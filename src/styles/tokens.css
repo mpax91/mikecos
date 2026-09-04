@@ -1,0 +1,31 @@
+:root {
+  /* Quiet study palette */
+  --color-paper: #FBF8F3;
+  --color-sidebar: #F3EEE2;
+  --color-border: #E4DDCE;
+  --color-ink: #2E2A22;
+  --color-muted: #8A7B5E;
+  --color-placeholder: #B0A489;
+
+  --color-accent: #2F4A3C;
+  --color-accent-text: #EFE7D6;
+
+  --color-accent-secondary: #B8632F;
+
+  --color-postit: #F6DE7C;
+  --color-postit-border: #E0C458;
+
+  --color-card-bg: #FFFFFF;
+
+  /* Typography */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Helvetica, Arial, sans-serif;
+  --font-serif: Georgia, "Iowan Old Style", "Times New Roman", serif;
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+
+  /* Layout */
+  --sidebar-width: 150px;
+  --radius-card: 10px;
+  --border-hairline: 0.5px solid var(--color-border);
+}
