@@ -11,6 +11,7 @@ export interface Entity {
   is_top_level: number; // 0 | 1 (D1/SQLite boolean)
   status: string | null;
   position: number;
+  pinned: number; // 0 | 1
   last_touched: string | null;
   created_at: string;
   updated_at: string;

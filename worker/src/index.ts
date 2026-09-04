@@ -21,7 +21,7 @@ function childCount(db: D1Database, id: string) {
 // GET /api/projects — list all top-level projects with child counts
 app.get('/api/projects', async (c) => {
   const { results } = await c.env.DB.prepare(
-    `SELECT * FROM entities WHERE is_top_level = 1 ORDER BY position ASC, created_at ASC`
+    `SELECT * FROM entities WHERE is_top_level = 1 ORDER BY pinned DESC, position ASC, created_at ASC`
   ).all<Entity>();
 
   const withCounts = await Promise.all(
@@ -70,7 +70,7 @@ app.get('/api/entities/:id', async (c) => {
   }
 
   const { results: children } = await c.env.DB.prepare(
-    `SELECT * FROM entities WHERE parent_id = ? ORDER BY position ASC, created_at ASC`
+    `SELECT * FROM entities WHERE parent_id = ? ORDER BY pinned DESC, position ASC, created_at ASC`
   )
     .bind(id)
     .all<Entity>();
@@ -121,7 +121,9 @@ app.post('/api/entities', async (c) => {
 // PATCH /api/entities/:id — update title/content/status/parent_id
 app.patch('/api/entities/:id', async (c) => {
   const id = c.req.param('id');
-  const body = await c.req.json<Partial<Pick<Entity, 'title' | 'content' | 'status' | 'parent_id' | 'position'>>>();
+  const body = await c.req.json<
+    Partial<Pick<Entity, 'title' | 'content' | 'status' | 'parent_id' | 'position' | 'pinned'>>
+  >();
 
   const existing = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(id).first<Entity>();
   if (!existing) return c.json({ error: 'not found' }, 404);
@@ -153,6 +155,10 @@ app.patch('/api/entities/:id', async (c) => {
     fields.push('position = ?');
     values.push(body.position);
   }
+  if (body.pinned !== undefined) {
+    fields.push('pinned = ?');
+    values.push(body.pinned);
+  }
 
   const ts = now();
   fields.push('updated_at = ?');
@@ -171,27 +177,52 @@ app.patch('/api/entities/:id', async (c) => {
   return c.json(entity);
 });
 
-// DELETE /api/entities/:id — cascades to children via FK
+// DELETE /api/entities/:id — recursively deletes descendants too (explicit
+// walk rather than relying on FK cascade, since SQLite/D1 only enforces
+// ON DELETE CASCADE when foreign_keys is pragma'd on for the connection)
 app.delete('/api/entities/:id', async (c) => {
   const id = c.req.param('id');
-  await c.env.DB.prepare('DELETE FROM entities WHERE id = ?').bind(id).run();
+  await c.env.DB.prepare(
+    `DELETE FROM entities WHERE id IN (
+       WITH RECURSIVE descendants(id) AS (
+         SELECT id FROM entities WHERE id = ?
+         UNION ALL
+         SELECT e.id FROM entities e JOIN descendants d ON e.parent_id = d.id
+       )
+       SELECT id FROM descendants
+     )`
+  )
+    .bind(id)
+    .run();
   return c.json({ ok: true });
 });
 
-// POST /api/entities/reorder — { parent_id, ordered_ids: string[] }
+// POST /api/entities/reorder — { parent_id: string | null, ordered_ids: string[] }
+// parent_id is null when reordering top-level projects.
 app.post('/api/entities/reorder', async (c) => {
-  const body = await c.req.json<{ parent_id: string; ordered_ids: string[] }>();
+  const body = await c.req.json<{ parent_id: string | null; ordered_ids: string[] }>();
   if (!body.ordered_ids?.length) return c.json({ error: 'ordered_ids required' }, 400);
 
-  const stmts = body.ordered_ids.map((entityId, index) =>
-    c.env.DB.prepare('UPDATE entities SET position = ? WHERE id = ? AND parent_id = ?').bind(
-      index,
-      entityId,
-      body.parent_id
-    )
-  );
+  const parentClause = body.parent_id === null ? 'parent_id IS NULL' : 'parent_id = ?';
+  const stmts = body.ordered_ids.map((entityId, index) => {
+    const stmt = c.env.DB.prepare(
+      `UPDATE entities SET position = ? WHERE id = ? AND ${parentClause}`
+    );
+    return body.parent_id === null ? stmt.bind(index, entityId) : stmt.bind(index, entityId, body.parent_id);
+  });
   await c.env.DB.batch(stmts);
   return c.json({ ok: true });
+});
+
+// POST /api/entities/:id/pin — { pinned: boolean }
+app.post('/api/entities/:id/pin', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json<{ pinned: boolean }>();
+  await c.env.DB.prepare('UPDATE entities SET pinned = ?, updated_at = ? WHERE id = ?')
+    .bind(body.pinned ? 1 : 0, now(), id)
+    .run();
+  const entity = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(id).first<Entity>();
+  return c.json(entity);
 });
 
 app.get('/api/health', (c) => c.json({ ok: true, time: now() }));

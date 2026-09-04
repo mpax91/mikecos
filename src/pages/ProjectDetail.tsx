@@ -1,11 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import type { Entity, EntityDetail } from '../api/types';
 import { Breadcrumb } from '../components/Breadcrumb';
 import { NewMenu } from '../components/NewMenu';
 import { NoteEditor } from '../components/NoteEditor';
-import { SortableGroup } from '../components/SortableGroup';
+import { SortableGrid } from '../components/SortableGrid';
+import { EntityCard } from '../components/EntityCard';
+import { EditableText } from '../components/EditableText';
+import { RenameModal } from '../components/RenameModal';
+import { ConfirmModal } from '../components/ConfirmModal';
 
 export function ProjectDetail() {
   const { id } = useParams<{ id: string }>();
@@ -13,7 +17,8 @@ export function ProjectDetail() {
   const [detail, setDetail] = useState<EntityDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [noteTitle, setNoteTitle] = useState('');
-  const titleSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [renaming, setRenaming] = useState<Entity | null>(null);
+  const [deleting, setDeleting] = useState<Entity | null>(null);
 
   const load = useCallback(() => {
     if (!id) return;
@@ -44,7 +49,6 @@ export function ProjectDetail() {
 
   async function toggleTask(entity: Entity) {
     const next = entity.status === 'done' ? 'open' : 'done';
-    // optimistic update
     setDetail((prev) =>
       prev
         ? { ...prev, children: prev.children.map((c) => (c.id === entity.id ? { ...c, status: next } : c)) }
@@ -53,25 +57,43 @@ export function ProjectDetail() {
     await api.updateEntity(entity.id, { status: next });
   }
 
-  async function reorderGroup(parentId: string, ordered: Entity[]) {
-    setDetail((prev) => {
-      if (!prev) return prev;
-      const otherIds = new Set(ordered.map((o) => o.id));
-      const rest = prev.children.filter((c) => !otherIds.has(c.id));
-      return { ...prev, children: [...rest, ...ordered] };
-    });
+  async function renameEntity(entity: Entity, newTitle: string) {
+    setDetail((prev) =>
+      prev
+        ? { ...prev, children: prev.children.map((c) => (c.id === entity.id ? { ...c, title: newTitle } : c)) }
+        : prev
+    );
+    await api.updateEntity(entity.id, { title: newTitle });
+  }
+
+  async function togglePin(entity: Entity) {
+    const next = entity.pinned === 1 ? 0 : 1;
+    setDetail((prev) =>
+      prev
+        ? { ...prev, children: prev.children.map((c) => (c.id === entity.id ? { ...c, pinned: next } : c)) }
+        : prev
+    );
+    await api.setPinned(entity.id, next === 1);
+  }
+
+  async function deleteEntity(entity: Entity) {
+    setDetail((prev) => (prev ? { ...prev, children: prev.children.filter((c) => c.id !== entity.id) } : prev));
+    await api.deleteEntity(entity.id);
+    setDeleting(null);
+  }
+
+  async function reorderAll(ordered: Entity[]) {
+    if (!id) return;
+    setDetail((prev) => (prev ? { ...prev, children: ordered } : prev));
     await api.reorder(
-      parentId,
+      id,
       ordered.map((o) => o.id)
     );
   }
 
   function handleNoteTitleChange(value: string) {
     setNoteTitle(value);
-    if (titleSaveTimer.current) clearTimeout(titleSaveTimer.current);
-    titleSaveTimer.current = setTimeout(() => {
-      if (id) api.updateEntity(id, { title: value });
-    }, 500);
+    if (id) api.updateEntity(id, { title: value });
   }
 
   function handleNoteContentSave(json: string) {
@@ -107,22 +129,36 @@ export function ProjectDetail() {
     );
   }
 
-  const folders = children.filter((c) => c.type === 'folder').sort((a, b) => a.position - b.position);
-  const rest = children
-    .filter((c) => c.type === 'note' || c.type === 'task')
-    .sort((a, b) => a.position - b.position);
-
   return (
     <div>
       <Breadcrumb trail={breadcrumb} current={entity} />
 
       {entity.is_top_level ? (
         <div className="project-header">
-          <h1 className="project-header__title">{entity.title}</h1>
-          {entity.content && <p className="project-header__desc">{entity.content}</p>}
+          <EditableText
+            value={entity.title}
+            placeholder="Untitled project"
+            onSave={(v) => id && api.updateEntity(id, { title: v })}
+            className="project-header__title-input"
+            displayClassName="project-header__title"
+          />
+          <EditableText
+            value={entity.content ?? ''}
+            placeholder="Add a description…"
+            onSave={(v) => id && api.updateEntity(id, { content: v })}
+            as="textarea"
+            className="project-header__desc-input"
+            displayClassName="project-header__desc"
+          />
         </div>
       ) : (
-        <div className="folder-header">{entity.title}</div>
+        <EditableText
+          value={entity.title}
+          placeholder="Untitled folder"
+          onSave={(v) => id && api.updateEntity(id, { title: v })}
+          className="folder-header-input"
+          displayClassName="folder-header"
+        />
       )}
 
       <div className="toolbar-row" style={{ marginBottom: 8 }}>
@@ -130,26 +166,47 @@ export function ProjectDetail() {
         <NewMenu onCreate={createChild} />
       </div>
 
-      {folders.length === 0 && rest.length === 0 && (
+      {children.length === 0 ? (
         <div className="empty-state">Nothing here yet — use "+ New" to add a folder, note, or task.</div>
+      ) : (
+        <SortableGrid
+          items={children}
+          onReorder={reorderAll}
+          className="entity-card-grid"
+          renderItem={(c) => (
+            <EntityCard
+              key={c.id}
+              entity={c}
+              onToggleTask={toggleTask}
+              onDelete={setDeleting}
+              onTogglePin={togglePin}
+              onRename={setRenaming}
+              onRenameTask={renameEntity}
+            />
+          )}
+        />
       )}
 
-      {folders.length > 0 && (
-        <>
-          <div className="group-label">Folders</div>
-          <SortableGroup items={folders} onReorder={(ordered) => reorderGroup(entity.id, ordered)} />
-        </>
+      {renaming && (
+        <RenameModal
+          initialValue={renaming.title}
+          label={renaming.type === 'folder' ? 'Folder name' : 'Name'}
+          onSave={(v) => renameEntity(renaming, v)}
+          onClose={() => setRenaming(null)}
+        />
       )}
 
-      {rest.length > 0 && (
-        <>
-          <div className="group-label">Notes &amp; Tasks</div>
-          <SortableGroup
-            items={rest}
-            onReorder={(ordered) => reorderGroup(entity.id, ordered)}
-            onToggleTask={toggleTask}
-          />
-        </>
+      {deleting && (
+        <ConfirmModal
+          title={`Delete ${deleting.type}?`}
+          body={
+            deleting.type === 'folder'
+              ? `"${deleting.title}" and everything inside it will be permanently deleted.`
+              : `"${deleting.title || 'Untitled'}" will be permanently deleted.`
+          }
+          onConfirm={() => deleteEntity(deleting)}
+          onCancel={() => setDeleting(null)}
+        />
       )}
     </div>
   );

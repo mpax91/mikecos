@@ -1,17 +1,17 @@
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import type { DragEndEvent } from '@dnd-kit/core';
-import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
-import type { Entity } from '../api/types';
-import { EntityRow } from './EntityRow';
+import { SortableContext, rectSortingStrategy, arrayMove } from '@dnd-kit/sortable';
 
-export function SortableGroup({
+export function SortableGrid<T extends { id: string }>({
   items,
   onReorder,
-  onToggleTask,
+  renderItem,
+  className,
 }: {
-  items: Entity[];
-  onReorder: (ordered: Entity[]) => void;
-  onToggleTask?: (entity: Entity) => void;
+  items: T[];
+  onReorder: (ordered: T[]) => void;
+  renderItem: (item: T) => React.ReactNode;
+  className?: string;
 }) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
@@ -26,10 +26,8 @@ export function SortableGroup({
 
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-      <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
-        {items.map((entity) => (
-          <EntityRow key={entity.id} entity={entity} onToggleTask={onToggleTask} />
-        ))}
+      <SortableContext items={items.map((i) => i.id)} strategy={rectSortingStrategy}>
+        <div className={className}>{items.map((item) => renderItem(item))}</div>
       </SortableContext>
     </DndContext>
   );

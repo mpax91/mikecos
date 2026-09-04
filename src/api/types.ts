@@ -9,6 +9,7 @@ export interface Entity {
   is_top_level: number;
   status: string | null;
   position: number;
+  pinned: number;
   last_touched: string | null;
   created_at: string;
   updated_at: string;

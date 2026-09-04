@@ -42,7 +42,7 @@ export const api = {
 
   updateEntity: (
     id: string,
-    patch: Partial<Pick<Entity, 'title' | 'content' | 'status' | 'parent_id' | 'position'>>
+    patch: Partial<Pick<Entity, 'title' | 'content' | 'status' | 'parent_id' | 'position' | 'pinned'>>
   ) =>
     request<Entity>(`/api/entities/${id}`, {
       method: 'PATCH',
@@ -52,9 +52,15 @@ export const api = {
   deleteEntity: (id: string) =>
     request<{ ok: true }>(`/api/entities/${id}`, { method: 'DELETE' }),
 
-  reorder: (parent_id: string, ordered_ids: string[]) =>
+  reorder: (parent_id: string | null, ordered_ids: string[]) =>
     request<{ ok: true }>('/api/entities/reorder', {
       method: 'POST',
       body: JSON.stringify({ parent_id, ordered_ids }),
+    }),
+
+  setPinned: (id: string, pinned: boolean) =>
+    request<Entity>(`/api/entities/${id}/pin`, {
+      method: 'POST',
+      body: JSON.stringify({ pinned }),
     }),
 };
