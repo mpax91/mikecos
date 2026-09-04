@@ -1,4 +1,4 @@
-export type EntityType = 'project' | 'folder' | 'note' | 'task';
+export type EntityType = 'project' | 'folder' | 'note' | 'task' | 'file' | 'link';
 export type TaskStatus = 'open' | 'done';
 export type ProjectStatus = 'active' | 'archived';
 
@@ -25,7 +25,19 @@ export interface Link {
   created_at: string;
 }
 
+export interface FileMeta {
+  r2_key: string;
+  mime_type: string;
+  size: number;
+  filename: string;
+}
+
+export interface LinkMeta {
+  url: string;
+}
+
 export interface Env {
   DB: D1Database;
+  FILES: R2Bucket;
   ALLOWED_ORIGIN: string;
 }

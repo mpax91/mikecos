@@ -2,11 +2,16 @@ import { useEffect, useRef, useState } from 'react';
 
 export function NewMenu({
   onCreate,
+  onAddLink,
+  onUploadFile,
 }: {
-  onCreate: (type: 'folder' | 'note' | 'task') => void;
+  onCreate: (type: 'folder' | 'note') => void;
+  onAddLink: () => void;
+  onUploadFile: (file: File) => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     function onDocClick(e: MouseEvent) {
@@ -16,8 +21,25 @@ export function NewMenu({
     return () => document.removeEventListener('mousedown', onDocClick);
   }, []);
 
+  const items: { key: string; label: string; onClick: () => void }[] = [
+    { key: 'folder', label: 'New Folder', onClick: () => onCreate('folder') },
+    { key: 'note', label: 'New Note', onClick: () => onCreate('note') },
+    { key: 'file', label: 'Upload File', onClick: () => fileInputRef.current?.click() },
+    { key: 'link', label: 'Add Link', onClick: onAddLink },
+  ];
+
   return (
     <div ref={ref} style={{ position: 'relative', display: 'inline-block' }}>
+      <input
+        ref={fileInputRef}
+        type="file"
+        style={{ display: 'none' }}
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) onUploadFile(file);
+          e.target.value = '';
+        }}
+      />
       <button className="btn" onClick={() => setOpen((v) => !v)}>
         + New
       </button>
@@ -34,11 +56,11 @@ export function NewMenu({
             boxShadow: '0 4px 16px rgba(46, 42, 34, 0.12)',
           }}
         >
-          {(['folder', 'note', 'task'] as const).map((type) => (
+          {items.map((item) => (
             <div
-              key={type}
+              key={item.key}
               onClick={() => {
-                onCreate(type);
+                item.onClick();
                 setOpen(false);
               }}
               style={{
@@ -46,12 +68,11 @@ export function NewMenu({
                 borderRadius: 6,
                 cursor: 'pointer',
                 fontSize: 13,
-                textTransform: 'capitalize',
               }}
               onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(47,74,60,0.08)')}
               onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
             >
-              New {type}
+              {item.label}
             </div>
           ))}
         </div>

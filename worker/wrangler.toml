@@ -7,5 +7,9 @@ binding = "DB"
 database_name = "mikeos-db"
 database_id = "d2a93367-a474-4b41-aa2d-a688400e4fb2"
 
+[[r2_buckets]]
+binding = "FILES"
+bucket_name = "mikeos-files"
+
 [vars]
 ALLOWED_ORIGIN = "*"

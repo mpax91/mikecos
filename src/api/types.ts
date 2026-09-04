@@ -1,4 +1,15 @@
-export type EntityType = 'project' | 'folder' | 'note' | 'task';
+export type EntityType = 'project' | 'folder' | 'note' | 'task' | 'file' | 'link';
+
+export interface FileMeta {
+  r2_key: string;
+  mime_type: string;
+  size: number;
+  filename: string;
+}
+
+export interface LinkMeta {
+  url: string;
+}
 
 export interface Entity {
   id: string;

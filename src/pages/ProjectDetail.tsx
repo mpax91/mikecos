@@ -7,11 +7,14 @@ import { NewMenu } from '../components/NewMenu';
 import { NoteEditor } from '../components/NoteEditor';
 import { SortableGrid } from '../components/SortableGrid';
 import { EntityCard } from '../components/EntityCard';
+import { FolderTile } from '../components/FolderTile';
 import { TaskRow } from '../components/TaskRow';
+import { NewTaskRow } from '../components/NewTaskRow';
 import { Section } from '../components/Section';
 import { EditableText } from '../components/EditableText';
 import { RenameModal } from '../components/RenameModal';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { LinkModal } from '../components/LinkModal';
 
 export function ProjectDetail() {
   const { id } = useParams<{ id: string }>();
@@ -21,6 +24,7 @@ export function ProjectDetail() {
   const [noteTitle, setNoteTitle] = useState('');
   const [renaming, setRenaming] = useState<Entity | null>(null);
   const [deleting, setDeleting] = useState<Entity | null>(null);
+  const [addingLink, setAddingLink] = useState(false);
 
   const load = useCallback(() => {
     if (!id) return;
@@ -39,7 +43,7 @@ export function ProjectDetail() {
     load();
   }, [load]);
 
-  async function createChild(type: 'folder' | 'note' | 'task') {
+  async function createChild(type: 'folder' | 'note') {
     if (!id) return;
     const child = await api.createEntity({ type, parent_id: id });
     if (type === 'note') {
@@ -47,6 +51,25 @@ export function ProjectDetail() {
     } else {
       load();
     }
+  }
+
+  async function createTask(title: string) {
+    if (!id) return;
+    await api.createEntity({ type: 'task', parent_id: id, title });
+    load();
+  }
+
+  async function addLink(url: string, title: string) {
+    if (!id) return;
+    await api.createLink(id, url, title);
+    setAddingLink(false);
+    load();
+  }
+
+  async function uploadFile(file: File) {
+    if (!id) return;
+    await api.uploadFile(file, id);
+    load();
   }
 
   async function toggleTask(entity: Entity) {
@@ -84,11 +107,11 @@ export function ProjectDetail() {
     setDeleting(null);
   }
 
-  async function reorderSection(type: Entity['type'], ordered: Entity[]) {
+  async function reorderGroup(predicate: (e: Entity) => boolean, ordered: Entity[]) {
     if (!id) return;
     setDetail((prev) => {
       if (!prev) return prev;
-      const others = prev.children.filter((c) => c.type !== type);
+      const others = prev.children.filter((c) => !predicate(c));
       return { ...prev, children: [...others, ...ordered] };
     });
     await api.reorder(
@@ -150,7 +173,9 @@ export function ProjectDetail() {
 
   const folders = children.filter((c) => c.type === 'folder');
   const notes = children.filter((c) => c.type === 'note');
+  const files = children.filter((c) => c.type === 'file' || c.type === 'link');
   const tasks = children.filter((c) => c.type === 'task');
+  const isFileOrLink = (c: Entity) => c.type === 'file' || c.type === 'link';
 
   return (
     <div>
@@ -178,55 +203,75 @@ export function ProjectDetail() {
 
       <div className="toolbar-row" style={{ marginBottom: 8 }}>
         <div />
-        <NewMenu onCreate={createChild} />
+        <NewMenu onCreate={createChild} onAddLink={() => setAddingLink(true)} onUploadFile={uploadFile} />
       </div>
 
-      {children.length === 0 ? (
-        <div className="empty-state">Nothing here yet — use "+ New" to add a folder, note, or task.</div>
-      ) : (
-        <>
-          <Section title="Folders" count={folders.length}>
-            <SortableGrid
-              items={folders}
-              onReorder={(ordered) => reorderSection('folder', ordered)}
-              className="entity-card-grid"
-              renderItem={(c) => (
-                <EntityCard key={c.id} entity={c} onDelete={setDeleting} onTogglePin={togglePin} onRename={setRenaming} />
-              )}
-            />
-          </Section>
+      <Section title="Folders">
+        {folders.length === 0 ? (
+          <div className="empty-state empty-state--section">No folders yet.</div>
+        ) : (
+          <SortableGrid
+            items={folders}
+            onReorder={(ordered) => reorderGroup((c) => c.type === 'folder', ordered)}
+            className="folder-tile-grid"
+            renderItem={(c) => (
+              <FolderTile key={c.id} entity={c} onDelete={setDeleting} onTogglePin={togglePin} onRename={setRenaming} />
+            )}
+          />
+        )}
+      </Section>
 
-          <Section title="Notes" count={notes.length}>
-            <SortableGrid
-              items={notes}
-              onReorder={(ordered) => reorderSection('note', ordered)}
-              className="entity-card-grid"
-              renderItem={(c) => (
-                <EntityCard key={c.id} entity={c} onDelete={setDeleting} onTogglePin={togglePin} onRename={setRenaming} />
-              )}
-            />
-          </Section>
+      <Section title="Notes">
+        {notes.length === 0 ? (
+          <div className="empty-state empty-state--section">No notes yet.</div>
+        ) : (
+          <SortableGrid
+            items={notes}
+            onReorder={(ordered) => reorderGroup((c) => c.type === 'note', ordered)}
+            className="entity-card-grid"
+            renderItem={(c) => (
+              <EntityCard key={c.id} entity={c} onDelete={setDeleting} onTogglePin={togglePin} onRename={setRenaming} />
+            )}
+          />
+        )}
+      </Section>
 
-          <Section title="Tasks" count={tasks.length}>
-            <SortableGrid
-              items={tasks}
-              onReorder={(ordered) => reorderSection('task', ordered)}
-              className="task-list"
-              layout="list"
-              renderItem={(c) => (
-                <TaskRow
-                  key={c.id}
-                  entity={c}
-                  onToggle={toggleTask}
-                  onDelete={setDeleting}
-                  onTogglePin={togglePin}
-                  onRename={renameEntity}
-                />
-              )}
-            />
-          </Section>
-        </>
-      )}
+      <Section title="Files">
+        {files.length === 0 ? (
+          <div className="empty-state empty-state--section">No files or links yet.</div>
+        ) : (
+          <SortableGrid
+            items={files}
+            onReorder={(ordered) => reorderGroup(isFileOrLink, ordered)}
+            className="entity-card-grid"
+            renderItem={(c) => (
+              <EntityCard key={c.id} entity={c} onDelete={setDeleting} onTogglePin={togglePin} onRename={setRenaming} />
+            )}
+          />
+        )}
+      </Section>
+
+      <Section title="Tasks">
+        {tasks.length > 0 && (
+          <SortableGrid
+            items={tasks}
+            onReorder={(ordered) => reorderGroup((c) => c.type === 'task', ordered)}
+            className="task-list"
+            layout="list"
+            renderItem={(c) => (
+              <TaskRow
+                key={c.id}
+                entity={c}
+                onToggle={toggleTask}
+                onDelete={setDeleting}
+                onTogglePin={togglePin}
+                onRename={renameEntity}
+              />
+            )}
+          />
+        )}
+        <NewTaskRow onCreate={createTask} />
+      </Section>
 
       {renaming && (
         <RenameModal
@@ -249,6 +294,8 @@ export function ProjectDetail() {
           onCancel={() => setDeleting(null)}
         />
       )}
+
+      {addingLink && <LinkModal onSave={addLink} onClose={() => setAddingLink(false)} />}
     </div>
   );
 }

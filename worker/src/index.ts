@@ -78,10 +78,11 @@ app.get('/api/entities/:id', async (c) => {
   return c.json({ entity, breadcrumb, children: children ?? [] });
 });
 
-// POST /api/entities — create a folder/note/task as a child of parent_id
+// POST /api/entities — create a folder/note/task/link as a child of parent_id
+// (files go through POST /api/upload instead, since they carry binary data)
 app.post('/api/entities', async (c) => {
   const body = await c.req.json<{
-    type: 'folder' | 'note' | 'task';
+    type: 'folder' | 'note' | 'task' | 'link';
     title?: string;
     content?: string | null;
     parent_id: string;
@@ -89,7 +90,7 @@ app.post('/api/entities', async (c) => {
   }>();
 
   if (!body.parent_id) return c.json({ error: 'parent_id is required' }, 400);
-  if (!['folder', 'note', 'task'].includes(body.type)) {
+  if (!['folder', 'note', 'task', 'link'].includes(body.type)) {
     return c.json({ error: 'invalid type' }, 400);
   }
 
@@ -104,7 +105,9 @@ app.post('/api/entities', async (c) => {
 
   const id = uid();
   const ts = now();
-  const title = body.title?.trim() || (body.type === 'note' ? 'Untitled note' : body.type === 'task' ? '' : 'New folder');
+  const title =
+    body.title?.trim() ||
+    (body.type === 'note' ? 'Untitled note' : body.type === 'task' ? '' : body.type === 'link' ? 'New link' : 'New folder');
   const status = body.type === 'task' ? (body.status ?? 'open') : null;
 
   await c.env.DB.prepare(
@@ -182,6 +185,29 @@ app.patch('/api/entities/:id', async (c) => {
 // ON DELETE CASCADE when foreign_keys is pragma'd on for the connection)
 app.delete('/api/entities/:id', async (c) => {
   const id = c.req.param('id');
+
+  // Purge any R2 objects belonging to file entities in this subtree before
+  // the rows disappear, so attachments don't leak storage.
+  const { results: files } = await c.env.DB.prepare(
+    `WITH RECURSIVE descendants(id) AS (
+       SELECT id FROM entities WHERE id = ?
+       UNION ALL
+       SELECT e.id FROM entities e JOIN descendants d ON e.parent_id = d.id
+     )
+     SELECT content FROM entities WHERE id IN (SELECT id FROM descendants) AND type = 'file'`
+  )
+    .bind(id)
+    .all<{ content: string | null }>();
+  for (const row of files ?? []) {
+    if (!row.content) continue;
+    try {
+      const meta = JSON.parse(row.content) as { r2_key?: string };
+      if (meta.r2_key) await c.env.FILES.delete(meta.r2_key);
+    } catch {
+      // malformed metadata — nothing to clean up
+    }
+  }
+
   await c.env.DB.prepare(
     `DELETE FROM entities WHERE id IN (
        WITH RECURSIVE descendants(id) AS (
@@ -223,6 +249,77 @@ app.post('/api/entities/:id/pin', async (c) => {
     .run();
   const entity = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(id).first<Entity>();
   return c.json(entity);
+});
+
+// ---- File attachments (R2-backed) ----
+
+// POST /api/upload — multipart/form-data with a "file" field.
+// With a "parent_id" field, creates a `file` entity as a child of that
+// folder (shown in the Files section). Without it, this is an inline
+// attachment for a note: the object is stored and its URL returned, but no
+// entity row is created — the Tiptap doc itself references the URL.
+app.post('/api/upload', async (c) => {
+  const form = await c.req.formData();
+  const rawFile = form.get('file');
+  if (!rawFile || typeof rawFile === 'string') return c.json({ error: 'file is required' }, 400);
+  const file = rawFile as File;
+
+  const parentId = form.get('parent_id')?.toString() || null;
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 120) || 'file';
+  const key = `${uid()}-${safeName}`;
+  const buf = await file.arrayBuffer();
+  const mimeType = file.type || 'application/octet-stream';
+
+  await c.env.FILES.put(key, buf, { httpMetadata: { contentType: mimeType } });
+
+  const meta = { r2_key: key, mime_type: mimeType, size: buf.byteLength, filename: file.name };
+
+  if (parentId) {
+    const parent = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(parentId).first<Entity>();
+    if (!parent) return c.json({ error: 'parent not found' }, 404);
+    const maxPos = await c.env.DB.prepare(
+      'SELECT COALESCE(MAX(position), -1) as m FROM entities WHERE parent_id = ?'
+    )
+      .bind(parentId)
+      .first<{ m: number }>();
+    const id = uid();
+    const ts = now();
+    await c.env.DB.prepare(
+      `INSERT INTO entities (id, type, title, content, parent_id, is_top_level, status, position, last_touched, created_at, updated_at)
+       VALUES (?, 'file', ?, ?, ?, 0, NULL, ?, ?, ?, ?)`
+    )
+      .bind(id, file.name, JSON.stringify(meta), parentId, (maxPos?.m ?? -1) + 1, ts, ts, ts)
+      .run();
+    const entity = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(id).first<Entity>();
+    return c.json(entity, 201);
+  }
+
+  return c.json({ ...meta, url: `/api/files/${key}` }, 201);
+});
+
+// GET /api/files/:key — stream an object back out. ?download=1 forces a
+// "Save As" download instead of inline viewing.
+app.get('/api/files/:key', async (c) => {
+  const key = c.req.param('key');
+  const obj = await c.env.FILES.get(key);
+  if (!obj) return c.text('not found', 404);
+
+  const headers = new Headers();
+  obj.writeHttpMetadata(headers);
+  headers.set('etag', obj.httpEtag);
+  headers.set('cache-control', 'public, max-age=31536000, immutable');
+  if (c.req.query('download') === '1') {
+    headers.set('content-disposition', 'attachment');
+  }
+  return new Response(obj.body, { headers });
+});
+
+// DELETE /api/files/:key — purge a single R2 object (used when removing an
+// inline attachment from a note; standalone `file` entities are cleaned up
+// automatically by DELETE /api/entities/:id instead).
+app.delete('/api/files/:key', async (c) => {
+  await c.env.FILES.delete(c.req.param('key'));
+  return c.json({ ok: true });
 });
 
 app.get('/api/health', (c) => c.json({ ok: true, time: now() }));

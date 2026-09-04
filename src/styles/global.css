@@ -228,20 +228,24 @@ a {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
-  margin-right: 4px;
-  border-radius: 6px;
+  width: 32px;
+  height: 32px;
+  margin-right: 8px;
+  border-radius: 8px;
   border: var(--border-hairline);
   background: var(--color-card-bg);
   color: var(--color-ink);
-  font-size: 15px;
+  font-size: 20px;
+  font-weight: var(--weight-medium);
   line-height: 1;
   cursor: pointer;
+  box-shadow: 0 1px 2px rgba(46, 42, 34, 0.06);
 }
 
 .breadcrumb__back:hover {
-  background: var(--color-sidebar);
+  background: var(--color-accent);
+  color: var(--color-accent-text);
+  border-color: var(--color-accent);
 }
 
 .breadcrumb__link, .breadcrumb__current {
@@ -251,10 +255,16 @@ a {
   margin: -2px -4px;
 }
 
+.breadcrumb__link {
+  text-decoration: underline;
+  text-decoration-color: var(--color-border);
+  text-underline-offset: 2px;
+}
+
 .breadcrumb__link:hover {
   color: var(--color-ink);
   background: rgba(47, 74, 60, 0.08);
-  text-decoration: underline;
+  text-decoration-color: currentColor;
 }
 
 .breadcrumb__current {
@@ -361,7 +371,7 @@ a {
 .note-editor table {
   border-collapse: collapse;
   table-layout: fixed;
-  width: 100%;
+  max-width: 100%;
   margin: 0;
 }
 
@@ -399,6 +409,92 @@ a {
   margin: 8px 0;
   padding-left: 12px;
   color: var(--color-muted);
+}
+
+.note-editor a {
+  color: var(--color-accent);
+  text-decoration: underline;
+}
+
+.note-editor mark {
+  background: var(--color-postit);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+/* ---- Inline attachments (images / PDFs / files) inside a note ---- */
+
+.note-attachment {
+  border: var(--border-hairline);
+  border-radius: 10px;
+  overflow: hidden;
+  margin: 10px 0;
+  background: var(--color-card-bg);
+}
+
+.note-attachment__bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--color-sidebar);
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.note-attachment__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note-attachment__actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.note-attachment__action {
+  border: none;
+  background: transparent;
+  border-radius: 5px;
+  width: 22px;
+  height: 22px;
+  cursor: pointer;
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.note-attachment__action:hover {
+  background: rgba(47, 74, 60, 0.1);
+  color: var(--color-ink);
+}
+
+.note-attachment__image {
+  display: block;
+  max-width: 100%;
+  max-height: 420px;
+  margin: 0 auto;
+}
+
+.note-attachment__pdf {
+  display: block;
+  width: 100%;
+  height: 480px;
+  border: none;
+}
+
+.note-attachment__generic {
+  padding: 14px;
+  font-size: 13px;
+  color: var(--color-ink);
+}
+
+.note-attachment__generic-icon {
+  font-size: 15px;
 }
 
 /* ---- Note editor toolbar (Apple-Notes-style, persistent) ---- */
@@ -512,9 +608,23 @@ a {
   cursor: pointer;
 }
 
+.editor-toolbar__table-controls button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+}
+
 .editor-toolbar__table-controls button:hover {
   background: var(--color-sidebar);
   color: var(--color-ink);
+}
+
+.editor-toolbar__table-controls-danger:hover {
+  background: rgba(184, 99, 47, 0.12) !important;
+  color: var(--color-accent-secondary) !important;
 }
 
 /* ---- Entity card grid ---- */
@@ -598,6 +708,76 @@ a {
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+/* ---- Folder tiles (plain icon + label, no card chrome) ---- */
+
+.folder-tile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 4px;
+}
+
+.folder-tile {
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 10px 8px;
+  border-radius: var(--radius-card);
+}
+
+.folder-tile:hover {
+  background: rgba(47, 74, 60, 0.05);
+}
+
+.folder-tile.is-dragging {
+  background: var(--color-card-bg);
+  box-shadow: 0 8px 24px rgba(46, 42, 34, 0.14);
+}
+
+.folder-tile__top {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 4px;
+  margin-bottom: 2px;
+}
+
+.folder-tile__icon {
+  font-size: 36px;
+  line-height: 1;
+}
+
+.folder-tile__title {
+  font-size: 13px;
+  font-weight: var(--weight-medium);
+  color: var(--color-ink);
+  word-break: break-word;
+  margin-top: 4px;
+}
+
+.folder-tile.is-pinned .folder-tile__title {
+  color: var(--color-accent-secondary);
+}
+
+.entity-card__drag--placeholder {
+  visibility: hidden;
+}
+
+.entity-card__thumb {
+  width: 100%;
+  height: 90px;
+  object-fit: cover;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  background: var(--color-sidebar);
+}
+
+.empty-state--section {
+  padding: 8px 6px 4px;
+  font-size: 12.5px;
 }
 
 /* ---- Detail sections (Folders / Notes / Tasks) ---- */
@@ -703,6 +883,15 @@ a {
 .task-row:hover .task-row__kebab,
 .task-row .kebab-menu:has(.kebab-menu__dropdown) {
   opacity: 1;
+}
+
+.task-row--new .task-row__input {
+  color: var(--color-ink);
+}
+
+.task-row--new .task-row__checkbox {
+  cursor: default;
+  opacity: 0.4;
 }
 
 /* ---- Kebab menu ---- */
