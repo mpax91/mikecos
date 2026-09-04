@@ -7,6 +7,8 @@ import { NewMenu } from '../components/NewMenu';
 import { NoteEditor } from '../components/NoteEditor';
 import { SortableGrid } from '../components/SortableGrid';
 import { EntityCard } from '../components/EntityCard';
+import { TaskRow } from '../components/TaskRow';
+import { Section } from '../components/Section';
 import { EditableText } from '../components/EditableText';
 import { RenameModal } from '../components/RenameModal';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -48,13 +50,13 @@ export function ProjectDetail() {
   }
 
   async function toggleTask(entity: Entity) {
-    const next = entity.status === 'done' ? 'open' : 'done';
+    const nextStatus = entity.status === 'done' ? 'open' : 'done';
     setDetail((prev) =>
       prev
-        ? { ...prev, children: prev.children.map((c) => (c.id === entity.id ? { ...c, status: next } : c)) }
+        ? { ...prev, children: prev.children.map((c) => (c.id === entity.id ? { ...c, status: nextStatus } : c)) }
         : prev
     );
-    await api.updateEntity(entity.id, { status: next });
+    await api.updateEntity(entity.id, { status: nextStatus });
   }
 
   async function renameEntity(entity: Entity, newTitle: string) {
@@ -82,22 +84,31 @@ export function ProjectDetail() {
     setDeleting(null);
   }
 
-  async function reorderAll(ordered: Entity[]) {
+  async function reorderSection(type: Entity['type'], ordered: Entity[]) {
     if (!id) return;
-    setDetail((prev) => (prev ? { ...prev, children: ordered } : prev));
+    setDetail((prev) => {
+      if (!prev) return prev;
+      const others = prev.children.filter((c) => c.type !== type);
+      return { ...prev, children: [...others, ...ordered] };
+    });
     await api.reorder(
       id,
       ordered.map((o) => o.id)
     );
   }
 
-  function handleNoteTitleChange(value: string) {
+  // Bound to the loaded entity's own id (not the route param `id`), which
+  // only changes once the fetch for the new route resolves. The route id
+  // updates immediately on navigation, one render before `detail` catches
+  // up — binding to it here would let a stale note's save land on whatever
+  // entity the URL just changed to.
+  function handleNoteTitleChange(value: string, noteId: string) {
     setNoteTitle(value);
-    if (id) api.updateEntity(id, { title: value });
+    api.updateEntity(noteId, { title: value });
   }
 
-  function handleNoteContentSave(json: string) {
-    if (id) api.updateEntity(id, { content: json });
+  function handleNoteContentSave(json: string, noteId: string) {
+    api.updateEntity(noteId, { content: json });
   }
 
   if (error) return <div className="empty-state">Couldn't load: {error}</div>;
@@ -122,12 +133,24 @@ export function ProjectDetail() {
           }}
           value={noteTitle}
           placeholder="Untitled note"
-          onChange={(e) => handleNoteTitleChange(e.target.value)}
+          onChange={(e) => handleNoteTitleChange(e.target.value, entity.id)}
         />
-        <NoteEditor content={entity.content} onSave={handleNoteContentSave} />
+        {/* key={entity.id} forces a full remount (not a prop update) when
+            navigating between notes, so the flush-on-unmount save in
+            NoteEditor always fires against the note it was actually
+            editing, never a transient mismatch during route changes. */}
+        <NoteEditor
+          key={entity.id}
+          content={entity.content}
+          onSave={(json) => handleNoteContentSave(json, entity.id)}
+        />
       </div>
     );
   }
+
+  const folders = children.filter((c) => c.type === 'folder');
+  const notes = children.filter((c) => c.type === 'note');
+  const tasks = children.filter((c) => c.type === 'task');
 
   return (
     <div>
@@ -141,14 +164,6 @@ export function ProjectDetail() {
             onSave={(v) => id && api.updateEntity(id, { title: v })}
             className="project-header__title-input"
             displayClassName="project-header__title"
-          />
-          <EditableText
-            value={entity.content ?? ''}
-            placeholder="Add a description…"
-            onSave={(v) => id && api.updateEntity(id, { content: v })}
-            as="textarea"
-            className="project-header__desc-input"
-            displayClassName="project-header__desc"
           />
         </div>
       ) : (
@@ -169,22 +184,48 @@ export function ProjectDetail() {
       {children.length === 0 ? (
         <div className="empty-state">Nothing here yet — use "+ New" to add a folder, note, or task.</div>
       ) : (
-        <SortableGrid
-          items={children}
-          onReorder={reorderAll}
-          className="entity-card-grid"
-          renderItem={(c) => (
-            <EntityCard
-              key={c.id}
-              entity={c}
-              onToggleTask={toggleTask}
-              onDelete={setDeleting}
-              onTogglePin={togglePin}
-              onRename={setRenaming}
-              onRenameTask={renameEntity}
+        <>
+          <Section title="Folders" count={folders.length}>
+            <SortableGrid
+              items={folders}
+              onReorder={(ordered) => reorderSection('folder', ordered)}
+              className="entity-card-grid"
+              renderItem={(c) => (
+                <EntityCard key={c.id} entity={c} onDelete={setDeleting} onTogglePin={togglePin} onRename={setRenaming} />
+              )}
             />
-          )}
-        />
+          </Section>
+
+          <Section title="Notes" count={notes.length}>
+            <SortableGrid
+              items={notes}
+              onReorder={(ordered) => reorderSection('note', ordered)}
+              className="entity-card-grid"
+              renderItem={(c) => (
+                <EntityCard key={c.id} entity={c} onDelete={setDeleting} onTogglePin={togglePin} onRename={setRenaming} />
+              )}
+            />
+          </Section>
+
+          <Section title="Tasks" count={tasks.length}>
+            <SortableGrid
+              items={tasks}
+              onReorder={(ordered) => reorderSection('task', ordered)}
+              className="task-list"
+              layout="list"
+              renderItem={(c) => (
+                <TaskRow
+                  key={c.id}
+                  entity={c}
+                  onToggle={toggleTask}
+                  onDelete={setDeleting}
+                  onTogglePin={togglePin}
+                  onRename={renameEntity}
+                />
+              )}
+            />
+          </Section>
+        </>
       )}
 
       {renaming && (

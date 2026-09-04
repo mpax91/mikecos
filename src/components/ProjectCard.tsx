@@ -42,7 +42,6 @@ export function ProjectCard({
       {isPinned && <span className="entity-card__pin" title="Pinned">📌</span>}
       <div style={{ minWidth: 0, flex: 1 }}>
         <p className="project-card__title">{project.title}</p>
-        <p className="project-card__desc">{project.content || 'No description'}</p>
       </div>
       <div className="project-card__meta">
         <Badge>{project.child_count}</Badge>

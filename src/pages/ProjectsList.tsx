@@ -12,7 +12,6 @@ export function ProjectsList() {
   const [projects, setProjects] = useState<ProjectListItem[] | null>(null);
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<ProjectListItem | null>(null);
   const [deleting, setDeleting] = useState<ProjectListItem | null>(null);
@@ -28,10 +27,9 @@ export function ProjectsList() {
 
   async function handleCreate() {
     if (!title.trim()) return;
-    const project = await api.createProject(title.trim(), description.trim());
+    const project = await api.createProject(title.trim(), '');
     setCreating(false);
     setTitle('');
-    setDescription('');
     navigate(`/projects/${project.id}`);
   }
 
@@ -102,11 +100,6 @@ export function ProjectsList() {
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
-          />
-          <textarea
-            placeholder="Description (optional)"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
           />
           <div className="modal__actions">
             <button className="btn btn--ghost" onClick={() => setCreating(false)}>
