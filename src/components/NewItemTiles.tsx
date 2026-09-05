@@ -17,7 +17,7 @@ export function NewFolderTile({ onCreate }: { onCreate: () => void }) {
  * jump straight into a new note. */
 export function NewNoteTile({ onCreate }: { onCreate: () => void }) {
   return (
-    <div className="entity-card entity-card--ghost" onClick={onCreate}>
+    <div className="entity-card entity-card--ghost entity-card--note-ghost" onClick={onCreate}>
       <div className="entity-card__ghost-plus">+</div>
       <div className="entity-card__title entity-card__title--ghost">New Note</div>
     </div>
@@ -67,7 +67,7 @@ export function NewFileTile({
         }}
       />
       <div className="entity-card__ghost-plus">+</div>
-      <div className="entity-card__title entity-card__title--ghost">New File</div>
+      <div className="entity-card__title entity-card__title--ghost">New Media</div>
       {open && (
         <div
           className="card new-file-tile__menu"

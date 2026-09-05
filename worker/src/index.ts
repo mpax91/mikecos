@@ -16,9 +16,26 @@ function childCount(db: D1Database, id: string) {
   return db.prepare('SELECT COUNT(*) as n FROM entities WHERE parent_id = ?').bind(id).first<{ n: number }>();
 }
 
+// Per-project breakdown shown on the projects list — direct children only
+// (matching what the project's own Pinned section shows), open tasks only
+// so a project with a long done-list doesn't look busier than it is.
+function sectionCounts(db: D1Database, id: string) {
+  return db
+    .prepare(
+      `SELECT
+         SUM(CASE WHEN pinned = 1 THEN 1 ELSE 0 END) as pinned_count,
+         SUM(CASE WHEN type = 'folder' THEN 1 ELSE 0 END) as folder_count,
+         SUM(CASE WHEN type = 'note' THEN 1 ELSE 0 END) as note_count,
+         SUM(CASE WHEN type = 'task' AND status != 'done' THEN 1 ELSE 0 END) as open_task_count
+       FROM entities WHERE parent_id = ?`
+    )
+    .bind(id)
+    .first<{ pinned_count: number; folder_count: number; note_count: number; open_task_count: number }>();
+}
+
 // ---- Projects (top-level) ----
 
-// GET /api/projects — list all top-level projects with child counts
+// GET /api/projects — list all top-level projects with a section breakdown
 app.get('/api/projects', async (c) => {
   const { results } = await c.env.DB.prepare(
     `SELECT * FROM entities WHERE is_top_level = 1 ORDER BY pinned DESC, position ASC, created_at ASC`
@@ -26,8 +43,15 @@ app.get('/api/projects', async (c) => {
 
   const withCounts = await Promise.all(
     (results ?? []).map(async (p) => {
-      const cnt = await childCount(c.env.DB, p.id);
-      return { ...p, child_count: cnt?.n ?? 0 };
+      const [cnt, sections] = await Promise.all([childCount(c.env.DB, p.id), sectionCounts(c.env.DB, p.id)]);
+      return {
+        ...p,
+        child_count: cnt?.n ?? 0,
+        pinned_count: sections?.pinned_count ?? 0,
+        folder_count: sections?.folder_count ?? 0,
+        note_count: sections?.note_count ?? 0,
+        open_task_count: sections?.open_task_count ?? 0,
+      };
     })
   );
   return c.json(withCounts);

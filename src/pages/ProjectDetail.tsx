@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { api } from '../api/client';
 import type { Entity, EntityDetail } from '../api/types';
 import { Breadcrumb } from '../components/Breadcrumb';
@@ -25,6 +25,8 @@ function typePredicate(type: Entity['type']): (e: Entity) => boolean {
 export function ProjectDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  const isNewNote = Boolean((location.state as { isNew?: boolean } | null)?.isNew);
   const [detail, setDetail] = useState<EntityDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [noteTitle, setNoteTitle] = useState('');
@@ -53,9 +55,15 @@ export function ProjectDetail() {
     if (!id) return;
     const child = await api.createEntity({ type, parent_id: id });
     if (type === 'note') {
-      navigate(`/projects/${child.id}`);
+      // The isNew flag tells the note screen to auto-select its title
+      // input on mount, so typing a real name replaces "Untitled Note"
+      // immediately instead of requiring a separate rename step later.
+      navigate(`/projects/${child.id}`, { state: { isNew: true } });
     } else {
       load();
+      // Same idea for folders: open straight into rename instead of
+      // leaving it titled "New Folder" until the user thinks to fix it.
+      setRenaming(child);
     }
   }
 
@@ -191,6 +199,7 @@ export function ProjectDetail() {
           placeholder="Untitled Note"
           onChange={(e) => handleNoteTitleChange(e.target.value, entity.id)}
           onFocus={(e) => e.target.select()}
+          autoFocus={isNewNote}
         />
         {/* key={entity.id} forces a full remount (not a prop update) when
             navigating between notes, so the flush-on-unmount save in
@@ -209,13 +218,12 @@ export function ProjectDetail() {
   const notes = children.filter((c) => c.type === 'note');
   const files = children.filter(isFileOrLink);
   const tasks = children.filter((c) => c.type === 'task');
-  // Completed tasks sink to the bottom of the list rather than sitting
-  // wherever they happened to be created — a display-only reordering, so
+  // Completed tasks render in their own group below a divider rather than
+  // sitting wherever they happened to be created — a display-only split, so
   // promote/demote (which act on `tasks` in its real position order) keep
   // working the same way underneath.
   const openTasks = tasks.filter((t) => t.status !== 'done');
   const doneTasks = tasks.filter((t) => t.status === 'done');
-  const orderedTasks = [...openTasks, ...doneTasks];
   // Pinned items from every section, in one quick-reference list — only on
   // the project's own top-level screen, not inside a folder.
   const pinned = entity.is_top_level ? children.filter((c) => c.pinned === 1) : [];
@@ -309,7 +317,7 @@ export function ProjectDetail() {
         </div>
       </Section>
 
-      <Section title="Files">
+      <Section title="Media">
         <div className="entity-card-grid">
           {files.map(renderTile)}
           <NewFileTile onUploadFile={uploadFile} onAddLink={() => setAddingLink(true)} />
@@ -318,8 +326,14 @@ export function ProjectDetail() {
 
       <Section title="Tasks">
         <div className="task-list">
-          {orderedTasks.map(renderTile)}
+          {openTasks.map(renderTile)}
           <NewTaskRow onCreate={createTask} />
+          {doneTasks.length > 0 && (
+            <>
+              <div className="task-divider">Completed</div>
+              {doneTasks.map(renderTile)}
+            </>
+          )}
         </div>
       </Section>
 

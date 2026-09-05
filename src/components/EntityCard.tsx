@@ -21,53 +21,41 @@ function parseLinkMeta(entity: Entity): LinkMeta | null {
   }
 }
 
-function PdfBadgeIcon() {
+// A plain page-outline shape shared by every non-image file badge — only
+// the accent color and the corner tag text change per type, so PDF/Word/
+// generic files all read as "a document" at a glance while still being
+// tellable apart.
+function PageShape({ color, tag }: { color: string; tag?: string }) {
   return (
-    <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
+    <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
       <path
         d="M6 2h8l5 5v13a1.5 1.5 0 01-1.5 1.5h-11A1.5 1.5 0 015 20V3.5A1.5 1.5 0 016.5 2z"
         fill="#fff"
-        stroke="var(--color-accent-secondary)"
+        stroke={color}
         strokeWidth="1.3"
       />
-      <path d="M14 2v4.5A1.5 1.5 0 0015.5 8H19" stroke="var(--color-accent-secondary)" strokeWidth="1.3" strokeLinejoin="round" />
-      <rect x="4.2" y="13" width="10.5" height="6" rx="1.2" fill="var(--color-accent-secondary)" />
-      <text x="9.4" y="17.6" fontSize="5.2" fontWeight="700" fill="#fff" textAnchor="middle">PDF</text>
-    </svg>
-  );
-}
-
-function GenericFileIcon() {
-  return (
-    <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
-      <path
-        d="M6 2h8l5 5v13a1.5 1.5 0 01-1.5 1.5h-11A1.5 1.5 0 015 20V3.5A1.5 1.5 0 016.5 2z"
-        fill="#fff"
-        stroke="var(--color-muted)"
-        strokeWidth="1.3"
-      />
-      <path d="M14 2v4.5A1.5 1.5 0 0015.5 8H19" stroke="var(--color-muted)" strokeWidth="1.3" strokeLinejoin="round" />
-      <path d="M8 12.5h8M8 15.5h8M8 18.5h5" stroke="var(--color-muted)" strokeWidth="1.2" strokeLinecap="round" />
+      <path d="M14 2v4.5A1.5 1.5 0 0015.5 8H19" stroke={color} strokeWidth="1.3" strokeLinejoin="round" />
+      {tag && (
+        <>
+          <rect x="3.6" y="13" width="11.5" height="6" rx="1.2" fill={color} />
+          <text x="9.35" y="17.6" fontSize="4.7" fontWeight="700" fill="#fff" textAnchor="middle">
+            {tag}
+          </text>
+        </>
+      )}
+      {!tag && <path d="M8 12.5h8M8 15.5h8M8 18.5h5" stroke={color} strokeWidth="1.2" strokeLinecap="round" />}
     </svg>
   );
 }
 
 function LinkBadgeIcon() {
+  // A simple globe/chain glyph — the earlier interlocking-rings version
+  // read as a dollar sign at this size, which was confusing next to file
+  // icons that are actually about money-adjacent topics.
   return (
-    <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
-      <circle cx="12" cy="12" r="10" fill="var(--color-accent)" />
-      <path
-        d="M9.8 13.2a2.6 2.6 0 000 3.7l0 0a2.6 2.6 0 003.7 0l1.6-1.6a2.6 2.6 0 00-3.7-3.7"
-        stroke="var(--color-accent-text)"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-      />
-      <path
-        d="M14.2 10.8a2.6 2.6 0 000-3.7l0 0a2.6 2.6 0 00-3.7 0L8.9 8.7a2.6 2.6 0 003.7 3.7"
-        stroke="var(--color-accent-text)"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-      />
+    <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+      <circle cx="12" cy="12" r="9.5" stroke="#2E6DA4" strokeWidth="1.4" />
+      <path d="M2.7 12h18.6M12 2.5c2.5 2.6 3.8 6 3.8 9.5s-1.3 6.9-3.8 9.5c-2.5-2.6-3.8-6-3.8-9.5S9.5 5.1 12 2.5z" stroke="#2E6DA4" strokeWidth="1.2" />
     </svg>
   );
 }
@@ -96,6 +84,13 @@ export function EntityCard({
   const fileMeta = isFile ? parseFileMeta(entity) : null;
   const linkMeta = isLink ? parseLinkMeta(entity) : null;
 
+  const isImage = fileMeta?.mime_type.startsWith('image/') ?? false;
+  const isPdf = fileMeta?.mime_type === 'application/pdf';
+  const isDoc =
+    fileMeta?.mime_type === 'application/msword' ||
+    fileMeta?.mime_type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  const mediaKind = isImage ? 'image' : isPdf ? 'pdf' : isDoc ? 'doc' : isLink ? 'link' : isFile ? 'generic' : null;
+
   const menuItems = [
     { label: 'Rename', onClick: () => onRename(entity) },
     ...(isFile && fileMeta
@@ -119,7 +114,9 @@ export function EntityCard({
 
   return (
     <div
-      className={`entity-card entity-card--${entity.type}${isPinned ? ' is-pinned' : ''}`}
+      className={`entity-card entity-card--${entity.type}${mediaKind ? ` entity-card--media-${mediaKind}` : ''}${
+        isPinned ? ' is-pinned' : ''
+      }`}
       onClick={handleClick}
     >
       <div className="entity-card__top">
@@ -128,17 +125,23 @@ export function EntityCard({
         <KebabMenu items={menuItems} />
       </div>
 
-      {isFile && fileMeta ? (
-        fileMeta.mime_type.startsWith('image/') ? (
-          <img className="entity-card__thumb" src={api.fileUrl(fileMeta.r2_key)} alt={entity.title} />
-        ) : (
-          <div className="entity-card__badge">
-            {fileMeta.mime_type === 'application/pdf' ? <PdfBadgeIcon /> : <GenericFileIcon />}
-          </div>
-        )
+      {isImage && fileMeta ? (
+        <img className="entity-card__thumb" src={api.fileUrl(fileMeta.r2_key)} alt={entity.title} />
+      ) : isPdf ? (
+        <div className="entity-card__badge">
+          <PageShape color="var(--color-accent-secondary)" tag="PDF" />
+        </div>
+      ) : isDoc ? (
+        <div className="entity-card__badge">
+          <PageShape color="#2E6DA4" tag="DOC" />
+        </div>
       ) : isLink ? (
         <div className="entity-card__badge">
           <LinkBadgeIcon />
+        </div>
+      ) : isFile ? (
+        <div className="entity-card__badge">
+          <PageShape color="var(--color-muted)" />
         </div>
       ) : null}
 

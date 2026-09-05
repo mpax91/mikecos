@@ -28,6 +28,10 @@ export interface Entity {
 
 export interface ProjectListItem extends Entity {
   child_count: number;
+  pinned_count: number;
+  folder_count: number;
+  note_count: number;
+  open_task_count: number;
 }
 
 export interface EntityDetail {

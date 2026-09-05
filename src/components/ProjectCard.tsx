@@ -2,7 +2,6 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useNavigate } from 'react-router-dom';
 import type { ProjectListItem } from '../api/types';
-import { Badge } from './Badge';
 import { KebabMenu } from './KebabMenu';
 
 export function ProjectCard({
@@ -42,9 +41,12 @@ export function ProjectCard({
       {isPinned && <span className="entity-card__pin" title="Pinned">📌</span>}
       <div style={{ minWidth: 0, flex: 1 }}>
         <p className="project-card__title">{project.title}</p>
-      </div>
-      <div className="project-card__meta">
-        <Badge>{project.child_count}</Badge>
+        <div className="project-card__stats">
+          <span>Pins: {project.pinned_count}</span>
+          <span>Folders: {project.folder_count}</span>
+          <span>Notes: {project.note_count}</span>
+          <span>Tasks: {project.open_task_count}</span>
+        </div>
       </div>
       <KebabMenu
         items={[

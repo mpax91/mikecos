@@ -218,8 +218,9 @@ a {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
-  font-size: 13px;
+  gap: 8px;
+  font-size: 15.5px;
+  font-weight: var(--weight-medium);
   color: var(--color-muted);
   margin-bottom: 20px;
 }
@@ -709,28 +710,34 @@ a {
   border-color: var(--color-accent-secondary);
 }
 
-/* Notes get a Google-Keep-like paper-card treatment: no border, a soft
-   shadow that lifts on hover, generous padding, and a serif title so it
-   reads as a written note rather than a generic list row. */
+/* Notes read as physical post-it notes: square-ish, yellow, a hairline
+   darker-yellow border and a soft drop shadow, like a real sticky note
+   sitting on the desk rather than a generic list card. */
 .entity-card--note {
-  border-color: transparent;
-  box-shadow: 0 1px 3px rgba(46, 42, 34, 0.1), 0 1px 2px rgba(46, 42, 34, 0.06);
-  padding: 16px;
-  justify-content: center;
-  min-height: 76px;
+  background: var(--color-postit);
+  border-color: var(--color-postit-border);
+  box-shadow: 2px 3px 7px rgba(46, 42, 34, 0.16);
+  padding: 18px;
+  justify-content: flex-start;
+  aspect-ratio: 1 / 1;
 }
 
 .entity-card--note:hover {
-  box-shadow: 0 4px 14px rgba(46, 42, 34, 0.14), 0 1px 2px rgba(46, 42, 34, 0.06);
+  box-shadow: 3px 5px 12px rgba(46, 42, 34, 0.22);
 }
 
 .entity-card--note.is-pinned {
-  box-shadow: 0 1px 3px rgba(46, 42, 34, 0.1), inset 3px 0 0 var(--color-accent-secondary);
+  box-shadow: 2px 3px 7px rgba(46, 42, 34, 0.16), inset 3px 0 0 var(--color-accent-secondary);
 }
 
 .entity-card__title--note {
   font-family: var(--font-serif);
-  font-size: 15px;
+  font-size: 16px;
+  line-height: 1.35;
+}
+
+.entity-card--ghost.entity-card--note-ghost {
+  aspect-ratio: 1 / 1;
 }
 
 /* Ghost "add new" tile — dashed, muted, always the last item in its grid so
@@ -794,6 +801,34 @@ a {
   border-radius: 8px;
   background: var(--color-sidebar);
   margin-bottom: 8px;
+}
+
+/* A thin colored tab at the top edge of each Media card, matching its
+   badge color, so the file type is scannable even before reading the
+   icon — pdf rust, doc blue, link blue, generic neutral. Images (real
+   thumbnails) don't get one; the photo itself is the identifier. */
+.entity-card--media-pdf::before,
+.entity-card--media-doc::before,
+.entity-card--media-link::before,
+.entity-card--media-generic::before {
+  content: '';
+  display: block;
+  height: 3px;
+  margin: -12px -12px 10px;
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
+}
+
+.entity-card--media-pdf::before {
+  background: var(--color-accent-secondary);
+}
+
+.entity-card--media-doc::before,
+.entity-card--media-link::before {
+  background: #2e6da4;
+}
+
+.entity-card--media-generic::before {
+  background: var(--color-border);
 }
 
 .entity-card__top {
@@ -950,6 +985,9 @@ a {
 }
 
 .detail-section__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
   font-weight: var(--weight-medium);
   letter-spacing: 0.04em;
@@ -958,6 +996,28 @@ a {
   margin-bottom: 10px;
   padding-bottom: 6px;
   border-bottom: var(--border-hairline);
+  cursor: pointer;
+  user-select: none;
+}
+
+.detail-section__header:hover {
+  color: var(--color-ink);
+}
+
+.detail-section__chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  color: var(--color-placeholder);
+  transition: transform 0.12s;
+  transform: rotate(0deg);
+  flex-shrink: 0;
+}
+
+.detail-section__chevron.is-expanded {
+  transform: rotate(90deg);
 }
 
 /* ---- Task list (vertical rows, not tiles) ---- */
@@ -1051,6 +1111,25 @@ a {
 .task-row--new .task-row__checkbox {
   cursor: default;
   opacity: 0.4;
+}
+
+/* A quiet separator between open/new tasks and completed ones — lighter
+   than a Section header (no uppercase, no strong border) so it reads as a
+   soft break in one list rather than a second section. */
+.task-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 2px;
+  font-size: 11px;
+  color: var(--color-placeholder);
+}
+
+.task-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--color-border);
 }
 
 /* ---- Kebab menu ---- */
@@ -1197,6 +1276,14 @@ a {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.project-card__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 12px;
+  color: var(--color-muted);
 }
 
 .project-card:hover {

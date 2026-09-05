@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Modal } from './Modal';
 
 export function RenameModal({
@@ -13,6 +13,7 @@ export function RenameModal({
   onClose: () => void;
 }) {
   const [value, setValue] = useState(initialValue);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   function commit() {
     if (value.trim()) onSave(value.trim());
@@ -22,7 +23,12 @@ export function RenameModal({
   return (
     <Modal title={`Rename`} onClose={onClose}>
       <input
+        ref={inputRef}
         autoFocus
+        // Select the existing text (usually a generic default like "New
+        // Folder") so typing replaces it outright instead of requiring a
+        // manual select-all first.
+        onFocus={(e) => e.target.select()}
         placeholder={label}
         value={value}
         onChange={(e) => setValue(e.target.value)}
