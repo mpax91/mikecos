@@ -96,7 +96,7 @@ export function ProjectsList() {
         <Modal title="New Project" onClose={() => setCreating(false)}>
           <input
             autoFocus
-            placeholder="Project name"
+            placeholder="Project Name"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
@@ -115,7 +115,7 @@ export function ProjectsList() {
       {renaming && (
         <RenameModal
           initialValue={renaming.title}
-          label="Project name"
+          label="Project Name"
           onSave={(v) => handleRename(renaming, v)}
           onClose={() => setRenaming(null)}
         />

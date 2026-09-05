@@ -10,11 +10,22 @@ interface AttachmentAttrs {
   r2Key: string;
 }
 
+function DownloadIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+      <path d="M8 1.5v8.2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <path d="M4.5 6.2L8 9.9l3.5-3.7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M2 12.5v1a1 1 0 001 1h10a1 1 0 001-1v-1" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function AttachmentView({ node, deleteNode }: NodeViewProps) {
   const attrs = node.attrs as AttachmentAttrs;
   const { url, filename, mimeType, r2Key } = attrs;
   const isImage = mimeType?.startsWith('image/');
   const isPdf = mimeType === 'application/pdf';
+  const kind = isImage ? 'image' : isPdf ? 'pdf' : 'generic';
 
   function handleDelete() {
     deleteNode();
@@ -22,19 +33,18 @@ function AttachmentView({ node, deleteNode }: NodeViewProps) {
   }
 
   return (
-    <NodeViewWrapper className="note-attachment" contentEditable={false} data-drag-handle>
+    <NodeViewWrapper className={`note-attachment note-attachment--${kind}`} contentEditable={false} data-drag-handle>
       <div className="note-attachment__bar">
         <span className="note-attachment__name">{filename}</span>
         <div className="note-attachment__actions">
           <button
             type="button"
-            className="note-attachment__action"
-            title="Download"
+            className="note-attachment__download"
             onClick={() => window.open(`${url}?download=1`, '_blank')}
           >
-            ⬇
+            <DownloadIcon /> Download
           </button>
-          <button type="button" className="note-attachment__action" title="Remove" onClick={handleDelete}>
+          <button type="button" className="note-attachment__remove" title="Remove" onClick={handleDelete}>
             ✕
           </button>
         </div>

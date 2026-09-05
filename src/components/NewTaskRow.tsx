@@ -14,11 +14,10 @@ export function NewTaskRow({ onCreate }: { onCreate: (title: string) => void }) 
 
   return (
     <div className="task-row task-row--new">
-      <span className="task-row__drag task-row__drag--placeholder" />
       <input type="checkbox" disabled className="task-row__checkbox" />
       <input
         className="task-row__input"
-        placeholder="New task"
+        placeholder="New Task"
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => {

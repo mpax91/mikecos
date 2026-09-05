@@ -107,7 +107,7 @@ app.post('/api/entities', async (c) => {
   const ts = now();
   const title =
     body.title?.trim() ||
-    (body.type === 'note' ? 'Untitled note' : body.type === 'task' ? '' : body.type === 'link' ? 'New link' : 'New folder');
+    (body.type === 'note' ? 'Untitled Note' : body.type === 'task' ? '' : body.type === 'link' ? 'New Link' : 'New Folder');
   const status = body.type === 'task' ? (body.status ?? 'open') : null;
 
   await c.env.DB.prepare(

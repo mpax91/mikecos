@@ -3,18 +3,24 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import type { Entity, EntityDetail } from '../api/types';
 import { Breadcrumb } from '../components/Breadcrumb';
-import { NewMenu } from '../components/NewMenu';
 import { NoteEditor } from '../components/NoteEditor';
-import { SortableGrid } from '../components/SortableGrid';
 import { EntityCard } from '../components/EntityCard';
 import { FolderTile } from '../components/FolderTile';
 import { TaskRow } from '../components/TaskRow';
 import { NewTaskRow } from '../components/NewTaskRow';
+import { NewFolderTile, NewNoteTile, NewFileTile } from '../components/NewItemTiles';
 import { Section } from '../components/Section';
 import { EditableText } from '../components/EditableText';
 import { RenameModal } from '../components/RenameModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { LinkModal } from '../components/LinkModal';
+
+const isFileOrLink = (c: Entity) => c.type === 'file' || c.type === 'link';
+
+function typePredicate(type: Entity['type']): (e: Entity) => boolean {
+  if (type === 'file' || type === 'link') return isFileOrLink;
+  return (e: Entity) => e.type === type;
+}
 
 export function ProjectDetail() {
   const { id } = useParams<{ id: string }>();
@@ -120,6 +126,33 @@ export function ProjectDetail() {
     );
   }
 
+  // Promote/demote replace drag-to-reorder: swap an item with its neighbor
+  // within its own section (folders move among folders, tasks among tasks,
+  // etc.) and persist the swap the same way a drag reorder used to.
+  function groupFor(entity: Entity): Entity[] {
+    if (!detail) return [];
+    const predicate = typePredicate(entity.type);
+    return detail.children.filter(predicate);
+  }
+
+  function promote(entity: Entity) {
+    const group = groupFor(entity);
+    const idx = group.findIndex((e) => e.id === entity.id);
+    if (idx <= 0) return;
+    const ordered = [...group];
+    [ordered[idx - 1], ordered[idx]] = [ordered[idx], ordered[idx - 1]];
+    reorderGroup(typePredicate(entity.type), ordered);
+  }
+
+  function demote(entity: Entity) {
+    const group = groupFor(entity);
+    const idx = group.findIndex((e) => e.id === entity.id);
+    if (idx === -1 || idx >= group.length - 1) return;
+    const ordered = [...group];
+    [ordered[idx + 1], ordered[idx]] = [ordered[idx], ordered[idx + 1]];
+    reorderGroup(typePredicate(entity.type), ordered);
+  }
+
   // Bound to the loaded entity's own id (not the route param `id`), which
   // only changes once the fetch for the new route resolves. The route id
   // updates immediately on navigation, one render before `detail` catches
@@ -155,8 +188,9 @@ export function ProjectDetail() {
             marginBottom: 16,
           }}
           value={noteTitle}
-          placeholder="Untitled note"
+          placeholder="Untitled Note"
           onChange={(e) => handleNoteTitleChange(e.target.value, entity.id)}
+          onFocus={(e) => e.target.select()}
         />
         {/* key={entity.id} forces a full remount (not a prop update) when
             navigating between notes, so the flush-on-unmount save in
@@ -173,9 +207,59 @@ export function ProjectDetail() {
 
   const folders = children.filter((c) => c.type === 'folder');
   const notes = children.filter((c) => c.type === 'note');
-  const files = children.filter((c) => c.type === 'file' || c.type === 'link');
+  const files = children.filter(isFileOrLink);
   const tasks = children.filter((c) => c.type === 'task');
-  const isFileOrLink = (c: Entity) => c.type === 'file' || c.type === 'link';
+  // Completed tasks sink to the bottom of the list rather than sitting
+  // wherever they happened to be created — a display-only reordering, so
+  // promote/demote (which act on `tasks` in its real position order) keep
+  // working the same way underneath.
+  const openTasks = tasks.filter((t) => t.status !== 'done');
+  const doneTasks = tasks.filter((t) => t.status === 'done');
+  const orderedTasks = [...openTasks, ...doneTasks];
+  // Pinned items from every section, in one quick-reference list — only on
+  // the project's own top-level screen, not inside a folder.
+  const pinned = entity.is_top_level ? children.filter((c) => c.pinned === 1) : [];
+
+  function renderTile(c: Entity) {
+    if (c.type === 'folder') {
+      return (
+        <FolderTile
+          key={c.id}
+          entity={c}
+          onDelete={setDeleting}
+          onTogglePin={togglePin}
+          onRename={setRenaming}
+          onPromote={promote}
+          onDemote={demote}
+        />
+      );
+    }
+    if (c.type === 'task') {
+      return (
+        <TaskRow
+          key={c.id}
+          entity={c}
+          onToggle={toggleTask}
+          onDelete={setDeleting}
+          onTogglePin={togglePin}
+          onRename={renameEntity}
+          onPromote={promote}
+          onDemote={demote}
+        />
+      );
+    }
+    return (
+      <EntityCard
+        key={c.id}
+        entity={c}
+        onDelete={setDeleting}
+        onTogglePin={togglePin}
+        onRename={setRenaming}
+        onPromote={promote}
+        onDemote={demote}
+      />
+    );
+  }
 
   return (
     <div>
@@ -185,7 +269,7 @@ export function ProjectDetail() {
         <div className="project-header">
           <EditableText
             value={entity.title}
-            placeholder="Untitled project"
+            placeholder="Untitled Project"
             onSave={(v) => id && api.updateEntity(id, { title: v })}
             className="project-header__title-input"
             displayClassName="project-header__title"
@@ -194,89 +278,55 @@ export function ProjectDetail() {
       ) : (
         <EditableText
           value={entity.title}
-          placeholder="Untitled folder"
+          placeholder="Untitled Folder"
           onSave={(v) => id && api.updateEntity(id, { title: v })}
           className="folder-header-input"
           displayClassName="folder-header"
         />
       )}
 
-      <div className="toolbar-row" style={{ marginBottom: 8 }}>
-        <div />
-        <NewMenu onCreate={createChild} onAddLink={() => setAddingLink(true)} onUploadFile={uploadFile} />
-      </div>
+      {entity.is_top_level && (
+        <Section title="Pinned">
+          {pinned.length === 0 ? (
+            <div className="empty-state empty-state--section">Pin anything from below to keep it here for quick reference.</div>
+          ) : (
+            <div className="entity-card-grid">{pinned.map(renderTile)}</div>
+          )}
+        </Section>
+      )}
 
       <Section title="Folders">
-        {folders.length === 0 ? (
-          <div className="empty-state empty-state--section">No folders yet.</div>
-        ) : (
-          <SortableGrid
-            items={folders}
-            onReorder={(ordered) => reorderGroup((c) => c.type === 'folder', ordered)}
-            className="folder-tile-grid"
-            renderItem={(c) => (
-              <FolderTile key={c.id} entity={c} onDelete={setDeleting} onTogglePin={togglePin} onRename={setRenaming} />
-            )}
-          />
-        )}
+        <div className="folder-tile-grid">
+          {folders.map(renderTile)}
+          <NewFolderTile onCreate={() => createChild('folder')} />
+        </div>
       </Section>
 
       <Section title="Notes">
-        {notes.length === 0 ? (
-          <div className="empty-state empty-state--section">No notes yet.</div>
-        ) : (
-          <SortableGrid
-            items={notes}
-            onReorder={(ordered) => reorderGroup((c) => c.type === 'note', ordered)}
-            className="entity-card-grid"
-            renderItem={(c) => (
-              <EntityCard key={c.id} entity={c} onDelete={setDeleting} onTogglePin={togglePin} onRename={setRenaming} />
-            )}
-          />
-        )}
+        <div className="entity-card-grid">
+          {notes.map(renderTile)}
+          <NewNoteTile onCreate={() => createChild('note')} />
+        </div>
       </Section>
 
       <Section title="Files">
-        {files.length === 0 ? (
-          <div className="empty-state empty-state--section">No files or links yet.</div>
-        ) : (
-          <SortableGrid
-            items={files}
-            onReorder={(ordered) => reorderGroup(isFileOrLink, ordered)}
-            className="entity-card-grid"
-            renderItem={(c) => (
-              <EntityCard key={c.id} entity={c} onDelete={setDeleting} onTogglePin={togglePin} onRename={setRenaming} />
-            )}
-          />
-        )}
+        <div className="entity-card-grid">
+          {files.map(renderTile)}
+          <NewFileTile onUploadFile={uploadFile} onAddLink={() => setAddingLink(true)} />
+        </div>
       </Section>
 
       <Section title="Tasks">
-        {tasks.length > 0 && (
-          <SortableGrid
-            items={tasks}
-            onReorder={(ordered) => reorderGroup((c) => c.type === 'task', ordered)}
-            className="task-list"
-            layout="list"
-            renderItem={(c) => (
-              <TaskRow
-                key={c.id}
-                entity={c}
-                onToggle={toggleTask}
-                onDelete={setDeleting}
-                onTogglePin={togglePin}
-                onRename={renameEntity}
-              />
-            )}
-          />
-        )}
-        <NewTaskRow onCreate={createTask} />
+        <div className="task-list">
+          {orderedTasks.map(renderTile)}
+          <NewTaskRow onCreate={createTask} />
+        </div>
       </Section>
 
       {renaming && (
         <RenameModal
           initialValue={renaming.title}
-          label={renaming.type === 'folder' ? 'Folder name' : 'Name'}
+          label={renaming.type === 'folder' ? 'Folder Name' : 'Name'}
           onSave={(v) => renameEntity(renaming, v)}
           onClose={() => setRenaming(null)}
         />

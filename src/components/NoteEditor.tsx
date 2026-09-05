@@ -60,6 +60,25 @@ function insertSizedTable(editor: Editor) {
     cellPos += cell.nodeSize;
   });
   view.dispatch(tr);
+  ensureTrailingParagraph(editor);
+}
+
+/**
+ * Tables and attachments are both atom/block nodes with no editable content
+ * of their own, so if one ends up as the very last node in the document
+ * there's nowhere left to click to keep writing below it — the cursor has
+ * no paragraph to land in. Appending a blank paragraph after the doc's last
+ * node whenever that last node isn't already a paragraph keeps a freeform
+ * writing spot available beneath any table or attachment. Idempotent: once
+ * the trailing paragraph exists this is a no-op, so it's safe to call after
+ * every edit without looping.
+ */
+function ensureTrailingParagraph(editor: Editor) {
+  const { doc } = editor.state;
+  const last = doc.lastChild;
+  if (last && last.type.name !== 'paragraph') {
+    editor.chain().insertContentAt(doc.content.size, { type: 'paragraph' }).run();
+  }
 }
 
 function activeBlockStyle(editor: Editor): BlockStyle {
@@ -166,13 +185,18 @@ function DividerIcon() {
   );
 }
 
-function RowIcon({ remove }: { remove?: boolean }) {
+function RowIcon({ remove, above }: { remove?: boolean; above?: boolean }) {
+  // The dashed/highlighted rect marks where the new row lands — on top when
+  // `above`, on the bottom otherwise — so "add row above" and "add row
+  // below" read as visually distinct buttons rather than duplicates.
+  const newRectY = above ? 1 : 9.5;
+  const solidRectY = above ? 9.5 : 1;
   return (
     <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-      <rect x="1" y="1" width="14" height="4.5" rx="0.5" stroke="currentColor" strokeWidth="1.1" />
+      <rect x="1" y={solidRectY} width="14" height="4.5" rx="0.5" stroke="currentColor" strokeWidth="1.1" />
       <rect
         x="1"
-        y="9.5"
+        y={newRectY}
         width="14"
         height="4.5"
         rx="0.5"
@@ -185,18 +209,25 @@ function RowIcon({ remove }: { remove?: boolean }) {
       {remove ? (
         <path d="M5.5 11.75h5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
       ) : (
-        <path d="M8 10.5v3M6.5 12h3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+        <path
+          d={above ? 'M8 2.5v3M6.5 4h3' : 'M8 10.5v3M6.5 12h3'}
+          stroke="currentColor"
+          strokeWidth="1.2"
+          strokeLinecap="round"
+        />
       )}
     </svg>
   );
 }
 
-function ColIcon({ remove }: { remove?: boolean }) {
+function ColIcon({ remove, left }: { remove?: boolean; left?: boolean }) {
+  const newRectX = left ? 1 : 9.5;
+  const solidRectX = left ? 9.5 : 1;
   return (
     <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-      <rect x="1" y="1" width="4.5" height="14" rx="0.5" stroke="currentColor" strokeWidth="1.1" />
+      <rect x={solidRectX} y="1" width="4.5" height="14" rx="0.5" stroke="currentColor" strokeWidth="1.1" />
       <rect
-        x="9.5"
+        x={newRectX}
         y="1"
         width="4.5"
         height="14"
@@ -210,7 +241,12 @@ function ColIcon({ remove }: { remove?: boolean }) {
       {remove ? (
         <path d="M10.25 8h3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
       ) : (
-        <path d="M11.75 6.5v3M10.25 8h3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+        <path
+          d={left ? 'M2.75 6.5v3M1.25 8h3' : 'M11.75 6.5v3M10.25 8h3'}
+          stroke="currentColor"
+          strokeWidth="1.2"
+          strokeLinecap="round"
+        />
       )}
     </svg>
   );
@@ -268,8 +304,14 @@ function TableControls({ editor }: { editor: Editor }) {
   if (!editor.isActive('table')) return null;
   return (
     <div className="editor-toolbar__table-controls">
+      <button type="button" onClick={() => editor.chain().focus().addRowBefore().run()} title="Add row above">
+        <RowIcon above />
+      </button>
       <button type="button" onClick={() => editor.chain().focus().addRowAfter().run()} title="Add row below">
         <RowIcon />
+      </button>
+      <button type="button" onClick={() => editor.chain().focus().addColumnBefore().run()} title="Add column left">
+        <ColIcon left />
       </button>
       <button type="button" onClick={() => editor.chain().focus().addColumnAfter().run()} title="Add column right">
         <ColIcon />
@@ -308,7 +350,13 @@ export function NoteEditor({
 
   const editor = useEditor({
     extensions: [
-      StarterKit.configure({ link: { openOnClick: false, autolink: true } }),
+      StarterKit.configure({
+        link: {
+          openOnClick: true,
+          autolink: true,
+          HTMLAttributes: { target: '_blank', rel: 'noopener noreferrer' },
+        },
+      }),
       TaskList,
       TaskItem.configure({ nested: true }),
       Table.configure({ resizable: true }),
@@ -339,6 +387,7 @@ export function NoteEditor({
         onSave(json);
       }, AUTOSAVE_DEBOUNCE_MS);
     },
+    onCreate: ({ editor }) => ensureTrailingParagraph(editor),
     onSelectionUpdate: () => forceRerender((n) => n + 1),
     onTransaction: () => forceRerender((n) => n + 1),
   });
@@ -380,6 +429,7 @@ export function NoteEditor({
         })
         .focus()
         .run();
+      ensureTrailingParagraph(editor);
     } catch {
       // Upload failed (network/server) — silently no-op; the toolbar stays
       // usable and the user can retry.
@@ -420,6 +470,17 @@ export function NoteEditor({
       {label}
     </button>
   );
+
+  // A table or attachment is a self-contained block with no editable text
+  // of its own, so if it's the last thing in the document there's no
+  // paragraph left to click into below it. ensureTrailingParagraph keeps one
+  // there; clicking in the empty space below the last block (rather than on
+  // a block itself) just needs to move the cursor into it.
+  function handleContentAreaClick(e: React.MouseEvent) {
+    if (e.target !== e.currentTarget) return; // a click on real content already placed the cursor
+    ensureTrailingParagraph(editor);
+    editor.chain().focus('end').run();
+  }
 
   return (
     <div className="note-editor">
@@ -504,7 +565,9 @@ export function NoteEditor({
           }}
         />
       </div>
-      <EditorContent editor={editor} />
+      <div className="note-editor__content-area" onClick={handleContentAreaClick}>
+        <EditorContent editor={editor} />
+      </div>
       {linkModalOpen && <LinkModal onSave={handleAddLink} onClose={() => setLinkModalOpen(false)} />}
     </div>
   );
