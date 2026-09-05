@@ -327,7 +327,7 @@ export function ProjectDetail() {
       )}
 
       {entity.is_top_level && (
-        <Section title="Pinned">
+        <Section title="Pinned" count={pinned.length}>
           {pinned.length === 0 ? (
             <div className="empty-state empty-state--section">Pin anything from below to keep it here for quick reference.</div>
           ) : (
@@ -336,28 +336,28 @@ export function ProjectDetail() {
         </Section>
       )}
 
-      <Section title="Folders">
+      <Section title="Folders" count={folders.length}>
         <div className="folder-tile-grid">
           {folders.map(renderTile)}
           <NewFolderTile onCreate={() => createChild('folder')} />
         </div>
       </Section>
 
-      <Section title="Notes">
+      <Section title="Notes" count={notes.length}>
         <div className="entity-card-grid">
           {notes.map(renderTile)}
           <NewNoteTile onCreate={() => createChild('note')} />
         </div>
       </Section>
 
-      <Section title="Media">
+      <Section title="Media" count={files.length}>
         <div className="entity-card-grid">
           {files.map(renderTile)}
           <NewFileTile onUploadFile={uploadFile} onAddLink={() => setAddingLink(true)} />
         </div>
       </Section>
 
-      <Section title="Tasks">
+      <Section title="Tasks" count={openTasks.length}>
         <div className="task-list">
           {openTasks.map(renderTile)}
           <NewTaskRow onCreate={createTask} />

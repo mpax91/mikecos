@@ -124,7 +124,9 @@ export function TaskRow({
   const isPinned = entity.pinned === 1;
   const subtasks = entity.subtasks ?? [];
   const media = entity.media ?? [];
-  const doneSubtasks = subtasks.filter((s) => s.status === 'done').length;
+  // Only count what's left to do — a finished subtask shouldn't keep
+  // padding out this badge once it's no longer actionable.
+  const openSubtaskCount = subtasks.filter((s) => s.status !== 'done').length;
   const dueDate = parseTaskMeta(entity).due_date;
   const due = dueDate ? formatDueDate(dueDate) : null;
 
@@ -152,9 +154,9 @@ export function TaskRow({
             📅 {due.label}
           </span>
         )}
-        {subtasks.length > 0 && (
-          <span className="task-row__subtask-count">
-            {doneSubtasks}/{subtasks.length}
+        {openSubtaskCount > 0 && (
+          <span className="task-row__subtask-count" title={`${openSubtaskCount} subtask${openSubtaskCount === 1 ? '' : 's'} left`}>
+            {openSubtaskCount}
           </span>
         )}
         {media.length > 0 && <TaskMediaIndicator media={media} />}
@@ -165,7 +167,7 @@ export function TaskRow({
             { label: isPinned ? 'Unpin' : 'Pin', onClick: () => onTogglePin(entity) },
             ...(onPromote ? [{ label: 'Promote', onClick: () => onPromote(entity) }] : []),
             ...(onDemote ? [{ label: 'Demote', onClick: () => onDemote(entity) }] : []),
-            { label: 'Delete', onClick: () => onDelete(entity), danger: true },
+            { label: 'Delete', onClick: () => onDelete(entity), danger: true, separatorBefore: true },
           ]}
         />
       </div>

@@ -35,7 +35,7 @@ export function FolderTile({
             { label: 'Rename', onClick: () => onRename(entity) },
             { label: 'Promote', onClick: () => onPromote(entity) },
             { label: 'Demote', onClick: () => onDemote(entity) },
-            { label: 'Delete', onClick: () => onDelete(entity), danger: true },
+            { label: 'Delete', onClick: () => onDelete(entity), danger: true, separatorBefore: true },
           ]}
         />
       </div>

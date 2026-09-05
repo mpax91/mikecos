@@ -9,7 +9,7 @@ function ChevronIcon() {
   );
 }
 
-export function Section({ title, children }: { title: string; children: ReactNode }) {
+export function Section({ title, count, children }: { title: string; count?: number; children: ReactNode }) {
   const [expanded, setExpanded] = useState(true);
 
   return (
@@ -24,6 +24,7 @@ export function Section({ title, children }: { title: string; children: ReactNod
           <ChevronIcon />
         </span>
         {title}
+        {typeof count === 'number' && <span className="detail-section__count">{count}</span>}
       </div>
       {expanded && children}
     </div>

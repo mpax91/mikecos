@@ -260,7 +260,7 @@ export function TaskDetailModal({
 
         <div className="task-panel__section">
           <div className="task-panel__section-title">
-            Subtasks{subtasks.length > 0 ? ` (${subtasks.filter((s) => s.status === 'done').length}/${subtasks.length})` : ''}
+            Subtasks{subtasks.filter((s) => s.status !== 'done').length > 0 ? ` (${subtasks.filter((s) => s.status !== 'done').length})` : ''}
           </div>
           {subtasks.map((sub) => (
             <div key={sub.id} className={`task-panel__subtask-row${sub.status === 'done' ? ' is-done' : ''}`}>
@@ -273,9 +273,9 @@ export function TaskDetailModal({
               <span className="task-panel__subtask-title" onClick={() => onOpenSubtask(sub.id)}>
                 {sub.title || 'Untitled Task'}
               </span>
-              {(sub.subtasks?.length ?? 0) > 0 && (
+              {(sub.subtasks ?? []).filter((s) => s.status !== 'done').length > 0 && (
                 <span className="task-row__subtask-count">
-                  {(sub.subtasks ?? []).filter((s) => s.status === 'done').length}/{sub.subtasks?.length}
+                  {(sub.subtasks ?? []).filter((s) => s.status !== 'done').length}
                 </span>
               )}
               <button

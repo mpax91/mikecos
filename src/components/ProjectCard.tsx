@@ -52,7 +52,7 @@ export function ProjectCard({
         items={[
           { label: 'Rename', onClick: () => onRename(project) },
           { label: isPinned ? 'Unpin' : 'Pin to top', onClick: () => onTogglePin(project) },
-          { label: 'Delete', onClick: () => onDelete(project), danger: true },
+          { label: 'Delete', onClick: () => onDelete(project), danger: true, separatorBefore: true },
         ]}
       />
     </div>
