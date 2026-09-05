@@ -54,6 +54,30 @@ function openSubtaskCount(db: D1Database, id: string) {
     .first<{ n: number }>();
 }
 
+// Bumps last_touched on the top-level project that owns `entityId` (which may
+// itself be the project). Used so a project's "Last Modified" badge reflects
+// activity anywhere inside it — a note edited three folders deep, a task
+// completed, a file uploaded — not just edits to the project's own title.
+// Distinct from updated_at (set on every PATCH, including pure reorders/pins)
+// so promote/demote and pin toggles don't make an untouched project look busy.
+async function touchProjectAncestor(db: D1Database, entityId: string | null) {
+  if (!entityId) return;
+  let cursor = await db
+    .prepare('SELECT id, parent_id, is_top_level FROM entities WHERE id = ?')
+    .bind(entityId)
+    .first<{ id: string; parent_id: string | null; is_top_level: number }>();
+  let guard = 0;
+  while (cursor && !cursor.is_top_level && cursor.parent_id && guard++ < 20) {
+    cursor = await db
+      .prepare('SELECT id, parent_id, is_top_level FROM entities WHERE id = ?')
+      .bind(cursor.parent_id)
+      .first();
+  }
+  if (cursor?.is_top_level) {
+    await db.prepare('UPDATE entities SET last_touched = ? WHERE id = ?').bind(now(), cursor.id).run();
+  }
+}
+
 // ---- Projects (top-level) ----
 
 // GET /api/projects — list all top-level projects with a section breakdown
@@ -201,6 +225,7 @@ app.post('/api/entities', async (c) => {
   )
     .bind(id, body.type, title, body.content ?? null, body.parent_id, status, (maxPos?.m ?? -1) + 1, ts, ts, ts)
     .run();
+  await touchProjectAncestor(c.env.DB, body.parent_id);
 
   const entity = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(id).first<Entity>();
   return c.json(entity, 201);
@@ -260,6 +285,7 @@ app.patch('/api/entities/:id', async (c) => {
   await c.env.DB.prepare(`UPDATE entities SET ${fields.join(', ')} WHERE id = ?`)
     .bind(...values)
     .run();
+  if (touchesContent) await touchProjectAncestor(c.env.DB, id);
 
   const entity = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(id).first<Entity>();
   return c.json(entity);
@@ -270,6 +296,7 @@ app.patch('/api/entities/:id', async (c) => {
 // ON DELETE CASCADE when foreign_keys is pragma'd on for the connection)
 app.delete('/api/entities/:id', async (c) => {
   const id = c.req.param('id');
+  const existing = await c.env.DB.prepare('SELECT parent_id FROM entities WHERE id = ?').bind(id).first<{ parent_id: string | null }>();
 
   // Purge any R2 objects belonging to file entities in this subtree before
   // the rows disappear, so attachments don't leak storage.
@@ -305,6 +332,7 @@ app.delete('/api/entities/:id', async (c) => {
   )
     .bind(id)
     .run();
+  await touchProjectAncestor(c.env.DB, existing?.parent_id ?? null);
   return c.json({ ok: true });
 });
 
@@ -375,6 +403,7 @@ app.post('/api/upload', async (c) => {
     )
       .bind(id, file.name, JSON.stringify(meta), parentId, (maxPos?.m ?? -1) + 1, ts, ts, ts)
       .run();
+    await touchProjectAncestor(c.env.DB, parentId);
     const entity = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(id).first<Entity>();
     return c.json(entity, 201);
   }

@@ -3,6 +3,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { useNavigate } from 'react-router-dom';
 import type { ProjectListItem } from '../api/types';
 import { KebabMenu } from './KebabMenu';
+import { formatRelativeTime } from '../utils/formatRelativeTime';
 
 export function ProjectCard({
   project,
@@ -27,6 +28,10 @@ export function ProjectCard({
   };
 
   const isPinned = project.pinned === 1;
+  // last_touched bumps whenever anything inside the project actually changes
+  // (title/content edits anywhere in its tree, children created/deleted) —
+  // distinct from updated_at, which also moves on pure reordering/pinning.
+  const lastModifiedIso = project.last_touched ?? project.updated_at;
 
   return (
     <div
@@ -40,7 +45,12 @@ export function ProjectCard({
       </span>
       {isPinned && <span className="entity-card__pin" title="Pinned">📌</span>}
       <div style={{ minWidth: 0, flex: 1 }}>
-        <p className="project-card__title">{project.title}</p>
+        <p className="project-card__title">
+          <span className="project-card__title-text">{project.title}</span>
+          <span className="project-card__last-modified" title={new Date(lastModifiedIso).toLocaleString()}>
+            {formatRelativeTime(lastModifiedIso)}
+          </span>
+        </p>
         <div className="project-card__stats">
           <span>Pins: {project.pinned_count}</span>
           <span>Folders: {project.folder_count}</span>

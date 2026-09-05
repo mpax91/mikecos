@@ -1537,6 +1537,27 @@ a {
   font-size: 15px;
   font-weight: var(--weight-medium);
   margin: 0 0 4px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.project-card__title-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.project-card__last-modified {
+  font-size: 11px;
+  font-weight: var(--weight-regular);
+  color: var(--color-muted);
+  background: var(--color-sidebar);
+  border-radius: 10px;
+  padding: 1px 7px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .project-card__meta {
