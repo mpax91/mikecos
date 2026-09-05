@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Sidebar } from './components/Sidebar';
 import { TabBar } from './components/TabBar';
@@ -5,11 +6,13 @@ import { ProjectsList } from './pages/ProjectsList';
 import { ProjectDetail } from './pages/ProjectDetail';
 
 export default function App() {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
   return (
     <div className="app-shell">
-      <Sidebar />
+      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="main">
-        <TabBar />
+        <TabBar onMenuClick={() => setSidebarOpen(true)} />
         <div className="main__content">
           <Routes>
             <Route path="/" element={<Navigate to="/projects" replace />} />
