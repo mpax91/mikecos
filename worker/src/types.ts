@@ -15,6 +15,7 @@ export interface Entity {
   last_touched: string | null;
   created_at: string;
   updated_at: string;
+  subtasks?: Entity[]; // attached in-memory for task children only, not a DB column
 }
 
 export interface Link {

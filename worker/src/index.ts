@@ -99,7 +99,23 @@ app.get('/api/entities/:id', async (c) => {
     .bind(id)
     .all<Entity>();
 
-  return c.json({ entity, breadcrumb, children: children ?? [] });
+  // Tasks can have their own child tasks (subtasks) — the same generic
+  // parent/child relationship folders use. Attach one level of them here
+  // so the project's own Tasks section can render subtasks nested under
+  // their parent without a separate round trip per task.
+  const withSubtasks = await Promise.all(
+    (children ?? []).map(async (child) => {
+      if (child.type !== 'task') return child;
+      const { results: subtasks } = await c.env.DB.prepare(
+        `SELECT * FROM entities WHERE parent_id = ? AND type = 'task' ORDER BY pinned DESC, position ASC, created_at ASC`
+      )
+        .bind(child.id)
+        .all<Entity>();
+      return { ...child, subtasks: subtasks ?? [] };
+    })
+  );
+
+  return c.json({ entity, breadcrumb, children: withSubtasks });
 });
 
 // POST /api/entities — create a folder/note/task/link as a child of parent_id

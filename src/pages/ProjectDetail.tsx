@@ -8,6 +8,7 @@ import { EntityCard } from '../components/EntityCard';
 import { FolderTile } from '../components/FolderTile';
 import { TaskRow } from '../components/TaskRow';
 import { NewTaskRow } from '../components/NewTaskRow';
+import { TaskDetailModal } from '../components/TaskDetailModal';
 import { NewFolderTile, NewNoteTile, NewFileTile } from '../components/NewItemTiles';
 import { Section } from '../components/Section';
 import { EditableText } from '../components/EditableText';
@@ -33,6 +34,10 @@ export function ProjectDetail() {
   const [renaming, setRenaming] = useState<Entity | null>(null);
   const [deleting, setDeleting] = useState<Entity | null>(null);
   const [addingLink, setAddingLink] = useState(false);
+  // Stack of task ids for the Todoist-style detail panel: [taskId] when a
+  // top-level task/subtask is opened from the project list, with deeper
+  // ids pushed as the panel itself drills into a subtask's own subtasks.
+  const [taskStack, setTaskStack] = useState<string[]>([]);
 
   const load = useCallback(() => {
     if (!id) return;
@@ -86,13 +91,29 @@ export function ProjectDetail() {
     load();
   }
 
+  // Tasks can be a direct child of the project OR nested one level deeper
+  // as a subtask (attached under a parent task's own `.subtasks`, not in
+  // the flat `children` array) — these helpers patch/remove at whichever
+  // level actually holds the id so optimistic updates work for both.
+  function mapChildrenWithSubtasks(list: Entity[], targetId: string, patch: Partial<Entity>): Entity[] {
+    return list.map((c) => {
+      if (c.id === targetId) return { ...c, ...patch };
+      if (c.subtasks?.length) {
+        return { ...c, subtasks: c.subtasks.map((s) => (s.id === targetId ? { ...s, ...patch } : s)) };
+      }
+      return c;
+    });
+  }
+
+  function removeChildEverywhere(list: Entity[], targetId: string): Entity[] {
+    return list
+      .filter((c) => c.id !== targetId)
+      .map((c) => (c.subtasks?.length ? { ...c, subtasks: c.subtasks.filter((s) => s.id !== targetId) } : c));
+  }
+
   async function toggleTask(entity: Entity) {
     const nextStatus = entity.status === 'done' ? 'open' : 'done';
-    setDetail((prev) =>
-      prev
-        ? { ...prev, children: prev.children.map((c) => (c.id === entity.id ? { ...c, status: nextStatus } : c)) }
-        : prev
-    );
+    setDetail((prev) => (prev ? { ...prev, children: mapChildrenWithSubtasks(prev.children, entity.id, { status: nextStatus }) } : prev));
     await api.updateEntity(entity.id, { status: nextStatus });
   }
 
@@ -107,18 +128,30 @@ export function ProjectDetail() {
 
   async function togglePin(entity: Entity) {
     const next = entity.pinned === 1 ? 0 : 1;
-    setDetail((prev) =>
-      prev
-        ? { ...prev, children: prev.children.map((c) => (c.id === entity.id ? { ...c, pinned: next } : c)) }
-        : prev
-    );
+    setDetail((prev) => (prev ? { ...prev, children: mapChildrenWithSubtasks(prev.children, entity.id, { pinned: next }) } : prev));
     await api.setPinned(entity.id, next === 1);
   }
 
   async function deleteEntity(entity: Entity) {
-    setDetail((prev) => (prev ? { ...prev, children: prev.children.filter((c) => c.id !== entity.id) } : prev));
+    setDetail((prev) => (prev ? { ...prev, children: removeChildEverywhere(prev.children, entity.id) } : prev));
     await api.deleteEntity(entity.id);
     setDeleting(null);
+  }
+
+  function openTask(entity: Entity) {
+    setTaskStack([entity.id]);
+  }
+
+  function openSubtask(taskId: string) {
+    setTaskStack((prev) => [...prev, taskId]);
+  }
+
+  function backTask() {
+    setTaskStack((prev) => prev.slice(0, -1));
+  }
+
+  function closeTaskModal() {
+    setTaskStack([]);
   }
 
   async function reorderGroup(predicate: (e: Entity) => boolean, ordered: Entity[]) {
@@ -250,7 +283,7 @@ export function ProjectDetail() {
           onToggle={toggleTask}
           onDelete={setDeleting}
           onTogglePin={togglePin}
-          onRename={renameEntity}
+          onOpen={openTask}
           onPromote={promote}
           onDemote={demote}
         />
@@ -360,6 +393,21 @@ export function ProjectDetail() {
       )}
 
       {addingLink && <LinkModal onSave={addLink} onClose={() => setAddingLink(false)} />}
+
+      {taskStack.length > 0 && (
+        <TaskDetailModal
+          key={taskStack[taskStack.length - 1]}
+          taskId={taskStack[taskStack.length - 1]}
+          onBack={taskStack.length > 1 ? backTask : undefined}
+          onClose={closeTaskModal}
+          onOpenSubtask={openSubtask}
+          onMutated={load}
+          onRequestDelete={(entityToDelete) => {
+            closeTaskModal();
+            setDeleting(entityToDelete);
+          }}
+        />
+      )}
     </div>
   );
 }
