@@ -751,6 +751,30 @@ a {
   line-height: 1.35;
 }
 
+/* Pinned mixes notes with files/links/folders/tasks in one row. A note's
+   usual big square would force every shorter card in that row to stretch to
+   match it, so a pinned note instead renders at the same compact rectangle
+   size as everything else — keeping only the post-it color, border, and
+   serif title as its identity, not the square shape or the body preview. */
+.entity-card--note.entity-card--compact {
+  aspect-ratio: auto;
+  padding: 12px;
+  min-height: 88px;
+}
+
+.entity-card--note.entity-card--compact .entity-card__top {
+  position: static;
+  margin-bottom: 4px;
+}
+
+.entity-card--note.entity-card--compact .entity-card__title--note {
+  font-size: 14px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 /* Ghost "New Note" tile: same square post-it shape and yellow family as a
    real note, just a paler tint + dashed border so it clearly reads as an
    empty placeholder rather than an actual note. */

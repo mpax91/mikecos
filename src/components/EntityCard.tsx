@@ -134,6 +134,7 @@ export function EntityCard({
   onRename,
   onPromote,
   onDemote,
+  compact = false,
 }: {
   entity: Entity;
   onDelete: (entity: Entity) => void;
@@ -141,6 +142,11 @@ export function EntityCard({
   onRename: (entity: Entity) => void;
   onPromote: (entity: Entity) => void;
   onDemote: (entity: Entity) => void;
+  /** Pinned mixes notes with files/links/folders/tasks in one row — a note's
+   * usual big square would force every shorter card in that row to stretch
+   * to match it. `compact` renders the note at the same rectangle size as a
+   * media card instead, keeping only its post-it color/border identity. */
+  compact?: boolean;
 }) {
   const navigate = useNavigate();
   const isPinned = entity.pinned === 1;
@@ -195,7 +201,7 @@ export function EntityCard({
     <div
       className={`entity-card entity-card--${entity.type}${mediaKind ? ` entity-card--media-${mediaKind}` : ''}${
         isPinned ? ' is-pinned' : ''
-      }`}
+      }${compact ? ' entity-card--compact' : ''}`}
       onClick={handleClick}
     >
       <div className="entity-card__top">
@@ -230,7 +236,9 @@ export function EntityCard({
         {entity.title || (isFile ? fileMeta?.filename : isLink ? linkMeta?.url : 'Untitled Note')}
       </div>
 
-      {isNote && notePreview && <div className="entity-card__snippet entity-card__snippet--note">{notePreview}</div>}
+      {isNote && notePreview && !compact && (
+        <div className="entity-card__snippet entity-card__snippet--note">{notePreview}</div>
+      )}
     </div>
   );
 }

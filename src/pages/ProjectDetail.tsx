@@ -261,7 +261,7 @@ export function ProjectDetail() {
   // the project's own top-level screen, not inside a folder.
   const pinned = entity.is_top_level ? children.filter((c) => c.pinned === 1) : [];
 
-  function renderTile(c: Entity) {
+  function renderTile(c: Entity, compact = false) {
     if (c.type === 'folder') {
       return (
         <FolderTile
@@ -298,6 +298,7 @@ export function ProjectDetail() {
         onRename={setRenaming}
         onPromote={promote}
         onDemote={demote}
+        compact={compact}
       />
     );
   }
@@ -331,40 +332,40 @@ export function ProjectDetail() {
           {pinned.length === 0 ? (
             <div className="empty-state empty-state--section">Pin anything from below to keep it here for quick reference.</div>
           ) : (
-            <div className="entity-card-grid">{pinned.map(renderTile)}</div>
+            <div className="entity-card-grid">{pinned.map((c) => renderTile(c, true))}</div>
           )}
         </Section>
       )}
 
       <Section title="Folders" count={folders.length}>
         <div className="folder-tile-grid">
-          {folders.map(renderTile)}
+          {folders.map((c) => renderTile(c))}
           <NewFolderTile onCreate={() => createChild('folder')} />
         </div>
       </Section>
 
       <Section title="Notes" count={notes.length}>
         <div className="entity-card-grid">
-          {notes.map(renderTile)}
+          {notes.map((c) => renderTile(c))}
           <NewNoteTile onCreate={() => createChild('note')} />
         </div>
       </Section>
 
       <Section title="Media" count={files.length}>
         <div className="entity-card-grid">
-          {files.map(renderTile)}
+          {files.map((c) => renderTile(c))}
           <NewFileTile onUploadFile={uploadFile} onAddLink={() => setAddingLink(true)} />
         </div>
       </Section>
 
       <Section title="Tasks" count={openTasks.length}>
         <div className="task-list">
-          {openTasks.map(renderTile)}
+          {openTasks.map((c) => renderTile(c))}
           <NewTaskRow onCreate={createTask} />
           {doneTasks.length > 0 && (
             <>
               <div className="task-divider">Completed</div>
-              {doneTasks.map(renderTile)}
+              {doneTasks.map((c) => renderTile(c))}
             </>
           )}
         </div>
