@@ -31,10 +31,10 @@ export function FolderTile({
         <div className="entity-card__spacer" />
         <KebabMenu
           items={[
+            { label: isPinned ? 'Unpin' : 'Pin', onClick: () => onTogglePin(entity) },
             { label: 'Rename', onClick: () => onRename(entity) },
             { label: 'Promote', onClick: () => onPromote(entity) },
             { label: 'Demote', onClick: () => onDemote(entity) },
-            { label: isPinned ? 'Unpin' : 'Pin', onClick: () => onTogglePin(entity) },
             { label: 'Delete', onClick: () => onDelete(entity), danger: true },
           ]}
         />

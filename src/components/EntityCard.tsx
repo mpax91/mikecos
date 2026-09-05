@@ -21,41 +21,81 @@ function parseLinkMeta(entity: Entity): LinkMeta | null {
   }
 }
 
-// A plain page-outline shape shared by every non-image file badge — only
-// the accent color and the corner tag text change per type, so PDF/Word/
-// generic files all read as "a document" at a glance while still being
-// tellable apart.
-function PageShape({ color, tag }: { color: string; tag?: string }) {
+// Standard, familiar file-type icons (a page with a folded corner, a bold
+// colored label banner) — modeled on the classic Windows/Adobe/Office
+// icon shapes so PDF/DOC/image/link are recognizable at a glance, the
+// same way they'd look in any file browser.
+function FilePdfIcon() {
   return (
-    <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
       <path
         d="M6 2h8l5 5v13a1.5 1.5 0 01-1.5 1.5h-11A1.5 1.5 0 015 20V3.5A1.5 1.5 0 016.5 2z"
-        fill="#fff"
-        stroke={color}
-        strokeWidth="1.3"
+        fill="var(--color-pdf)"
       />
-      <path d="M14 2v4.5A1.5 1.5 0 0015.5 8H19" stroke={color} strokeWidth="1.3" strokeLinejoin="round" />
-      {tag && (
-        <>
-          <rect x="3.6" y="13" width="11.5" height="6" rx="1.2" fill={color} />
-          <text x="9.35" y="17.6" fontSize="4.7" fontWeight="700" fill="#fff" textAnchor="middle">
-            {tag}
-          </text>
-        </>
-      )}
-      {!tag && <path d="M8 12.5h8M8 15.5h8M8 18.5h5" stroke={color} strokeWidth="1.2" strokeLinecap="round" />}
+      <path d="M14 2v4.5A1.5 1.5 0 0015.5 8H19L14 2z" fill="#fff" opacity="0.32" />
+      <rect x="3.4" y="13.1" width="13.6" height="6.3" rx="1.1" fill="var(--color-pdf-dark)" />
+      <text x="10.2" y="17.9" fontSize="5.6" fontWeight="700" fill="#fff" textAnchor="middle" fontFamily="Arial, sans-serif">
+        PDF
+      </text>
     </svg>
   );
 }
 
-function LinkBadgeIcon() {
-  // A simple globe/chain glyph — the earlier interlocking-rings version
-  // read as a dollar sign at this size, which was confusing next to file
-  // icons that are actually about money-adjacent topics.
+function FileDocIcon() {
   return (
-    <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
-      <circle cx="12" cy="12" r="9.5" stroke="#2E6DA4" strokeWidth="1.4" />
-      <path d="M2.7 12h18.6M12 2.5c2.5 2.6 3.8 6 3.8 9.5s-1.3 6.9-3.8 9.5c-2.5-2.6-3.8-6-3.8-9.5S9.5 5.1 12 2.5z" stroke="#2E6DA4" strokeWidth="1.2" />
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+      <path
+        d="M6 2h8l5 5v13a1.5 1.5 0 01-1.5 1.5h-11A1.5 1.5 0 015 20V3.5A1.5 1.5 0 016.5 2z"
+        fill="var(--color-doc)"
+      />
+      <path d="M14 2v4.5A1.5 1.5 0 0015.5 8H19L14 2z" fill="#fff" opacity="0.32" />
+      <rect x="3.4" y="13.1" width="13.6" height="6.3" rx="1.1" fill="var(--color-doc-dark)" />
+      <text x="10.2" y="17.9" fontSize="5.6" fontWeight="700" fill="#fff" textAnchor="middle" fontFamily="Arial, sans-serif">
+        DOC
+      </text>
+    </svg>
+  );
+}
+
+// A generic document icon for files that are neither PDF nor Word —
+// same page-with-folded-corner shape, no colored label since there's no
+// single type to name.
+function GenericFileIcon() {
+  return (
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+      <path
+        d="M6 2h8l5 5v13a1.5 1.5 0 01-1.5 1.5h-11A1.5 1.5 0 015 20V3.5A1.5 1.5 0 016.5 2z"
+        fill="#fff"
+        stroke="var(--color-muted)"
+        strokeWidth="1.3"
+      />
+      <path d="M14 2v4.5A1.5 1.5 0 0015.5 8H19" stroke="var(--color-muted)" strokeWidth="1.3" strokeLinejoin="round" />
+      <path d="M8 12.5h8M8 15.5h8M8 18.5h5" stroke="var(--color-muted)" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+// A standard "picture" icon (frame + mountain + sun), the same glyph used
+// across Windows/macOS for image files, rather than an actual thumbnail —
+// keeps every media type reading as a consistent icon set.
+function ImageFileIcon() {
+  return (
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+      <rect x="2.5" y="3.5" width="19" height="17" rx="2.2" fill="#fff" stroke="var(--color-image-accent)" strokeWidth="1.4" />
+      <circle cx="8.4" cy="9" r="2.1" fill="#E3B23C" />
+      <path
+        d="M3.3 17.4l5.5-6 4 4.2 2.6-2.8 5.3 5.5v0.6a1.3 1.3 0 01-1.3 1.3H4.6a1.3 1.3 0 01-1.3-1.3z"
+        fill="var(--color-image-accent)"
+      />
+    </svg>
+  );
+}
+
+// A simple bookmark ribbon — the standard glyph for a saved link.
+function BookmarkIcon() {
+  return (
+    <svg width="24" height="28" viewBox="0 0 20 24" fill="none">
+      <path d="M4 1.5h12a1 1 0 011 1V22l-7-4.3-7 4.3V2.5a1 1 0 011-1z" fill="var(--color-link-accent)" />
     </svg>
   );
 }
@@ -92,13 +132,13 @@ export function EntityCard({
   const mediaKind = isImage ? 'image' : isPdf ? 'pdf' : isDoc ? 'doc' : isLink ? 'link' : isFile ? 'generic' : null;
 
   const menuItems = [
+    { label: isPinned ? 'Unpin' : 'Pin', onClick: () => onTogglePin(entity) },
     { label: 'Rename', onClick: () => onRename(entity) },
     ...(isFile && fileMeta
       ? [{ label: 'Download', onClick: () => window.open(api.fileUrl(fileMeta.r2_key, true), '_blank') }]
       : []),
     { label: 'Promote', onClick: () => onPromote(entity) },
     { label: 'Demote', onClick: () => onDemote(entity) },
-    { label: isPinned ? 'Unpin' : 'Pin', onClick: () => onTogglePin(entity) },
     { label: 'Delete', onClick: () => onDelete(entity), danger: true },
   ];
 
@@ -125,23 +165,25 @@ export function EntityCard({
         <KebabMenu items={menuItems} />
       </div>
 
-      {isImage && fileMeta ? (
-        <img className="entity-card__thumb" src={api.fileUrl(fileMeta.r2_key)} alt={entity.title} />
+      {isImage ? (
+        <div className="entity-card__badge">
+          <ImageFileIcon />
+        </div>
       ) : isPdf ? (
         <div className="entity-card__badge">
-          <PageShape color="var(--color-accent-secondary)" tag="PDF" />
+          <FilePdfIcon />
         </div>
       ) : isDoc ? (
         <div className="entity-card__badge">
-          <PageShape color="#2E6DA4" tag="DOC" />
+          <FileDocIcon />
         </div>
       ) : isLink ? (
         <div className="entity-card__badge">
-          <LinkBadgeIcon />
+          <BookmarkIcon />
         </div>
       ) : isFile ? (
         <div className="entity-card__badge">
-          <PageShape color="var(--color-muted)" />
+          <GenericFileIcon />
         </div>
       ) : null}
 

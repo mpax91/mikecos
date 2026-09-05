@@ -41,9 +41,9 @@ export function TaskRow({
       <KebabMenu
         className="task-row__kebab"
         items={[
+          { label: isPinned ? 'Unpin' : 'Pin', onClick: () => onTogglePin(entity) },
           { label: 'Promote', onClick: () => onPromote(entity) },
           { label: 'Demote', onClick: () => onDemote(entity) },
-          { label: isPinned ? 'Unpin' : 'Pin', onClick: () => onTogglePin(entity) },
           { label: 'Delete', onClick: () => onDelete(entity), danger: true },
         ]}
       />

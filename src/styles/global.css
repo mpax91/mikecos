@@ -730,14 +730,44 @@ a {
   box-shadow: 2px 3px 7px rgba(46, 42, 34, 0.16), inset 3px 0 0 var(--color-accent-secondary);
 }
 
+/* The note card's own top row (pin + kebab) is pulled out of normal flow
+   so the title can sit flush against the card's top padding instead of
+   below an extra row of vertical space. */
+.entity-card--note {
+  position: relative;
+}
+
+.entity-card--note .entity-card__top {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  left: 14px;
+  margin-bottom: 0;
+}
+
 .entity-card__title--note {
   font-family: var(--font-serif);
   font-size: 16px;
   line-height: 1.35;
 }
 
+/* Ghost "New Note" tile: same square post-it shape and yellow family as a
+   real note, just a paler tint + dashed border so it clearly reads as an
+   empty placeholder rather than an actual note. */
 .entity-card--ghost.entity-card--note-ghost {
   aspect-ratio: 1 / 1;
+  background: var(--color-postit-ghost);
+  border: 1.5px dashed var(--color-postit-ghost-border);
+}
+
+.entity-card--ghost.entity-card--note-ghost:hover {
+  border-color: var(--color-postit-border);
+  background: var(--color-postit-ghost);
+}
+
+.entity-card--ghost.entity-card--note-ghost .entity-card__title--ghost {
+  font-family: var(--font-serif);
+  color: var(--color-muted);
 }
 
 /* Ghost "add new" tile — dashed, muted, always the last item in its grid so
@@ -796,11 +826,7 @@ a {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 46px;
-  height: 46px;
-  border-radius: 8px;
-  background: var(--color-sidebar);
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 /* A thin colored tab at the top edge of each Media card, matching its
@@ -810,6 +836,7 @@ a {
 .entity-card--media-pdf::before,
 .entity-card--media-doc::before,
 .entity-card--media-link::before,
+.entity-card--media-image::before,
 .entity-card--media-generic::before {
   content: '';
   display: block;
@@ -819,12 +846,19 @@ a {
 }
 
 .entity-card--media-pdf::before {
-  background: var(--color-accent-secondary);
+  background: var(--color-pdf);
 }
 
-.entity-card--media-doc::before,
+.entity-card--media-doc::before {
+  background: var(--color-doc);
+}
+
 .entity-card--media-link::before {
-  background: #2e6da4;
+  background: var(--color-link-accent);
+}
+
+.entity-card--media-image::before {
+  background: var(--color-image-accent);
 }
 
 .entity-card--media-generic::before {
@@ -919,7 +953,7 @@ a {
 }
 
 .folder-tile__icon {
-  font-size: 36px;
+  font-size: 44px;
   line-height: 1;
 }
 
@@ -938,6 +972,7 @@ a {
 .folder-tile--ghost {
   border: 1.5px dashed var(--color-border);
   color: var(--color-placeholder);
+  justify-content: center;
 }
 
 .folder-tile--ghost:hover {

@@ -14,8 +14,18 @@
 
   --color-postit: #F6DE7C;
   --color-postit-border: #E0C458;
+  --color-postit-ghost: #FBF3D2;
+  --color-postit-ghost-border: #E8D48C;
 
   --color-card-bg: #FFFFFF;
+
+  /* Standard file-type colors, matched to their familiar real-world icons */
+  --color-pdf: #D93831;
+  --color-pdf-dark: #B32B26;
+  --color-doc: #2B579A;
+  --color-doc-dark: #204272;
+  --color-image-accent: #3F7CAC;
+  --color-link-accent: #2F4A3C;
 
   /* Typography */
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Helvetica, Arial, sans-serif;
