@@ -4,6 +4,10 @@ export interface KebabMenuItem {
   label: string;
   onClick: () => void;
   danger?: boolean;
+  /** Calls out a safe/affirmative action (e.g. Download) in the accent color. */
+  positive?: boolean;
+  /** Renders a divider line above this item, to set it apart from the items before it. */
+  separatorBefore?: boolean;
 }
 
 export function KebabMenu({ items, className }: { items: KebabMenuItem[]; className?: string }) {
@@ -38,15 +42,17 @@ export function KebabMenu({ items, className }: { items: KebabMenuItem[]; classN
       {open && (
         <div className="kebab-menu__dropdown card">
           {items.map((item) => (
-            <div
-              key={item.label}
-              className={`kebab-menu__item${item.danger ? ' is-danger' : ''}`}
-              onClick={() => {
-                setOpen(false);
-                item.onClick();
-              }}
-            >
-              {item.label}
+            <div key={item.label}>
+              {item.separatorBefore && <div className="kebab-menu__separator" />}
+              <div
+                className={`kebab-menu__item${item.danger ? ' is-danger' : ''}${item.positive ? ' is-positive' : ''}`}
+                onClick={() => {
+                  setOpen(false);
+                  item.onClick();
+                }}
+              >
+                {item.label}
+              </div>
             </div>
           ))}
         </div>

@@ -1280,6 +1280,20 @@ a {
   background: rgba(184, 99, 47, 0.1);
 }
 
+.kebab-menu__item.is-positive {
+  color: var(--color-accent);
+}
+
+.kebab-menu__item.is-positive:hover {
+  background: rgba(47, 74, 60, 0.1);
+}
+
+.kebab-menu__separator {
+  height: 1px;
+  margin: 6px 4px;
+  background: var(--color-border);
+}
+
 /* ---- Editable text (click-to-edit) ---- */
 
 .editable-text__display {

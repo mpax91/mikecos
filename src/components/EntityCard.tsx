@@ -160,13 +160,13 @@ export function EntityCard({
 
   const menuItems = [
     ...(isFile && fileMeta
-      ? [{ label: 'Download', onClick: () => window.open(api.fileUrl(fileMeta.r2_key, true), '_blank') }]
+      ? [{ label: 'Download', onClick: () => window.open(api.fileUrl(fileMeta.r2_key, true), '_blank'), positive: true }]
       : []),
-    { label: isPinned ? 'Unpin' : 'Pin', onClick: () => onTogglePin(entity) },
+    { label: isPinned ? 'Unpin' : 'Pin', onClick: () => onTogglePin(entity), separatorBefore: isFile && !!fileMeta },
     { label: 'Rename', onClick: () => onRename(entity) },
     { label: 'Promote', onClick: () => onPromote(entity) },
     { label: 'Demote', onClick: () => onDemote(entity) },
-    { label: 'Delete', onClick: () => onDelete(entity), danger: true },
+    { label: 'Delete', onClick: () => onDelete(entity), danger: true, separatorBefore: true },
   ];
 
   function handleClick() {
