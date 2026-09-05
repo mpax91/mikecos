@@ -1281,11 +1281,14 @@ a {
 }
 
 .kebab-menu__item.is-positive {
-  color: var(--color-accent);
+  /* The app's own --color-accent (#2F4A3C) is too close in darkness to
+     --color-ink to read as "green" at this font size — use a brighter,
+     more saturated green here so it's unmistakably distinct. */
+  color: #2E8B57;
 }
 
 .kebab-menu__item.is-positive:hover {
-  background: rgba(47, 74, 60, 0.1);
+  background: rgba(46, 139, 87, 0.12);
 }
 
 .kebab-menu__separator {
