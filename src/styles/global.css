@@ -1644,8 +1644,26 @@ a {
   flex-shrink: 0;
 }
 
+.task-panel__edit {
+  background: none;
+  border: none;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--color-placeholder);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.1s;
+  flex-shrink: 0;
+  padding: 2px;
+}
+
+.task-panel__edit:hover {
+  color: var(--color-ink);
+}
+
 .task-panel__subtask-row:hover .task-panel__remove,
-.task-panel__media-row:hover .task-panel__remove {
+.task-panel__media-row:hover .task-panel__remove,
+.task-panel__media-row:hover .task-panel__edit {
   opacity: 1;
 }
 

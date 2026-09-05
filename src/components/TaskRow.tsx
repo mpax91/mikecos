@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Entity, FileMeta, LinkMeta, TaskMeta } from '../api/types';
 import { KebabMenu } from './KebabMenu';
-import { api } from '../api/client';
+import { api, normalizeUrl } from '../api/client';
 
 function parseFileMeta(entity: Entity): FileMeta | null {
   if (!entity.content) return null;
@@ -82,7 +82,7 @@ function TaskMediaIndicator({ media }: { media: Entity[] }) {
             const fileMeta = item.type === 'file' ? parseFileMeta(item) : null;
             const linkMeta = item.type === 'link' ? parseLinkMeta(item) : null;
             const label = item.title || fileMeta?.filename || linkMeta?.url || 'Untitled';
-            const href = fileMeta ? api.fileUrl(fileMeta.r2_key) : linkMeta?.url;
+            const href = fileMeta ? api.fileUrl(fileMeta.r2_key) : linkMeta ? normalizeUrl(linkMeta.url) : undefined;
             return (
               <a
                 key={item.id}

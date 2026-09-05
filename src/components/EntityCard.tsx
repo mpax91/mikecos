@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import type { Entity, FileMeta, LinkMeta } from '../api/types';
 import { KebabMenu } from './KebabMenu';
-import { api } from '../api/client';
+import { api, normalizeUrl } from '../api/client';
 
 function parseFileMeta(entity: Entity): FileMeta | null {
   if (!entity.content) return null;
@@ -185,7 +185,7 @@ export function EntityCard({
         window.open(api.fileUrl(fileMeta.r2_key), '_blank');
       }
     } else if (isLink && linkMeta) {
-      window.open(linkMeta.url, '_blank', 'noopener,noreferrer');
+      window.open(normalizeUrl(linkMeta.url), '_blank', 'noopener,noreferrer');
     } else {
       navigate(`/projects/${entity.id}`);
     }

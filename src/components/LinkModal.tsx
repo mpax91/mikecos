@@ -1,29 +1,39 @@
 import { useState } from 'react';
 import { Modal } from './Modal';
+import { normalizeUrl } from '../api/client';
 
-export function LinkModal({ onSave, onClose }: { onSave: (url: string, title: string) => void; onClose: () => void }) {
-  const [url, setUrl] = useState('');
-  const [title, setTitle] = useState('');
-
-  function normalizedUrl() {
-    const trimmed = url.trim();
-    if (!trimmed) return '';
-    return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
-  }
+export function LinkModal({
+  initialUrl = '',
+  initialTitle = '',
+  heading = 'Add Link',
+  submitLabel = 'Add',
+  onSave,
+  onClose,
+}: {
+  initialUrl?: string;
+  initialTitle?: string;
+  heading?: string;
+  submitLabel?: string;
+  onSave: (url: string, title: string) => void;
+  onClose: () => void;
+}) {
+  const [url, setUrl] = useState(initialUrl);
+  const [title, setTitle] = useState(initialTitle);
 
   function submit() {
-    const finalUrl = normalizedUrl();
-    if (!finalUrl) return;
-    onSave(finalUrl, title.trim());
+    const trimmed = url.trim();
+    if (!trimmed) return;
+    onSave(normalizeUrl(trimmed), title.trim());
   }
 
   return (
-    <Modal title="Add Link" onClose={onClose}>
+    <Modal title={heading} onClose={onClose}>
       <input
         autoFocus
         placeholder="https://…"
         value={url}
         onChange={(e) => setUrl(e.target.value)}
+        onFocus={(e) => e.target.select()}
         onKeyDown={(e) => e.key === 'Enter' && submit()}
       />
       <input
@@ -37,7 +47,7 @@ export function LinkModal({ onSave, onClose }: { onSave: (url: string, title: st
           Cancel
         </button>
         <button className="btn" onClick={submit} disabled={!url.trim()}>
-          Add
+          {submitLabel}
         </button>
       </div>
     </Modal>

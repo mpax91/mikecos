@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { api } from '../api/client';
+import { api, normalizeUrl } from '../api/client';
 import type { Entity, FileMeta, LinkMeta, TaskMeta } from '../api/types';
+import { RenameModal } from './RenameModal';
+import { LinkModal } from './LinkModal';
 
 const DESCRIPTION_DEBOUNCE_MS = 800;
 const TITLE_DEBOUNCE_MS = 500;
@@ -61,6 +63,7 @@ export function TaskDetailModal({
   const [newSubtask, setNewSubtask] = useState('');
   const [addingLink, setAddingLink] = useState(false);
   const [linkUrl, setLinkUrl] = useState('');
+  const [editingAttachment, setEditingAttachment] = useState<Entity | null>(null);
   const titleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const descTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -164,6 +167,26 @@ export function TaskDetailModal({
   async function removeAttachment(item: Entity) {
     setChildren((prev) => prev.filter((c) => c.id !== item.id));
     await api.deleteEntity(item.id);
+    onMutated();
+  }
+
+  async function saveAttachmentTitle(newTitle: string) {
+    if (!editingAttachment) return;
+    const id = editingAttachment.id;
+    setEditingAttachment(null);
+    setChildren((prev) => prev.map((c) => (c.id === id ? { ...c, title: newTitle } : c)));
+    await api.updateEntity(id, { title: newTitle });
+    onMutated();
+  }
+
+  async function saveAttachmentLink(url: string, linkTitle: string) {
+    if (!editingAttachment) return;
+    const id = editingAttachment.id;
+    setEditingAttachment(null);
+    const content = JSON.stringify({ url });
+    const finalTitle = linkTitle || url;
+    setChildren((prev) => prev.map((c) => (c.id === id ? { ...c, content, title: finalTitle } : c)));
+    await api.updateEntity(id, { content, title: finalTitle });
     onMutated();
   }
 
@@ -289,7 +312,7 @@ export function TaskDetailModal({
             const fileMeta = item.type === 'file' ? parseFileMeta(item) : null;
             const linkMeta = item.type === 'link' ? parseLinkMeta(item) : null;
             const label = item.title || fileMeta?.filename || linkMeta?.url || 'Untitled';
-            const href = fileMeta ? api.fileUrl(fileMeta.r2_key) : linkMeta?.url;
+            const href = fileMeta ? api.fileUrl(fileMeta.r2_key) : linkMeta ? normalizeUrl(linkMeta.url) : undefined;
             return (
               <div key={item.id} className="task-panel__media-row">
                 <a
@@ -301,6 +324,14 @@ export function TaskDetailModal({
                 >
                   {item.type === 'link' ? '🔖' : '📎'} {label}
                 </a>
+                <button
+                  type="button"
+                  className="task-panel__edit"
+                  onClick={() => setEditingAttachment(item)}
+                  aria-label={item.type === 'link' ? 'Edit link' : 'Rename attachment'}
+                >
+                  ✎
+                </button>
                 <button
                   type="button"
                   className="task-panel__remove"
@@ -348,6 +379,26 @@ export function TaskDetailModal({
           Delete Task
         </button>
       </div>
+
+      {editingAttachment && editingAttachment.type === 'file' && (
+        <RenameModal
+          initialValue={editingAttachment.title || parseFileMeta(editingAttachment)?.filename || ''}
+          label="File Name"
+          onSave={saveAttachmentTitle}
+          onClose={() => setEditingAttachment(null)}
+        />
+      )}
+
+      {editingAttachment && editingAttachment.type === 'link' && (
+        <LinkModal
+          heading="Edit Link"
+          submitLabel="Save"
+          initialUrl={parseLinkMeta(editingAttachment)?.url ?? ''}
+          initialTitle={editingAttachment.title || ''}
+          onSave={saveAttachmentLink}
+          onClose={() => setEditingAttachment(null)}
+        />
+      )}
     </div>
   );
 }

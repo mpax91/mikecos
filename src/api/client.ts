@@ -17,6 +17,15 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+// Shared with createLink below, and with anywhere a stored LinkMeta.url is
+// turned into an href — a link saved before this normalization existed (or
+// entered without a scheme some other way) still needs to resolve as an
+// external site rather than a path on the app itself.
+export function normalizeUrl(url: string): string {
+  const trimmed = url.trim();
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
+
 export const api = {
   listProjects: () => request<ProjectListItem[]>('/api/projects'),
 
@@ -40,11 +49,18 @@ export const api = {
       body: JSON.stringify(params),
     }),
 
-  createLink: (parent_id: string, url: string, title?: string) =>
-    request<Entity>('/api/entities', {
+  createLink: (parent_id: string, url: string, title?: string) => {
+    // Without a scheme, an href like "espn.com" resolves as a path
+    // relative to the app itself (opening MikeOS at /espn.com) instead of
+    // the external site — normalize once here so every caller gets a real,
+    // externally-openable URL regardless of whether it prompted the user
+    // to include "https://" or not.
+    const normalized = normalizeUrl(url);
+    return request<Entity>('/api/entities', {
       method: 'POST',
-      body: JSON.stringify({ type: 'link', parent_id, content: JSON.stringify({ url }), title: title || url }),
-    }),
+      body: JSON.stringify({ type: 'link', parent_id, content: JSON.stringify({ url: normalized }), title: title || normalized }),
+    });
+  },
 
   uploadFile: async (file: File, parent_id?: string): Promise<Entity> => {
     const form = new FormData();
