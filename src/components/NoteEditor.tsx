@@ -8,6 +8,7 @@ import { TableHeader } from '@tiptap/extension-table-header';
 import { TableCell } from '@tiptap/extension-table-cell';
 import { Mention } from '@tiptap/extension-mention';
 import { Highlight } from '@tiptap/extension-highlight';
+import { TextAlign } from '@tiptap/extension-text-align';
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { Editor } from '@tiptap/react';
@@ -291,6 +292,46 @@ function LinkIcon() {
   );
 }
 
+function AlignLeftIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+      <rect x="1" y="2.5" width="14" height="1.6" rx="0.8" fill="currentColor" />
+      <rect x="1" y="6.7" width="9" height="1.6" rx="0.8" fill="currentColor" />
+      <rect x="1" y="10.9" width="12" height="1.6" rx="0.8" fill="currentColor" />
+    </svg>
+  );
+}
+
+function AlignCenterIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+      <rect x="1" y="2.5" width="14" height="1.6" rx="0.8" fill="currentColor" />
+      <rect x="3.5" y="6.7" width="9" height="1.6" rx="0.8" fill="currentColor" />
+      <rect x="2" y="10.9" width="12" height="1.6" rx="0.8" fill="currentColor" />
+    </svg>
+  );
+}
+
+function AlignRightIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+      <rect x="1" y="2.5" width="14" height="1.6" rx="0.8" fill="currentColor" />
+      <rect x="6" y="6.7" width="9" height="1.6" rx="0.8" fill="currentColor" />
+      <rect x="3" y="10.9" width="12" height="1.6" rx="0.8" fill="currentColor" />
+    </svg>
+  );
+}
+
+function AlignJustifyIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+      <rect x="1" y="2.5" width="14" height="1.6" rx="0.8" fill="currentColor" />
+      <rect x="1" y="6.7" width="14" height="1.6" rx="0.8" fill="currentColor" />
+      <rect x="1" y="10.9" width="14" height="1.6" rx="0.8" fill="currentColor" />
+    </svg>
+  );
+}
+
 function HighlightIcon() {
   return (
     <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
@@ -372,6 +413,7 @@ export function NoteEditor({
         },
       }),
       Highlight,
+      TextAlign.configure({ types: ['heading', 'paragraph'] }),
       Attachment,
     ],
     content: content ? JSON.parse(content) : '',
@@ -500,6 +542,31 @@ export function NoteEditor({
           () => editor.chain().focus().toggleStrike().run(),
           <span style={{ textDecoration: 'line-through' }}>S</span>,
           'Strikethrough (cross out)'
+        )}
+        <div className="editor-toolbar__divider" />
+        {btn(
+          editor.isActive({ textAlign: 'left' }),
+          () => editor.chain().focus().setTextAlign('left').run(),
+          <AlignLeftIcon />,
+          'Align left'
+        )}
+        {btn(
+          editor.isActive({ textAlign: 'center' }),
+          () => editor.chain().focus().setTextAlign('center').run(),
+          <AlignCenterIcon />,
+          'Align center'
+        )}
+        {btn(
+          editor.isActive({ textAlign: 'right' }),
+          () => editor.chain().focus().setTextAlign('right').run(),
+          <AlignRightIcon />,
+          'Align right'
+        )}
+        {btn(
+          editor.isActive({ textAlign: 'justify' }),
+          () => editor.chain().focus().setTextAlign('justify').run(),
+          <AlignJustifyIcon />,
+          'Justify'
         )}
         <div className="editor-toolbar__divider" />
         {btn(

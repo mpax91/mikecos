@@ -26,11 +26,32 @@ function sectionCounts(db: D1Database, id: string) {
          SUM(CASE WHEN pinned = 1 THEN 1 ELSE 0 END) as pinned_count,
          SUM(CASE WHEN type = 'folder' THEN 1 ELSE 0 END) as folder_count,
          SUM(CASE WHEN type = 'note' THEN 1 ELSE 0 END) as note_count,
+         SUM(CASE WHEN type IN ('file', 'link') THEN 1 ELSE 0 END) as media_count,
          SUM(CASE WHEN type = 'task' AND status != 'done' THEN 1 ELSE 0 END) as open_task_count
        FROM entities WHERE parent_id = ?`
     )
     .bind(id)
-    .first<{ pinned_count: number; folder_count: number; note_count: number; open_task_count: number }>();
+    .first<{
+      pinned_count: number;
+      folder_count: number;
+      note_count: number;
+      media_count: number;
+      open_task_count: number;
+    }>();
+}
+
+// Subtasks live one level deeper than the project (task -> subtask), so they
+// aren't covered by sectionCounts' direct-children query above — count open
+// subtasks across every task belonging to this project in one extra query.
+function openSubtaskCount(db: D1Database, id: string) {
+  return db
+    .prepare(
+      `SELECT COUNT(*) as n FROM entities
+       WHERE type = 'task' AND status != 'done'
+         AND parent_id IN (SELECT id FROM entities WHERE parent_id = ? AND type = 'task')`
+    )
+    .bind(id)
+    .first<{ n: number }>();
 }
 
 // ---- Projects (top-level) ----
@@ -43,14 +64,20 @@ app.get('/api/projects', async (c) => {
 
   const withCounts = await Promise.all(
     (results ?? []).map(async (p) => {
-      const [cnt, sections] = await Promise.all([childCount(c.env.DB, p.id), sectionCounts(c.env.DB, p.id)]);
+      const [cnt, sections, subtasks] = await Promise.all([
+        childCount(c.env.DB, p.id),
+        sectionCounts(c.env.DB, p.id),
+        openSubtaskCount(c.env.DB, p.id),
+      ]);
       return {
         ...p,
         child_count: cnt?.n ?? 0,
         pinned_count: sections?.pinned_count ?? 0,
         folder_count: sections?.folder_count ?? 0,
         note_count: sections?.note_count ?? 0,
+        media_count: sections?.media_count ?? 0,
         open_task_count: sections?.open_task_count ?? 0,
+        open_subtask_count: subtasks?.n ?? 0,
       };
     })
   );

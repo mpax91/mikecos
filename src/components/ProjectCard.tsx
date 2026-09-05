@@ -45,7 +45,9 @@ export function ProjectCard({
           <span>Pins: {project.pinned_count}</span>
           <span>Folders: {project.folder_count}</span>
           <span>Notes: {project.note_count}</span>
+          <span>Media: {project.media_count}</span>
           <span>Tasks: {project.open_task_count}</span>
+          <span>Subtasks: {project.open_subtask_count}</span>
         </div>
       </div>
       <KebabMenu

@@ -47,7 +47,9 @@ export interface ProjectListItem extends Entity {
   pinned_count: number;
   folder_count: number;
   note_count: number;
+  media_count: number;
   open_task_count: number;
+  open_subtask_count: number;
 }
 
 export interface EntityDetail {
