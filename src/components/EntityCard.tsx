@@ -21,6 +21,32 @@ function parseLinkMeta(entity: Entity): LinkMeta | null {
   }
 }
 
+// Notes store their body as a stringified Tiptap/ProseMirror doc, not
+// HTML — walk its node tree collecting text so the card can show a plain
+// preview snippet instead of looking blank under the title.
+function extractNoteText(content: string | null, maxLength = 160): string {
+  if (!content) return '';
+  let doc: unknown;
+  try {
+    doc = JSON.parse(content);
+  } catch {
+    return '';
+  }
+  const parts: string[] = [];
+  function walk(node: unknown) {
+    if (!node || typeof node !== 'object') return;
+    const n = node as { type?: string; text?: string; content?: unknown[] };
+    if (n.type === 'text' && n.text) parts.push(n.text);
+    if (Array.isArray(n.content)) {
+      for (const child of n.content) walk(child);
+      if (n.type && n.type !== 'text' && parts.length && parts[parts.length - 1] !== ' ') parts.push(' ');
+    }
+  }
+  walk(doc);
+  const text = parts.join('').replace(/\s+/g, ' ').trim();
+  return text.length > maxLength ? `${text.slice(0, maxLength).trimEnd()}…` : text;
+}
+
 // Standard, familiar file-type icons (a page with a folded corner, a bold
 // colored label banner) — modeled on the classic Windows/Adobe/Office
 // icon shapes so PDF/DOC/image/link are recognizable at a glance, the
@@ -130,13 +156,14 @@ export function EntityCard({
     fileMeta?.mime_type === 'application/msword' ||
     fileMeta?.mime_type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
   const mediaKind = isImage ? 'image' : isPdf ? 'pdf' : isDoc ? 'doc' : isLink ? 'link' : isFile ? 'generic' : null;
+  const notePreview = isNote ? extractNoteText(entity.content) : '';
 
   const menuItems = [
-    { label: isPinned ? 'Unpin' : 'Pin', onClick: () => onTogglePin(entity) },
-    { label: 'Rename', onClick: () => onRename(entity) },
     ...(isFile && fileMeta
       ? [{ label: 'Download', onClick: () => window.open(api.fileUrl(fileMeta.r2_key, true), '_blank') }]
       : []),
+    { label: isPinned ? 'Unpin' : 'Pin', onClick: () => onTogglePin(entity) },
+    { label: 'Rename', onClick: () => onRename(entity) },
     { label: 'Promote', onClick: () => onPromote(entity) },
     { label: 'Demote', onClick: () => onDemote(entity) },
     { label: 'Delete', onClick: () => onDelete(entity), danger: true },
@@ -144,7 +171,19 @@ export function EntityCard({
 
   function handleClick() {
     if (isFile && fileMeta) {
-      window.open(api.fileUrl(fileMeta.r2_key), '_blank');
+      if (isDoc) {
+        // Browsers have no built-in viewer for Word docs, so a direct link
+        // just downloads the file instead of opening it — route through
+        // Office's web viewer instead so "open" previews like the PDF
+        // case does, leaving the dedicated Download button as the only
+        // way to actually save a copy.
+        const officeViewer = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(
+          api.fileUrl(fileMeta.r2_key)
+        )}`;
+        window.open(officeViewer, '_blank');
+      } else {
+        window.open(api.fileUrl(fileMeta.r2_key), '_blank');
+      }
     } else if (isLink && linkMeta) {
       window.open(linkMeta.url, '_blank', 'noopener,noreferrer');
     } else {
@@ -190,6 +229,8 @@ export function EntityCard({
       <div className={`entity-card__title${isNote ? ' entity-card__title--note' : ''}`}>
         {entity.title || (isFile ? fileMeta?.filename : isLink ? linkMeta?.url : 'Untitled Note')}
       </div>
+
+      {isNote && notePreview && <div className="entity-card__snippet entity-card__snippet--note">{notePreview}</div>}
     </div>
   );
 }

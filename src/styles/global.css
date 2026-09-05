@@ -917,6 +917,24 @@ a {
   overflow: hidden;
 }
 
+.entity-card__snippet--note {
+  font-family: var(--font-serif);
+  font-size: 13px;
+  -webkit-line-clamp: 6;
+  color: #6b5f3a;
+}
+
+/* Media card titles (PDF/DOC/image/link/generic) sit under a centered
+   icon, so the filename reads better centered too rather than ragged-left
+   under a symmetrical badge. */
+.entity-card--media-pdf .entity-card__title,
+.entity-card--media-doc .entity-card__title,
+.entity-card--media-link .entity-card__title,
+.entity-card--media-image .entity-card__title,
+.entity-card--media-generic .entity-card__title {
+  text-align: center;
+}
+
 /* ---- Folder tiles (plain icon + label, no card chrome) ---- */
 
 .folder-tile-grid {
