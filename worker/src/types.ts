@@ -16,6 +16,7 @@ export interface Entity {
   created_at: string;
   updated_at: string;
   subtasks?: Entity[]; // attached in-memory for task children only, not a DB column
+  media?: Entity[]; // attached in-memory for task children only (file/link attachments), not a DB column
 }
 
 export interface Link {

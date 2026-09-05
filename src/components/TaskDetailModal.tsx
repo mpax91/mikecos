@@ -147,6 +147,7 @@ export function TaskDetailModal({
   async function uploadAttachment(file: File) {
     await api.uploadFile(file, taskId);
     load();
+    onMutated();
   }
 
   async function addAttachmentLink() {
@@ -156,11 +157,13 @@ export function TaskDetailModal({
     setAddingLink(false);
     await api.createLink(taskId, trimmed);
     load();
+    onMutated();
   }
 
   async function removeAttachment(item: Entity) {
     setChildren((prev) => prev.filter((c) => c.id !== item.id));
     await api.deleteEntity(item.id);
+    onMutated();
   }
 
   if (!entity) {

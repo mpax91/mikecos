@@ -36,6 +36,10 @@ export interface Entity {
    * one level of the task's own child tasks, attached by the API so the
    * project view can render subtasks nested under their parent. */
   subtasks?: Entity[];
+  /** Same idea as `subtasks`, for the task's own file/link attachments —
+   * lets the project view show a small attachment indicator without a
+   * separate fetch per task. */
+  media?: Entity[];
 }
 
 export interface ProjectListItem extends Entity {

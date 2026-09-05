@@ -1723,3 +1723,55 @@ a {
 .task-panel__delete-btn:hover {
   text-decoration: underline;
 }
+
+/* ---- Task row attachment indicator ---- */
+
+.task-row__media {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.task-row__media-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: none;
+  background: var(--color-sidebar);
+  border-radius: 10px;
+  padding: 2px 8px;
+  color: var(--color-muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.task-row__media-trigger:hover {
+  background: rgba(47, 74, 60, 0.1);
+  color: var(--color-ink);
+}
+
+.task-row__media-dropdown {
+  position: absolute;
+  top: 110%;
+  right: 0;
+  min-width: 200px;
+  max-width: 280px;
+  z-index: 20;
+  padding: 6px;
+  box-shadow: 0 4px 16px rgba(46, 42, 34, 0.14);
+}
+
+.task-row__media-item {
+  display: block;
+  padding: 7px 9px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  color: var(--color-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-row__media-item:hover {
+  background: rgba(47, 74, 60, 0.08);
+  text-decoration: underline;
+}
