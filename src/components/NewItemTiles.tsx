@@ -14,10 +14,14 @@ export function NewFolderTile({ onCreate }: { onCreate: () => void }) {
 }
 
 /** Dashed "+" card at the end of the Notes section — click to create and
- * jump straight into a new note. */
-export function NewNoteTile({ onCreate }: { onCreate: () => void }) {
+ * jump straight into a new note. `compact` matches its size to the compact
+ * note cards used on mobile, so the ghost tile doesn't tower over real ones. */
+export function NewNoteTile({ onCreate, compact = false }: { onCreate: () => void; compact?: boolean }) {
   return (
-    <div className="entity-card entity-card--ghost entity-card--note-ghost" onClick={onCreate}>
+    <div
+      className={`entity-card entity-card--ghost entity-card--note-ghost${compact ? ' entity-card--compact' : ''}`}
+      onClick={onCreate}
+    >
       <div className="entity-card__ghost-plus">+</div>
       <div className="entity-card__title entity-card__title--ghost">New Note</div>
     </div>

@@ -15,6 +15,7 @@ import { EditableText } from '../components/EditableText';
 import { RenameModal } from '../components/RenameModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { LinkModal } from '../components/LinkModal';
+import { useIsMobile } from '../hooks/useIsMobile';
 
 const isFileOrLink = (c: Entity) => c.type === 'file' || c.type === 'link';
 
@@ -27,6 +28,7 @@ export function ProjectDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
+  const isMobile = useIsMobile();
   const isNewNote = Boolean((location.state as { isNew?: boolean } | null)?.isNew);
   const [detail, setDetail] = useState<EntityDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -275,6 +277,10 @@ export function ProjectDetail() {
   function renderTile(c: Entity, isPinnedView = false) {
     const onPromote = isPinnedView ? (e: Entity) => promoteWithin(pinned, e) : promote;
     const onDemote = isPinnedView ? (e: Entity) => demoteWithin(pinned, e) : demote;
+    // On phone widths a full-size post-it note is too large next to everything
+    // else in its section, so notes borrow the same compact rectangle sizing
+    // Pinned already uses — purely visual, unrelated to promote/demote scope.
+    const compact = isPinnedView || (isMobile && c.type === 'note');
     if (c.type === 'folder') {
       return (
         <FolderTile
@@ -311,7 +317,7 @@ export function ProjectDetail() {
         onRename={setRenaming}
         onPromote={onPromote}
         onDemote={onDemote}
-        compact={isPinnedView}
+        compact={compact}
       />
     );
   }
@@ -341,7 +347,7 @@ export function ProjectDetail() {
       )}
 
       {entity.is_top_level && (
-        <Section title="Pinned" count={pinned.length}>
+        <Section title="Pinned" count={pinned.length} defaultExpanded={!isMobile}>
           {pinned.length === 0 ? (
             <div className="empty-state empty-state--section">Pin anything from below to keep it here for quick reference.</div>
           ) : (
@@ -350,28 +356,28 @@ export function ProjectDetail() {
         </Section>
       )}
 
-      <Section title="Folders" count={folders.length}>
+      <Section title="Folders" count={folders.length} defaultExpanded={!isMobile}>
         <div className="folder-tile-grid">
           {folders.map((c) => renderTile(c))}
           <NewFolderTile onCreate={() => createChild('folder')} />
         </div>
       </Section>
 
-      <Section title="Notes" count={notes.length}>
+      <Section title="Notes" count={notes.length} defaultExpanded={!isMobile}>
         <div className="entity-card-grid">
           {notes.map((c) => renderTile(c))}
-          <NewNoteTile onCreate={() => createChild('note')} />
+          <NewNoteTile onCreate={() => createChild('note')} compact={isMobile} />
         </div>
       </Section>
 
-      <Section title="Media" count={files.length}>
+      <Section title="Media" count={files.length} defaultExpanded={!isMobile}>
         <div className="entity-card-grid">
           {files.map((c) => renderTile(c))}
           <NewFileTile onUploadFile={uploadFile} onAddLink={() => setAddingLink(true)} />
         </div>
       </Section>
 
-      <Section title="Tasks" count={openTasks.length}>
+      <Section title="Tasks" count={openTasks.length} defaultExpanded={!isMobile}>
         <div className="task-list">
           {openTasks.map((c) => renderTile(c))}
           <NewTaskRow onCreate={createTask} />

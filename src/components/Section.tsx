@@ -9,8 +9,18 @@ function ChevronIcon() {
   );
 }
 
-export function Section({ title, count, children }: { title: string; count?: number; children: ReactNode }) {
-  const [expanded, setExpanded] = useState(true);
+export function Section({
+  title,
+  count,
+  children,
+  defaultExpanded = true,
+}: {
+  title: string;
+  count?: number;
+  children: ReactNode;
+  defaultExpanded?: boolean;
+}) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
 
   return (
     <div className="detail-section">

@@ -15,6 +15,7 @@ import type { Editor } from '@tiptap/react';
 import { Attachment } from './AttachmentNode';
 import { LinkModal } from './LinkModal';
 import { api } from '../api/client';
+import { useIsMobile } from '../hooks/useIsMobile';
 
 const AUTOSAVE_DEBOUNCE_MS = 800;
 
@@ -341,6 +342,16 @@ function HighlightIcon() {
   );
 }
 
+function MoreIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+      <circle cx="3" cy="8" r="1.4" fill="currentColor" />
+      <circle cx="8" cy="8" r="1.4" fill="currentColor" />
+      <circle cx="13" cy="8" r="1.4" fill="currentColor" />
+    </svg>
+  );
+}
+
 function TableControls({ editor }: { editor: Editor }) {
   if (!editor.isActive('table')) return null;
   return (
@@ -388,6 +399,13 @@ export function NoteEditor({
   const [linkModalOpen, setLinkModalOpen] = useState(false);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isMobile = useIsMobile();
+  // On phone widths the ribbon collapses to core buttons only, with
+  // everything else (alignment, quote, highlight, divider, table, image/file
+  // insert) tucked behind this "more" toggle. Desktop always shows everything
+  // inline, same as before, so this flag is simply ignored there.
+  const [overflowOpen, setOverflowOpen] = useState(false);
+  const showExtras = !isMobile || overflowOpen;
 
   const editor = useEditor({
     extensions: [
@@ -545,31 +563,6 @@ export function NoteEditor({
         )}
         <div className="editor-toolbar__divider" />
         {btn(
-          editor.isActive({ textAlign: 'left' }),
-          () => editor.chain().focus().setTextAlign('left').run(),
-          <AlignLeftIcon />,
-          'Align left'
-        )}
-        {btn(
-          editor.isActive({ textAlign: 'center' }),
-          () => editor.chain().focus().setTextAlign('center').run(),
-          <AlignCenterIcon />,
-          'Align center'
-        )}
-        {btn(
-          editor.isActive({ textAlign: 'right' }),
-          () => editor.chain().focus().setTextAlign('right').run(),
-          <AlignRightIcon />,
-          'Align right'
-        )}
-        {btn(
-          editor.isActive({ textAlign: 'justify' }),
-          () => editor.chain().focus().setTextAlign('justify').run(),
-          <AlignJustifyIcon />,
-          'Justify'
-        )}
-        <div className="editor-toolbar__divider" />
-        {btn(
           editor.isActive('bulletList'),
           () => editor.chain().focus().toggleBulletList().run(),
           <BulletListIcon />,
@@ -587,31 +580,72 @@ export function NoteEditor({
           <ChecklistIcon />,
           'Checklist'
         )}
-        {btn(editor.isActive('blockquote'), () => editor.chain().focus().toggleBlockquote().run(), '"', 'Quote')}
-        {btn(
-          editor.isActive('highlight'),
-          () => editor.chain().focus().toggleHighlight().run(),
-          <HighlightIcon />,
-          'Highlight'
-        )}
         <div className="editor-toolbar__divider" />
-        {btn(
-          false,
-          () => editor.chain().focus().setHorizontalRule().run(),
-          <DividerIcon />,
-          'Section divider'
-        )}
-        {btn(
-          editor.isActive('table'),
-          () => insertSizedTable(editor),
-          '⊞',
-          'Insert table'
-        )}
-        <TableControls editor={editor} />
-        <div className="editor-toolbar__divider" />
-        {btn(false, () => imageInputRef.current?.click(), <ImageIcon />, 'Insert image')}
-        {btn(false, () => fileInputRef.current?.click(), <FileIcon />, 'Attach PDF or file')}
         {btn(editor.isActive('link'), () => setLinkModalOpen(true), <LinkIcon />, 'Insert link')}
+        {isMobile && (
+          <button
+            type="button"
+            className={`editor-toolbar__btn${overflowOpen ? ' is-active' : ''}`}
+            onClick={() => setOverflowOpen((v) => !v)}
+            title="More formatting"
+          >
+            <MoreIcon />
+          </button>
+        )}
+        {showExtras && (
+          <>
+            <div className="editor-toolbar__divider" />
+            {btn(
+              editor.isActive({ textAlign: 'left' }),
+              () => editor.chain().focus().setTextAlign('left').run(),
+              <AlignLeftIcon />,
+              'Align left'
+            )}
+            {btn(
+              editor.isActive({ textAlign: 'center' }),
+              () => editor.chain().focus().setTextAlign('center').run(),
+              <AlignCenterIcon />,
+              'Align center'
+            )}
+            {btn(
+              editor.isActive({ textAlign: 'right' }),
+              () => editor.chain().focus().setTextAlign('right').run(),
+              <AlignRightIcon />,
+              'Align right'
+            )}
+            {btn(
+              editor.isActive({ textAlign: 'justify' }),
+              () => editor.chain().focus().setTextAlign('justify').run(),
+              <AlignJustifyIcon />,
+              'Justify'
+            )}
+            <div className="editor-toolbar__divider" />
+            {btn(editor.isActive('blockquote'), () => editor.chain().focus().toggleBlockquote().run(), '"', 'Quote')}
+            {btn(
+              editor.isActive('highlight'),
+              () => editor.chain().focus().toggleHighlight().run(),
+              <HighlightIcon />,
+              'Highlight'
+            )}
+            <div className="editor-toolbar__divider" />
+            {btn(
+              false,
+              () => editor.chain().focus().setHorizontalRule().run(),
+              <DividerIcon />,
+              'Section divider'
+            )}
+            {btn(
+              editor.isActive('table'),
+              () => insertSizedTable(editor),
+              '⊞',
+              'Insert table'
+            )}
+            <TableControls editor={editor} />
+            <div className="editor-toolbar__divider" />
+            {btn(false, () => imageInputRef.current?.click(), <ImageIcon />, 'Insert image')}
+            {btn(false, () => fileInputRef.current?.click(), <FileIcon />, 'Attach PDF or file')}
+          </>
+        )}
         <input
           ref={imageInputRef}
           type="file"

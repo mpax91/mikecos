@@ -882,6 +882,13 @@ a {
   color: var(--color-muted);
 }
 
+/* Mobile-only: match the ghost "New Note" tile to the compact rectangle size
+   real notes use there, so it doesn't tower over an actual note above it. */
+.entity-card--ghost.entity-card--note-ghost.entity-card--compact {
+  aspect-ratio: auto;
+  min-height: 88px;
+}
+
 /* Ghost "add new" tile — dashed, muted, always the last item in its grid so
    there's always an obvious next step. */
 .entity-card--ghost {
