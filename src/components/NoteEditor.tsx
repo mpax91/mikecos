@@ -545,8 +545,12 @@ export function NoteEditor({
   return (
     <div className="note-editor">
       <div className="editor-toolbar">
-        <BlockStyleDropdown editor={editor} />
-        <div className="editor-toolbar__divider" />
+        {!isMobile && (
+          <>
+            <BlockStyleDropdown editor={editor} />
+            <div className="editor-toolbar__divider" />
+          </>
+        )}
         {btn(editor.isActive('bold'), () => editor.chain().focus().toggleBold().run(), <b>B</b>, 'Bold')}
         {btn(editor.isActive('italic'), () => editor.chain().focus().toggleItalic().run(), <i>I</i>, 'Italic')}
         {btn(
@@ -594,7 +598,12 @@ export function NoteEditor({
         )}
         {showExtras && (
           <>
-            <div className="editor-toolbar__divider" />
+            {isMobile && (
+              <>
+                <BlockStyleDropdown editor={editor} />
+                <div className="editor-toolbar__divider" />
+              </>
+            )}
             {btn(
               editor.isActive({ textAlign: 'left' }),
               () => editor.chain().focus().setTextAlign('left').run(),
