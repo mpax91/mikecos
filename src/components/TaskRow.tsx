@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { Entity, FileMeta, LinkMeta } from '../api/types';
+import type { Entity, FileMeta, LinkMeta, TaskMeta } from '../api/types';
 import { KebabMenu } from './KebabMenu';
 import { api } from '../api/client';
 
@@ -19,6 +19,36 @@ function parseLinkMeta(entity: Entity): LinkMeta | null {
   } catch {
     return null;
   }
+}
+
+function parseTaskMeta(entity: Entity): TaskMeta {
+  if (!entity.content) return {};
+  try {
+    return JSON.parse(entity.content) as TaskMeta;
+  } catch {
+    return {};
+  }
+}
+
+/** 'YYYY-MM-DD' -> a short, relative-when-useful label plus a `kind` the
+ * caller uses to color it (overdue tasks should stand out, today's tasks
+ * a little, anything further out just reads as plain info). */
+function formatDueDate(dueDate: string): { label: string; kind: 'overdue' | 'today' | 'upcoming' } {
+  const due = new Date(`${dueDate}T00:00:00`);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const diffDays = Math.round((due.getTime() - today.getTime()) / 86400000);
+
+  if (diffDays === 0) return { label: 'Today', kind: 'today' };
+  if (diffDays === 1) return { label: 'Tomorrow', kind: 'upcoming' };
+  if (diffDays === -1) return { label: 'Yesterday', kind: 'overdue' };
+
+  const label = due.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: due.getFullYear() !== today.getFullYear() ? 'numeric' : undefined,
+  });
+  return { label, kind: diffDays < 0 ? 'overdue' : 'upcoming' };
 }
 
 /** Small paperclip + count on a task row that has file/link attachments —
@@ -95,6 +125,8 @@ export function TaskRow({
   const subtasks = entity.subtasks ?? [];
   const media = entity.media ?? [];
   const doneSubtasks = subtasks.filter((s) => s.status === 'done').length;
+  const dueDate = parseTaskMeta(entity).due_date;
+  const due = dueDate ? formatDueDate(dueDate) : null;
 
   return (
     <div>
@@ -112,6 +144,14 @@ export function TaskRow({
         <span className={`task-row__title${isDone ? ' is-done' : ''}${!entity.title ? ' is-placeholder' : ''}`}>
           {entity.title || 'Untitled Task'}
         </span>
+        {due && (
+          <span
+            className={`task-row__due task-row__due--${isDone ? 'done' : due.kind}`}
+            title={dueDate ?? undefined}
+          >
+            📅 {due.label}
+          </span>
+        )}
         {subtasks.length > 0 && (
           <span className="task-row__subtask-count">
             {doneSubtasks}/{subtasks.length}

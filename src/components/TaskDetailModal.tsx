@@ -92,6 +92,7 @@ export function TaskDetailModal({
     // otherwise whichever save lands second would silently wipe the first.
     setEntity((prev) => (prev ? { ...prev, content: json } : prev));
     api.updateEntity(taskId, { content: json });
+    onMutated();
   }
 
   function handleTitleChange(value: string) {

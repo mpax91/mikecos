@@ -1775,3 +1775,36 @@ a {
   background: rgba(47, 74, 60, 0.08);
   text-decoration: underline;
 }
+
+/* ---- Task row due-date badge ---- */
+
+.task-row__due {
+  font-size: 11px;
+  border-radius: 10px;
+  padding: 2px 8px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.task-row__due--upcoming {
+  color: var(--color-muted);
+  background: var(--color-sidebar);
+}
+
+.task-row__due--today {
+  color: var(--color-accent);
+  background: rgba(47, 74, 60, 0.12);
+  font-weight: var(--weight-medium);
+}
+
+.task-row__due--overdue {
+  color: var(--color-accent-secondary);
+  background: rgba(184, 99, 47, 0.12);
+  font-weight: var(--weight-medium);
+}
+
+.task-row__due--done {
+  color: var(--color-placeholder);
+  background: var(--color-sidebar);
+  text-decoration: line-through;
+}
