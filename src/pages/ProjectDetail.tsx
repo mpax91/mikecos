@@ -154,17 +154,33 @@ export function ProjectDetail() {
     setTaskStack([]);
   }
 
-  async function reorderGroup(predicate: (e: Entity) => boolean, ordered: Entity[]) {
+  // Persist a new order for exactly the entities in `orderedIds` (the API
+  // only touches those rows) and reload from the server rather than
+  // hand-splicing local state — `position` is one flat field shared by every
+  // child regardless of type, so a reorder scoped to one slice (a type group,
+  // or the cross-type Pinned list) can shift how children interleave in ways
+  // a naive local splice won't reproduce. Refetching guarantees what's on
+  // screen always matches what's actually persisted.
+  async function persistReorder(orderedIds: string[]) {
     if (!id) return;
-    setDetail((prev) => {
-      if (!prev) return prev;
-      const others = prev.children.filter((c) => !predicate(c));
-      return { ...prev, children: [...others, ...ordered] };
-    });
-    await api.reorder(
-      id,
-      ordered.map((o) => o.id)
-    );
+    await api.reorder(id, orderedIds);
+    load();
+  }
+
+  function promoteWithin(group: Entity[], entity: Entity) {
+    const idx = group.findIndex((e) => e.id === entity.id);
+    if (idx <= 0) return;
+    const ordered = [...group];
+    [ordered[idx - 1], ordered[idx]] = [ordered[idx], ordered[idx - 1]];
+    persistReorder(ordered.map((o) => o.id));
+  }
+
+  function demoteWithin(group: Entity[], entity: Entity) {
+    const idx = group.findIndex((e) => e.id === entity.id);
+    if (idx === -1 || idx >= group.length - 1) return;
+    const ordered = [...group];
+    [ordered[idx + 1], ordered[idx]] = [ordered[idx], ordered[idx + 1]];
+    persistReorder(ordered.map((o) => o.id));
   }
 
   // Promote/demote replace drag-to-reorder: swap an item with its neighbor
@@ -177,21 +193,11 @@ export function ProjectDetail() {
   }
 
   function promote(entity: Entity) {
-    const group = groupFor(entity);
-    const idx = group.findIndex((e) => e.id === entity.id);
-    if (idx <= 0) return;
-    const ordered = [...group];
-    [ordered[idx - 1], ordered[idx]] = [ordered[idx], ordered[idx - 1]];
-    reorderGroup(typePredicate(entity.type), ordered);
+    promoteWithin(groupFor(entity), entity);
   }
 
   function demote(entity: Entity) {
-    const group = groupFor(entity);
-    const idx = group.findIndex((e) => e.id === entity.id);
-    if (idx === -1 || idx >= group.length - 1) return;
-    const ordered = [...group];
-    [ordered[idx + 1], ordered[idx]] = [ordered[idx], ordered[idx + 1]];
-    reorderGroup(typePredicate(entity.type), ordered);
+    demoteWithin(groupFor(entity), entity);
   }
 
   // Bound to the loaded entity's own id (not the route param `id`), which
@@ -261,7 +267,14 @@ export function ProjectDetail() {
   // the project's own top-level screen, not inside a folder.
   const pinned = entity.is_top_level ? children.filter((c) => c.pinned === 1) : [];
 
-  function renderTile(c: Entity, compact = false) {
+  // Inside Pinned, "promote/demote" needs to move an item relative to its
+  // fellow pinned items (any type), not relative to its type-siblings —
+  // otherwise promoting the one pinned note is a no-op whenever it's already
+  // first among ALL notes, pinned or not, even though it visually sits next
+  // to a pinned file it should be able to swap with.
+  function renderTile(c: Entity, isPinnedView = false) {
+    const onPromote = isPinnedView ? (e: Entity) => promoteWithin(pinned, e) : promote;
+    const onDemote = isPinnedView ? (e: Entity) => demoteWithin(pinned, e) : demote;
     if (c.type === 'folder') {
       return (
         <FolderTile
@@ -270,8 +283,8 @@ export function ProjectDetail() {
           onDelete={setDeleting}
           onTogglePin={togglePin}
           onRename={setRenaming}
-          onPromote={promote}
-          onDemote={demote}
+          onPromote={onPromote}
+          onDemote={onDemote}
         />
       );
     }
@@ -284,8 +297,8 @@ export function ProjectDetail() {
           onDelete={setDeleting}
           onTogglePin={togglePin}
           onOpen={openTask}
-          onPromote={promote}
-          onDemote={demote}
+          onPromote={onPromote}
+          onDemote={onDemote}
         />
       );
     }
@@ -296,9 +309,9 @@ export function ProjectDetail() {
         onDelete={setDeleting}
         onTogglePin={togglePin}
         onRename={setRenaming}
-        onPromote={promote}
-        onDemote={demote}
-        compact={compact}
+        onPromote={onPromote}
+        onDemote={onDemote}
+        compact={isPinnedView}
       />
     );
   }
