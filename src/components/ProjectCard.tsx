@@ -52,12 +52,34 @@ export function ProjectCard({
           </span>
         </p>
         <div className="project-card__stats">
-          <span>Pins: {project.pinned_count}</span>
-          <span>Folders: {project.folder_count}</span>
-          <span>Notes: {project.note_count}</span>
-          <span>Media: {project.media_count}</span>
-          <span>Tasks: {project.open_task_count}</span>
-          <span>Subtasks: {project.open_subtask_count}</span>
+          {project.pinned_count > 0 && (
+            <span title={`${project.pinned_count} pinned`}>📌 {project.pinned_count}</span>
+          )}
+          {project.folder_count > 0 && (
+            <span title={`${project.folder_count} folder${project.folder_count === 1 ? '' : 's'}`}>
+              📁 {project.folder_count}
+            </span>
+          )}
+          {project.note_count > 0 && (
+            <span title={`${project.note_count} note${project.note_count === 1 ? '' : 's'}`}>
+              📝 {project.note_count}
+            </span>
+          )}
+          {project.media_count > 0 && (
+            <span title={`${project.media_count} media item${project.media_count === 1 ? '' : 's'}`}>
+              📎 {project.media_count}
+            </span>
+          )}
+          {project.open_task_count > 0 && (
+            <span title={`${project.open_task_count} open task${project.open_task_count === 1 ? '' : 's'}`}>
+              ☑ {project.open_task_count}
+            </span>
+          )}
+          {project.open_subtask_count > 0 && (
+            <span title={`${project.open_subtask_count} open subtask${project.open_subtask_count === 1 ? '' : 's'}`}>
+              ↳ {project.open_subtask_count}
+            </span>
+          )}
         </div>
       </div>
       <KebabMenu

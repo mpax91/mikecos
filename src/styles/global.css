@@ -1520,9 +1520,13 @@ a {
 .project-card__stats {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 14px;
+  gap: 4px 12px;
   font-size: 12px;
   color: var(--color-muted);
+}
+
+.project-card__stats span {
+  white-space: nowrap;
 }
 
 .project-card:hover {
