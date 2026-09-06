@@ -10,6 +10,7 @@ import { Toast } from '../components/Toast';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { formatRelativeTime } from '../utils/formatRelativeTime';
 import { extractSnippet } from '../lib/snippet';
+import { useTabs, useReportTabMeta } from '../contexts/TabsContext';
 
 interface ToastState {
   message: string;
@@ -26,6 +27,7 @@ export function NotesPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const isMobile = useIsMobile();
+  const { openTab, showContextMenu } = useTabs();
   const [notes, setNotes] = useState<Entity[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [noteTitle, setNoteTitle] = useState('');
@@ -53,6 +55,10 @@ export function NotesPage() {
   }, [isMobile, id, notes, navigate]);
 
   const selected = notes?.find((n) => n.id === id) ?? null;
+
+  // Keep the active tab's label/icon in sync: "Notes" for the list, or the
+  // open note's own title (live, as it's typed) when one is selected.
+  useReportTabMeta(selected ? noteTitle || 'Untitled Note' : 'Notes', selected ? 'note' : 'notes-list');
 
   useEffect(() => {
     setNoteTitle(selected?.title ?? '');
@@ -151,7 +157,19 @@ export function NotesPage() {
                   <div
                     key={n.id}
                     className={`notes-page__row${n.id === id ? ' is-active' : ''}`}
-                    onClick={() => navigate(`/notes/${n.id}`)}
+                    onClick={(e) => {
+                      if (e.metaKey || e.ctrlKey) {
+                        openTab(`/notes/${n.id}`, { background: true });
+                        return;
+                      }
+                      navigate(`/notes/${n.id}`);
+                    }}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      showContextMenu(e.clientX, e.clientY, [
+                        { label: 'Open in New Tab', onClick: () => openTab(`/notes/${n.id}`, { background: true }) },
+                      ]);
+                    }}
                   >
                     {n.pinned === 1 && (
                       <span className="notes-page__row-pin" title="Pinned">

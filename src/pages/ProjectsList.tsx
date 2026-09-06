@@ -7,8 +7,10 @@ import { ProjectCard } from '../components/ProjectCard';
 import { RenameModal } from '../components/RenameModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { SortableGrid } from '../components/SortableGrid';
+import { useReportTabMeta } from '../contexts/TabsContext';
 
 export function ProjectsList() {
+  useReportTabMeta('Projects', 'projects-list');
   const [projects, setProjects] = useState<ProjectListItem[] | null>(null);
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState('');

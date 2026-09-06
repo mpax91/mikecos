@@ -17,6 +17,7 @@ import { ConfirmModal } from '../components/ConfirmModal';
 import { LinkModal } from '../components/LinkModal';
 import { Toast } from '../components/Toast';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { useReportTabMeta } from '../contexts/TabsContext';
 
 const isFileOrLink = (c: Entity) => c.type === 'file' || c.type === 'link';
 
@@ -59,6 +60,18 @@ export function ProjectDetail() {
     setError(null);
     load();
   }, [load]);
+
+  // Keep the active tab's label/icon in sync with whatever this route is
+  // actually showing: the note's title as it's typed, or the project/folder's
+  // title (distinct icon for a folder vs. its parent project's own tab).
+  useReportTabMeta(
+    detail
+      ? detail.entity.type === 'note'
+        ? noteTitle || 'Untitled Note'
+        : detail.entity.title || (detail.entity.is_top_level ? 'Untitled Project' : 'Untitled Folder')
+      : undefined,
+    detail ? (detail.entity.type === 'note' ? 'note' : detail.entity.is_top_level ? 'project' : 'folder') : undefined
+  );
 
   async function createChild(type: 'folder' | 'note') {
     if (!id) return;

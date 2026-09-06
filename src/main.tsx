@@ -3,11 +3,14 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import './styles/global.css'
 import App from './App.tsx'
+import { TabsProvider } from './contexts/TabsContext'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
-      <App />
+      <TabsProvider>
+        <App />
+      </TabsProvider>
     </BrowserRouter>
   </StrictMode>,
 )

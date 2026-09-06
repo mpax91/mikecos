@@ -141,19 +141,85 @@ a {
   gap: 2px;
 }
 
+.tabbar__tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tabbar__tabs::-webkit-scrollbar {
+  display: none;
+}
+
 .tabbar__tab {
   display: flex;
   align-items: center;
+  gap: 6px;
   height: 32px;
-  padding: 0 14px;
+  padding: 0 10px;
   border-radius: 8px 8px 0 0;
   font-size: 13px;
   font-weight: var(--weight-medium);
-  color: var(--color-ink);
-  background: var(--color-card-bg);
+  color: var(--color-muted);
+  background: transparent;
   border: var(--border-hairline);
+  border-color: transparent;
   border-bottom: none;
   margin-top: 6px;
+  cursor: pointer;
+  max-width: 200px;
+  flex: 0 0 auto;
+}
+
+.tabbar__tab:hover {
+  background: rgba(47, 74, 60, 0.06);
+}
+
+.tabbar__tab.is-active {
+  color: var(--color-ink);
+  background: var(--color-card-bg);
+  border-color: var(--color-border);
+}
+
+.tabbar__tab.is-pinned {
+  padding: 0 8px;
+  max-width: none;
+}
+
+.tabbar__tab-icon {
+  font-size: 13px;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+
+.tabbar__tab-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.tabbar__tab-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
+  color: var(--color-muted);
+  font-size: 11px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.tabbar__tab-close:hover {
+  background: rgba(47, 74, 60, 0.12);
+  color: var(--color-ink);
 }
 
 .tabbar__new {
@@ -166,7 +232,13 @@ a {
   border-radius: 6px;
   color: var(--color-muted);
   font-size: 16px;
-  cursor: default;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.tabbar__new:hover {
+  background: rgba(47, 74, 60, 0.08);
+  color: var(--color-ink);
 }
 
 .tabbar__menu-btn {
@@ -230,9 +302,26 @@ a {
     display: inline-flex;
   }
 
+  /* Tabs are a desktop-only feature for now — mobile keeps its original
+     hamburger-only header. */
+  .tabbar__tabs,
+  .tabbar__new {
+    display: none;
+  }
+
   .main__content {
     padding: 16px;
   }
+}
+
+/* ---- Context menu (right-click) ---- */
+
+.context-menu {
+  position: fixed;
+  z-index: 100;
+  min-width: 160px;
+  padding: 6px;
+  box-shadow: 0 4px 16px rgba(46, 42, 34, 0.14);
 }
 
 /* ---- Typography helpers ---- */

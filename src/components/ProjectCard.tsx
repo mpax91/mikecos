@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import type { ProjectListItem } from '../api/types';
 import { KebabMenu } from './KebabMenu';
 import { formatRelativeTime } from '../utils/formatRelativeTime';
+import { useTabs } from '../contexts/TabsContext';
 
 export function ProjectCard({
   project,
@@ -17,6 +18,7 @@ export function ProjectCard({
   onRename: (p: ProjectListItem) => void;
 }) {
   const navigate = useNavigate();
+  const { openTab, showContextMenu } = useTabs();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: project.id,
   });
@@ -38,7 +40,19 @@ export function ProjectCard({
       ref={setNodeRef}
       style={style}
       className={`card project-card${isPinned ? ' is-pinned' : ''}`}
-      onClick={() => navigate(`/projects/${project.id}`)}
+      onClick={(e) => {
+        if (e.metaKey || e.ctrlKey) {
+          openTab(`/projects/${project.id}`, { background: true });
+          return;
+        }
+        navigate(`/projects/${project.id}`);
+      }}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        showContextMenu(e.clientX, e.clientY, [
+          { label: 'Open in New Tab', onClick: () => openTab(`/projects/${project.id}`, { background: true }) },
+        ]);
+      }}
     >
       <span className="entity-card__drag" {...attributes} {...listeners} onClick={(e) => e.stopPropagation()}>
         ⠿
