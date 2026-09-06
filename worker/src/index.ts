@@ -143,28 +143,31 @@ function extractAttachmentsAndLinks(contentJson: string | null | undefined): {
 
 // ---- Jots (standalone, top-level "quick capture") ----
 
-// GET /api/jots — oldest-first (the whole point is that a jot that's been
-// sitting the longest surfaces first, unlike Notes' newest-first ordering).
+// GET /api/jots — pinned first, then oldest-first within each group (the
+// whole point of the unpinned ordering is that a jot that's been sitting the
+// longest surfaces first, unlike Notes' newest-first ordering).
 app.get('/api/jots', async (c) => {
   const { results } = await c.env.DB.prepare(
     `SELECT * FROM entities WHERE is_top_level = 1 AND type = 'jot'
-     ORDER BY COALESCE(last_touched, updated_at) ASC`
+     ORDER BY pinned DESC, COALESCE(last_touched, updated_at) ASC`
   ).all<Entity>();
   return c.json(results ?? []);
 });
 
-// POST /api/jots — create a new jot (type='jot', parent_id=NULL). No title
-// field — jots are body-only, same as Keep notes.
+// POST /api/jots — create a new jot (type='jot', parent_id=NULL). Title is
+// optional and empty by default — like Keep, most jots never get one.
 app.post('/api/jots', async (c) => {
-  const body = await c.req.json<{ content?: string | null }>().catch(() => ({ content: null }));
+  const body = await c.req
+    .json<{ content?: string | null; title?: string }>()
+    .catch(() => ({ content: null, title: undefined }));
   const id = uid();
   const ts = now();
   const searchText = extractPlainText(body.content ?? null);
   await c.env.DB.prepare(
     `INSERT INTO entities (id, type, title, content, parent_id, is_top_level, status, position, last_touched, created_at, updated_at, search_text)
-     VALUES (?, 'jot', '', ?, NULL, 1, NULL, 0, ?, ?, ?, ?)`
+     VALUES (?, 'jot', ?, ?, NULL, 1, NULL, 0, ?, ?, ?, ?)`
   )
-    .bind(id, body.content ?? null, ts, ts, ts, searchText)
+    .bind(id, body.title ?? '', body.content ?? null, ts, ts, ts, searchText)
     .run();
   const entity = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(id).first<Entity>();
   return c.json(entity, 201);

@@ -434,6 +434,8 @@ export function NoteEditor({
   content,
   onSave,
   onChange,
+  autoFocus,
+  compact,
 }: {
   content: string | null;
   onSave: (json: string) => void;
@@ -442,6 +444,19 @@ export function NoteEditor({
    * emptiness right when "Done" is clicked, without racing the save
    * debounce. Most callers (plain Notes) don't need this. */
   onChange?: (json: string) => void;
+  /** Focuses the body editor (not any title field, which lives outside this
+   * component) as soon as it mounts — used by Jots so opening the composer
+   * or an existing jot drops the cursor straight into the text, Keep-style,
+   * with no extra click. Only takes effect at construction time, so callers
+   * that need a fresh focus per-open should remount via a `key` prop
+   * (both the Jots composer and JotPanel already do, keyed by draft/jot id). */
+  autoFocus?: boolean;
+  /** Shrinks the toolbar to a small, quick-capture-friendly core set (Bold,
+   * Italic, Checklist, Link, Insert image) with everything else tucked
+   * behind a "More" toggle — used by Jots, on both mobile and desktop,
+   * independent of the isMobile-driven collapse below (which uses a
+   * different, larger core set and stays exactly as-is for Notes). */
+  compact?: boolean;
 }) {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingJson = useRef<string | null>(null);
@@ -451,16 +466,19 @@ export function NoteEditor({
   const imageInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isMobile = useIsMobile();
-  // On phone widths the ribbon collapses to core buttons only, with
-  // everything else (alignment, quote, highlight, divider, table, image/file
-  // insert) tucked behind this "more" toggle. Desktop always shows everything
-  // inline, same as before, so this flag is simply ignored there.
+  // On phone widths (or always, in compact mode) the ribbon collapses to
+  // core buttons only, with everything else (alignment, quote, highlight,
+  // divider, table, image/file insert) tucked behind this "more" toggle.
+  // Desktop, non-compact usage always shows everything inline, same as
+  // before, so this flag is simply ignored there.
   const [overflowOpen, setOverflowOpen] = useState(false);
-  const showExtras = !isMobile || overflowOpen;
+  const showMoreToggle = isMobile || compact;
+  const showExtras = compact ? overflowOpen : !isMobile || overflowOpen;
 
   const editor = useEditor({
     extensions: noteExtensions(),
     content: content ? JSON.parse(content) : '',
+    autofocus: autoFocus ? 'end' : false,
     onUpdate: ({ editor }) => {
       // Snapshot the JSON immediately (cheap) so a flush-on-unmount never
       // needs to touch a possibly-already-destroyed editor instance.
@@ -625,118 +643,171 @@ export function NoteEditor({
     editor.chain().focus('end').run();
   }
 
+  const boldBtn = btn(editor.isActive('bold'), () => editor.chain().focus().toggleBold().run(), <b>B</b>, 'Bold');
+  const italicBtn = btn(editor.isActive('italic'), () => editor.chain().focus().toggleItalic().run(), <i>I</i>, 'Italic');
+  const underlineBtn = btn(
+    editor.isActive('underline'),
+    () => editor.chain().focus().toggleUnderline().run(),
+    <span style={{ textDecoration: 'underline' }}>U</span>,
+    'Underline'
+  );
+  const strikeBtn = btn(
+    editor.isActive('strike'),
+    () => editor.chain().focus().toggleStrike().run(),
+    <span style={{ textDecoration: 'line-through' }}>S</span>,
+    'Strikethrough (cross out)'
+  );
+  const bulletBtn = btn(
+    editor.isActive('bulletList'),
+    () => editor.chain().focus().toggleBulletList().run(),
+    <BulletListIcon />,
+    'Bulleted list'
+  );
+  const orderedBtn = btn(
+    editor.isActive('orderedList'),
+    () => editor.chain().focus().toggleOrderedList().run(),
+    <OrderedListIcon />,
+    'Numbered list'
+  );
+  const checklistBtn = btn(
+    editor.isActive('taskList'),
+    () => editor.chain().focus().toggleTaskList().run(),
+    <ChecklistIcon />,
+    'Checklist'
+  );
+  const linkBtn = btn(editor.isActive('link'), () => setLinkModalOpen(true), <LinkIcon />, 'Insert link');
+  const linkPreviewBtn = btn(false, () => setLinkPreviewModalOpen(true), <LinkPreviewIcon />, 'Insert link preview');
+  const alignLeftBtn = btn(
+    editor.isActive({ textAlign: 'left' }),
+    () => editor.chain().focus().setTextAlign('left').run(),
+    <AlignLeftIcon />,
+    'Align left'
+  );
+  const alignCenterBtn = btn(
+    editor.isActive({ textAlign: 'center' }),
+    () => editor.chain().focus().setTextAlign('center').run(),
+    <AlignCenterIcon />,
+    'Align center'
+  );
+  const alignRightBtn = btn(
+    editor.isActive({ textAlign: 'right' }),
+    () => editor.chain().focus().setTextAlign('right').run(),
+    <AlignRightIcon />,
+    'Align right'
+  );
+  const alignJustifyBtn = btn(
+    editor.isActive({ textAlign: 'justify' }),
+    () => editor.chain().focus().setTextAlign('justify').run(),
+    <AlignJustifyIcon />,
+    'Justify'
+  );
+  const quoteBtn = btn(editor.isActive('blockquote'), () => editor.chain().focus().toggleBlockquote().run(), '"', 'Quote');
+  const highlightBtn = btn(
+    editor.isActive('highlight'),
+    () => editor.chain().focus().toggleHighlight().run(),
+    <HighlightIcon />,
+    'Highlight'
+  );
+  const hrBtn = btn(false, () => editor.chain().focus().setHorizontalRule().run(), <DividerIcon />, 'Section divider');
+  const tableBtn = btn(editor.isActive('table'), () => insertSizedTable(editor), '⊞', 'Insert table');
+  const imageBtn = btn(false, () => imageInputRef.current?.click(), <ImageIcon />, 'Insert image');
+  const fileBtn = btn(false, () => fileInputRef.current?.click(), <FileIcon />, 'Attach PDF or file');
+  const moreToggleBtn = (
+    <button
+      type="button"
+      className={`editor-toolbar__btn${overflowOpen ? ' is-active' : ''}`}
+      onClick={() => setOverflowOpen((v) => !v)}
+      title="More formatting"
+    >
+      <MoreIcon />
+    </button>
+  );
+
   return (
     <div className="note-editor">
       <div className="editor-toolbar">
-        {!isMobile && (
+        {compact ? (
           <>
-            <BlockStyleDropdown editor={editor} />
+            {boldBtn}
+            {italicBtn}
             <div className="editor-toolbar__divider" />
+            {checklistBtn}
+            <div className="editor-toolbar__divider" />
+            {linkBtn}
+            {imageBtn}
+            {showMoreToggle && moreToggleBtn}
+            {showExtras && (
+              <>
+                {underlineBtn}
+                {strikeBtn}
+                <div className="editor-toolbar__divider" />
+                {bulletBtn}
+                {orderedBtn}
+                <div className="editor-toolbar__divider" />
+                {linkPreviewBtn}
+                <div className="editor-toolbar__divider" />
+                <BlockStyleDropdown editor={editor} />
+                <div className="editor-toolbar__divider" />
+                {alignLeftBtn}
+                {alignCenterBtn}
+                {alignRightBtn}
+                {alignJustifyBtn}
+                <div className="editor-toolbar__divider" />
+                {quoteBtn}
+                {highlightBtn}
+                <div className="editor-toolbar__divider" />
+                {hrBtn}
+                {tableBtn}
+                <TableControls editor={editor} />
+                <div className="editor-toolbar__divider" />
+                {fileBtn}
+              </>
+            )}
           </>
-        )}
-        {btn(editor.isActive('bold'), () => editor.chain().focus().toggleBold().run(), <b>B</b>, 'Bold')}
-        {btn(editor.isActive('italic'), () => editor.chain().focus().toggleItalic().run(), <i>I</i>, 'Italic')}
-        {btn(
-          editor.isActive('underline'),
-          () => editor.chain().focus().toggleUnderline().run(),
-          <span style={{ textDecoration: 'underline' }}>U</span>,
-          'Underline'
-        )}
-        {btn(
-          editor.isActive('strike'),
-          () => editor.chain().focus().toggleStrike().run(),
-          <span style={{ textDecoration: 'line-through' }}>S</span>,
-          'Strikethrough (cross out)'
-        )}
-        <div className="editor-toolbar__divider" />
-        {btn(
-          editor.isActive('bulletList'),
-          () => editor.chain().focus().toggleBulletList().run(),
-          <BulletListIcon />,
-          'Bulleted list'
-        )}
-        {btn(
-          editor.isActive('orderedList'),
-          () => editor.chain().focus().toggleOrderedList().run(),
-          <OrderedListIcon />,
-          'Numbered list'
-        )}
-        {btn(
-          editor.isActive('taskList'),
-          () => editor.chain().focus().toggleTaskList().run(),
-          <ChecklistIcon />,
-          'Checklist'
-        )}
-        <div className="editor-toolbar__divider" />
-        {btn(editor.isActive('link'), () => setLinkModalOpen(true), <LinkIcon />, 'Insert link')}
-        {btn(false, () => setLinkPreviewModalOpen(true), <LinkPreviewIcon />, 'Insert link preview')}
-        {isMobile && (
-          <button
-            type="button"
-            className={`editor-toolbar__btn${overflowOpen ? ' is-active' : ''}`}
-            onClick={() => setOverflowOpen((v) => !v)}
-            title="More formatting"
-          >
-            <MoreIcon />
-          </button>
-        )}
-        {showExtras && (
+        ) : (
           <>
-            {isMobile && (
+            {!isMobile && (
               <>
                 <BlockStyleDropdown editor={editor} />
                 <div className="editor-toolbar__divider" />
               </>
             )}
-            {btn(
-              editor.isActive({ textAlign: 'left' }),
-              () => editor.chain().focus().setTextAlign('left').run(),
-              <AlignLeftIcon />,
-              'Align left'
-            )}
-            {btn(
-              editor.isActive({ textAlign: 'center' }),
-              () => editor.chain().focus().setTextAlign('center').run(),
-              <AlignCenterIcon />,
-              'Align center'
-            )}
-            {btn(
-              editor.isActive({ textAlign: 'right' }),
-              () => editor.chain().focus().setTextAlign('right').run(),
-              <AlignRightIcon />,
-              'Align right'
-            )}
-            {btn(
-              editor.isActive({ textAlign: 'justify' }),
-              () => editor.chain().focus().setTextAlign('justify').run(),
-              <AlignJustifyIcon />,
-              'Justify'
-            )}
+            {boldBtn}
+            {italicBtn}
+            {underlineBtn}
+            {strikeBtn}
             <div className="editor-toolbar__divider" />
-            {btn(editor.isActive('blockquote'), () => editor.chain().focus().toggleBlockquote().run(), '"', 'Quote')}
-            {btn(
-              editor.isActive('highlight'),
-              () => editor.chain().focus().toggleHighlight().run(),
-              <HighlightIcon />,
-              'Highlight'
-            )}
+            {bulletBtn}
+            {orderedBtn}
+            {checklistBtn}
             <div className="editor-toolbar__divider" />
-            {btn(
-              false,
-              () => editor.chain().focus().setHorizontalRule().run(),
-              <DividerIcon />,
-              'Section divider'
+            {linkBtn}
+            {linkPreviewBtn}
+            {showMoreToggle && moreToggleBtn}
+            {showExtras && (
+              <>
+                {isMobile && (
+                  <>
+                    <BlockStyleDropdown editor={editor} />
+                    <div className="editor-toolbar__divider" />
+                  </>
+                )}
+                {alignLeftBtn}
+                {alignCenterBtn}
+                {alignRightBtn}
+                {alignJustifyBtn}
+                <div className="editor-toolbar__divider" />
+                {quoteBtn}
+                {highlightBtn}
+                <div className="editor-toolbar__divider" />
+                {hrBtn}
+                {tableBtn}
+                <TableControls editor={editor} />
+                <div className="editor-toolbar__divider" />
+                {imageBtn}
+                {fileBtn}
+              </>
             )}
-            {btn(
-              editor.isActive('table'),
-              () => insertSizedTable(editor),
-              '⊞',
-              'Insert table'
-            )}
-            <TableControls editor={editor} />
-            <div className="editor-toolbar__divider" />
-            {btn(false, () => imageInputRef.current?.click(), <ImageIcon />, 'Insert image')}
-            {btn(false, () => fileInputRef.current?.click(), <FileIcon />, 'Attach PDF or file')}
           </>
         )}
         <input

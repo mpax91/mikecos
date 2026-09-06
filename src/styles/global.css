@@ -1571,6 +1571,16 @@ a {
   background: rgba(46, 139, 87, 0.12);
 }
 
+.kebab-menu__item.is-disabled {
+  color: var(--color-muted);
+  cursor: default;
+  opacity: 0.6;
+}
+
+.kebab-menu__item.is-disabled:hover {
+  background: none;
+}
+
 .kebab-menu__separator {
   height: 1px;
   margin: 6px 4px;
@@ -2455,6 +2465,32 @@ a {
   padding: 4px 16px 12px;
 }
 
+.jots-page__composer-title {
+  width: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 15px;
+  font-weight: var(--weight-medium);
+  padding: 8px 0 4px;
+}
+
+.jots-page__composer-title::placeholder {
+  color: var(--color-placeholder);
+}
+
+/* The composer uses the full NoteEditor, which is otherwise sized for a
+   full document page — tighten it here so the collapsed-to-expanded
+   transition feels like Keep's compact "Take a note" box, not a document. */
+.jots-page__composer-expanded .note-editor__content-area {
+  min-height: 44px;
+  padding-bottom: 8px;
+}
+
+.jots-page__composer-expanded .note-editor .ProseMirror {
+  min-height: 24px;
+}
+
 .jots-page__composer-actions {
   display: flex;
   justify-content: flex-end;
@@ -2512,21 +2548,40 @@ a {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
+}
+
+.jot-card__pin {
+  margin-right: 4px;
+}
+
+.jot-card__title {
+  font-size: 14px;
+  font-weight: var(--weight-medium);
+  margin-bottom: 4px;
 }
 
 .jot-card__body {
   font-size: 13px;
-  max-height: 260px;
+  max-height: 220px;
   overflow: hidden;
 }
 
 /* Cards are read-only previews — the editor toolbar doesn't exist here
    (JotBody never renders NoteEditor's toolbar), just its ProseMirror
-   content styling, and clicks shouldn't show a text-editing caret. */
+   content styling, and clicks shouldn't show a text-editing caret. A card
+   should hug its content, Keep-style, rather than inheriting the full
+   editor's document-sized min-heights/padding meant to leave room to click
+   below a long page while composing. */
+.jot-card__note-editor .note-editor__content-area {
+  min-height: 0;
+  padding-bottom: 0;
+}
+
 .jot-card__note-editor .ProseMirror {
   cursor: pointer;
   padding: 0;
+  min-height: 0;
 }
 
 .jot-card__note-editor .note-attachment__bar {
@@ -2632,6 +2687,31 @@ a {
 
 .jot-panel {
   width: min(560px, 100%);
+}
+
+.jot-panel__title {
+  width: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 17px;
+  font-weight: var(--weight-medium);
+  padding: 12px 16px 0;
+}
+
+.jot-panel__title::placeholder {
+  color: var(--color-placeholder);
+}
+
+/* Same document-sized min-heights as the composer — tighten them here too,
+   since a jot's body is typically much shorter than a full note's. */
+.jot-panel .note-editor__content-area {
+  min-height: 160px;
+  padding-bottom: 24px;
+}
+
+.jot-panel .note-editor .ProseMirror {
+  min-height: 80px;
 }
 
 @media (max-width: 640px) {

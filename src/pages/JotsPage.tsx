@@ -15,27 +15,40 @@ function JotCard({
   jot,
   onOpen,
   onConvert,
+  onTogglePin,
   onDelete,
 }: {
   jot: Entity;
   onOpen: () => void;
   onConvert: (to: 'note' | 'task') => void;
+  onTogglePin: () => void;
   onDelete: () => void;
 }) {
   return (
     <div className="jot-card" onClick={onOpen}>
       <div className="jot-card__top">
         <span className="last-modified-badge" title={new Date(jot.updated_at).toLocaleString()}>
+          {jot.pinned === 1 && (
+            <span className="jot-card__pin" title="Pinned">
+              📌
+            </span>
+          )}
           {formatRelativeTime(jot.updated_at)}
         </span>
         <KebabMenu
           items={[
-            { label: 'Turn into Task', onClick: () => onConvert('task') },
+            { label: jot.pinned === 1 ? 'Unpin' : 'Pin', onClick: onTogglePin },
+            {
+              label: 'Turn into Task (Coming soon)',
+              onClick: () => onConvert('task'),
+              disabled: true,
+            },
             { label: 'Turn into Note', onClick: () => onConvert('note') },
             { label: 'Delete', onClick: onDelete, danger: true, separatorBefore: true },
           ]}
         />
       </div>
+      {jot.title && <div className="jot-card__title">{jot.title}</div>}
       <div className="jot-card__body">
         <JotBody content={jot.content} />
       </div>
@@ -55,9 +68,11 @@ export function JotsPage() {
   const [jots, setJots] = useState<Entity[] | null>(null);
   const [composerOpen, setComposerOpen] = useState(false);
   const [draftId, setDraftId] = useState<string | null>(null);
+  const [draftTitle, setDraftTitle] = useState('');
   const draftEmptyRef = useRef(true);
   const draftJsonRef = useRef<string | null>(null);
   const draftIdRef = useRef<string | null>(null);
+  const draftTitleRef = useRef('');
   const [openJot, setOpenJot] = useState<Entity | null>(null);
   const [converting, setConverting] = useState<{ jot: Entity; to: 'note' | 'task' } | null>(null);
   const [deleting, setDeleting] = useState<Entity | null>(null);
@@ -76,25 +91,34 @@ export function JotsPage() {
       const jot = await api.createJot(null);
       draftIdRef.current = jot.id;
       draftEmptyRef.current = true;
+      draftTitleRef.current = '';
       setDraftId(jot.id);
+      setDraftTitle('');
     }
+  }
+
+  function handleDraftTitleChange(value: string) {
+    setDraftTitle(value);
+    draftTitleRef.current = value;
   }
 
   async function finishComposer() {
     const id = draftIdRef.current;
     const finalJson = draftJsonRef.current;
+    const finalTitle = draftTitleRef.current.trim();
     setComposerOpen(false);
     draftIdRef.current = null;
     setDraftId(null);
+    setDraftTitle('');
     if (!id) return;
-    if (draftEmptyRef.current) {
+    if (draftEmptyRef.current && !finalTitle) {
       await api.deleteEntity(id);
     } else {
       // Explicitly save-then-refresh rather than relying on NoteEditor's own
       // debounced/flush-on-unmount save, whose PATCH could otherwise still
       // be in flight when the list GET below fires — a race that would show
       // the card with stale (often still-empty) content for a beat.
-      if (finalJson) await api.updateEntity(id, { content: finalJson });
+      await api.updateEntity(id, { content: finalJson ?? null, title: finalTitle });
       load();
     }
   }
@@ -103,7 +127,7 @@ export function JotsPage() {
   // jot behind if you navigate away instead of hitting Done.
   useEffect(() => {
     return () => {
-      if (draftIdRef.current && draftEmptyRef.current) {
+      if (draftIdRef.current && draftEmptyRef.current && !draftTitleRef.current.trim()) {
         api.deleteEntity(draftIdRef.current).catch(() => {});
       }
     };
@@ -113,6 +137,13 @@ export function JotsPage() {
     if (!converting) return;
     await api.convertEntity(converting.jot.id, converting.to, parentId);
     setConverting(null);
+    load();
+  }
+
+  async function handleTogglePin(jot: Entity) {
+    const next = jot.pinned === 1 ? 0 : 1;
+    setJots((prev) => (prev ? prev.map((j) => (j.id === jot.id ? { ...j, pinned: next } : j)) : prev));
+    await api.setPinned(jot.id, next === 1);
     load();
   }
 
@@ -147,15 +178,25 @@ export function JotsPage() {
                 wiped out entirely when the id arrives and the key changes,
                 remounting a fresh, empty editor underneath. */}
             {draftId ? (
-              <NoteEditor
-                key={draftId}
-                content={null}
-                onSave={(json) => api.updateEntity(draftId, { content: json })}
-                onChange={(json) => {
-                  draftJsonRef.current = json;
-                  draftEmptyRef.current = isTiptapDocEmpty(json);
-                }}
-              />
+              <>
+                <input
+                  className="jots-page__composer-title"
+                  placeholder="Title"
+                  value={draftTitle}
+                  onChange={(e) => handleDraftTitleChange(e.target.value)}
+                />
+                <NoteEditor
+                  key={draftId}
+                  content={null}
+                  autoFocus
+                  compact
+                  onSave={(json) => api.updateEntity(draftId, { content: json })}
+                  onChange={(json) => {
+                    draftJsonRef.current = json;
+                    draftEmptyRef.current = isTiptapDocEmpty(json);
+                  }}
+                />
+              </>
             ) : (
               <div className="empty-state empty-state--section">Loading…</div>
             )}
@@ -178,6 +219,7 @@ export function JotsPage() {
               jot={jot}
               onOpen={() => setOpenJot(jot)}
               onConvert={(to) => setConverting({ jot, to })}
+              onTogglePin={() => handleTogglePin(jot)}
               onDelete={() => setDeleting(jot)}
             />
           ))}
@@ -188,6 +230,7 @@ export function JotsPage() {
         <JotPanel
           jotId={openJot.id}
           content={openJot.content}
+          title={openJot.title}
           onClose={() => {
             setOpenJot(null);
             load();

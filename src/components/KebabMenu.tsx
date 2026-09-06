@@ -8,6 +8,9 @@ export interface KebabMenuItem {
   positive?: boolean;
   /** Renders a divider line above this item, to set it apart from the items before it. */
   separatorBefore?: boolean;
+  /** Grays the item out and makes it non-clickable — used for actions that
+   * exist but aren't ready to be exposed yet ("Coming soon"). */
+  disabled?: boolean;
 }
 
 export function KebabMenu({ items, className }: { items: KebabMenuItem[]; className?: string }) {
@@ -45,8 +48,11 @@ export function KebabMenu({ items, className }: { items: KebabMenuItem[]; classN
             <div key={item.label}>
               {item.separatorBefore && <div className="kebab-menu__separator" />}
               <div
-                className={`kebab-menu__item${item.danger ? ' is-danger' : ''}${item.positive ? ' is-positive' : ''}`}
+                className={`kebab-menu__item${item.danger ? ' is-danger' : ''}${item.positive ? ' is-positive' : ''}${
+                  item.disabled ? ' is-disabled' : ''
+                }`}
                 onClick={() => {
+                  if (item.disabled) return;
                   setOpen(false);
                   item.onClick();
                 }}
