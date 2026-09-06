@@ -2056,6 +2056,18 @@ a {
   color: rgba(255, 255, 255, 0.75);
 }
 
+/* The kebab trigger's default muted-grey color is nearly invisible against
+   the active row's orange background — it wasn't actually removed, just
+   unreadable there. */
+.notes-page__row.is-active .kebab-menu__trigger {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.notes-page__row.is-active .kebab-menu__trigger:hover {
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+}
+
 .notes-page__row-pin {
   flex-shrink: 0;
   margin-top: 2px;
