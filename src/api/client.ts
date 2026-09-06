@@ -129,4 +129,31 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ parent_id }),
     }),
+
+  // ---- Jots ----
+
+  listJots: () => request<Entity[]>('/api/jots'),
+
+  createJot: (content?: string | null) =>
+    request<Entity>('/api/jots', {
+      method: 'POST',
+      body: JSON.stringify({ content: content ?? null }),
+    }),
+
+  /** Turns a Jot into a Note (parent_id may be null — standalone, like any
+   * other Note) or a Task (parent_id required — MikeOS has no standalone
+   * task concept yet). */
+  convertEntity: (id: string, to: 'note' | 'task', parent_id: string | null) =>
+    request<Entity>(`/api/entities/${id}/convert`, {
+      method: 'POST',
+      body: JSON.stringify({ to, parent_id }),
+    }),
+
+  /** Server-side link unfurl (og:title/og:image + bare domain fallback) for
+   * the editor's "Insert link preview" button — a browser-side fetch would
+   * hit CORS on nearly every real site. */
+  fetchLinkPreview: (url: string) =>
+    request<{ url: string; title: string | null; image: string | null; domain: string | null }>(
+      `/api/link-preview?url=${encodeURIComponent(url)}`
+    ),
 };

@@ -100,6 +100,167 @@ function extractPlainText(contentJson: string | null | undefined): string | null
   }
 }
 
+// Walks a Tiptap JSON document collecting its 'attachment' and 'linkPreview'
+// block nodes — used when converting a Jot into a Task, since tasks (unlike
+// notes/jots) have no rich body to hold them inline. Each becomes a sibling
+// file/link entity under the task's destination parent instead.
+function extractAttachmentsAndLinks(contentJson: string | null | undefined): {
+  attachments: { url: string; filename: string; mimeType: string; r2Key: string; size: number }[];
+  links: { url: string; title: string | null; image: string | null; domain: string | null }[];
+} {
+  const attachments: { url: string; filename: string; mimeType: string; r2Key: string; size: number }[] = [];
+  const links: { url: string; title: string | null; image: string | null; domain: string | null }[] = [];
+  if (!contentJson) return { attachments, links };
+  try {
+    const doc = JSON.parse(contentJson);
+    const walk = (node: unknown) => {
+      if (!node || typeof node !== 'object') return;
+      const n = node as { type?: string; attrs?: Record<string, unknown>; content?: unknown[] };
+      if (n.type === 'attachment' && n.attrs) {
+        attachments.push({
+          url: String(n.attrs.url ?? ''),
+          filename: String(n.attrs.filename ?? 'file'),
+          mimeType: String(n.attrs.mimeType ?? 'application/octet-stream'),
+          r2Key: String(n.attrs.r2Key ?? ''),
+          size: Number(n.attrs.size ?? 0),
+        });
+      } else if (n.type === 'linkPreview' && n.attrs) {
+        links.push({
+          url: String(n.attrs.url ?? ''),
+          title: (n.attrs.title as string | null) ?? null,
+          image: (n.attrs.image as string | null) ?? null,
+          domain: (n.attrs.domain as string | null) ?? null,
+        });
+      }
+      if (Array.isArray(n.content)) n.content.forEach(walk);
+    };
+    walk(doc);
+  } catch {
+    // malformed content — nothing to extract
+  }
+  return { attachments, links };
+}
+
+// ---- Jots (standalone, top-level "quick capture") ----
+
+// GET /api/jots — oldest-first (the whole point is that a jot that's been
+// sitting the longest surfaces first, unlike Notes' newest-first ordering).
+app.get('/api/jots', async (c) => {
+  const { results } = await c.env.DB.prepare(
+    `SELECT * FROM entities WHERE is_top_level = 1 AND type = 'jot'
+     ORDER BY COALESCE(last_touched, updated_at) ASC`
+  ).all<Entity>();
+  return c.json(results ?? []);
+});
+
+// POST /api/jots — create a new jot (type='jot', parent_id=NULL). No title
+// field — jots are body-only, same as Keep notes.
+app.post('/api/jots', async (c) => {
+  const body = await c.req.json<{ content?: string | null }>().catch(() => ({ content: null }));
+  const id = uid();
+  const ts = now();
+  const searchText = extractPlainText(body.content ?? null);
+  await c.env.DB.prepare(
+    `INSERT INTO entities (id, type, title, content, parent_id, is_top_level, status, position, last_touched, created_at, updated_at, search_text)
+     VALUES (?, 'jot', '', ?, NULL, 1, NULL, 0, ?, ?, ?, ?)`
+  )
+    .bind(id, body.content ?? null, ts, ts, ts, searchText)
+    .run();
+  const entity = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(id).first<Entity>();
+  return c.json(entity, 201);
+});
+
+// POST /api/entities/:id/convert — { to: 'note' | 'task', parent_id: string | null }
+// Turns a Jot into a real Note or Task — the two ways a jot leaves the
+// temporary-holding-spot list (the third is plain delete).
+//
+// 'note': a pure type + parent change. Jots and Notes share the exact same
+// Tiptap `content` shape (including inline attachment/linkPreview nodes), so
+// nothing about the content needs to change — parent_id may be null
+// (standalone, top-level, like any other Note) or a project id.
+//
+// 'task': tasks have no rich body (their `content` column holds TaskMeta
+// JSON, not Tiptap), so the jot's plain text becomes the task's title, and
+// any attachment/linkPreview nodes become sibling file/link entities under
+// the destination parent — the same shape Task attachments already take.
+// Unlike 'note', parent_id is required here: MikeOS has no standalone/
+// top-level task concept today, only tasks inside a project or folder.
+app.post('/api/entities/:id/convert', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json<{ to: 'note' | 'task'; parent_id: string | null }>();
+
+  const existing = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(id).first<Entity>();
+  if (!existing) return c.json({ error: 'not found' }, 404);
+
+  if (body.parent_id) {
+    const parent = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(body.parent_id).first<Entity>();
+    if (!parent) return c.json({ error: 'parent not found' }, 404);
+  }
+
+  const ts = now();
+
+  if (body.to === 'note') {
+    const isTopLevel = body.parent_id === null ? 1 : 0;
+    const maxPos = await c.env.DB.prepare(
+      body.parent_id === null
+        ? `SELECT COALESCE(MAX(position), -1) as m FROM entities WHERE parent_id IS NULL AND type = 'note'`
+        : 'SELECT COALESCE(MAX(position), -1) as m FROM entities WHERE parent_id = ?'
+    )
+      .bind(...(body.parent_id === null ? [] : [body.parent_id]))
+      .first<{ m: number }>();
+
+    await c.env.DB.prepare(
+      `UPDATE entities SET type = 'note', title = ?, parent_id = ?, is_top_level = ?, position = ?, status = NULL, updated_at = ?, last_touched = ? WHERE id = ?`
+    )
+      .bind(existing.title || 'Untitled Note', body.parent_id, isTopLevel, (maxPos?.m ?? -1) + 1, ts, ts, id)
+      .run();
+  } else {
+    if (!body.parent_id) return c.json({ error: 'parent_id is required to convert to a task' }, 400);
+
+    const title = extractPlainText(existing.content) || '';
+    const { attachments, links } = extractAttachmentsAndLinks(existing.content);
+
+    const maxPos = await c.env.DB.prepare(
+      'SELECT COALESCE(MAX(position), -1) as m FROM entities WHERE parent_id = ?'
+    )
+      .bind(body.parent_id)
+      .first<{ m: number }>();
+    let nextPos = (maxPos?.m ?? -1) + 1;
+
+    await c.env.DB.prepare(
+      `UPDATE entities SET type = 'task', title = ?, content = NULL, search_text = NULL, parent_id = ?, is_top_level = 0, position = ?, status = 'open', updated_at = ?, last_touched = ? WHERE id = ?`
+    )
+      .bind(title, body.parent_id, nextPos, ts, ts, id)
+      .run();
+    nextPos += 1;
+
+    for (const a of attachments) {
+      if (!a.r2Key) continue;
+      const meta = { r2_key: a.r2Key, mime_type: a.mimeType, size: a.size, filename: a.filename };
+      await c.env.DB.prepare(
+        `INSERT INTO entities (id, type, title, content, parent_id, is_top_level, status, position, last_touched, created_at, updated_at)
+         VALUES (?, 'file', ?, ?, ?, 0, NULL, ?, ?, ?, ?)`
+      )
+        .bind(uid(), a.filename, JSON.stringify(meta), body.parent_id, nextPos++, ts, ts, ts)
+        .run();
+    }
+    for (const l of links) {
+      if (!l.url) continue;
+      const meta = { url: l.url, preview_title: l.title, preview_image: l.image, preview_domain: l.domain };
+      await c.env.DB.prepare(
+        `INSERT INTO entities (id, type, title, content, parent_id, is_top_level, status, position, last_touched, created_at, updated_at)
+         VALUES (?, 'link', ?, ?, ?, 0, NULL, ?, ?, ?, ?)`
+      )
+        .bind(uid(), l.title || l.url, JSON.stringify(meta), body.parent_id, nextPos++, ts, ts, ts)
+        .run();
+    }
+  }
+
+  await touchProjectAncestor(c.env.DB, body.parent_id);
+  const entity = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(id).first<Entity>();
+  return c.json(entity);
+});
+
 // ---- Projects (top-level) ----
 
 // GET /api/projects — list all top-level projects with a section breakdown
@@ -552,6 +713,97 @@ app.get('/api/files/:key', async (c) => {
 app.delete('/api/files/:key', async (c) => {
   await c.env.FILES.delete(c.req.param('key'));
   return c.json({ ok: true });
+});
+
+// ---- Link previews ----
+
+// GET /api/link-preview?url=... — fetches the target page server-side (a
+// browser fetch would hit CORS on almost every real site) and pulls its
+// og:title/og:image (falling back to twitter:image, then <title>) via
+// HTMLRewriter, Workers' built-in streaming HTML parser — no dependency
+// needed for the couple of tags this cares about. Always resolves with at
+// least a domain so the editor can fall back to a bare-link-style card
+// rather than failing outright when a site can't be unfurled (blocks
+// non-browser UAs, times out, 404s, etc).
+app.get('/api/link-preview', async (c) => {
+  const raw = c.req.query('url');
+  if (!raw) return c.json({ error: 'url is required' }, 400);
+
+  const target = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  let domain: string | null = null;
+  try {
+    domain = new URL(target).hostname.replace(/^www\./, '');
+  } catch {
+    return c.json({ error: 'invalid url' }, 400);
+  }
+
+  const result: { url: string; title: string | null; image: string | null; domain: string | null } = {
+    url: target,
+    title: null,
+    image: null,
+    domain,
+  };
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    const res = await fetch(target, {
+      signal: controller.signal,
+      headers: {
+        // Plenty of sites serve a bare/blank <head> to non-browser user
+        // agents — a normal desktop UA gets the real og: tags instead.
+        'user-agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+      },
+    });
+    clearTimeout(timeout);
+
+    let twitterImage: string | null = null;
+    let titleTag = '';
+    const rewriter = new HTMLRewriter()
+      .on('meta[property="og:title"]', {
+        element(el) {
+          const v = el.getAttribute('content');
+          if (v && !result.title) result.title = v;
+        },
+      })
+      .on('meta[property="og:image"]', {
+        element(el) {
+          const v = el.getAttribute('content');
+          if (v && !result.image) result.image = v;
+        },
+      })
+      .on('meta[name="twitter:image"]', {
+        element(el) {
+          const v = el.getAttribute('content');
+          if (v && !twitterImage) twitterImage = v;
+        },
+      })
+      .on('title', {
+        text(t) {
+          titleTag += t.text;
+        },
+      });
+
+    // Nothing downstream needs the rewritten HTML itself — just consume the
+    // transformed body so the handlers above actually fire.
+    await rewriter.transform(res).text();
+
+    if (!result.title && titleTag.trim()) result.title = titleTag.trim();
+    if (!result.image && twitterImage) result.image = twitterImage;
+    if (result.image) {
+      try {
+        result.image = new URL(result.image, target).toString();
+      } catch {
+        // leave as-is if it's already absolute-ish or malformed
+      }
+    }
+  } catch {
+    // Fetch failed/timed out — the caller still gets a domain-only result,
+    // which the editor renders as a plain link card instead of failing.
+  }
+
+  return c.json(result);
 });
 
 app.get('/api/health', (c) => c.json({ ok: true, time: now() }));

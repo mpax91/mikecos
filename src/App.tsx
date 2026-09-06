@@ -5,6 +5,7 @@ import { TabBar } from './components/TabBar';
 import { ProjectsList } from './pages/ProjectsList';
 import { ProjectDetail } from './pages/ProjectDetail';
 import { NotesPage } from './pages/NotesPage';
+import { JotsPage } from './pages/JotsPage';
 
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -21,6 +22,7 @@ export default function App() {
             <Route path="/projects/:id" element={<ProjectDetail />} />
             <Route path="/notes" element={<NotesPage />} />
             <Route path="/notes/:id" element={<NotesPage />} />
+            <Route path="/jots" element={<JotsPage />} />
             <Route path="*" element={<Navigate to="/projects" replace />} />
           </Routes>
         </div>

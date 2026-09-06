@@ -13,11 +13,43 @@ import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { Editor } from '@tiptap/react';
 import { Attachment } from './AttachmentNode';
+import { LinkPreview } from './LinkPreviewNode';
 import { LinkModal } from './LinkModal';
 import { api } from '../api/client';
 import { useIsMobile } from '../hooks/useIsMobile';
 
 const AUTOSAVE_DEBOUNCE_MS = 800;
+
+/** The full extension set for a note/jot document — shared between the real
+ * editing surface here and the read-only renderer used for Jot cards, so a
+ * card's attachment/link-preview/checklist rendering never silently drifts
+ * from how the same content looks while actually being edited. */
+export function noteExtensions() {
+  return [
+    StarterKit.configure({
+      link: {
+        openOnClick: true,
+        autolink: true,
+        HTMLAttributes: { target: '_blank', rel: 'noopener noreferrer' },
+      },
+    }),
+    TaskList,
+    TaskItem.configure({ nested: true }),
+    Table.configure({ resizable: true }),
+    TableRow,
+    TableHeader,
+    TableCell,
+    Mention.configure({
+      suggestion: {
+        items: () => [],
+      },
+    }),
+    Highlight,
+    TextAlign.configure({ types: ['heading', 'paragraph'] }),
+    Attachment,
+    LinkPreview,
+  ];
+}
 
 type BlockStyle = 'title' | 'heading' | 'subheading' | 'body';
 
@@ -293,6 +325,18 @@ function LinkIcon() {
   );
 }
 
+// A link glyph inside a small card outline — distinguishes "insert a rich
+// preview card" from the plain inline-hyperlink LinkIcon above.
+function LinkPreviewIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+      <rect x="1" y="2.5" width="14" height="11" rx="1.4" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M6.2 8.9a2 2 0 000 2.8l0 0a2 2 0 002.8 0l1.1-1.1a2 2 0 00-2.8-2.8" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+      <path d="M8 7.1a2 2 0 000-2.8l0 0a2 2 0 00-2.8 0L4.1 5.4a2 2 0 002.8 2.8" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function AlignLeftIcon() {
   return (
     <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
@@ -389,14 +433,21 @@ function TableControls({ editor }: { editor: Editor }) {
 export function NoteEditor({
   content,
   onSave,
+  onChange,
 }: {
   content: string | null;
   onSave: (json: string) => void;
+  /** Fires synchronously on every keystroke (unlike onSave, which is
+   * debounced) — used by the Jots composer to know the document's current
+   * emptiness right when "Done" is clicked, without racing the save
+   * debounce. Most callers (plain Notes) don't need this. */
+  onChange?: (json: string) => void;
 }) {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingJson = useRef<string | null>(null);
   const [, forceRerender] = useState(0);
   const [linkModalOpen, setLinkModalOpen] = useState(false);
+  const [linkPreviewModalOpen, setLinkPreviewModalOpen] = useState(false);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isMobile = useIsMobile();
@@ -408,38 +459,14 @@ export function NoteEditor({
   const showExtras = !isMobile || overflowOpen;
 
   const editor = useEditor({
-    extensions: [
-      StarterKit.configure({
-        link: {
-          openOnClick: true,
-          autolink: true,
-          HTMLAttributes: { target: '_blank', rel: 'noopener noreferrer' },
-        },
-      }),
-      TaskList,
-      TaskItem.configure({ nested: true }),
-      Table.configure({ resizable: true }),
-      TableRow,
-      TableHeader,
-      TableCell,
-      Mention.configure({
-        suggestion: {
-          // No mentionable entities exist yet in V1.0 — extension is wired in
-          // now so future modules (people, projects) can populate this
-          // without a content-model migration.
-          items: () => [],
-        },
-      }),
-      Highlight,
-      TextAlign.configure({ types: ['heading', 'paragraph'] }),
-      Attachment,
-    ],
+    extensions: noteExtensions(),
     content: content ? JSON.parse(content) : '',
     onUpdate: ({ editor }) => {
       // Snapshot the JSON immediately (cheap) so a flush-on-unmount never
       // needs to touch a possibly-already-destroyed editor instance.
       const json = JSON.stringify(editor.getJSON());
       pendingJson.current = json;
+      onChangeRef.current?.(json);
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(() => {
         saveTimer.current = null;
@@ -454,6 +481,8 @@ export function NoteEditor({
 
   const onSaveRef = useRef(onSave);
   onSaveRef.current = onSave;
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
 
   // Flush any pending debounced save on unmount (e.g. navigating away right
   // after typing) so edits are never silently dropped.
@@ -485,6 +514,7 @@ export function NoteEditor({
             filename: uploaded.filename,
             mimeType: uploaded.mime_type,
             r2Key: uploaded.r2_key,
+            size: uploaded.size,
           },
         })
         .focus()
@@ -493,6 +523,59 @@ export function NoteEditor({
     } catch {
       // Upload failed (network/server) — silently no-op; the toolbar stays
       // usable and the user can retry.
+    }
+  }
+
+  async function handleAddLinkPreview(url: string) {
+    setLinkPreviewModalOpen(false);
+    if (!editor) return;
+    const insertPos = editor.state.selection.to;
+    // Insert immediately with just the domain known, then fill in the
+    // fetched title/image once it resolves — the card never blocks on the
+    // network, it just upgrades a beat later (or stays domain-only if the
+    // target couldn't be unfurled).
+    let domain = url;
+    try {
+      domain = new URL(/^https?:\/\//i.test(url) ? url : `https://${url}`).hostname.replace(/^www\./, '');
+    } catch {
+      // leave domain as the raw string
+    }
+    editor
+      .chain()
+      .insertContentAt(insertPos, { type: 'linkPreview', attrs: { url, title: null, image: null, domain } })
+      .focus()
+      .run();
+    ensureTrailingParagraph(editor);
+
+    try {
+      const preview = await api.fetchLinkPreview(url);
+      if (editor.isDestroyed) return;
+      // Find the node we just inserted (by url + still-null title, so an
+      // identical link added twice doesn't collide) and patch its attrs.
+      let targetPos: number | null = null;
+      editor.state.doc.descendants((node, pos) => {
+        if (targetPos === null && node.type.name === 'linkPreview' && node.attrs.url === url && node.attrs.title === null) {
+          targetPos = pos;
+        }
+      });
+      if (targetPos !== null) {
+        editor
+          .chain()
+          .command(({ tr }) => {
+            tr.setNodeMarkup(targetPos as number, undefined, {
+              url: preview.url,
+              title: preview.title,
+              image: preview.image,
+              domain: preview.domain,
+            });
+            return true;
+          })
+          .run();
+        // setNodeMarkup doesn't itself trigger onUpdate's autosave — nudge it.
+        onSaveRef.current(JSON.stringify(editor.getJSON()));
+      }
+    } catch {
+      // Unfurl failed — the domain-only card inserted above stands as-is.
     }
   }
 
@@ -586,6 +669,7 @@ export function NoteEditor({
         )}
         <div className="editor-toolbar__divider" />
         {btn(editor.isActive('link'), () => setLinkModalOpen(true), <LinkIcon />, 'Insert link')}
+        {btn(false, () => setLinkPreviewModalOpen(true), <LinkPreviewIcon />, 'Insert link preview')}
         {isMobile && (
           <button
             type="button"
@@ -679,6 +763,15 @@ export function NoteEditor({
         <EditorContent editor={editor} />
       </div>
       {linkModalOpen && <LinkModal onSave={handleAddLink} onClose={() => setLinkModalOpen(false)} />}
+      {linkPreviewModalOpen && (
+        <LinkModal
+          heading="Insert Link Preview"
+          submitLabel="Insert"
+          showLabelField={false}
+          onSave={(url) => handleAddLinkPreview(url)}
+          onClose={() => setLinkPreviewModalOpen(false)}
+        />
+      )}
     </div>
   );
 }

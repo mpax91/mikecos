@@ -8,6 +8,11 @@ interface AttachmentAttrs {
   filename: string;
   mimeType: string;
   r2Key: string;
+  /** Byte size at upload time — not shown anywhere today, but carried along
+   * so converting a Jot into a Task can build a real FileMeta (which
+   * requires size) for the resulting sibling file entity without a second
+   * round trip to look it up. */
+  size: number;
 }
 
 function DownloadIcon() {
@@ -74,6 +79,7 @@ export const Attachment = Node.create({
       filename: { default: null },
       mimeType: { default: null },
       r2Key: { default: null },
+      size: { default: 0 },
     };
   },
 

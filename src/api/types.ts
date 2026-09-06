@@ -1,4 +1,4 @@
-export type EntityType = 'project' | 'folder' | 'note' | 'task' | 'file' | 'link';
+export type EntityType = 'project' | 'folder' | 'note' | 'task' | 'file' | 'link' | 'jot';
 
 export interface FileMeta {
   r2_key: string;
@@ -9,6 +9,12 @@ export interface FileMeta {
 
 export interface LinkMeta {
   url: string;
+  /** Server-fetched rich preview (og:title/og:image + domain) for a link
+   * inserted via the editor's "Insert link preview" button. Absent for a
+   * plain inline hyperlink, or when the target page couldn't be unfurled. */
+  preview_title?: string | null;
+  preview_image?: string | null;
+  preview_domain?: string | null;
 }
 
 /** Tasks store their extra detail (everything beyond title/status) as

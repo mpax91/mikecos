@@ -57,6 +57,14 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
           >
             Notes
           </NavLink>
+          <NavLink
+            to="/jots"
+            onClick={(e) => handleClick(e, '/jots')}
+            onContextMenu={(e) => handleContextMenu(e, '/jots', 'Jots')}
+            className={({ isActive }) => `sidebar__nav-item title-case${isActive ? ' is-active' : ''}`}
+          >
+            Jots
+          </NavLink>
         </nav>
       </aside>
     </>

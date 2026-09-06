@@ -7,6 +7,7 @@ export function LinkModal({
   initialTitle = '',
   heading = 'Add Link',
   submitLabel = 'Add',
+  showLabelField = true,
   onSave,
   onClose,
 }: {
@@ -14,6 +15,10 @@ export function LinkModal({
   initialTitle?: string;
   heading?: string;
   submitLabel?: string;
+  /** "Insert link preview" fetches its own title server-side — the optional
+   * label field only makes sense for a plain inline link, so callers that
+   * don't want it (a fetched title would just be overwritten) can hide it. */
+  showLabelField?: boolean;
   onSave: (url: string, title: string) => void;
   onClose: () => void;
 }) {
@@ -36,12 +41,14 @@ export function LinkModal({
         onFocus={(e) => e.target.select()}
         onKeyDown={(e) => e.key === 'Enter' && submit()}
       />
-      <input
-        placeholder="Label (optional)"
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        onKeyDown={(e) => e.key === 'Enter' && submit()}
-      />
+      {showLabelField && (
+        <input
+          placeholder="Label (optional)"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && submit()}
+        />
+      )}
       <div className="modal__actions">
         <button className="btn btn--ghost" onClick={onClose}>
           Cancel

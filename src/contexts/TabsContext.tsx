@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ContextMenu, type ContextMenuItem } from '../components/ContextMenu';
 
-export type TabKind = 'projects-list' | 'notes-list' | 'project' | 'folder' | 'note';
+export type TabKind = 'projects-list' | 'notes-list' | 'jots-list' | 'project' | 'folder' | 'note';
 
 export interface Tab {
   id: string;
@@ -22,6 +22,7 @@ const STORAGE_KEY = 'mikeos.tabs.v1';
 function inferTabMeta(path: string): { kind: TabKind; title: string } {
   if (path === '/projects') return { kind: 'projects-list', title: 'Projects' };
   if (path === '/notes') return { kind: 'notes-list', title: 'Notes' };
+  if (path === '/jots') return { kind: 'jots-list', title: 'Jots' };
   if (path.startsWith('/projects/')) return { kind: 'project', title: 'Project' };
   if (path.startsWith('/notes/')) return { kind: 'note', title: 'Note' };
   return { kind: 'projects-list', title: 'Projects' };
@@ -269,5 +270,6 @@ export function useReportTabMeta(title: string | undefined, kind?: TabKind) {
 }
 
 export function tabIcon(kind: TabKind): string {
+  if (kind === 'jots-list') return '🗒️';
   return kind === 'notes-list' || kind === 'note' ? '📝' : '📁';
 }

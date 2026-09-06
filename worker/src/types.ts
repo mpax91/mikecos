@@ -1,4 +1,4 @@
-export type EntityType = 'project' | 'folder' | 'note' | 'task' | 'file' | 'link';
+export type EntityType = 'project' | 'folder' | 'note' | 'task' | 'file' | 'link' | 'jot';
 export type TaskStatus = 'open' | 'done';
 export type ProjectStatus = 'active' | 'archived';
 
@@ -38,6 +38,9 @@ export interface FileMeta {
 
 export interface LinkMeta {
   url: string;
+  preview_title?: string | null;
+  preview_image?: string | null;
+  preview_domain?: string | null;
 }
 
 export interface Env {

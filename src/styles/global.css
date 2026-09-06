@@ -2426,3 +2426,216 @@ a {
 .toast__close:hover {
   opacity: 1;
 }
+
+/* ---- Jots ---- */
+
+.jots-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.jots-page__composer-collapsed {
+  width: 100%;
+  text-align: left;
+  padding: 12px 16px;
+  border-radius: var(--radius-card);
+  border: var(--border-hairline);
+  background: var(--color-card-bg);
+  color: var(--color-muted);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.jots-page__composer-collapsed:hover {
+  border-color: var(--color-muted);
+}
+
+.jots-page__composer-expanded {
+  padding: 4px 16px 12px;
+}
+
+.jots-page__composer-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 4px;
+}
+
+/* A loose Pinterest/Keep-style column layout — each card keeps its own
+   natural height (unlike the fixed-aspect entity-card-grid used elsewhere)
+   since jot content varies wildly: a line of text, a checklist, a photo. */
+.jots-page__grid {
+  column-count: 1;
+  column-gap: 12px;
+}
+
+@media (min-width: 640px) {
+  .jots-page__grid {
+    column-count: 2;
+  }
+}
+
+@media (min-width: 960px) {
+  .jots-page__grid {
+    column-count: 3;
+  }
+}
+
+@media (min-width: 1300px) {
+  .jots-page__grid {
+    column-count: 4;
+  }
+}
+
+.jot-card {
+  display: inline-block;
+  width: 100%;
+  break-inside: avoid;
+  margin-bottom: 12px;
+  /* Same post-it identity Notes already use elsewhere in the app (the
+     Pinned/Media grid's note cards) — reused here rather than invented,
+     since a jot is closer kin to a quick sticky note than to a folder or
+     task row. */
+  background: var(--color-postit);
+  border: 1px solid var(--color-postit-border);
+  border-radius: var(--radius-card);
+  box-shadow: 2px 3px 7px rgba(46, 42, 34, 0.16);
+  padding: 12px 14px;
+  cursor: pointer;
+}
+
+.jot-card:hover {
+  box-shadow: 3px 5px 12px rgba(46, 42, 34, 0.22);
+}
+
+.jot-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.jot-card__body {
+  font-size: 13px;
+  max-height: 260px;
+  overflow: hidden;
+}
+
+/* Cards are read-only previews — the editor toolbar doesn't exist here
+   (JotBody never renders NoteEditor's toolbar), just its ProseMirror
+   content styling, and clicks shouldn't show a text-editing caret. */
+.jot-card__note-editor .ProseMirror {
+  cursor: pointer;
+  padding: 0;
+}
+
+.jot-card__note-editor .note-attachment__bar {
+  display: none;
+}
+
+.jot-card__note-editor .note-attachment__image,
+.jot-card__note-editor .note-attachment__pdf {
+  pointer-events: none;
+}
+
+/* A card is a preview, not the full document — cap attachment heights to
+   something thumbnail-sized rather than the full-size 420px/480px used in
+   the actual editor, so one photo or PDF doesn't swallow the whole card. */
+.jot-card__note-editor .note-attachment__image {
+  max-height: 160px;
+}
+
+.jot-card__note-editor .note-attachment__pdf {
+  height: 140px;
+}
+
+/* ---- Link preview node (Tiptap) ---- */
+
+.link-preview-node {
+  position: relative;
+  margin: 6px 0;
+}
+
+.link-preview-node__card {
+  display: flex;
+  gap: 10px;
+  padding: 8px;
+  text-decoration: none;
+  color: var(--color-ink);
+  overflow: hidden;
+}
+
+.link-preview-node__card:hover {
+  border-color: var(--color-muted);
+}
+
+.link-preview-node__image {
+  flex-shrink: 0;
+  width: 64px;
+  height: 64px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--color-sidebar);
+}
+
+.link-preview-node__image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.link-preview-node__body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+}
+
+.link-preview-node__title {
+  font-size: 13px;
+  font-weight: var(--weight-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.link-preview-node__domain {
+  font-size: 11px;
+  color: var(--color-muted);
+}
+
+.link-preview-node__remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: var(--border-hairline);
+  background: var(--color-paper);
+  color: var(--color-muted);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+
+.link-preview-node:hover .link-preview-node__remove {
+  display: flex;
+}
+
+/* ---- Jot editing panel (slide-over, same treatment as the Task panel) ---- */
+
+.jot-panel {
+  width: min(560px, 100%);
+}
+
+@media (max-width: 640px) {
+  .jots-page__grid {
+    column-count: 1;
+  }
+}
