@@ -495,6 +495,34 @@ export function NoteEditor({
     onCreate: ({ editor }) => ensureTrailingParagraph(editor),
     onSelectionUpdate: () => forceRerender((n) => n + 1),
     onTransaction: () => forceRerender((n) => n + 1),
+    editorProps: {
+      // Pasting a copied screenshot/image (or any file a site lets you
+      // copy) inserts it inline immediately, same as clicking "Insert
+      // image" — no extra step. Falls through to Tiptap's normal paste
+      // handling (rich text, plain text, autolinking) whenever the
+      // clipboard has no files.
+      handlePaste: (view, event) => {
+        const files = Array.from(event.clipboardData?.files ?? []);
+        if (files.length === 0) return false;
+        event.preventDefault();
+        void handleFilesAt(files, view.state.selection.to);
+        return true;
+      },
+      // Dragging a file (image, PDF, document) from the desktop or another
+      // window in and dropping it inserts it at the drop point. `moved`
+      // means this is Tiptap's own internal drag-to-reorder, which should
+      // fall through to its default handling untouched.
+      handleDrop: (view, event, _slice, moved) => {
+        if (moved) return false;
+        const files = Array.from(event.dataTransfer?.files ?? []);
+        if (files.length === 0) return false;
+        event.preventDefault();
+        const coords = view.posAtCoords({ left: event.clientX, top: event.clientY });
+        const pos = coords ? coords.pos : view.state.doc.content.size;
+        void handleFilesAt(files, pos);
+        return true;
+      },
+    },
   });
 
   const onSaveRef = useRef(onSave);
@@ -513,13 +541,15 @@ export function NoteEditor({
     };
   }, []);
 
-  async function handleAttachmentPick(file: File | undefined) {
+  async function handleAttachmentPick(file: File | undefined, atPos?: number) {
     if (!file || !editor) return;
     // Capture the cursor position before the async upload — by the time it
     // resolves, focus may have moved (the native file-picker dialog steals
     // it), and re-focusing afterward doesn't reliably restore the same
-    // selection. Inserting at this locked-in position sidesteps that.
-    const insertPos = editor.state.selection.to;
+    // selection. Inserting at this locked-in position sidesteps that. A
+    // caller with its own target spot (paste, drag-and-drop) passes atPos
+    // explicitly instead of relying on the current selection.
+    const insertPos = atPos ?? editor.state.selection.to;
     try {
       const uploaded = await api.uploadInline(file);
       if (editor.isDestroyed) return;
@@ -541,6 +571,23 @@ export function NoteEditor({
     } catch {
       // Upload failed (network/server) — silently no-op; the toolbar stays
       // usable and the user can retry.
+    }
+  }
+
+  /** Pasting (Cmd/Ctrl+V) or dragging a screenshot/image/PDF/file straight
+   * into the body inserts it the same way the toolbar's Insert
+   * image/Attach file buttons do, without that extra click. Multiple files
+   * at once (a multi-file paste or drop) are inserted one after another,
+   * each at the end of whatever the previous one left behind. */
+  async function handleFilesAt(files: File[], atPos: number) {
+    if (!editor || files.length === 0) return;
+    editor.chain().setTextSelection(atPos).run();
+    for (const file of files) {
+      // Sequential (not parallel) so each insert lands after the previous
+      // one rather than racing to the same spot — handleAttachmentPick
+      // reads the *current* selection when no explicit position is given,
+      // which by then reflects wherever the prior insert left the cursor.
+      await handleAttachmentPick(file);
     }
   }
 
