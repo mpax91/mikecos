@@ -15,6 +15,7 @@ import { EditableText } from '../components/EditableText';
 import { RenameModal } from '../components/RenameModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { LinkModal } from '../components/LinkModal';
+import { Toast } from '../components/Toast';
 import { useIsMobile } from '../hooks/useIsMobile';
 
 const isFileOrLink = (c: Entity) => c.type === 'file' || c.type === 'link';
@@ -36,6 +37,7 @@ export function ProjectDetail() {
   const [renaming, setRenaming] = useState<Entity | null>(null);
   const [deleting, setDeleting] = useState<Entity | null>(null);
   const [addingLink, setAddingLink] = useState(false);
+  const [toast, setToast] = useState<{ message: string; actionLabel?: string; onAction?: () => void } | null>(null);
   // Stack of task ids for the Todoist-style detail panel: [taskId] when a
   // top-level task/subtask is opened from the project list, with deeper
   // ids pushed as the panel itself drills into a subtask's own subtasks.
@@ -138,6 +140,23 @@ export function ProjectDetail() {
     setDetail((prev) => (prev ? { ...prev, children: removeChildEverywhere(prev.children, entity.id) } : prev));
     await api.deleteEntity(entity.id);
     setDeleting(null);
+  }
+
+  // Reverse of Notes' "Move to Project": pulls a project note back out to
+  // the standalone Notes section, with the same undo affordance.
+  async function moveToNotes(entity: Entity) {
+    const movedTitle = entity.title || 'Untitled Note';
+    setDetail((prev) => (prev ? { ...prev, children: removeChildEverywhere(prev.children, entity.id) } : prev));
+    await api.moveEntity(entity.id, null);
+    setToast({
+      message: `"${movedTitle}" moved to Notes.`,
+      actionLabel: 'Undo',
+      onAction: async () => {
+        if (!id) return;
+        await api.moveEntity(entity.id, id);
+        load();
+      },
+    });
   }
 
   function openTask(entity: Entity) {
@@ -317,6 +336,7 @@ export function ProjectDetail() {
         onRename={setRenaming}
         onPromote={onPromote}
         onDemote={onDemote}
+        onMoveToNotes={c.type === 'note' ? moveToNotes : undefined}
         compact={compact}
       />
     );
@@ -413,6 +433,15 @@ export function ProjectDetail() {
       )}
 
       {addingLink && <LinkModal onSave={addLink} onClose={() => setAddingLink(false)} />}
+
+      {toast && (
+        <Toast
+          message={toast.message}
+          actionLabel={toast.actionLabel}
+          onAction={toast.onAction}
+          onDismiss={() => setToast(null)}
+        />
+      )}
 
       {taskStack.length > 0 && (
         <TaskDetailModal

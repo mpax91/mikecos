@@ -134,6 +134,7 @@ export function EntityCard({
   onRename,
   onPromote,
   onDemote,
+  onMoveToNotes,
   compact = false,
 }: {
   entity: Entity;
@@ -142,6 +143,11 @@ export function EntityCard({
   onRename: (entity: Entity) => void;
   onPromote: (entity: Entity) => void;
   onDemote: (entity: Entity) => void;
+  /** Reverse of "Move to Project" — moves a note out of this project tree
+   * back to the standalone Notes section. Only offered on note cards, and
+   * only when the caller passes it (project view wires it in; other places
+   * that reuse EntityCard for files/links simply omit it). */
+  onMoveToNotes?: (entity: Entity) => void;
   /** Pinned mixes notes with files/links/folders/tasks in one row — a note's
    * usual big square would force every shorter card in that row to stretch
    * to match it. `compact` renders the note at the same rectangle size as a
@@ -172,6 +178,9 @@ export function EntityCard({
     { label: 'Rename', onClick: () => onRename(entity) },
     { label: 'Promote', onClick: () => onPromote(entity) },
     { label: 'Demote', onClick: () => onDemote(entity) },
+    ...(isNote && onMoveToNotes
+      ? [{ label: 'Move to Notes', onClick: () => onMoveToNotes(entity), separatorBefore: true }]
+      : []),
     { label: 'Delete', onClick: () => onDelete(entity), danger: true, separatorBefore: true },
   ];
 

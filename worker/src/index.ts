@@ -78,12 +78,34 @@ async function touchProjectAncestor(db: D1Database, entityId: string | null) {
   }
 }
 
+// Flattens a Tiptap JSON document to plain text — a mirror kept alongside the
+// rich `content` so a future search feature has clean, pre-extracted text to
+// index without a historical backfill. Not queried by anything yet.
+function extractPlainText(contentJson: string | null | undefined): string | null {
+  if (!contentJson) return null;
+  try {
+    const doc = JSON.parse(contentJson);
+    const parts: string[] = [];
+    const walk = (node: unknown) => {
+      if (!node || typeof node !== 'object') return;
+      const n = node as { text?: unknown; content?: unknown[] };
+      if (typeof n.text === 'string') parts.push(n.text);
+      if (Array.isArray(n.content)) n.content.forEach(walk);
+    };
+    walk(doc);
+    const text = parts.join(' ').replace(/\s+/g, ' ').trim();
+    return text || null;
+  } catch {
+    return null;
+  }
+}
+
 // ---- Projects (top-level) ----
 
 // GET /api/projects — list all top-level projects with a section breakdown
 app.get('/api/projects', async (c) => {
   const { results } = await c.env.DB.prepare(
-    `SELECT * FROM entities WHERE is_top_level = 1 ORDER BY pinned DESC, position ASC, created_at ASC`
+    `SELECT * FROM entities WHERE is_top_level = 1 AND type = 'project' ORDER BY pinned DESC, position ASC, created_at ASC`
   ).all<Entity>();
 
   const withCounts = await Promise.all(
@@ -121,6 +143,36 @@ app.post('/api/projects', async (c) => {
      VALUES (?, 'project', ?, ?, NULL, 1, 'active', 0, ?, ?, ?)`
   )
     .bind(id, body.title.trim(), body.description ?? '', ts, ts, ts)
+    .run();
+  const entity = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(id).first<Entity>();
+  return c.json(entity, 201);
+});
+
+// ---- Notes (standalone, top-level) ----
+
+// GET /api/notes — top-level notes not attached to any project, pinned first
+// then by last-modified (most recent first) — distinct from Projects, which
+// default-sorts by manual position so drag-reordering keeps working there.
+app.get('/api/notes', async (c) => {
+  const { results } = await c.env.DB.prepare(
+    `SELECT * FROM entities WHERE is_top_level = 1 AND type = 'note'
+     ORDER BY pinned DESC, COALESCE(last_touched, updated_at) DESC`
+  ).all<Entity>();
+  return c.json(results ?? []);
+});
+
+// POST /api/notes — create a new standalone note (type='note', parent_id=NULL)
+app.post('/api/notes', async (c) => {
+  const body = await c.req.json<{ title?: string; content?: string | null }>();
+  const id = uid();
+  const ts = now();
+  const title = body.title?.trim() || 'Untitled Note';
+  const searchText = extractPlainText(body.content ?? null);
+  await c.env.DB.prepare(
+    `INSERT INTO entities (id, type, title, content, parent_id, is_top_level, status, position, last_touched, created_at, updated_at, search_text)
+     VALUES (?, 'note', ?, ?, NULL, 1, NULL, 0, ?, ?, ?, ?)`
+  )
+    .bind(id, title, body.content ?? null, ts, ts, ts, searchText)
     .run();
   const entity = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(id).first<Entity>();
   return c.json(entity, 201);
@@ -219,11 +271,12 @@ app.post('/api/entities', async (c) => {
     (body.type === 'note' ? 'Untitled Note' : body.type === 'task' ? '' : body.type === 'link' ? 'New Link' : 'New Folder');
   const status = body.type === 'task' ? (body.status ?? 'open') : null;
 
+  const searchText = extractPlainText(body.content ?? null);
   await c.env.DB.prepare(
-    `INSERT INTO entities (id, type, title, content, parent_id, is_top_level, status, position, last_touched, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)`
+    `INSERT INTO entities (id, type, title, content, parent_id, is_top_level, status, position, last_touched, created_at, updated_at, search_text)
+     VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`
   )
-    .bind(id, body.type, title, body.content ?? null, body.parent_id, status, (maxPos?.m ?? -1) + 1, ts, ts, ts)
+    .bind(id, body.type, title, body.content ?? null, body.parent_id, status, (maxPos?.m ?? -1) + 1, ts, ts, ts, searchText)
     .run();
   await touchProjectAncestor(c.env.DB, body.parent_id);
 
@@ -253,6 +306,8 @@ app.patch('/api/entities/:id', async (c) => {
   if (body.content !== undefined) {
     fields.push('content = ?');
     values.push(body.content);
+    fields.push('search_text = ?');
+    values.push(extractPlainText(body.content));
     touchesContent = true;
   }
   if (body.status !== undefined) {
@@ -360,6 +415,51 @@ app.post('/api/entities/:id/pin', async (c) => {
   await c.env.DB.prepare('UPDATE entities SET pinned = ?, updated_at = ? WHERE id = ?')
     .bind(body.pinned ? 1 : 0, now(), id)
     .run();
+  const entity = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(id).first<Entity>();
+  return c.json(entity);
+});
+
+// POST /api/entities/:id/move — { parent_id: string | null }
+// Atomically reparents an entity: updates parent_id, recomputes is_top_level,
+// and appends position at the end of the destination's children. Used for
+// "Move to Project" (parent_id: a project/folder id) and its reverse,
+// "Move to Notes" (parent_id: null). Kept as its own endpoint — rather than
+// folded into the generic PATCH — so the three fields always move together
+// and both the old and new parent's "last modified" ancestors get touched.
+app.post('/api/entities/:id/move', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json<{ parent_id: string | null }>();
+
+  const existing = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(id).first<Entity>();
+  if (!existing) return c.json({ error: 'not found' }, 404);
+
+  if (body.parent_id) {
+    const parent = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(body.parent_id).first<Entity>();
+    if (!parent) return c.json({ error: 'parent not found' }, 404);
+  }
+
+  const isTopLevel = body.parent_id === null ? 1 : 0;
+  const maxPos = await c.env.DB.prepare(
+    body.parent_id === null
+      ? 'SELECT COALESCE(MAX(position), -1) as m FROM entities WHERE parent_id IS NULL AND type = ?'
+      : 'SELECT COALESCE(MAX(position), -1) as m FROM entities WHERE parent_id = ?'
+  )
+    .bind(body.parent_id === null ? existing.type : body.parent_id)
+    .first<{ m: number }>();
+
+  const ts = now();
+  await c.env.DB.prepare(
+    'UPDATE entities SET parent_id = ?, is_top_level = ?, position = ?, updated_at = ? WHERE id = ?'
+  )
+    .bind(body.parent_id, isTopLevel, (maxPos?.m ?? -1) + 1, ts, id)
+    .run();
+
+  // Touch both the origin project tree and the new location (walking up from
+  // the moved entity itself covers the destination — including the case
+  // where it's now standalone and IS the top-level ancestor).
+  await touchProjectAncestor(c.env.DB, existing.parent_id);
+  await touchProjectAncestor(c.env.DB, id);
+
   const entity = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(id).first<Entity>();
   return c.json(entity);
 });

@@ -113,4 +113,20 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ pinned }),
     }),
+
+  listNotes: () => request<Entity[]>('/api/notes'),
+
+  createNote: (title?: string, content?: string | null) =>
+    request<Entity>('/api/notes', {
+      method: 'POST',
+      body: JSON.stringify({ title, content }),
+    }),
+
+  /** Reparents an entity — used for "Move to Project" (parent_id: a
+   * project/folder id) and its reverse, "Move to Notes" (parent_id: null). */
+  moveEntity: (id: string, parent_id: string | null) =>
+    request<Entity>(`/api/entities/${id}/move`, {
+      method: 'POST',
+      body: JSON.stringify({ parent_id }),
+    }),
 };

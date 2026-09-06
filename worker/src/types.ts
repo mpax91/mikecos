@@ -15,6 +15,8 @@ export interface Entity {
   last_touched: string | null;
   created_at: string;
   updated_at: string;
+  search_text?: string | null; // plain-text mirror of `content`, for future search — not yet queried
+
   subtasks?: Entity[]; // attached in-memory for task children only, not a DB column
   media?: Entity[]; // attached in-memory for task children only (file/link attachments), not a DB column
 }

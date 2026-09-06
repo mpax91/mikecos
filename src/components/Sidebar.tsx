@@ -25,6 +25,13 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
           >
             Projects
           </NavLink>
+          <NavLink
+            to="/notes"
+            onClick={onClose}
+            className={({ isActive }) => `sidebar__nav-item title-case${isActive ? ' is-active' : ''}`}
+          >
+            Notes
+          </NavLink>
         </nav>
       </aside>
     </>
