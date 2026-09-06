@@ -42,7 +42,7 @@ export function ProjectCard({
       className={`card project-card${isPinned ? ' is-pinned' : ''}`}
       onClick={(e) => {
         if (e.metaKey || e.ctrlKey) {
-          openTab(`/projects/${project.id}`, { background: true });
+          openTab(`/projects/${project.id}`, { background: true, title: project.title || 'Untitled Project', kind: 'project' });
           return;
         }
         navigate(`/projects/${project.id}`);
@@ -50,7 +50,15 @@ export function ProjectCard({
       onContextMenu={(e) => {
         e.preventDefault();
         showContextMenu(e.clientX, e.clientY, [
-          { label: 'Open in New Tab', onClick: () => openTab(`/projects/${project.id}`, { background: true }) },
+          {
+            label: 'Open in New Tab',
+            onClick: () =>
+              openTab(`/projects/${project.id}`, {
+                background: true,
+                title: project.title || 'Untitled Project',
+                kind: 'project',
+              }),
+          },
         ]);
       }}
     >

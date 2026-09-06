@@ -159,7 +159,7 @@ export function NotesPage() {
                     className={`notes-page__row${n.id === id ? ' is-active' : ''}`}
                     onClick={(e) => {
                       if (e.metaKey || e.ctrlKey) {
-                        openTab(`/notes/${n.id}`, { background: true });
+                        openTab(`/notes/${n.id}`, { background: true, title: n.title || 'Untitled Note', kind: 'note' });
                         return;
                       }
                       navigate(`/notes/${n.id}`);
@@ -167,7 +167,11 @@ export function NotesPage() {
                     onContextMenu={(e) => {
                       e.preventDefault();
                       showContextMenu(e.clientX, e.clientY, [
-                        { label: 'Open in New Tab', onClick: () => openTab(`/notes/${n.id}`, { background: true }) },
+                        {
+                          label: 'Open in New Tab',
+                          onClick: () =>
+                            openTab(`/notes/${n.id}`, { background: true, title: n.title || 'Untitled Note', kind: 'note' }),
+                        },
                       ]);
                     }}
                   >

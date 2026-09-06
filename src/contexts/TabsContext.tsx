@@ -27,13 +27,13 @@ function inferTabMeta(path: string): { kind: TabKind; title: string } {
   return { kind: 'projects-list', title: 'Projects' };
 }
 
-function makeTab(path: string): Tab {
+function makeTab(path: string, hint?: { title?: string; kind?: TabKind }): Tab {
   const meta = inferTabMeta(path);
   return {
     id: crypto.randomUUID(),
     path,
-    title: meta.title,
-    kind: meta.kind,
+    title: hint?.title || meta.title,
+    kind: hint?.kind ?? meta.kind,
     pinned: false,
   };
 }
@@ -64,7 +64,7 @@ interface TabsContextValue {
   activeTabId: string;
   switchTab: (id: string) => void;
   closeTab: (id: string) => void;
-  openTab: (path: string, opts?: { background?: boolean }) => void;
+  openTab: (path: string, opts?: { background?: boolean; title?: string; kind?: TabKind }) => void;
   pinTab: (id: string) => void;
   unpinTab: (id: string) => void;
   reportActiveTabMeta: (title: string, kind?: TabKind) => void;
@@ -136,8 +136,12 @@ export function TabsProvider({ children }: { children: React.ReactNode }) {
   );
 
   const openTab = useCallback(
-    (path: string, opts?: { background?: boolean }) => {
-      const tab = makeTab(path);
+    (path: string, opts?: { background?: boolean; title?: string; kind?: TabKind }) => {
+      // Callers that already know what they're opening (a project card, a
+      // note row) pass their known title/kind so the tab shows "Job Search"
+      // immediately instead of a generic "Project" placeholder that only
+      // resolves once the tab is actually visited and its data loads.
+      const tab = makeTab(path, { title: opts?.title, kind: opts?.kind });
       // A new tab always lands at the very end — to the right of every other
       // tab, browser-style — never in front of or between existing ones.
       // Pinned tabs still end up first overall since pinTab/unpinTab keep
