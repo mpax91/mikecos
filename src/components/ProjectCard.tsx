@@ -69,7 +69,7 @@ export function ProjectCard({
       <div style={{ minWidth: 0, flex: 1 }}>
         <p className="project-card__title">
           <span className="project-card__title-text">{project.title}</span>
-          <span className="project-card__last-modified" title={new Date(lastModifiedIso).toLocaleString()}>
+          <span className="last-modified-badge" title={new Date(lastModifiedIso).toLocaleString()}>
             {formatRelativeTime(lastModifiedIso)}
           </span>
         </p>

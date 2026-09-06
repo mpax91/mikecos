@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Entity, FileMeta, LinkMeta, TaskMeta } from '../api/types';
 import { KebabMenu } from './KebabMenu';
 import { api, normalizeUrl } from '../api/client';
+import { formatRelativeTime } from '../utils/formatRelativeTime';
 
 function parseFileMeta(entity: Entity): FileMeta | null {
   if (!entity.content) return null;
@@ -160,6 +161,13 @@ export function TaskRow({
           </span>
         )}
         {media.length > 0 && <TaskMediaIndicator media={media} />}
+        {/* Subtask rows skip this (and Promote/Demote) to stay lean — same
+            "less chrome when nested" pattern already used for them. */}
+        {!isSubtask && (
+          <span className="last-modified-badge" title={new Date(entity.updated_at).toLocaleString()}>
+            {formatRelativeTime(entity.updated_at)}
+          </span>
+        )}
         {isPinned && <span className="task-row__pin" title="Pinned">📌</span>}
         <KebabMenu
           className="task-row__kebab"

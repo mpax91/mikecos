@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import type { Entity, FileMeta, LinkMeta } from '../api/types';
 import { KebabMenu } from './KebabMenu';
 import { api, normalizeUrl } from '../api/client';
+import { formatRelativeTime } from '../utils/formatRelativeTime';
 
 function parseFileMeta(entity: Entity): FileMeta | null {
   if (!entity.content) return null;
@@ -248,6 +249,12 @@ export function EntityCard({
       {isNote && notePreview && !compact && (
         <div className="entity-card__snippet entity-card__snippet--note">{notePreview}</div>
       )}
+
+      <div className="entity-card__meta">
+        <span className="last-modified-badge" title={new Date(entity.updated_at).toLocaleString()}>
+          {formatRelativeTime(entity.updated_at)}
+        </span>
+      </div>
     </div>
   );
 }

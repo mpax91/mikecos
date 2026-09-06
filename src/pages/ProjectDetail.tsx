@@ -390,7 +390,10 @@ export function ProjectDetail() {
       )}
 
       {entity.is_top_level && (
-        <Section title="Pinned" count={pinned.length} defaultExpanded={!isMobile}>
+        // Pinned is the one section that stays expanded on mobile too — these
+        // are the things most worth seeing at a glance, unlike Folders/Notes/
+        // Media which default collapsed there to keep the page short.
+        <Section title="Pinned" count={pinned.length} defaultExpanded={true}>
           {pinned.length === 0 ? (
             <div className="empty-state empty-state--section">Pin anything from below to keep it here for quick reference.</div>
           ) : (
@@ -420,7 +423,8 @@ export function ProjectDetail() {
         </div>
       </Section>
 
-      <Section title="Tasks" count={openTasks.length} defaultExpanded={!isMobile}>
+      {/* Tasks default expanded on mobile too, same reasoning as Pinned. */}
+      <Section title="Tasks" count={openTasks.length} defaultExpanded={true}>
         <div className="task-list">
           {openTasks.map((c) => renderTile(c))}
           <NewTaskRow onCreate={createTask} />

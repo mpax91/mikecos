@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import type { Entity } from '../api/types';
 import { KebabMenu } from './KebabMenu';
+import { formatRelativeTime } from '../utils/formatRelativeTime';
 
 /** Plain icon + label, no card chrome — folders read as folders, not tiles. */
 export function FolderTile({
@@ -41,6 +42,9 @@ export function FolderTile({
       </div>
       <div className="folder-tile__icon">📁</div>
       <div className="folder-tile__title">{entity.title || 'New Folder'}</div>
+      <span className="last-modified-badge folder-tile__meta" title={new Date(entity.updated_at).toLocaleString()}>
+        {formatRelativeTime(entity.updated_at)}
+      </span>
     </div>
   );
 }

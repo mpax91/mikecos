@@ -260,6 +260,10 @@ a {
   background: rgba(47, 74, 60, 0.08);
 }
 
+/* Mobile-only enlarged treatment lives in the phone-width media query below —
+   the desktop-shape rule above stays as a (currently unused, display:none)
+   fallback base. */
+
 .main__content {
   flex: 1;
   overflow-y: auto;
@@ -298,8 +302,31 @@ a {
     z-index: 40;
   }
 
+  /* A little taller than the desktop tab strip so the bigger hamburger
+     button below has comfortable breathing room as a real touch target. */
+  .tabbar {
+    height: 52px;
+    flex: 0 0 52px;
+  }
+
+  /* Bigger and more apparent than the plain icon-only desktop treatment —
+     same bordered-chip chrome as the breadcrumb back button (.breadcrumb__back)
+     elsewhere in the app, so it reads as "a button" rather than a faint glyph. */
   .tabbar__menu-btn {
     display: inline-flex;
+    width: 40px;
+    height: 40px;
+    font-size: 20px;
+    border-radius: 9px;
+    border: var(--border-hairline);
+    background: var(--color-card-bg);
+  }
+
+  .tabbar__menu-btn:hover,
+  .tabbar__menu-btn:active {
+    background: var(--color-accent);
+    color: var(--color-accent-text);
+    border-color: var(--color-accent);
   }
 
   /* Tabs are a desktop-only feature for now — mobile keeps its original
@@ -1132,8 +1159,6 @@ a {
 .entity-card__meta {
   margin-top: auto;
   padding-top: 8px;
-  font-size: 11px;
-  color: var(--color-muted);
 }
 
 .entity-card__snippet {
@@ -1162,6 +1187,16 @@ a {
 .entity-card--media-link .entity-card__title,
 .entity-card--media-image .entity-card__title,
 .entity-card--media-generic .entity-card__title {
+  text-align: center;
+}
+
+/* Media cards center everything else, so their last-modified badge centers
+   too instead of sitting flush left under a centered title/icon. */
+.entity-card--media-pdf .entity-card__meta,
+.entity-card--media-doc .entity-card__meta,
+.entity-card--media-link .entity-card__meta,
+.entity-card--media-image .entity-card__meta,
+.entity-card--media-generic .entity-card__meta {
   text-align: center;
 }
 
@@ -1215,6 +1250,10 @@ a {
 
 .folder-tile.is-pinned .folder-tile__title {
   color: var(--color-accent-secondary);
+}
+
+.folder-tile__meta {
+  margin-top: 4px;
 }
 
 .folder-tile--ghost {
@@ -1664,7 +1703,10 @@ a {
   min-width: 0;
 }
 
-.project-card__last-modified {
+/* Shared "last modified" pill — used on project cards, folder tiles, entity
+   cards (notes/files/links), task rows, and the standalone Notes list, so
+   recency always reads the same way anywhere it appears. */
+.last-modified-badge {
   font-size: 11px;
   font-weight: var(--weight-regular);
   color: var(--color-muted);
@@ -2163,8 +2205,15 @@ a {
   color: #fff;
 }
 
-.notes-page__row.is-active .notes-page__row-meta {
+.notes-page__row.is-active .notes-page__row-snippet {
   color: rgba(255, 255, 255, 0.75);
+}
+
+/* Same contrast fix as the kebab trigger below — the badge's default muted
+   text on a light chip is unreadable against the active row's orange. */
+.notes-page__row.is-active .last-modified-badge {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
 }
 
 /* The kebab trigger's default muted-grey color is nearly invisible against
@@ -2189,24 +2238,30 @@ a {
   min-width: 0;
 }
 
+/* Title + last-modified badge share a row, same layout as .project-card__title
+   — the badge is what used to be plain muted text sitting flush against the
+   snippet below it, easy to mistake for part of the preview. Now it reads as
+   the same "ribbon" chip Projects already uses everywhere else. */
+.notes-page__row-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
 .notes-page__row-title {
   font-weight: var(--weight-medium);
   font-size: 14px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.notes-page__row-meta {
-  display: flex;
-  gap: 8px;
-  font-size: 12px;
-  color: var(--color-muted);
-  margin-top: 2px;
-  overflow: hidden;
+  min-width: 0;
+  flex: 1;
 }
 
 .notes-page__row-snippet {
+  font-size: 12px;
+  color: var(--color-muted);
+  margin-top: 2px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

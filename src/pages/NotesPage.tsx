@@ -181,11 +181,13 @@ export function NotesPage() {
                       </span>
                     )}
                     <div className="notes-page__row-body">
-                      <div className="notes-page__row-title">{n.title || 'Untitled Note'}</div>
-                      <div className="notes-page__row-meta">
-                        <span>{formatRelativeTime(n.last_touched ?? n.updated_at)}</span>
-                        {n.content && <span className="notes-page__row-snippet">{extractSnippet(n.content, 60)}</span>}
+                      <div className="notes-page__row-title-row">
+                        <span className="notes-page__row-title">{n.title || 'Untitled Note'}</span>
+                        <span className="last-modified-badge" title={new Date(n.last_touched ?? n.updated_at).toLocaleString()}>
+                          {formatRelativeTime(n.last_touched ?? n.updated_at)}
+                        </span>
                       </div>
+                      {n.content && <div className="notes-page__row-snippet">{extractSnippet(n.content, 60)}</div>}
                     </div>
                     <KebabMenu
                       className="notes-page__row-kebab"
