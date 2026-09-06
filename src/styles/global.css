@@ -2003,15 +2003,12 @@ a {
 
 .notes-page {
   display: flex;
-  height: calc(100vh - 168px);
+  height: calc(100vh - 200px);
   min-height: 320px;
   border: var(--border-hairline);
   border-radius: var(--radius-card);
   background: var(--color-card-bg);
   overflow: hidden;
-  /* Break out of .main__content's own padding so the split view reaches
-     the edges of the available space instead of floating in a small box. */
-  margin: -8px -16px -16px;
 }
 
 .notes-page__sidebar {
@@ -2027,24 +2024,6 @@ a {
   width: 100%;
   flex: 1;
   border-right: none;
-}
-
-.notes-page__sidebar-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 16px 16px 12px;
-  position: sticky;
-  top: 0;
-  background: var(--color-card-bg);
-  border-bottom: var(--border-hairline);
-  z-index: 1;
-}
-
-.notes-page__heading {
-  font-size: 20px;
-  margin: 0;
 }
 
 .notes-page__list {
@@ -2180,11 +2159,7 @@ a {
 
 @media (max-width: 640px) {
   .notes-page {
-    height: calc(100vh - 120px);
-    margin: -8px -8px -8px;
-    border-radius: 0;
-    border-left: none;
-    border-right: none;
+    height: calc(100vh - 160px);
   }
 
   .notes-page__detail {

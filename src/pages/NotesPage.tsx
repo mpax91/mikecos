@@ -125,93 +125,91 @@ export function NotesPage() {
   const showDetail = !isMobile || !!selected;
 
   return (
-    <div className={`notes-page${isMobile ? ' notes-page--mobile' : ''}`}>
+    <div>
       {showList && (
-        <div className="notes-page__sidebar">
-          <div className="notes-page__sidebar-header">
-            <h1 className="heading-serif notes-page__heading">Notes</h1>
-            <button className="btn" onClick={createNote}>
-              + New Note
-            </button>
-          </div>
-          {notes.length === 0 ? (
-            <div className="empty-state empty-state--section">
-              No notes yet — create one to jot something down without attaching it to a project.
-            </div>
-          ) : (
-            <div className="notes-page__list">
-              {notes.map((n) => (
-                <div
-                  key={n.id}
-                  className={`notes-page__row${n.id === id ? ' is-active' : ''}`}
-                  onClick={() => navigate(`/notes/${n.id}`)}
-                >
-                  {n.pinned === 1 && (
-                    <span className="notes-page__row-pin" title="Pinned">
-                      📌
-                    </span>
-                  )}
-                  <div className="notes-page__row-body">
-                    <div className="notes-page__row-title">{n.title || 'Untitled Note'}</div>
-                    <div className="notes-page__row-meta">
-                      <span>{formatRelativeTime(n.last_touched ?? n.updated_at)}</span>
-                      {n.content && <span className="notes-page__row-snippet">{extractSnippet(n.content, 60)}</span>}
+        <div className="toolbar-row">
+          <h1 className="heading-serif" style={{ fontSize: 24, margin: 0 }}>
+            Notes
+          </h1>
+          <button className="btn" onClick={createNote}>
+            + New Note
+          </button>
+        </div>
+      )}
+      <div className={`notes-page${isMobile ? ' notes-page--mobile' : ''}`}>
+        {showList && (
+          <div className="notes-page__sidebar">
+            {notes.length === 0 ? (
+              <div className="empty-state empty-state--section">No notes yet — create your first one.</div>
+            ) : (
+              <div className="notes-page__list">
+                {notes.map((n) => (
+                  <div
+                    key={n.id}
+                    className={`notes-page__row${n.id === id ? ' is-active' : ''}`}
+                    onClick={() => navigate(`/notes/${n.id}`)}
+                  >
+                    {n.pinned === 1 && (
+                      <span className="notes-page__row-pin" title="Pinned">
+                        📌
+                      </span>
+                    )}
+                    <div className="notes-page__row-body">
+                      <div className="notes-page__row-title">{n.title || 'Untitled Note'}</div>
+                      <div className="notes-page__row-meta">
+                        <span>{formatRelativeTime(n.last_touched ?? n.updated_at)}</span>
+                        {n.content && <span className="notes-page__row-snippet">{extractSnippet(n.content, 60)}</span>}
+                      </div>
                     </div>
+                    <KebabMenu
+                      className="notes-page__row-kebab"
+                      items={[
+                        { label: n.pinned === 1 ? 'Unpin' : 'Pin to top', onClick: () => togglePin(n) },
+                        { label: 'Delete', onClick: () => setDeleting(n), danger: true, separatorBefore: true },
+                      ]}
+                    />
                   </div>
-                  <KebabMenu
-                    className="notes-page__row-kebab"
-                    items={[
-                      { label: n.pinned === 1 ? 'Unpin' : 'Pin to top', onClick: () => togglePin(n) },
-                      { label: 'Delete', onClick: () => setDeleting(n), danger: true, separatorBefore: true },
-                    ]}
-                  />
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {showDetail && selected && (
-        <div className="notes-page__detail">
-          {isMobile && (
-            <button type="button" className="notes-page__back" onClick={() => navigate('/notes')}>
-              ‹ Notes
-            </button>
-          )}
-          <div className="notes-page__detail-header">
-            <input
-              ref={titleInputRef}
-              className="notes-page__title-input"
-              value={noteTitle}
-              placeholder="Untitled Note"
-              onChange={(e) => handleTitleChange(e.target.value)}
-              onFocus={(e) => e.target.select()}
-            />
-            <button
-              type="button"
-              className="notes-page__move-btn"
-              onClick={() => setMoving(true)}
-              title="Move to Project"
-            >
-              📁 <span>Move to Project</span>
-            </button>
-            <KebabMenu
-              items={[
-                { label: selected.pinned === 1 ? 'Unpin' : 'Pin to top', onClick: () => togglePin(selected) },
-                { label: 'Delete', onClick: () => setDeleting(selected), danger: true, separatorBefore: true },
-              ]}
-            />
+                ))}
+              </div>
+            )}
           </div>
-          <NoteEditor key={selected.id} content={selected.content} onSave={handleContentSave} />
-        </div>
-      )}
+        )}
 
-      {showDetail && !selected && (
-        <div className="notes-page__detail notes-page__detail--empty">
-          <div className="empty-state">Select a note, or create a new one.</div>
-        </div>
-      )}
+        {showDetail && selected && (
+          <div className="notes-page__detail">
+            {isMobile && (
+              <button type="button" className="notes-page__back" onClick={() => navigate('/notes')}>
+                ‹ Notes
+              </button>
+            )}
+            <div className="notes-page__detail-header">
+              <input
+                ref={titleInputRef}
+                className="notes-page__title-input"
+                value={noteTitle}
+                placeholder="Untitled Note"
+                onChange={(e) => handleTitleChange(e.target.value)}
+                onFocus={(e) => e.target.select()}
+              />
+              <button
+                type="button"
+                className="notes-page__move-btn"
+                onClick={() => setMoving(true)}
+                title="Move to Project"
+              >
+                📁 <span>Move to Project</span>
+              </button>
+            </div>
+            <NoteEditor key={selected.id} content={selected.content} onSave={handleContentSave} />
+          </div>
+        )}
+
+        {showDetail && !selected && (
+          <div className="notes-page__detail notes-page__detail--empty">
+            <div className="empty-state">Select a note, or create a new one.</div>
+          </div>
+        )}
+      </div>
 
       {deleting && (
         <ConfirmModal
