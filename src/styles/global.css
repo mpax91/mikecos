@@ -689,6 +689,28 @@ a {
   background: var(--color-border);
 }
 
+/* On phone widths, tighten the toolbar just enough that its collapsed
+   button set (the "core" row shown before tapping "More formatting")
+   reliably fits on one line even inside the narrower Notes split view,
+   which nests extra padding (.notes-page border + .notes-page__detail)
+   beyond what the in-project note editor sits inside. */
+@media (max-width: 640px) {
+  .editor-toolbar {
+    gap: 1px;
+    padding: 4px;
+  }
+
+  .editor-toolbar__btn {
+    min-width: 25px;
+    height: 25px;
+    padding: 0 4px;
+  }
+
+  .editor-toolbar__divider {
+    margin: 3px 2px;
+  }
+}
+
 .editor-toolbar__dropdown-wrap {
   position: relative;
 }
@@ -2120,15 +2142,14 @@ a {
   justify-content: center;
 }
 
-.notes-page__back {
+/* Reuses .breadcrumb / .breadcrumb__back / .breadcrumb__current (the same
+   back-button chrome Projects uses) instead of its own plain text link, so
+   the two feel like the same control. Just needs a touch less bottom
+   margin than the default breadcrumb spacing, since it sits inside the
+   already-padded detail pane. */
+.notes-page__back-row {
+  margin-bottom: 12px;
   align-self: flex-start;
-  border: none;
-  background: transparent;
-  color: var(--color-accent);
-  font-size: 14px;
-  font-weight: var(--weight-medium);
-  padding: 4px 0 12px;
-  cursor: pointer;
 }
 
 .notes-page__detail-header {

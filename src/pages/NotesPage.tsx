@@ -182,9 +182,18 @@ export function NotesPage() {
         {showDetail && selected && (
           <div className="notes-page__detail">
             {isMobile && (
-              <button type="button" className="notes-page__back" onClick={() => navigate('/notes')}>
-                ‹ Notes
-              </button>
+              <div className="breadcrumb notes-page__back-row">
+                <button
+                  type="button"
+                  className="breadcrumb__back"
+                  onClick={() => navigate('/notes')}
+                  title="Back"
+                  aria-label="Back"
+                >
+                  ‹
+                </button>
+                <span className="breadcrumb__current">Notes</span>
+              </div>
             )}
             <div className="notes-page__detail-header">
               <input
