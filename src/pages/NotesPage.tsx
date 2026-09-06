@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
 import type { Entity } from '../api/types';
 import { NoteEditor } from '../components/NoteEditor';
@@ -216,7 +216,13 @@ export function NotesPage() {
                 >
                   ‹
                 </button>
-                <span className="breadcrumb__current">Notes</span>
+                {/* A real link now, matching how "Projects" behaves in the
+                    project breadcrumb — previously this was a plain
+                    non-clickable span, the one visible inconsistency between
+                    the two back-button treatments. */}
+                <Link to="/notes" className="breadcrumb__link">
+                  Notes
+                </Link>
               </div>
             )}
             <div className="notes-page__detail-header">

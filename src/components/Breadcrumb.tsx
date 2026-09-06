@@ -3,13 +3,19 @@ import type { Entity } from '../api/types';
 
 export function Breadcrumb({ trail, current }: { trail: Entity[]; current: Entity }) {
   const navigate = useNavigate();
+  // A fixed "go to parent" destination computed from the actual hierarchy,
+  // not browser history — history-based back (navigate(-1)) can land
+  // somewhere unrelated once tabs are involved (switching tabs, restoring
+  // them on reload, etc. all push their own history entries), whereas this
+  // is always exactly one level up regardless of how you arrived here.
+  const parentPath = trail.length > 0 ? `/projects/${trail[trail.length - 1].id}` : '/projects';
 
   return (
     <div className="breadcrumb">
       <button
         type="button"
         className="breadcrumb__back"
-        onClick={() => navigate(-1)}
+        onClick={() => navigate(parentPath)}
         title="Back"
         aria-label="Back"
       >
