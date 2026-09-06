@@ -99,7 +99,7 @@ export function NotesPage() {
     navigate('/notes');
   }
 
-  async function moveToProject(projectId: string) {
+  async function moveToProject(projectId: string, previousLastTouched: string | null) {
     if (!selected) return;
     const movedId = selected.id;
     const movedTitle = selected.title || 'Untitled Note';
@@ -112,6 +112,10 @@ export function NotesPage() {
       actionLabel: 'Undo',
       onAction: async () => {
         await api.moveEntity(movedId, null);
+        // Restore the project's own "last modified" stamp to what it was
+        // before this move — otherwise a move-then-immediate-undo still
+        // leaves the project looking freshly touched.
+        await api.updateEntity(projectId, { last_touched: previousLastTouched });
         load();
         navigate(`/notes/${movedId}`);
       },

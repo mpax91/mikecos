@@ -92,7 +92,7 @@ export const api = {
 
   updateEntity: (
     id: string,
-    patch: Partial<Pick<Entity, 'title' | 'content' | 'status' | 'parent_id' | 'position' | 'pinned'>>
+    patch: Partial<Pick<Entity, 'title' | 'content' | 'status' | 'parent_id' | 'position' | 'pinned' | 'last_touched'>>
   ) =>
     request<Entity>(`/api/entities/${id}`, {
       method: 'PATCH',

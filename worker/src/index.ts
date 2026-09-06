@@ -288,7 +288,7 @@ app.post('/api/entities', async (c) => {
 app.patch('/api/entities/:id', async (c) => {
   const id = c.req.param('id');
   const body = await c.req.json<
-    Partial<Pick<Entity, 'title' | 'content' | 'status' | 'parent_id' | 'position' | 'pinned'>>
+    Partial<Pick<Entity, 'title' | 'content' | 'status' | 'parent_id' | 'position' | 'pinned' | 'last_touched'>>
   >();
 
   const existing = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(id).first<Entity>();
@@ -327,11 +327,29 @@ app.patch('/api/entities/:id', async (c) => {
     fields.push('pinned = ?');
     values.push(body.pinned);
   }
+  // Explicit last_touched override — used only to restore a project's own
+  // "last modified" stamp after an Undo (e.g. moving a note in, then right
+  // back out, shouldn't leave the project looking touched). Takes priority
+  // over the auto-touch below, and never triggers touchProjectAncestor
+  // itself since it doesn't set touchesContent.
+  let explicitTouch = false;
+  if (body.last_touched !== undefined) {
+    fields.push('last_touched = ?');
+    values.push(body.last_touched);
+    explicitTouch = true;
+  }
 
+  // A pure last_touched restore (nothing else in the patch) is invisible
+  // bookkeeping, not a real edit — skip bumping updated_at for it too, or a
+  // project with no last_touched of its own yet (falls back to updated_at
+  // for display) would still appear freshly modified after the "restore".
+  const isPureTouchRestore = explicitTouch && fields.length === 1;
   const ts = now();
-  fields.push('updated_at = ?');
-  values.push(ts);
-  if (touchesContent) {
+  if (!isPureTouchRestore) {
+    fields.push('updated_at = ?');
+    values.push(ts);
+  }
+  if (touchesContent && !explicitTouch) {
     fields.push('last_touched = ?');
     values.push(ts);
   }

@@ -145,7 +145,13 @@ export function ProjectDetail() {
   // Reverse of Notes' "Move to Project": pulls a project note back out to
   // the standalone Notes section, with the same undo affordance.
   async function moveToNotes(entity: Entity) {
+    if (!detail) return;
     const movedTitle = entity.title || 'Untitled Note';
+    // The entity this page is showing may itself be a folder nested inside
+    // the project, not the project — walk up via the breadcrumb to find the
+    // actual top-level project whose "last modified" badge is affected.
+    const projectAncestor = detail.entity.is_top_level ? detail.entity : detail.breadcrumb[0];
+    const previousLastTouched = projectAncestor?.last_touched ?? null;
     setDetail((prev) => (prev ? { ...prev, children: removeChildEverywhere(prev.children, entity.id) } : prev));
     await api.moveEntity(entity.id, null);
     setToast({
@@ -154,6 +160,10 @@ export function ProjectDetail() {
       onAction: async () => {
         if (!id) return;
         await api.moveEntity(entity.id, id);
+        // Restore the project's "last modified" stamp to what it was before
+        // this move — otherwise a move-then-immediate-undo still leaves the
+        // project looking freshly touched.
+        if (projectAncestor) await api.updateEntity(projectAncestor.id, { last_touched: previousLastTouched });
         load();
       },
     });

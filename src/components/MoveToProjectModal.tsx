@@ -10,7 +10,11 @@ export function MoveToProjectModal({
   onMove,
   onClose,
 }: {
-  onMove: (projectId: string) => void;
+  /** `previousLastTouched` is the target project's own last_touched at the
+   * moment it was picked — the caller hangs onto it so that if the move is
+   * immediately undone, the project's "last modified" badge can be restored
+   * to exactly what it was, instead of showing a false "just modified". */
+  onMove: (projectId: string, previousLastTouched: string | null) => void;
   onClose: () => void;
 }) {
   const [projects, setProjects] = useState<ProjectListItem[] | null>(null);
@@ -27,7 +31,7 @@ export function MoveToProjectModal({
     setCreating(true);
     try {
       const project = await api.createProject(title, '');
-      onMove(project.id);
+      onMove(project.id, project.last_touched);
     } finally {
       setCreating(false);
     }
@@ -42,7 +46,12 @@ export function MoveToProjectModal({
           <div className="empty-state empty-state--section">No projects yet — create one below.</div>
         ) : (
           projects.map((p) => (
-            <button key={p.id} type="button" className="move-to-project__item" onClick={() => onMove(p.id)}>
+            <button
+              key={p.id}
+              type="button"
+              className="move-to-project__item"
+              onClick={() => onMove(p.id, p.last_touched)}
+            >
               {p.title}
             </button>
           ))
