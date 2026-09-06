@@ -730,7 +730,11 @@ export function NoteEditor({
           <>
             {boldBtn}
             {italicBtn}
+            {underlineBtn}
+            {strikeBtn}
             <div className="editor-toolbar__divider" />
+            {bulletBtn}
+            {orderedBtn}
             {checklistBtn}
             <div className="editor-toolbar__divider" />
             {linkBtn}
@@ -738,12 +742,6 @@ export function NoteEditor({
             {showMoreToggle && moreToggleBtn}
             {showExtras && (
               <>
-                {underlineBtn}
-                {strikeBtn}
-                <div className="editor-toolbar__divider" />
-                {bulletBtn}
-                {orderedBtn}
-                <div className="editor-toolbar__divider" />
                 {linkPreviewBtn}
                 <div className="editor-toolbar__divider" />
                 <BlockStyleDropdown editor={editor} />

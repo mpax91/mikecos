@@ -2536,8 +2536,14 @@ a {
   border: 1px solid var(--color-postit-border);
   border-radius: var(--radius-card);
   box-shadow: 2px 3px 7px rgba(46, 42, 34, 0.16);
-  padding: 12px 14px;
+  padding: 14px 16px;
   cursor: pointer;
+  /* A one-line jot with the sizing fully stripped away read as a flat,
+     oddly-proportioned strip rather than a card — a bit of guaranteed body
+     height keeps even the shortest jot looking like a proper Keep-style
+     note, not a banner. */
+  min-height: 72px;
+  box-sizing: border-box;
 }
 
 .jot-card:hover {
@@ -2562,7 +2568,7 @@ a {
 }
 
 .jot-card__body {
-  font-size: 13px;
+  font-size: 14px;
   max-height: 220px;
   overflow: hidden;
 }
