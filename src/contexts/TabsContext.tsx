@@ -138,11 +138,11 @@ export function TabsProvider({ children }: { children: React.ReactNode }) {
   const openTab = useCallback(
     (path: string, opts?: { background?: boolean }) => {
       const tab = makeTab(path);
-      // Pinned tabs stay first — a newly opened tab always lands right after
-      // the last pinned tab, at the end of the unpinned run (browser-style).
-      const lastPinnedIdx = state.tabs.reduce((acc, t, i) => (t.pinned ? i : acc), -1);
-      const tabs = state.tabs.slice();
-      tabs.splice(lastPinnedIdx + 1, 0, tab);
+      // A new tab always lands at the very end — to the right of every other
+      // tab, browser-style — never in front of or between existing ones.
+      // Pinned tabs still end up first overall since pinTab/unpinTab keep
+      // them sorted to the front of the array independently of this.
+      const tabs = [...state.tabs, tab];
       const next: TabsState = { tabs, activeTabId: opts?.background ? state.activeTabId : tab.id };
       setState(next);
       persist(next, true);
