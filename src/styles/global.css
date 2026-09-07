@@ -2792,6 +2792,23 @@ a {
   border-radius: 8px;
 }
 
+/* A day viewed from the Week grid should always be one click from getting
+   back to it — this sits above the heading like a breadcrumb rather than
+   living inside the Day/Week toggle, since it's always the same target
+   (the week containing whichever date is being viewed) regardless of how
+   you arrived on this page. */
+.today-page__breadcrumb {
+  display: inline-block;
+  font-size: 12px;
+  color: var(--color-muted);
+  text-decoration: none;
+  margin-bottom: 10px;
+}
+
+.today-page__breadcrumb:hover {
+  color: var(--color-accent);
+}
+
 .today-page__heading {
   font-size: 34px;
   margin: 0;
@@ -2803,6 +2820,27 @@ a {
   font-style: italic;
   color: var(--color-muted);
   margin-top: 2px;
+}
+
+/* The room between the heading block and the nav controls — holiday badge
+   plus the weather sentence, per Mike's "room to the right of day/date"
+   ask. Wraps to its own line on narrower widths rather than fighting the
+   nav controls for space. */
+.today-page__header-extra {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 200px;
+  text-align: center;
+}
+
+.today-page__holiday-badge {
+  font-size: 12px;
+  font-weight: var(--weight-medium);
+  color: var(--color-accent-secondary);
 }
 
 .today-page__body {
@@ -2950,10 +2988,13 @@ a {
 }
 
 .week-page__col-header {
+  margin-bottom: 8px;
+}
+
+.week-page__col-header-top {
   display: flex;
   align-items: baseline;
   gap: 6px;
-  margin-bottom: 8px;
 }
 
 .week-page__col-weekday {
@@ -2971,6 +3012,13 @@ a {
 .week-page__col-date {
   font-size: 11px;
   color: var(--color-muted);
+  flex: 1;
+}
+
+.week-page__col-holiday {
+  font-size: 10.5px;
+  color: var(--color-accent-secondary);
+  margin-top: 2px;
 }
 
 .week-page__special {
@@ -3048,18 +3096,24 @@ a {
   padding: 8px 2px;
 }
 
+/* Styled as an actual call-to-action rather than a plain text link — a
+   small filled pill, right-aligned under the column's ruled lines. */
 .week-page__col-footer-link {
+  display: inline-block;
+  align-self: flex-end;
   font-size: 11px;
-  color: var(--color-muted);
+  font-weight: var(--weight-medium);
+  color: var(--color-accent-text);
+  background: var(--color-accent);
   text-decoration: none;
-  margin-top: 8px;
-  padding-top: 6px;
-  border-top: var(--border-hairline);
-  text-align: right;
+  margin-top: 10px;
+  padding: 5px 12px;
+  border-radius: 14px;
 }
 
 .week-page__col-footer-link:hover {
-  color: var(--color-accent);
+  background: var(--color-accent-hover, var(--color-accent));
+  opacity: 0.9;
 }
 
 /* A day's blank ruled lines sit right in the same column list as its real
@@ -3071,16 +3125,15 @@ a {
   border-bottom: 1px solid var(--color-border);
 }
 
-/* Draggable rows (real tasks, in Overdue / a day / the Unscheduled shelf) —
-   dnd-kit attaches pointer listeners to these, so touch-action: none stops
-   the browser's own scroll/select gestures from fighting the drag. */
-.week-page__row,
-.week-page__chip {
+/* Draggable rows (real tasks, in Overdue / a day) — dnd-kit attaches
+   pointer listeners to these, so touch-action: none stops the browser's
+   own scroll/select gestures from fighting the drag. The Unscheduled
+   shelf's own rows carry the same rule on .week-page__unscheduled-row. */
+.week-page__row {
   touch-action: none;
 }
 
-.week-page__row.is-dragging,
-.week-page__chip.is-dragging {
+.week-page__row.is-dragging {
   opacity: 0.35;
 }
 
@@ -3141,39 +3194,111 @@ a {
   color: var(--color-placeholder);
 }
 
-.week-page__unscheduled-grid {
+/* Vertical stack of full-width rows — the earlier wrapped-chip grid clipped
+   longer titles at a fixed chip width; a row gets the whole shelf's width,
+   so only a genuinely very long title truncates. */
+.week-page__unscheduled-list {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-direction: column;
 }
 
-.week-page__chip {
+.week-page__unscheduled-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  border: var(--border-hairline);
-  border-radius: 8px;
-  padding: 6px 10px;
+  gap: 10px;
+  padding: 7px 4px;
+  border-bottom: 1px solid var(--color-border);
   cursor: pointer;
-  flex: 0 1 240px;
-  min-width: 160px;
+  touch-action: none;
 }
 
-.week-page__chip:hover {
+.week-page__unscheduled-row:last-child {
+  border-bottom: none;
+}
+
+.week-page__unscheduled-row:hover {
   background: rgba(47, 74, 60, 0.06);
 }
 
-.week-page__chip-title {
-  font-size: 13px;
-  color: var(--color-ink);
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.week-page__unscheduled-row.is-dragging {
+  opacity: 0.35;
 }
 
 @media (max-width: 900px) {
   .week-page__grid {
     grid-template-columns: repeat(7, minmax(78vw, 1fr));
   }
+}
+
+/* ---- Weather widget (Week column chip + Day view sentence) ---- */
+
+.weather-widget {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.weather-chip,
+.weather-sentence {
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--color-muted);
+}
+
+.weather-chip {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  margin-left: auto;
+}
+
+.weather-chip__temps {
+  white-space: nowrap;
+}
+
+.weather-chip__temp-min {
+  color: var(--color-placeholder);
+}
+
+.weather-sentence {
+  font-size: 13px;
+  text-align: center;
+}
+
+.weather-sentence:hover,
+.weather-chip:hover {
+  color: var(--color-ink);
+}
+
+.weather-popover {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 6px;
+  padding: 10px 12px;
+  width: 180px;
+  z-index: 20;
+  font-size: 12px;
+}
+
+.today-page__header-extra .weather-popover {
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+}
+
+.weather-popover__headline {
+  font-size: 13px;
+  color: var(--color-ink);
+  margin-bottom: 6px;
+}
+
+.weather-popover__row {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 0;
+  color: var(--color-muted);
 }

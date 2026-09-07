@@ -99,6 +99,24 @@ export interface WeekDay {
   tasks: TodayTask[];
 }
 
+/** One day's forecast from GET /api/weather — the worker's already reduced
+ * Open-Meteo's response down to just what the UI shows, so nothing here
+ * needs further interpretation client-side beyond picking a unit label. */
+export interface WeatherDay {
+  date: string;
+  icon: string;
+  summary: string;
+  tempMaxF: number;
+  tempMinF: number;
+  precipProbability: number;
+  windMaxMph: number;
+}
+
+export interface WeatherResponse {
+  location: string;
+  days: WeatherDay[];
+}
+
 export interface WeekResponse {
   start: string;
   end: string;

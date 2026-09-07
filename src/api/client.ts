@@ -1,4 +1,4 @@
-import type { Entity, EntityDetail, EntityType, ProjectListItem, TodayResponse, WeekResponse } from './types';
+import type { Entity, EntityDetail, EntityType, ProjectListItem, TodayResponse, WeatherResponse, WeekResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -169,6 +169,12 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ title, due_date }),
     }),
+
+  /** Daily forecast for the next ~16 days at Mike's fixed home location —
+   * see the worker's /api/weather comment. No params: one location, one
+   * forecast window, cached at the edge, so every caller gets the same
+   * response and just looks up the date(s) it needs. */
+  getWeather: () => request<WeatherResponse>('/api/weather'),
 
   /** Server-side link unfurl (og:title/og:image + bare domain fallback) for
    * the editor's "Insert link preview" button — a browser-side fetch would

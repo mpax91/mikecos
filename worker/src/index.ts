@@ -989,6 +989,91 @@ app.get('/api/week', async (c) => {
   return c.json({ start, end, days: byDay, overdue, tickler, unscheduled });
 });
 
+// Bedford Hills, NY 10507 — Mike's fixed home location for the Week/Day
+// views' weather widget. Hardcoded rather than user-configurable for now;
+// if that ever needs to change it's this one constant.
+const WEATHER_LAT = 41.23667;
+const WEATHER_LON = -73.69444;
+const WEATHER_LOCATION_LABEL = 'Bedford Hills, NY';
+
+// WMO weather codes (what Open-Meteo's `weathercode` field returns) reduced
+// to one icon + one short label each — just enough to read at a glance in a
+// small day-column chip. https://open-meteo.com/en/docs lists the full set;
+// anything not named here (rare codes) falls back to a plain "—" so the UI
+// never breaks on an unrecognized code.
+const WEATHER_CODES: Record<number, { icon: string; summary: string }> = {
+  0: { icon: '☀️', summary: 'Clear sky' },
+  1: { icon: '🌤️', summary: 'Mainly clear' },
+  2: { icon: '⛅', summary: 'Partly cloudy' },
+  3: { icon: '☁️', summary: 'Overcast' },
+  45: { icon: '🌫️', summary: 'Fog' },
+  48: { icon: '🌫️', summary: 'Depositing rime fog' },
+  51: { icon: '🌦️', summary: 'Light drizzle' },
+  53: { icon: '🌦️', summary: 'Drizzle' },
+  55: { icon: '🌦️', summary: 'Dense drizzle' },
+  56: { icon: '🌧️', summary: 'Freezing drizzle' },
+  57: { icon: '🌧️', summary: 'Freezing drizzle' },
+  61: { icon: '🌧️', summary: 'Light rain' },
+  63: { icon: '🌧️', summary: 'Rain' },
+  65: { icon: '🌧️', summary: 'Heavy rain' },
+  66: { icon: '🌧️', summary: 'Freezing rain' },
+  67: { icon: '🌧️', summary: 'Freezing rain' },
+  71: { icon: '🌨️', summary: 'Light snow' },
+  73: { icon: '🌨️', summary: 'Snow' },
+  75: { icon: '🌨️', summary: 'Heavy snow' },
+  77: { icon: '🌨️', summary: 'Snow grains' },
+  80: { icon: '🌦️', summary: 'Rain showers' },
+  81: { icon: '🌦️', summary: 'Rain showers' },
+  82: { icon: '🌧️', summary: 'Violent rain showers' },
+  85: { icon: '🌨️', summary: 'Snow showers' },
+  86: { icon: '🌨️', summary: 'Heavy snow showers' },
+  95: { icon: '⛈️', summary: 'Thunderstorm' },
+  96: { icon: '⛈️', summary: 'Thunderstorm with hail' },
+  99: { icon: '⛈️', summary: 'Thunderstorm with hail' },
+};
+
+// GET /api/weather — a ~16-day daily forecast for Mike's home location, via
+// Open-Meteo (free, no API key). Proxied through the worker rather than
+// called directly from the browser so the location lives in one place
+// server-side, the shape returned to the client is already reduced to what
+// the UI needs, and Cloudflare's edge cache (cf.cacheTtl below) means the
+// upstream API isn't hit on every page load from every device.
+app.get('/api/weather', async (c) => {
+  const url =
+    `https://api.open-meteo.com/v1/forecast?latitude=${WEATHER_LAT}&longitude=${WEATHER_LON}` +
+    `&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max,windspeed_10m_max` +
+    `&temperature_unit=fahrenheit&windspeed_unit=mph&timezone=America%2FNew_York&forecast_days=16`;
+
+  const upstream = await fetch(url, { cf: { cacheTtl: 1800, cacheEverything: true } });
+  if (!upstream.ok) return c.json({ error: 'weather upstream failed' }, 502);
+  const raw = await upstream.json<{
+    daily: {
+      time: string[];
+      weathercode: number[];
+      temperature_2m_max: number[];
+      temperature_2m_min: number[];
+      precipitation_probability_max: number[];
+      windspeed_10m_max: number[];
+    };
+  }>();
+
+  const days = raw.daily.time.map((date, i) => {
+    const code = raw.daily.weathercode[i];
+    const known = WEATHER_CODES[code] ?? { icon: '—', summary: 'Unknown' };
+    return {
+      date,
+      icon: known.icon,
+      summary: known.summary,
+      tempMaxF: Math.round(raw.daily.temperature_2m_max[i]),
+      tempMinF: Math.round(raw.daily.temperature_2m_min[i]),
+      precipProbability: Math.round(raw.daily.precipitation_probability_max[i]),
+      windMaxMph: Math.round(raw.daily.windspeed_10m_max[i]),
+    };
+  });
+
+  return c.json({ location: WEATHER_LOCATION_LABEL, days });
+});
+
 app.get('/api/health', (c) => c.json({ ok: true, time: now() }));
 
 export default app;

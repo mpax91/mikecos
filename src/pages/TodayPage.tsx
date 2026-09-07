@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
-import type { Entity, TodayResponse, TodayTask } from '../api/types';
+import type { Entity, TodayResponse, TodayTask, WeatherDay } from '../api/types';
 import { TaskRow } from '../components/TaskRow';
 import { TaskDetailModal } from '../components/TaskDetailModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { BlankLine } from '../components/BlankLine';
+import { WeatherWidget } from '../components/WeatherWidget';
+import { getHolidays } from '../utils/holidays';
 import { useReportTabMeta } from '../contexts/TabsContext';
 
 /** Blank ruled lines shown below the day's real tasks — see BlankLine and
@@ -60,6 +62,11 @@ function mondayOf(iso: string): string {
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
 }
 
+function formatShort(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
 /** The daily planner — Phase 1: every open task due on or before the viewed
  * date, pulled from every project (plus standalone tasks with no project),
  * split into Overdue and the viewed day itself. Checking one off here
@@ -81,6 +88,7 @@ export function TodayPage() {
   const [error, setError] = useState<string | null>(null);
   const [taskStack, setTaskStack] = useState<string[]>([]);
   const [deleting, setDeleting] = useState<Entity | null>(null);
+  const [weather, setWeather] = useState<WeatherDay | undefined>(undefined);
 
   useReportTabMeta(isToday ? 'Today' : formatHeaderDate(date), 'today');
 
@@ -92,13 +100,24 @@ export function TodayPage() {
     load();
   }, [load]);
 
+  // Same forecast fetch as WeekPage — only this page's one viewed date gets
+  // used, but re-fetching per date isn't worth a separate endpoint shape.
+  // Silently absent (no widget rendered) for dates outside the ~16-day
+  // window, same as the Week view.
+  useEffect(() => {
+    api
+      .getWeather()
+      .then((res) => setWeather(res.days.find((d) => d.date === date)))
+      .catch(() => setWeather(undefined));
+  }, [date]);
+
   function goToDate(next: string) {
     navigate(next === todayLocalISO() ? '/today' : `/today/${next}`);
   }
 
+  const weekStart = mondayOf(date);
   function switchToWeek() {
-    const monday = mondayOf(date);
-    navigate(monday === mondayOf(todayLocalISO()) ? '/today/week' : `/today/week/${monday}`);
+    navigate(weekStart === mondayOf(todayLocalISO()) ? '/today/week' : `/today/week/${weekStart}`);
   }
 
   async function quickAdd(title: string) {
@@ -170,13 +189,25 @@ export function TodayPage() {
   const overdue = data?.overdue ?? [];
   const dueToday = data?.today ?? [];
 
+  const holidays = getHolidays(date);
+
   return (
     <div>
+      <Link to={weekStart === mondayOf(todayLocalISO()) ? '/today/week' : `/today/week/${weekStart}`} className="today-page__breadcrumb">
+        ‹ Week of {formatShort(weekStart)} – {formatShort(addDays(weekStart, 6))}
+      </Link>
+
       <div className="toolbar-row">
         <div>
           <h1 className="today-page__heading heading-serif">{formatDayHeading(date, isToday).heading}</h1>
           <div className="today-page__date-line">{formatDayHeading(date, isToday).dateLine}</div>
         </div>
+
+        <div className="today-page__header-extra">
+          {holidays.length > 0 && <div className="today-page__holiday-badge">🎉 {holidays.join(' · ')}</div>}
+          <WeatherWidget day={weather} variant="sentence" />
+        </div>
+
         <div className="today-page__nav">
           <div className="today-page__view-toggle">
             <button type="button" className="today-page__view-btn is-active">

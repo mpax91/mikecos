@@ -3,10 +3,12 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { DndContext, DragOverlay, PointerSensor, useDraggable, useDroppable, useSensor, useSensors } from '@dnd-kit/core';
 import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core';
 import { api } from '../api/client';
-import type { Entity, TicklerItem, TodayTask, WeekResponse } from '../api/types';
+import type { Entity, TicklerItem, TodayTask, WeatherDay, WeekResponse } from '../api/types';
 import { TaskDetailModal } from '../components/TaskDetailModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { BlankLine } from '../components/BlankLine';
+import { WeatherWidget } from '../components/WeatherWidget';
+import { getHolidays } from '../utils/holidays';
 import { useReportTabMeta } from '../contexts/TabsContext';
 
 /** Blank ruled lines shown below each day's real tasks — see BlankLine. */
@@ -97,18 +99,21 @@ function DraggableTaskRow({ task, onToggle, onOpen }: { task: TodayTask; onToggl
 function DayColumn({
   day,
   data,
+  weather,
   onToggle,
   onOpen,
   onQuickAdd,
 }: {
   day: WeekResponse['days'][number];
   data: WeekResponse;
+  weather: WeatherDay | undefined;
   onToggle: (t: Entity) => void;
   onOpen: (t: Entity) => void;
   onQuickAdd: (date: string, title: string) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `${DAY_DROP_PREFIX}${day.date}` });
   const realToday = todayLocalISO();
+  const holidays = getHolidays(day.date);
 
   return (
     <div
@@ -116,8 +121,12 @@ function DayColumn({
       className={`week-page__col${day.isToday ? ' is-today' : ''}${isOver ? ' is-drop-target' : ''}`}
     >
       <div className="week-page__col-header">
-        <span className="week-page__col-weekday">{formatDayLabel(day.date).weekday}</span>
-        <span className="week-page__col-date">{formatDayLabel(day.date).day}</span>
+        <div className="week-page__col-header-top">
+          <span className="week-page__col-weekday">{formatDayLabel(day.date).weekday}</span>
+          <span className="week-page__col-date">{formatDayLabel(day.date).day}</span>
+          <WeatherWidget day={weather} variant="chip" />
+        </div>
+        {holidays.length > 0 && <div className="week-page__col-holiday">{holidays.join(' · ')}</div>}
       </div>
 
       {day.isToday && data.overdue.length > 0 && (
@@ -129,7 +138,14 @@ function DayColumn({
         </div>
       )}
 
-      {day.isToday && data.tickler.length > 0 && (
+      {/* Unlike Overdue, this runs on every column, not just today's — Mike
+          wants every day to follow the same template rather than today
+          looking structurally different from the rest of the week. The
+          items themselves are the same set regardless of which column
+          they're shown on (staleness isn't day-relative the way overdue
+          is), which is fine: this is a constant reminder rail, not a
+          per-day computation. */}
+      {data.tickler.length > 0 && (
         <div className="week-page__special week-page__special--tickler">
           <div className="week-page__special-title">Worth revisiting</div>
           {data.tickler.map((t) => (
@@ -151,7 +167,7 @@ function DayColumn({
       </div>
 
       <Link to={day.date === realToday ? '/today' : `/today/${day.date}`} className="week-page__col-footer-link">
-        Open day →
+        Open Day →
       </Link>
     </div>
   );
@@ -170,9 +186,13 @@ function UnscheduledShelf({ tasks, onToggle, onOpen }: { tasks: TodayTask[]; onT
       {tasks.length === 0 ? (
         <div className="week-page__empty">Nothing waiting — nice.</div>
       ) : (
-        <div className="week-page__unscheduled-grid">
+        // A vertical stack of full-width rows rather than wrapped chips —
+        // chips were clipping longer titles at a fixed width. A row has the
+        // full shelf width to work with, so a title only truncates if it's
+        // genuinely too long for the whole page.
+        <div className="week-page__unscheduled-list">
           {tasks.map((t) => (
-            <ChipDraggable key={t.id} task={t} onToggle={onToggle} onOpen={onOpen} />
+            <UnscheduledRow key={t.id} task={t} onToggle={onToggle} onOpen={onOpen} />
           ))}
         </div>
       )}
@@ -180,14 +200,14 @@ function UnscheduledShelf({ tasks, onToggle, onOpen }: { tasks: TodayTask[]; onT
   );
 }
 
-function ChipDraggable({ task, onToggle, onOpen }: { task: TodayTask; onToggle: (t: Entity) => void; onOpen: (t: Entity) => void }) {
+function UnscheduledRow({ task, onToggle, onOpen }: { task: TodayTask; onToggle: (t: Entity) => void; onOpen: (t: Entity) => void }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: task.id });
   return (
     <div
       ref={setNodeRef}
       {...attributes}
       {...listeners}
-      className={`week-page__chip${isDragging ? ' is-dragging' : ''}`}
+      className={`week-page__unscheduled-row${isDragging ? ' is-dragging' : ''}`}
       onClick={() => onOpen(task)}
     >
       <input
@@ -198,7 +218,7 @@ function ChipDraggable({ task, onToggle, onOpen }: { task: TodayTask; onToggle: 
         onPointerDown={(e) => e.stopPropagation()}
         className="task-row__checkbox"
       />
-      <span className="week-page__chip-title">{task.title || 'Untitled Task'}</span>
+      <span className="week-page__row-title">{task.title || 'Untitled Task'}</span>
       {task.project && <span className="task-row__project-tag" title={`In project: ${task.project.title}`}>📁 {task.project.title}</span>}
     </div>
   );
@@ -223,6 +243,7 @@ export function WeekPage() {
   const [taskStack, setTaskStack] = useState<string[]>([]);
   const [deleting, setDeleting] = useState<Entity | null>(null);
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
+  const [weatherByDate, setWeatherByDate] = useState<Map<string, WeatherDay>>(new Map());
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
@@ -236,6 +257,18 @@ export function WeekPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Fetched once — the same ~16-day forecast covers every week the user
+  // might page through near the present, and a day outside that window
+  // just renders no weather widget (see WeatherWidget). Failure is silent:
+  // weather is a nice-to-have overlay, never something that should block
+  // or error out the planner itself.
+  useEffect(() => {
+    api
+      .getWeather()
+      .then((res) => setWeatherByDate(new Map(res.days.map((d) => [d.date, d]))))
+      .catch(() => {});
+  }, []);
 
   function goToWeek(nextStart: string) {
     navigate(nextStart === mondayOf(realToday) ? '/today/week' : `/today/week/${nextStart}`);
@@ -370,7 +403,15 @@ export function WeekPage() {
             <div className="week-page__scroll">
               <div className="week-page__grid">
                 {data.days.map((day) => (
-                  <DayColumn key={day.date} day={day} data={data} onToggle={toggleTask} onOpen={openTask} onQuickAdd={quickAdd} />
+                  <DayColumn
+                    key={day.date}
+                    day={day}
+                    data={data}
+                    weather={weatherByDate.get(day.date)}
+                    onToggle={toggleTask}
+                    onOpen={openTask}
+                    onQuickAdd={quickAdd}
+                  />
                 ))}
               </div>
             </div>
