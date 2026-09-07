@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import type { Env, Entity } from './types';
+import { calendarIdFromIcsUrl, meetingsForDate } from './ics';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -1120,6 +1121,51 @@ app.get('/api/weather', async (c) => {
   });
 
   return c.json({ location: WEATHER_LOCATION_LABEL, days });
+});
+
+// GET /api/meetings?date=YYYY-MM-DD — Mike's real Google Calendar events
+// (not MikeOS tasks) due that day, pulled from the two calendars' secret
+// ICS "basic.ics" addresses (GOOGLE_ICS_URL_PERSONAL / _SHARED — Worker
+// secrets, see worker/src/types.ts and the deploy workflow's "Set Google
+// Calendar ICS secrets" step). Deliberately read-only and lightweight:
+// this is the ICS-URL approach Mike chose over full OAuth2, which means
+// events are only as fresh as Google's own feed refresh (occasionally a
+// few hours behind a last-minute change) and there's no create/RSVP path
+// — acceptable for "what's on my calendar today", not attempted for
+// anything write-side. Each feed is fetched at the edge with a short
+// cache (5 min — meetings change more often than a weather forecast, so
+// this is much shorter than /api/weather's) rather than on every request.
+// Returns an empty list for a calendar whose secret isn't configured yet,
+// rather than erroring the whole endpoint out.
+app.get('/api/meetings', async (c) => {
+  const date = c.req.query('date');
+  if (!date) return c.json({ error: 'date query param is required (YYYY-MM-DD)' }, 400);
+
+  const feedConfigs: { url: string | undefined; calendar: 'personal' | 'shared' }[] = [
+    { url: c.env.GOOGLE_ICS_URL_PERSONAL, calendar: 'personal' },
+    { url: c.env.GOOGLE_ICS_URL_SHARED, calendar: 'shared' },
+  ];
+
+  const sources = (
+    await Promise.all(
+      feedConfigs.map(async ({ url, calendar }) => {
+        if (!url) return null;
+        const calendarId = calendarIdFromIcsUrl(url);
+        if (!calendarId) return null;
+        try {
+          const upstream = await fetch(url, { cf: { cacheTtl: 300, cacheEverything: true } });
+          if (!upstream.ok) return null;
+          const ics = await upstream.text();
+          return { ics, calendar, calendarId };
+        } catch {
+          return null;
+        }
+      })
+    )
+  ).filter((s): s is { ics: string; calendar: 'personal' | 'shared'; calendarId: string } => s !== null);
+
+  const meetings = meetingsForDate(sources, date);
+  return c.json({ date, meetings });
 });
 
 app.get('/api/health', (c) => c.json({ ok: true, time: now() }));

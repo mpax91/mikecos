@@ -141,3 +141,24 @@ export interface MonthResponse {
   end: string;
   tasks: TodayTask[];
 }
+
+/** One real Google Calendar event (not a MikeOS task) from GET
+ * /api/meetings — `start`/`end` are ISO instants (already resolved to UTC
+ * server-side, whatever timezone the source ICS used), and `gcalUrl` is a
+ * best-effort direct link to the event on calendar.google.com (see the
+ * worker's ics.ts for how — it's a reverse-engineered, undocumented format,
+ * so treat a dead link as a possible outcome, not a bug). */
+export interface MeetingItem {
+  id: string;
+  title: string;
+  start: string;
+  end: string;
+  allDay: boolean;
+  calendar: 'personal' | 'shared';
+  gcalUrl: string | null;
+}
+
+export interface MeetingsResponse {
+  date: string;
+  meetings: MeetingItem[];
+}

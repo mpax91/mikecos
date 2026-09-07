@@ -1,4 +1,4 @@
-import type { Entity, EntityDetail, EntityType, MonthResponse, ProjectListItem, TodayResponse, WeatherResponse, WeekResponse } from './types';
+import type { Entity, EntityDetail, EntityType, MeetingsResponse, MonthResponse, ProjectListItem, TodayResponse, WeatherResponse, WeekResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -170,6 +170,10 @@ export const api = {
    * previous/next month's padding days), not just the calendar month. */
   getMonth: (start: string, end: string) =>
     request<MonthResponse>(`/api/month?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`),
+
+  /** Real Google Calendar events (not tasks) due on `date` — Day view only,
+   * see the worker's /api/meetings comment for the ICS-feed approach. */
+  getMeetings: (date: string) => request<MeetingsResponse>(`/api/meetings?date=${encodeURIComponent(date)}`),
 
   /** Quick-add on the Today page — a standalone task with no project,
    * due on the given date. */

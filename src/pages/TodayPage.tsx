@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
-import type { Entity, TicklerItem, TodayResponse, TodayTask, WeatherDay } from '../api/types';
+import type { Entity, MeetingItem, TicklerItem, TodayResponse, TodayTask, WeatherDay } from '../api/types';
 import { TaskRow } from '../components/TaskRow';
 import { TaskDetailModal } from '../components/TaskDetailModal';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -75,6 +75,15 @@ function formatShort(iso: string): string {
   return new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+// Meeting times are shown in Mike's home timezone specifically (rather
+// than the viewing device's own zone) — same as the weather widget's fixed
+// Bedford Hills, NY location, so a meeting at "1pm" reads the same whether
+// he's looking at this from his desktop at home or his phone on the road.
+const MEETING_TZ = 'America/New_York';
+function formatMeetingTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString('en-US', { timeZone: MEETING_TZ, hour: 'numeric', minute: '2-digit' });
+}
+
 /** The daily planner — Phase 1: every open task due on or before the viewed
  * date, pulled from every project (plus standalone tasks with no project),
  * split into Overdue and the viewed day itself. Checking one off here
@@ -98,6 +107,7 @@ export function TodayPage() {
   const [deleting, setDeleting] = useState<Entity | null>(null);
   const [weather, setWeather] = useState<WeatherDay | undefined>(undefined);
   const [extraRows, setExtraRows] = useState(0);
+  const [meetings, setMeetings] = useState<MeetingItem[]>([]);
 
   useReportTabMeta(isToday ? 'Today' : formatHeaderDate(date), 'today');
 
@@ -125,6 +135,17 @@ export function TodayPage() {
       .getWeather()
       .then((res) => setWeather(res.days.find((d) => d.date === date)))
       .catch(() => setWeather(undefined));
+  }, [date]);
+
+  // Real Google Calendar events, separate from the task data above — a
+  // failed/unconfigured fetch just means an empty section rather than
+  // blocking the rest of the page (same "nice-to-have overlay" treatment
+  // as weather).
+  useEffect(() => {
+    api
+      .getMeetings(date)
+      .then((res) => setMeetings(res.meetings))
+      .catch(() => setMeetings([]));
   }, [date]);
 
   function goToDate(next: string) {
@@ -310,6 +331,29 @@ export function TodayPage() {
               + Add another line
             </button>
           </div>
+
+          {meetings.length > 0 && (
+            <div className="today-page__section">
+              <div className="today-page__section-title">{isToday ? "Today's Meetings" : 'Meetings'}</div>
+              <div className="today-page__meetings card">
+                {meetings.map((m) => (
+                  <a
+                    key={m.id}
+                    className="today-page__meeting-row"
+                    href={m.gcalUrl ?? undefined}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={(e) => {
+                      if (!m.gcalUrl) e.preventDefault();
+                    }}
+                  >
+                    <span className="today-page__meeting-time">{m.allDay ? 'All day' : formatMeetingTime(m.start)}</span>
+                    <span className="today-page__meeting-title">{m.title}</span>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
 
           {tickler.length > 0 && (
             <div className="today-page__section">
