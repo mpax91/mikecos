@@ -2189,9 +2189,27 @@ a {
   border-right: none;
 }
 
+/* On mobile the list IS the whole screen (no side-by-side detail pane to
+   give the single bordered container any real shape), so the desktop
+   treatment — one big card with hairline dividers between rows — read as
+   an undifferentiated white box. Drop the outer card and give each row its
+   own card treatment instead, matching how Projects already presents its
+   list on every screen size: individual bordered, gapped tiles sitting on
+   the page background, not rows inside one shared box. */
+.notes-page--mobile {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+}
+
 .notes-page__list {
   display: flex;
   flex-direction: column;
+}
+
+.notes-page--mobile .notes-page__list {
+  gap: 10px;
 }
 
 .notes-page__row {
@@ -2201,6 +2219,12 @@ a {
   padding: 12px 16px;
   border-bottom: var(--border-hairline);
   cursor: pointer;
+}
+
+.notes-page--mobile .notes-page__row {
+  border: var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: var(--color-card-bg);
 }
 
 .notes-page__row:hover {
