@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { useTabs } from '../contexts/TabsContext';
+import { useTabs, tabIcon } from '../contexts/TabsContext';
 
 interface SidebarProps {
   open?: boolean;
@@ -47,6 +47,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
             onContextMenu={(e) => handleContextMenu(e, '/projects', 'Projects')}
             className={({ isActive }) => `sidebar__nav-item title-case${isActive ? ' is-active' : ''}`}
           >
+            <span className="sidebar__nav-icon">{tabIcon('projects-list')}</span>
             Projects
           </NavLink>
           <NavLink
@@ -55,6 +56,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
             onContextMenu={(e) => handleContextMenu(e, '/notes', 'Notes')}
             className={({ isActive }) => `sidebar__nav-item title-case${isActive ? ' is-active' : ''}`}
           >
+            <span className="sidebar__nav-icon">{tabIcon('notes-list')}</span>
             Notes
           </NavLink>
           <NavLink
@@ -63,6 +65,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
             onContextMenu={(e) => handleContextMenu(e, '/jots', 'Jots')}
             className={({ isActive }) => `sidebar__nav-item title-case${isActive ? ' is-active' : ''}`}
           >
+            <span className="sidebar__nav-icon">{tabIcon('jots-list')}</span>
             Jots
           </NavLink>
         </nav>

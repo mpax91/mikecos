@@ -102,13 +102,21 @@ a {
 }
 
 .sidebar__nav-item {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 8px 10px;
   border-radius: 8px;
   font-size: 13px;
   font-weight: var(--weight-medium);
   color: var(--color-ink);
   cursor: pointer;
+}
+
+.sidebar__nav-icon {
+  font-size: 14px;
+  line-height: 1;
+  flex: 0 0 auto;
 }
 
 .sidebar__nav-item:hover {
