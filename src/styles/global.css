@@ -2843,3 +2843,184 @@ a {
   background: rgba(47, 74, 60, 0.12);
   color: var(--color-ink);
 }
+
+/* Day/Week segmented control — shared by TodayPage and WeekPage headers. */
+.today-page__view-toggle {
+  display: flex;
+  border: var(--border-hairline);
+  border-radius: 8px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.today-page__view-btn {
+  border: none;
+  background: var(--color-card-bg);
+  color: var(--color-muted);
+  font-size: 12px;
+  font-weight: var(--weight-medium);
+  padding: 5px 12px;
+  cursor: pointer;
+}
+
+.today-page__view-btn + .today-page__view-btn {
+  border-left: var(--border-hairline);
+}
+
+.today-page__view-btn:hover {
+  background: rgba(47, 74, 60, 0.08);
+}
+
+.today-page__view-btn.is-active {
+  background: var(--color-accent);
+  color: var(--color-accent-text);
+}
+
+/* ---- Week view ---- */
+
+.week-page__scroll {
+  overflow-x: auto;
+  padding-bottom: 8px;
+  margin: 0 -4px;
+}
+
+.week-page__grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(190px, 1fr));
+  gap: 10px;
+  padding: 0 4px;
+}
+
+.week-page__col {
+  display: flex;
+  flex-direction: column;
+  background: var(--color-card-bg);
+  border: var(--border-hairline);
+  border-radius: var(--radius-card);
+  padding: 10px;
+  min-height: 220px;
+}
+
+.week-page__col.is-today {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 1px var(--color-accent);
+}
+
+.week-page__col-header {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.week-page__col-weekday {
+  font-size: 12px;
+  font-weight: var(--weight-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-ink);
+}
+
+.is-today .week-page__col-weekday {
+  color: var(--color-accent);
+}
+
+.week-page__col-date {
+  font-size: 11px;
+  color: var(--color-muted);
+}
+
+.week-page__special {
+  border-radius: 8px;
+  padding: 6px 8px;
+  margin-bottom: 8px;
+}
+
+.week-page__special--overdue {
+  background: rgba(196, 108, 45, 0.1);
+}
+
+.week-page__special--tickler {
+  background: var(--color-sidebar);
+}
+
+.week-page__special-title {
+  font-size: 10px;
+  font-weight: var(--weight-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 4px;
+}
+
+.week-page__special--overdue .week-page__special-title {
+  color: var(--color-accent-secondary);
+}
+
+.week-page__special--tickler .week-page__special-title {
+  color: var(--color-muted);
+}
+
+.week-page__col-list {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.week-page__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 2px;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.week-page__row:hover {
+  background: rgba(47, 74, 60, 0.06);
+}
+
+.week-page__row-title {
+  font-size: 13px;
+  color: var(--color-ink);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.week-page__row--tickler {
+  justify-content: space-between;
+}
+
+.week-page__tickler-badge {
+  font-size: 10px;
+  color: var(--color-muted);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.week-page__empty {
+  font-size: 12px;
+  color: var(--color-muted);
+  padding: 8px 2px;
+}
+
+.week-page__col-footer-link {
+  font-size: 11px;
+  color: var(--color-muted);
+  text-decoration: none;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: var(--border-hairline);
+  text-align: right;
+}
+
+.week-page__col-footer-link:hover {
+  color: var(--color-accent);
+}
+
+@media (max-width: 900px) {
+  .week-page__grid {
+    grid-template-columns: repeat(7, minmax(78vw, 1fr));
+  }
+}

@@ -1,4 +1,4 @@
-import type { Entity, EntityDetail, EntityType, ProjectListItem, TodayResponse } from './types';
+import type { Entity, EntityDetail, EntityType, ProjectListItem, TodayResponse, WeekResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -155,6 +155,12 @@ export const api = {
   // ---- Today (daily planner) ----
 
   getToday: (date: string) => request<TodayResponse>(`/api/today?date=${encodeURIComponent(date)}`),
+
+  /** `start` is the Monday of the week to show; `today` is the viewer's own
+   * local "today" so the server knows which column (if any) gets the
+   * Overdue/Tickler strip. */
+  getWeek: (start: string, today: string) =>
+    request<WeekResponse>(`/api/week?start=${encodeURIComponent(start)}&today=${encodeURIComponent(today)}`),
 
   /** Quick-add on the Today page — a standalone task with no project,
    * due on the given date. */

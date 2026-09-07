@@ -82,3 +82,24 @@ export interface TodayResponse {
   overdue: TodayTask[];
   today: TodayTask[];
 }
+
+/** One stale item surfaced by the Tickler — the entity itself plus which
+ * bucket it was picked from (jot / note / undated task), used to pick the
+ * right icon and "why this is here" phrasing. */
+export interface TicklerItem extends Entity {
+  staleness: 'jot' | 'note' | 'task';
+}
+
+export interface WeekDay {
+  date: string;
+  isToday: boolean;
+  tasks: TodayTask[];
+}
+
+export interface WeekResponse {
+  start: string;
+  end: string;
+  days: WeekDay[];
+  overdue: TodayTask[];
+  tickler: TicklerItem[];
+}

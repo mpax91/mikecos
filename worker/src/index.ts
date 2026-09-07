@@ -78,6 +78,33 @@ async function touchProjectAncestor(db: D1Database, entityId: string | null) {
   }
 }
 
+// Resolves a task's top-level project ancestor (if any), for the small
+// project tag shown next to a task wherever it's displayed away from its
+// own project (Today, Week). Cached per parent_id for the lifetime of one
+// request, since several tasks in the same project all resolve to the same
+// root and this dataset is small enough that a plain Map is plenty.
+function makeProjectResolver(db: D1Database) {
+  const cache = new Map<string, { id: string; title: string } | null>();
+  return async function resolveProject(parentId: string | null): Promise<{ id: string; title: string } | null> {
+    if (!parentId) return null;
+    if (cache.has(parentId)) return cache.get(parentId)!;
+    let cursor = await db
+      .prepare('SELECT id, parent_id, is_top_level, type, title FROM entities WHERE id = ?')
+      .bind(parentId)
+      .first<{ id: string; parent_id: string | null; is_top_level: number; type: string; title: string }>();
+    let guard = 0;
+    while (cursor && !cursor.is_top_level && cursor.parent_id && guard++ < 20) {
+      cursor = await db
+        .prepare('SELECT id, parent_id, is_top_level, type, title FROM entities WHERE id = ?')
+        .bind(cursor.parent_id)
+        .first();
+    }
+    const resolved = cursor && cursor.is_top_level === 1 && cursor.type === 'project' ? { id: cursor.id, title: cursor.title } : null;
+    cache.set(parentId, resolved);
+    return resolved;
+  };
+}
+
 // Flattens a Tiptap JSON document to plain text — a mirror kept alongside the
 // rich `content` so a future search feature has clean, pre-extracted text to
 // index without a historical backfill. Not queried by anything yet.
@@ -870,27 +897,7 @@ app.get('/api/today', async (c) => {
     .bind(date)
     .all<Entity>();
 
-  // Resolve each task's top-level project ancestor, if any, for the
-  // project tag shown next to it — cached per parent_id since several tasks
-  // in the same project all resolve to the same root.
-  const cache = new Map<string, { id: string; title: string } | null>();
-  async function resolveProject(parentId: string | null): Promise<{ id: string; title: string } | null> {
-    if (!parentId) return null;
-    if (cache.has(parentId)) return cache.get(parentId)!;
-    let cursor = await c.env.DB.prepare('SELECT id, parent_id, is_top_level, type, title FROM entities WHERE id = ?')
-      .bind(parentId)
-      .first<{ id: string; parent_id: string | null; is_top_level: number; type: string; title: string }>();
-    let guard = 0;
-    while (cursor && !cursor.is_top_level && cursor.parent_id && guard++ < 20) {
-      cursor = await c.env.DB.prepare('SELECT id, parent_id, is_top_level, type, title FROM entities WHERE id = ?')
-        .bind(cursor.parent_id)
-        .first();
-    }
-    const resolved = cursor && cursor.is_top_level === 1 && cursor.type === 'project' ? { id: cursor.id, title: cursor.title } : null;
-    cache.set(parentId, resolved);
-    return resolved;
-  }
-
+  const resolveProject = makeProjectResolver(c.env.DB);
   const withProject = await Promise.all(
     (results ?? []).map(async (task) => ({ ...task, project: await resolveProject(task.parent_id) }))
   );
@@ -899,6 +906,74 @@ app.get('/api/today', async (c) => {
   const today = withProject.filter((t) => t.due_date === date);
 
   return c.json({ date, overdue, today });
+});
+
+// GET /api/week?start=YYYY-MM-DD&today=YYYY-MM-DD — a 7-day docket starting
+// on `start` (a Monday, matching a physical weekly planner), one bucket per
+// day of exactly what's due that day. Overdue and the stale-item Tickler are
+// deliberately NOT repeated on every column — "overdue" only means anything
+// relative to the real current day, so both are attached only to whichever
+// day matches `today` (when that day falls inside the visible week at all;
+// looking at a past or future week shows neither, same as a paper planner's
+// other weeks never show today's leftovers).
+app.get('/api/week', async (c) => {
+  const start = c.req.query('start');
+  const today = c.req.query('today');
+  if (!start) return c.json({ error: 'start query param is required (YYYY-MM-DD, a Monday)' }, 400);
+
+  const days: string[] = [];
+  {
+    const [y, m, d] = start.split('-').map(Number);
+    const cursor = new Date(y, m - 1, d);
+    for (let i = 0; i < 7; i++) {
+      const dt = new Date(cursor);
+      dt.setDate(cursor.getDate() + i);
+      days.push(`${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`);
+    }
+  }
+  const end = days[6];
+
+  const { results } = await c.env.DB.prepare(
+    `SELECT * FROM entities WHERE type = 'task' AND status = 'open' AND due_date IS NOT NULL AND due_date <= ? ORDER BY due_date ASC, position ASC`
+  )
+    .bind(end)
+    .all<Entity>();
+
+  const resolveProject = makeProjectResolver(c.env.DB);
+  const withProject = await Promise.all(
+    (results ?? []).map(async (task) => ({ ...task, project: await resolveProject(task.parent_id) }))
+  );
+
+  const todayInRange = today && days.includes(today) ? today : null;
+  const overdue = todayInRange ? withProject.filter((t) => t.due_date! < todayInRange) : [];
+
+  let tickler: (Entity & { staleness: string })[] = [];
+  if (todayInRange) {
+    const [staleJot, staleNote, staleUndatedTask] = await Promise.all([
+      c.env.DB.prepare(
+        `SELECT * FROM entities WHERE type = 'note' AND is_jot = 1 ORDER BY COALESCE(last_touched, updated_at) ASC LIMIT 1`
+      ).first<Entity>(),
+      c.env.DB.prepare(
+        `SELECT * FROM entities WHERE type = 'note' AND is_jot = 0 AND parent_id IS NULL ORDER BY COALESCE(last_touched, updated_at) ASC LIMIT 1`
+      ).first<Entity>(),
+      c.env.DB.prepare(
+        `SELECT * FROM entities WHERE type = 'task' AND status = 'open' AND due_date IS NULL ORDER BY COALESCE(last_touched, updated_at) ASC LIMIT 1`
+      ).first<Entity>(),
+    ]);
+    tickler = [
+      staleJot ? { ...staleJot, staleness: 'jot' } : null,
+      staleNote ? { ...staleNote, staleness: 'note' } : null,
+      staleUndatedTask ? { ...staleUndatedTask, staleness: 'task' } : null,
+    ].filter((x): x is Entity & { staleness: string } => x !== null);
+  }
+
+  const byDay = days.map((date) => ({
+    date,
+    isToday: date === todayInRange,
+    tasks: withProject.filter((t) => t.due_date === date),
+  }));
+
+  return c.json({ start, end, days: byDay, overdue, tickler });
 });
 
 app.get('/api/health', (c) => c.json({ ok: true, time: now() }));

@@ -25,6 +25,18 @@ function formatHeaderDate(iso: string): string {
   return dt.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 }
 
+/** The Monday on or before `iso` — matches WeekPage's own anchoring, so
+ * switching from Day to Week always lands on the week containing the day
+ * currently being viewed. */
+function mondayOf(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  const day = dt.getDay();
+  const offset = day === 0 ? -6 : 1 - day;
+  dt.setDate(dt.getDate() + offset);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+}
+
 /** The daily planner — Phase 1: every open task due on or before the viewed
  * date, pulled from every project (plus standalone tasks with no project),
  * split into Overdue and the viewed day itself. Checking one off here
@@ -60,6 +72,11 @@ export function TodayPage() {
 
   function goToDate(next: string) {
     navigate(next === todayLocalISO() ? '/today' : `/today/${next}`);
+  }
+
+  function switchToWeek() {
+    const monday = mondayOf(date);
+    navigate(monday === mondayOf(todayLocalISO()) ? '/today/week' : `/today/week/${monday}`);
   }
 
   async function createQuickTask() {
@@ -142,6 +159,14 @@ export function TodayPage() {
           {isToday ? 'Today' : formatHeaderDate(date)}
         </h1>
         <div className="today-page__nav">
+          <div className="today-page__view-toggle">
+            <button type="button" className="today-page__view-btn is-active">
+              Day
+            </button>
+            <button type="button" className="today-page__view-btn" onClick={switchToWeek}>
+              Week
+            </button>
+          </div>
           {!isToday && (
             <button type="button" className="btn btn--ghost" onClick={() => goToDate(todayLocalISO())}>
               Today
