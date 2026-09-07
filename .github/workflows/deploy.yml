@@ -74,6 +74,18 @@ jobs:
           npm run deploy | tee /tmp/deploy.log
           url=$(grep -Eo 'https://[a-zA-Z0-9.-]+\.workers\.dev' /tmp/deploy.log | head -1)
           echo "worker_url=$url" >> "$GITHUB_OUTPUT"
+                - name: Set Google Calendar ICS secrets
+        if: ${{ secrets.GOOGLE_ICS_URL_PERSONAL != '' }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          GOOGLE_ICS_URL_PERSONAL: ${{ secrets.GOOGLE_ICS_URL_PERSONAL }}
+          GOOGLE_ICS_URL_SHARED: ${{ secrets.GOOGLE_ICS_URL_SHARED }}
+        run: |
+          printf '%s' "$GOOGLE_ICS_URL_PERSONAL" | npx wrangler secret put GOOGLE_ICS_URL_PERSONAL
+          if [ -n "$GOOGLE_ICS_URL_SHARED" ]; then
+            printf '%s' "$GOOGLE_ICS_URL_SHARED" | npx wrangler secret put GOOGLE_ICS_URL_SHARED
+          fi
 
   deploy-pages:
     runs-on: ubuntu-latest
