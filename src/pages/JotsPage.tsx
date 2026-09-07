@@ -5,6 +5,7 @@ import { NoteEditor } from '../components/NoteEditor';
 import { JotBody } from '../components/JotBody';
 import { JotPanel } from '../components/JotPanel';
 import { ConvertModal } from '../components/ConvertModal';
+import { PlanDateModal } from '../components/PlanDateModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { KebabMenu } from '../components/KebabMenu';
 import { formatRelativeTime } from '../utils/formatRelativeTime';
@@ -15,12 +16,14 @@ function JotCard({
   jot,
   onOpen,
   onConvert,
+  onPlan,
   onTogglePin,
   onDelete,
 }: {
   jot: Entity;
   onOpen: () => void;
   onConvert: (to: 'note' | 'task') => void;
+  onPlan: () => void;
   onTogglePin: () => void;
   onDelete: () => void;
 }) {
@@ -38,11 +41,8 @@ function JotCard({
         <KebabMenu
           items={[
             { label: jot.pinned === 1 ? 'Unpin' : 'Pin', onClick: onTogglePin },
-            {
-              label: 'Turn into Task (Coming soon)',
-              onClick: () => onConvert('task'),
-              disabled: true,
-            },
+            { label: 'Plan for a date', onClick: onPlan },
+            { label: 'Turn into Task (choose project)', onClick: () => onConvert('task') },
             { label: 'Turn into Note', onClick: () => onConvert('note') },
             { label: 'Delete', onClick: onDelete, danger: true, separatorBefore: true },
           ]}
@@ -75,6 +75,7 @@ export function JotsPage() {
   const draftTitleRef = useRef('');
   const [openJot, setOpenJot] = useState<Entity | null>(null);
   const [converting, setConverting] = useState<{ jot: Entity; to: 'note' | 'task' } | null>(null);
+  const [planning, setPlanning] = useState<Entity | null>(null);
   const [deleting, setDeleting] = useState<Entity | null>(null);
 
   const load = useCallback(() => {
@@ -137,6 +138,17 @@ export function JotsPage() {
     if (!converting) return;
     await api.convertEntity(converting.jot.id, converting.to, parentId);
     setConverting(null);
+    load();
+  }
+
+  /** "Plan for a date" — turns the jot straight into a standalone task
+   * (no project) due on the chosen date, in one step. It disappears from
+   * this grid the same way turning it into a Note or Task already does,
+   * since it's no longer a jot at all once converted. */
+  async function handlePlan(date: string) {
+    if (!planning) return;
+    await api.convertEntity(planning.id, 'task', null, date);
+    setPlanning(null);
     load();
   }
 
@@ -219,6 +231,7 @@ export function JotsPage() {
               jot={jot}
               onOpen={() => setOpenJot(jot)}
               onConvert={(to) => setConverting({ jot, to })}
+              onPlan={() => setPlanning(jot)}
               onTogglePin={() => handleTogglePin(jot)}
               onDelete={() => setDeleting(jot)}
             />
@@ -241,6 +254,8 @@ export function JotsPage() {
       {converting && (
         <ConvertModal to={converting.to} onConvert={handleConvert} onClose={() => setConverting(null)} />
       )}
+
+      {planning && <PlanDateModal onPlan={handlePlan} onClose={() => setPlanning(null)} />}
 
       {deleting && (
         <ConfirmModal

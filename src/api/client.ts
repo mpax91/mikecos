@@ -1,4 +1,4 @@
-import type { Entity, EntityDetail, EntityType, ProjectListItem } from './types';
+import type { Entity, EntityDetail, EntityType, ProjectListItem, TodayResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -92,7 +92,9 @@ export const api = {
 
   updateEntity: (
     id: string,
-    patch: Partial<Pick<Entity, 'title' | 'content' | 'status' | 'parent_id' | 'position' | 'pinned' | 'last_touched'>>
+    patch: Partial<
+      Pick<Entity, 'title' | 'content' | 'status' | 'parent_id' | 'position' | 'pinned' | 'due_date' | 'last_touched'>
+    >
   ) =>
     request<Entity>(`/api/entities/${id}`, {
       method: 'PATCH',
@@ -140,13 +142,26 @@ export const api = {
       body: JSON.stringify({ content: content ?? null }),
     }),
 
-  /** Turns a Jot into a Note (parent_id may be null — standalone, like any
-   * other Note) or a Task (parent_id required — MikeOS has no standalone
-   * task concept yet). */
-  convertEntity: (id: string, to: 'note' | 'task', parent_id: string | null) =>
+  /** Turns a Jot into a Note or a Task — parent_id may be null for either
+   * (a standalone Note, or a standalone Task with no project, same
+   * "addressable at the root" pattern Jots themselves use). due_date is
+   * only meaningful when to: 'task' — used by "Plan for a date". */
+  convertEntity: (id: string, to: 'note' | 'task', parent_id: string | null, due_date?: string | null) =>
     request<Entity>(`/api/entities/${id}/convert`, {
       method: 'POST',
-      body: JSON.stringify({ to, parent_id }),
+      body: JSON.stringify({ to, parent_id, due_date }),
+    }),
+
+  // ---- Today (daily planner) ----
+
+  getToday: (date: string) => request<TodayResponse>(`/api/today?date=${encodeURIComponent(date)}`),
+
+  /** Quick-add on the Today page — a standalone task with no project,
+   * due on the given date. */
+  createStandaloneTask: (title: string, due_date: string) =>
+    request<Entity>('/api/tasks', {
+      method: 'POST',
+      body: JSON.stringify({ title, due_date }),
     }),
 
   /** Server-side link unfurl (og:title/og:image + bare domain fallback) for

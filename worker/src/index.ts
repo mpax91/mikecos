@@ -192,7 +192,7 @@ app.post('/api/jots', async (c) => {
 // top-level task concept today, only tasks inside a project or folder.
 app.post('/api/entities/:id/convert', async (c) => {
   const id = c.req.param('id');
-  const body = await c.req.json<{ to: 'note' | 'task'; parent_id: string | null }>();
+  const body = await c.req.json<{ to: 'note' | 'task'; parent_id: string | null; due_date?: string | null }>();
 
   const existing = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(id).first<Entity>();
   if (!existing) return c.json({ error: 'not found' }, 404);
@@ -220,25 +220,33 @@ app.post('/api/entities/:id/convert', async (c) => {
       .bind(existing.title || 'Untitled Note', body.parent_id, isTopLevel, (maxPos?.m ?? -1) + 1, ts, ts, id)
       .run();
   } else {
-    if (!body.parent_id) return c.json({ error: 'parent_id is required to convert to a task' }, 400);
-
+    // A null parent_id makes a standalone task — no project, addressable at
+    // the root the same way a Jot is (is_top_level = 1). This is what
+    // "plan this jot for a date" uses: it doesn't require picking a project
+    // first, same as turning a jot into a standalone Note never has.
+    const isTopLevel = body.parent_id === null ? 1 : 0;
     const title = extractPlainText(existing.content) || '';
     const { attachments, links } = extractAttachmentsAndLinks(existing.content);
 
     const maxPos = await c.env.DB.prepare(
-      'SELECT COALESCE(MAX(position), -1) as m FROM entities WHERE parent_id = ?'
+      body.parent_id === null
+        ? `SELECT COALESCE(MAX(position), -1) as m FROM entities WHERE parent_id IS NULL AND type = 'task'`
+        : 'SELECT COALESCE(MAX(position), -1) as m FROM entities WHERE parent_id = ?'
     )
-      .bind(body.parent_id)
+      .bind(...(body.parent_id === null ? [] : [body.parent_id]))
       .first<{ m: number }>();
-    let nextPos = (maxPos?.m ?? -1) + 1;
+    const nextPos = (maxPos?.m ?? -1) + 1;
 
     await c.env.DB.prepare(
-      `UPDATE entities SET type = 'task', is_jot = 0, title = ?, content = NULL, search_text = NULL, parent_id = ?, is_top_level = 0, position = ?, status = 'open', updated_at = ?, last_touched = ? WHERE id = ?`
+      `UPDATE entities SET type = 'task', is_jot = 0, title = ?, content = NULL, search_text = NULL, parent_id = ?, is_top_level = ?, position = ?, status = 'open', due_date = ?, updated_at = ?, last_touched = ? WHERE id = ?`
     )
-      .bind(title, body.parent_id, nextPos, ts, ts, id)
+      .bind(title, body.parent_id, isTopLevel, nextPos, body.due_date ?? null, ts, ts, id)
       .run();
-    nextPos += 1;
 
+    // Attachments/links extracted from the jot's content belong to the
+    // *task itself* (parent_id = id, the task's own id) so they show up in
+    // its own attachment list — not siblings of the task under its project.
+    let attachPos = 0;
     for (const a of attachments) {
       if (!a.r2Key) continue;
       const meta = { r2_key: a.r2Key, mime_type: a.mimeType, size: a.size, filename: a.filename };
@@ -246,7 +254,7 @@ app.post('/api/entities/:id/convert', async (c) => {
         `INSERT INTO entities (id, type, title, content, parent_id, is_top_level, status, position, last_touched, created_at, updated_at)
          VALUES (?, 'file', ?, ?, ?, 0, NULL, ?, ?, ?, ?)`
       )
-        .bind(uid(), a.filename, JSON.stringify(meta), body.parent_id, nextPos++, ts, ts, ts)
+        .bind(uid(), a.filename, JSON.stringify(meta), id, attachPos++, ts, ts, ts)
         .run();
     }
     for (const l of links) {
@@ -256,7 +264,7 @@ app.post('/api/entities/:id/convert', async (c) => {
         `INSERT INTO entities (id, type, title, content, parent_id, is_top_level, status, position, last_touched, created_at, updated_at)
          VALUES (?, 'link', ?, ?, ?, 0, NULL, ?, ?, ?, ?)`
       )
-        .bind(uid(), l.title || l.url, JSON.stringify(meta), body.parent_id, nextPos++, ts, ts, ts)
+        .bind(uid(), l.title || l.url, JSON.stringify(meta), id, attachPos++, ts, ts, ts)
         .run();
     }
   }
@@ -454,7 +462,7 @@ app.post('/api/entities', async (c) => {
 app.patch('/api/entities/:id', async (c) => {
   const id = c.req.param('id');
   const body = await c.req.json<
-    Partial<Pick<Entity, 'title' | 'content' | 'status' | 'parent_id' | 'position' | 'pinned' | 'last_touched'>>
+    Partial<Pick<Entity, 'title' | 'content' | 'status' | 'parent_id' | 'position' | 'pinned' | 'due_date' | 'last_touched'>>
   >();
 
   const existing = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(id).first<Entity>();
@@ -492,6 +500,11 @@ app.patch('/api/entities/:id', async (c) => {
   if (body.pinned !== undefined) {
     fields.push('pinned = ?');
     values.push(body.pinned);
+  }
+  if (body.due_date !== undefined) {
+    fields.push('due_date = ?');
+    values.push(body.due_date);
+    touchesContent = true;
   }
   // Explicit last_touched override — used only to restore a project's own
   // "last modified" stamp after an Undo (e.g. moving a note in, then right
@@ -809,6 +822,83 @@ app.get('/api/link-preview', async (c) => {
   }
 
   return c.json(result);
+});
+
+// ---- Today (daily planner) ----
+
+// POST /api/tasks — create a standalone task with no project (parent_id
+// NULL, is_top_level = 1, same "addressable at the root" pattern Jots use).
+// This is the quick-add path on the Today page itself ("wash the car
+// Thursday" with no natural project home) — planning a Jot for a date goes
+// through /api/entities/:id/convert instead, since that's an existing item
+// being turned into a task rather than a brand new one.
+app.post('/api/tasks', async (c) => {
+  const body = await c.req.json<{ title: string; due_date?: string | null }>();
+  const title = body.title?.trim();
+  if (!title) return c.json({ error: 'title is required' }, 400);
+
+  const maxPos = await c.env.DB.prepare(
+    `SELECT COALESCE(MAX(position), -1) as m FROM entities WHERE parent_id IS NULL AND type = 'task'`
+  ).first<{ m: number }>();
+
+  const id = uid();
+  const ts = now();
+  await c.env.DB.prepare(
+    `INSERT INTO entities (id, type, title, parent_id, is_top_level, status, position, due_date, last_touched, created_at, updated_at)
+     VALUES (?, 'task', ?, NULL, 1, 'open', ?, ?, ?, ?, ?)`
+  )
+    .bind(id, title, (maxPos?.m ?? -1) + 1, body.due_date ?? null, ts, ts, ts)
+    .run();
+
+  const entity = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(id).first<Entity>();
+  return c.json(entity, 201);
+});
+
+// GET /api/today?date=YYYY-MM-DD — every open task due on or before `date`,
+// across every project plus standalone tasks, split into Overdue (due
+// before the given date) and Today (due exactly on it) — the core query the
+// daily planner view is built on. A past date works the same way (asking
+// "what was outstanding as of that day"), which is what makes history just
+// a different `date` rather than a separately-maintained thing.
+app.get('/api/today', async (c) => {
+  const date = c.req.query('date');
+  if (!date) return c.json({ error: 'date query param is required (YYYY-MM-DD)' }, 400);
+
+  const { results } = await c.env.DB.prepare(
+    `SELECT * FROM entities WHERE type = 'task' AND status = 'open' AND due_date IS NOT NULL AND due_date <= ? ORDER BY due_date ASC, position ASC`
+  )
+    .bind(date)
+    .all<Entity>();
+
+  // Resolve each task's top-level project ancestor, if any, for the
+  // project tag shown next to it — cached per parent_id since several tasks
+  // in the same project all resolve to the same root.
+  const cache = new Map<string, { id: string; title: string } | null>();
+  async function resolveProject(parentId: string | null): Promise<{ id: string; title: string } | null> {
+    if (!parentId) return null;
+    if (cache.has(parentId)) return cache.get(parentId)!;
+    let cursor = await c.env.DB.prepare('SELECT id, parent_id, is_top_level, type, title FROM entities WHERE id = ?')
+      .bind(parentId)
+      .first<{ id: string; parent_id: string | null; is_top_level: number; type: string; title: string }>();
+    let guard = 0;
+    while (cursor && !cursor.is_top_level && cursor.parent_id && guard++ < 20) {
+      cursor = await c.env.DB.prepare('SELECT id, parent_id, is_top_level, type, title FROM entities WHERE id = ?')
+        .bind(cursor.parent_id)
+        .first();
+    }
+    const resolved = cursor && cursor.is_top_level === 1 && cursor.type === 'project' ? { id: cursor.id, title: cursor.title } : null;
+    cache.set(parentId, resolved);
+    return resolved;
+  }
+
+  const withProject = await Promise.all(
+    (results ?? []).map(async (task) => ({ ...task, project: await resolveProject(task.parent_id) }))
+  );
+
+  const overdue = withProject.filter((t) => t.due_date! < date);
+  const today = withProject.filter((t) => t.due_date === date);
+
+  return c.json({ date, overdue, today });
 });
 
 app.get('/api/health', (c) => c.json({ ok: true, time: now() }));

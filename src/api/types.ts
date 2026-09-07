@@ -17,12 +17,14 @@ export interface LinkMeta {
   preview_domain?: string | null;
 }
 
-/** Tasks store their extra detail (everything beyond title/status) as
- * JSON in the shared `content` column — same pattern notes and files use
- * it for, just a different shape. */
+/** Tasks store their extra detail (everything beyond title/status/due date)
+ * as JSON in the shared `content` column — same pattern notes and files use
+ * it for, just a different shape. Due date used to live here too, but it's
+ * now a real column on Entity (see migrations/0006_planner.sql) so the
+ * daily planner can query "everything due today" without parsing every
+ * task's JSON. */
 export interface TaskMeta {
   description?: string;
-  due_date?: string | null; // 'YYYY-MM-DD'
 }
 
 export interface Entity {
@@ -37,6 +39,8 @@ export interface Entity {
   pinned: number;
   /** A Jot is stored as type='note' with this flag set, not a distinct type. */
   is_jot: number;
+  /** 'YYYY-MM-DD', tasks only. Powers the Today page's Overdue/Today split. */
+  due_date: string | null;
   last_touched: string | null;
   created_at: string;
   updated_at: string;
@@ -64,4 +68,17 @@ export interface EntityDetail {
   entity: Entity;
   breadcrumb: Entity[];
   children: Entity[];
+}
+
+/** A task as returned by GET /api/today — the same Entity, plus its
+ * resolved top-level project (null for a standalone task with no project),
+ * used for the little project tag next to it on the daily planner. */
+export interface TodayTask extends Entity {
+  project: { id: string; title: string } | null;
+}
+
+export interface TodayResponse {
+  date: string;
+  overdue: TodayTask[];
+  today: TodayTask[];
 }

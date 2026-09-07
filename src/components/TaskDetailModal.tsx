@@ -75,7 +75,7 @@ export function TaskDetailModal({
       setTitle(d.entity.title);
       const meta = parseTaskMeta(d.entity.content);
       setDescription(meta.description ?? '');
-      setDueDate(meta.due_date ?? '');
+      setDueDate(d.entity.due_date ?? '');
       const parent = d.breadcrumb[d.breadcrumb.length - 1];
       setParentTitle(parent && parent.type === 'task' ? parent.title || 'Untitled Task' : null);
     });
@@ -115,7 +115,9 @@ export function TaskDetailModal({
 
   function handleDueDateChange(value: string) {
     setDueDate(value);
-    saveMeta({ due_date: value || null });
+    setEntity((prev) => (prev ? { ...prev, due_date: value || null } : prev));
+    api.updateEntity(taskId, { due_date: value || null });
+    onMutated();
   }
 
   async function toggleDone() {

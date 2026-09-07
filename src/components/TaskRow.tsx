@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import type { Entity, FileMeta, LinkMeta, TaskMeta } from '../api/types';
+import { Link } from 'react-router-dom';
+import type { Entity, FileMeta, LinkMeta } from '../api/types';
 import { KebabMenu } from './KebabMenu';
 import { api, normalizeUrl } from '../api/client';
 import { formatRelativeTime } from '../utils/formatRelativeTime';
@@ -19,15 +20,6 @@ function parseLinkMeta(entity: Entity): LinkMeta | null {
     return JSON.parse(entity.content) as LinkMeta;
   } catch {
     return null;
-  }
-}
-
-function parseTaskMeta(entity: Entity): TaskMeta {
-  if (!entity.content) return {};
-  try {
-    return JSON.parse(entity.content) as TaskMeta;
-  } catch {
-    return {};
   }
 }
 
@@ -111,6 +103,7 @@ export function TaskRow({
   onPromote,
   onDemote,
   isSubtask = false,
+  projectTag,
 }: {
   entity: Entity;
   onToggle: (entity: Entity) => void;
@@ -120,6 +113,11 @@ export function TaskRow({
   onPromote?: (entity: Entity) => void;
   onDemote?: (entity: Entity) => void;
   isSubtask?: boolean;
+  /** Shown as a small pill after the title, linking to the project — used
+   * on the Today page, where a task is displayed away from its project and
+   * needs a visual reminder of where it actually lives. Omitted everywhere
+   * a task is already shown inside its own project (redundant there). */
+  projectTag?: { id: string; title: string } | null;
 }) {
   const isDone = entity.status === 'done';
   const isPinned = entity.pinned === 1;
@@ -128,7 +126,7 @@ export function TaskRow({
   // Only count what's left to do — a finished subtask shouldn't keep
   // padding out this badge once it's no longer actionable.
   const openSubtaskCount = subtasks.filter((s) => s.status !== 'done').length;
-  const dueDate = parseTaskMeta(entity).due_date;
+  const dueDate = entity.due_date;
   const due = dueDate ? formatDueDate(dueDate) : null;
 
   return (
@@ -147,6 +145,16 @@ export function TaskRow({
         <span className={`task-row__title${isDone ? ' is-done' : ''}${!entity.title ? ' is-placeholder' : ''}`}>
           {entity.title || 'Untitled Task'}
         </span>
+        {projectTag && (
+          <Link
+            to={`/projects/${projectTag.id}`}
+            className="task-row__project-tag"
+            onClick={(e) => e.stopPropagation()}
+            title={`In project: ${projectTag.title}`}
+          >
+            📁 {projectTag.title}
+          </Link>
+        )}
         {due && (
           <span
             className={`task-row__due task-row__due--${isDone ? 'done' : due.kind}`}

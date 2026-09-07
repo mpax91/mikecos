@@ -2760,3 +2760,86 @@ a {
     column-count: 1;
   }
 }
+
+/* ---- Today (daily planner) ---- */
+
+.today-page__nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.today-page__nav-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: var(--border-hairline);
+  background: var(--color-card-bg);
+  color: var(--color-ink);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.today-page__nav-btn:hover {
+  background: rgba(47, 74, 60, 0.08);
+}
+
+.today-page__date-input {
+  font-size: 13px;
+  padding: 5px 8px;
+  border-radius: 8px;
+}
+
+.today-page__subheading {
+  font-size: 12px;
+  color: var(--color-muted);
+  margin: -8px 0 16px;
+}
+
+.today-page__body {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.today-page__section-title {
+  font-size: 12px;
+  font-weight: var(--weight-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-muted);
+  margin-bottom: 8px;
+}
+
+.today-page__section-title--overdue {
+  color: var(--color-accent-secondary);
+}
+
+.today-page__list {
+  padding: 4px 12px;
+}
+
+.today-page__quick-add input {
+  width: 100%;
+}
+
+/* A task shown away from its own project (Today) gets a small tag pointing
+   back to it — the same visual role as the due-date badge next to it, just
+   naming "where" instead of "when". */
+.task-row__project-tag {
+  font-size: 11px;
+  color: var(--color-muted);
+  background: var(--color-sidebar);
+  border-radius: 10px;
+  padding: 2px 8px;
+  flex-shrink: 0;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.task-row__project-tag:hover {
+  background: rgba(47, 74, 60, 0.12);
+  color: var(--color-ink);
+}

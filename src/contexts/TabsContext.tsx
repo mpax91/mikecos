@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ContextMenu, type ContextMenuItem } from '../components/ContextMenu';
 
-export type TabKind = 'projects-list' | 'notes-list' | 'jots-list' | 'project' | 'folder' | 'note';
+export type TabKind = 'today' | 'projects-list' | 'notes-list' | 'jots-list' | 'project' | 'folder' | 'note';
 
 export interface Tab {
   id: string;
@@ -20,12 +20,13 @@ interface TabsState {
 const STORAGE_KEY = 'mikeos.tabs.v1';
 
 function inferTabMeta(path: string): { kind: TabKind; title: string } {
+  if (path === '/today' || path.startsWith('/today/')) return { kind: 'today', title: 'Today' };
   if (path === '/projects') return { kind: 'projects-list', title: 'Projects' };
   if (path === '/notes') return { kind: 'notes-list', title: 'Notes' };
   if (path === '/jots') return { kind: 'jots-list', title: 'Jots' };
   if (path.startsWith('/projects/')) return { kind: 'project', title: 'Project' };
   if (path.startsWith('/notes/')) return { kind: 'note', title: 'Note' };
-  return { kind: 'projects-list', title: 'Projects' };
+  return { kind: 'today', title: 'Today' };
 }
 
 function makeTab(path: string, hint?: { title?: string; kind?: TabKind }): Tab {
@@ -270,6 +271,7 @@ export function useReportTabMeta(title: string | undefined, kind?: TabKind) {
 }
 
 export function tabIcon(kind: TabKind): string {
+  if (kind === 'today') return '📅';
   if (kind === 'jots-list') return '🗒️';
   return kind === 'notes-list' || kind === 'note' ? '📝' : '📁';
 }

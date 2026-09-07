@@ -13,6 +13,7 @@ export interface Entity {
   position: number;
   pinned: number; // 0 | 1
   is_jot: number; // 0 | 1 — a Jot is stored as type='note' with this flag set, not a distinct type (see migrations/0005_jots.sql)
+  due_date: string | null; // 'YYYY-MM-DD' — tasks only (see migrations/0006_planner.sql)
   last_touched: string | null;
   created_at: string;
   updated_at: string;

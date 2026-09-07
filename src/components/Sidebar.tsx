@@ -42,6 +42,15 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
         <input className="sidebar__search" placeholder="Search" disabled title="Search — coming later" />
         <nav className="sidebar__nav">
           <NavLink
+            to="/today"
+            onClick={(e) => handleClick(e, '/today')}
+            onContextMenu={(e) => handleContextMenu(e, '/today', 'Today')}
+            className={({ isActive }) => `sidebar__nav-item title-case${isActive ? ' is-active' : ''}`}
+          >
+            <span className="sidebar__nav-icon">{tabIcon('today')}</span>
+            Today
+          </NavLink>
+          <NavLink
             to="/projects"
             onClick={(e) => handleClick(e, '/projects')}
             onContextMenu={(e) => handleContextMenu(e, '/projects', 'Projects')}
