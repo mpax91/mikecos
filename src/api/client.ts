@@ -1,4 +1,4 @@
-import type { Entity, EntityDetail, EntityType, MeetingsResponse, MonthResponse, ProjectListItem, TodayResponse, WeatherResponse, WeekResponse } from './types';
+import type { Entity, EntityDetail, EntityType, MeetingsResponse, MonthResponse, ProjectListItem, RecurringTaskDefinition, TodayResponse, WeatherResponse, WeekResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -196,4 +196,30 @@ export const api = {
     request<{ url: string; title: string | null; image: string | null; domain: string | null }>(
       `/api/link-preview?url=${encodeURIComponent(url)}`
     ),
+
+  // ---- Recurring task definitions (Settings screen) ----
+
+  listRecurring: () => request<RecurringTaskDefinition[]>('/api/recurring'),
+
+  createRecurring: (params: { title: string; project_id?: string | null; rrule: string; dtstart: string; active?: boolean }) =>
+    request<RecurringTaskDefinition>('/api/recurring', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    }),
+
+  updateRecurring: (
+    id: string,
+    patch: Partial<{ title: string; project_id: string | null; rrule: string; dtstart: string; active: boolean }>
+  ) =>
+    request<RecurringTaskDefinition>(`/api/recurring/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }),
+
+  deleteRecurring: (id: string) => request<{ ok: true }>(`/api/recurring/${id}`, { method: 'DELETE' }),
+
+  /** Human-readable summary of an RRULE string (e.g. "every week on Monday")
+   * for the live preview in the create/edit form. */
+  previewRrule: (rrule: string, dtstart: string) =>
+    request<{ text: string }>(`/api/recurring/preview?rrule=${encodeURIComponent(rrule)}&dtstart=${encodeURIComponent(dtstart)}`),
 };

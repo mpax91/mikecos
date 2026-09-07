@@ -162,3 +162,23 @@ export interface MeetingsResponse {
   date: string;
   meetings: MeetingItem[];
 }
+
+/** A recurring task definition managed on the Settings screen — describes
+ * the repeating chore itself (title, project, RRULE, anchor date); the
+ * actual task instances that show up on Today/Week/Month are ordinary
+ * Entities the worker spawns lazily (see the worker's spawnDueRecurringTasks
+ * comment on GET /api/today). `current_task_id` is the live outstanding
+ * spawned instance (null if none has spawned, or the last one is done). */
+export interface RecurringTaskDefinition {
+  id: string;
+  title: string;
+  project_id: string | null;
+  project_title: string | null;
+  rrule: string;
+  dtstart: string;
+  active: number; // 0 | 1
+  current_task_id: string | null;
+  last_spawned_due_date: string | null;
+  created_at: string;
+  updated_at: string;
+}

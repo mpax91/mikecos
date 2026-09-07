@@ -77,6 +77,15 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
             <span className="sidebar__nav-icon">{tabIcon('jots-list')}</span>
             Jots
           </NavLink>
+          <NavLink
+            to="/settings"
+            onClick={(e) => handleClick(e, '/settings')}
+            onContextMenu={(e) => handleContextMenu(e, '/settings', 'Settings')}
+            className={({ isActive }) => `sidebar__nav-item title-case${isActive ? ' is-active' : ''}`}
+          >
+            <span className="sidebar__nav-icon">{tabIcon('settings')}</span>
+            Settings
+          </NavLink>
         </nav>
       </aside>
     </>

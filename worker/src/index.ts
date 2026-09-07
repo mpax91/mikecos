@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import type { Env, Entity } from './types';
 import { calendarIdFromIcsUrl, meetingsForDate } from './ics';
+import { describeRrule, isValidRrule, nextDueOccurrenceDate, type RecurringTaskDefinition } from './recurring';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -76,6 +77,73 @@ async function touchProjectAncestor(db: D1Database, entityId: string | null) {
   }
   if (cursor?.is_top_level) {
     await db.prepare('UPDATE entities SET last_touched = ? WHERE id = ?').bind(now(), cursor.id).run();
+  }
+}
+
+// Lazily materializes recurring tasks — no cron trigger, this just runs at
+// the top of every GET /api/today so a spawn happens on the next page load
+// on or after it's due (same "no extra infra" spirit as everything else in
+// the planner). For each active definition: if its current_task_id still
+// points to an open task, it's still outstanding, so nothing spawns — a
+// definition only ever has one live instance at a time. Otherwise, spawn
+// the earliest occurrence that's due on or before `todayIso` (see
+// nextDueOccurrenceDate — if several were missed while the last instance
+// sat open, only the oldest one spawns; it lands with a due_date in the
+// past and rolls straight into Overdue, same as any other dated task).
+async function spawnDueRecurringTasks(db: D1Database, todayIso: string): Promise<void> {
+  const { results } = await db
+    .prepare(`SELECT * FROM recurring_task_definitions WHERE active = 1`)
+    .all<RecurringTaskDefinition>();
+
+  for (const def of results ?? []) {
+    if (def.current_task_id) {
+      const current = await db
+        .prepare(`SELECT status FROM entities WHERE id = ?`)
+        .bind(def.current_task_id)
+        .first<{ status: string | null }>();
+      if (current && current.status === 'open') continue; // still outstanding
+    }
+
+    let dueDate: string | null;
+    try {
+      dueDate = nextDueOccurrenceDate(def.rrule, def.dtstart, def.last_spawned_due_date, todayIso);
+    } catch {
+      continue; // a malformed RRULE shouldn't take the whole endpoint down
+    }
+    if (!dueDate) continue;
+
+    const id = uid();
+    const ts = now();
+    if (def.project_id) {
+      const maxPos = await db
+        .prepare(`SELECT COALESCE(MAX(position), -1) as m FROM entities WHERE parent_id = ?`)
+        .bind(def.project_id)
+        .first<{ m: number }>();
+      await db
+        .prepare(
+          `INSERT INTO entities (id, type, title, parent_id, is_top_level, status, position, due_date, last_touched, created_at, updated_at)
+           VALUES (?, 'task', ?, ?, 0, 'open', ?, ?, ?, ?, ?)`
+        )
+        .bind(id, def.title, def.project_id, (maxPos?.m ?? -1) + 1, dueDate, ts, ts, ts)
+        .run();
+      await touchProjectAncestor(db, def.project_id);
+    } else {
+      const maxPos = await db
+        .prepare(`SELECT COALESCE(MAX(position), -1) as m FROM entities WHERE parent_id IS NULL AND type = 'task'`)
+        .first<{ m: number }>();
+      await db
+        .prepare(
+          `INSERT INTO entities (id, type, title, parent_id, is_top_level, status, position, due_date, last_touched, created_at, updated_at)
+           VALUES (?, 'task', ?, NULL, 1, 'open', ?, ?, ?, ?, ?)`
+        )
+        .bind(id, def.title, (maxPos?.m ?? -1) + 1, dueDate, ts, ts, ts)
+        .run();
+    }
+
+    await db
+      .prepare(`UPDATE recurring_task_definitions SET current_task_id = ?, last_spawned_due_date = ?, updated_at = ? WHERE id = ?`)
+      .bind(id, dueDate, ts, def.id)
+      .run();
   }
 }
 
@@ -882,6 +950,136 @@ app.post('/api/tasks', async (c) => {
   return c.json(entity, 201);
 });
 
+// ---- Recurring task definitions (Settings screen) ----
+//
+// A definition just describes a repeating chore ("mow lawn", every Monday);
+// the actual task instances that show up on Today/Week/Month are ordinary
+// entities spawned lazily by spawnDueRecurringTasks (see /api/today) — this
+// CRUD surface only manages the definitions themselves. Deleting a
+// definition never deletes any task it already spawned.
+
+interface RecurringWithProject extends RecurringTaskDefinition {
+  project_title: string | null;
+}
+
+// GET /api/recurring — every definition (active and inactive), newest
+// first, with its project's title resolved for display (NULL for a
+// standalone recurring task).
+app.get('/api/recurring', async (c) => {
+  const { results } = await c.env.DB.prepare(
+    `SELECT r.*, p.title as project_title
+     FROM recurring_task_definitions r
+     LEFT JOIN entities p ON p.id = r.project_id
+     ORDER BY r.created_at DESC`
+  ).all<RecurringWithProject>();
+  return c.json(results ?? []);
+});
+
+// POST /api/recurring — create a new definition. `rrule` must be a bare
+// RFC5545 RRULE string (no "RRULE:" prefix, no DTSTART line — that comes
+// from `dtstart` separately so it can double as the "first occurrence"
+// date shown/edited on its own in the form).
+app.post('/api/recurring', async (c) => {
+  const body = await c.req.json<{
+    title: string;
+    project_id?: string | null;
+    rrule: string;
+    dtstart: string;
+    active?: boolean;
+  }>();
+
+  const title = body.title?.trim();
+  if (!title) return c.json({ error: 'title is required' }, 400);
+  if (!body.rrule?.trim()) return c.json({ error: 'rrule is required' }, 400);
+  if (!body.dtstart) return c.json({ error: 'dtstart is required (YYYY-MM-DD)' }, 400);
+  if (!isValidRrule(body.rrule.trim())) return c.json({ error: 'rrule does not parse as a valid RFC5545 rule' }, 400);
+
+  if (body.project_id) {
+    const project = await c.env.DB.prepare('SELECT id FROM entities WHERE id = ?').bind(body.project_id).first();
+    if (!project) return c.json({ error: 'project not found' }, 404);
+  }
+
+  const id = uid();
+  const ts = now();
+  await c.env.DB.prepare(
+    `INSERT INTO recurring_task_definitions (id, title, project_id, rrule, dtstart, active, current_task_id, last_spawned_due_date, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)`
+  )
+    .bind(id, title, body.project_id ?? null, body.rrule.trim(), body.dtstart, body.active === false ? 0 : 1, ts, ts)
+    .run();
+
+  const def = await c.env.DB.prepare('SELECT * FROM recurring_task_definitions WHERE id = ?').bind(id).first();
+  return c.json(def, 201);
+});
+
+// PATCH /api/recurring/:id — edit any subset of fields. Changing `rrule` or
+// `dtstart` does not retroactively touch the already-spawned current task;
+// it only changes what spawns next.
+app.patch('/api/recurring/:id', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json<Partial<{
+    title: string;
+    project_id: string | null;
+    rrule: string;
+    dtstart: string;
+    active: boolean;
+  }>>();
+
+  const existing = await c.env.DB.prepare('SELECT * FROM recurring_task_definitions WHERE id = ?').bind(id).first();
+  if (!existing) return c.json({ error: 'not found' }, 404);
+
+  if (body.rrule !== undefined && !isValidRrule(body.rrule.trim())) {
+    return c.json({ error: 'rrule does not parse as a valid RFC5545 rule' }, 400);
+  }
+  if (body.project_id) {
+    const project = await c.env.DB.prepare('SELECT id FROM entities WHERE id = ?').bind(body.project_id).first();
+    if (!project) return c.json({ error: 'project not found' }, 404);
+  }
+
+  const fields: string[] = [];
+  const values: unknown[] = [];
+  if (body.title !== undefined) { fields.push('title = ?'); values.push(body.title.trim()); }
+  if (body.project_id !== undefined) { fields.push('project_id = ?'); values.push(body.project_id); }
+  if (body.rrule !== undefined) { fields.push('rrule = ?'); values.push(body.rrule.trim()); }
+  if (body.dtstart !== undefined) { fields.push('dtstart = ?'); values.push(body.dtstart); }
+  if (body.active !== undefined) { fields.push('active = ?'); values.push(body.active ? 1 : 0); }
+
+  if (fields.length > 0) {
+    fields.push('updated_at = ?');
+    values.push(now());
+    values.push(id);
+    await c.env.DB.prepare(`UPDATE recurring_task_definitions SET ${fields.join(', ')} WHERE id = ?`).bind(...values).run();
+  }
+
+  const def = await c.env.DB.prepare('SELECT * FROM recurring_task_definitions WHERE id = ?').bind(id).first();
+  return c.json(def);
+});
+
+// DELETE /api/recurring/:id — removes the definition only; any task it has
+// already spawned (including the current outstanding one) stays exactly as
+// it is on the planner.
+app.delete('/api/recurring/:id', async (c) => {
+  const id = c.req.param('id');
+  const existing = await c.env.DB.prepare('SELECT id FROM recurring_task_definitions WHERE id = ?').bind(id).first();
+  if (!existing) return c.json({ error: 'not found' }, 404);
+  await c.env.DB.prepare('DELETE FROM recurring_task_definitions WHERE id = ?').bind(id).run();
+  return c.json({ ok: true });
+});
+
+// GET /api/recurring/preview?rrule=&dtstart= — human-readable summary of an
+// RRULE string (e.g. "every week on Monday") for the live preview in the
+// Settings form, so Mike can sanity-check what he typed before saving.
+app.get('/api/recurring/preview', async (c) => {
+  const rrule = c.req.query('rrule');
+  const dtstart = c.req.query('dtstart');
+  if (!rrule || !dtstart) return c.json({ error: 'rrule and dtstart query params are required' }, 400);
+  try {
+    return c.json({ text: describeRrule(rrule, dtstart) });
+  } catch {
+    return c.json({ error: "rrule does not parse — check the syntax (e.g. FREQ=WEEKLY;BYDAY=MO)" }, 400);
+  }
+});
+
 // Shared by /api/today and /api/week: the single stalest un-revisited jot
 // and top-level note, each tagged with which bucket it came from. Not tied
 // to any particular date — it's a "worth revisiting" nudge about whatever
@@ -922,6 +1120,11 @@ app.get('/api/today', async (c) => {
   if (!date) return c.json({ error: 'date query param is required (YYYY-MM-DD)' }, 400);
   const realToday = c.req.query('today') || date;
   const overdueAsOf = realToday < date ? realToday : date;
+
+  // Materialize any recurring tasks due as of the viewer's real "today"
+  // before querying — not `date`, since previewing a future day shouldn't
+  // spawn tomorrow's chore early. See spawnDueRecurringTasks.
+  await spawnDueRecurringTasks(c.env.DB, realToday);
 
   // overdueAsOf is always <= date (it's the earlier of the two), so a
   // single due_date <= date bound covers both buckets below.

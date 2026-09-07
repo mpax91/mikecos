@@ -3586,3 +3586,113 @@ a {
   padding: 3px 0;
   color: var(--color-muted);
 }
+
+/* ---- Settings page (Recurring Tasks) ---- */
+
+.settings-page__section {
+  margin-top: 24px;
+}
+
+.settings-page__section-title {
+  font-size: 16px;
+  margin: 0;
+}
+
+.settings-page__section-hint {
+  font-size: 13px;
+  color: var(--color-muted);
+  margin: 4px 0 16px;
+  max-width: 640px;
+}
+
+.settings-page__recurring-list {
+  padding: 4px 0;
+}
+
+.settings-page__recurring-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.settings-page__recurring-row:last-child {
+  border-bottom: none;
+}
+
+.settings-page__recurring-row.is-inactive {
+  opacity: 0.5;
+}
+
+.settings-page__recurring-toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--color-accent);
+  padding: 2px 4px;
+  line-height: 1;
+}
+
+.settings-page__recurring-main {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.settings-page__recurring-title {
+  font-size: 14px;
+  color: var(--color-ink);
+}
+
+.settings-page__recurring-meta {
+  font-size: 12px;
+  color: var(--color-muted);
+  font-family: monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.settings-page__recurring-delete {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-muted);
+  font-size: 13px;
+  padding: 2px 6px;
+}
+
+.settings-page__recurring-delete:hover {
+  color: var(--color-danger, #c0392b);
+}
+
+.settings-page__field-label {
+  display: block;
+  font-size: 12px;
+  color: var(--color-muted);
+  margin: 12px 0 4px;
+}
+
+.settings-page__rrule-preview {
+  font-size: 12px;
+  color: var(--color-accent);
+  margin-top: 6px;
+}
+
+.settings-page__rrule-error {
+  font-size: 12px;
+  color: var(--color-danger, #c0392b);
+  margin-top: 6px;
+}
+
+.settings-page__checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--color-ink);
+  margin-top: 14px;
+  cursor: pointer;
+}
