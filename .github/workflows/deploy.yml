@@ -25,11 +25,20 @@ jobs:
         # single deploy, regardless of what Cloudflare's own Time Travel
         # retention happens to cover at the time. Uploaded as a build
         # artifact so it survives outside of D1 entirely.
+        #
+        # mikeos-db is a shared database used by other MikeOS apps too (way
+        # more tables than this Worker touches), and it has an FTS5 virtual
+        # table (search_fts, from an unrelated feature) that `wrangler d1
+        # export`'s whole-database mode flatly refuses to touch ("cannot
+        # export databases with Virtual Tables"). Our migrations only ever
+        # touch entities/links, so back up just those two tables instead of
+        # the whole database — narrower, faster, and avoids the FTS5 export
+        # bug entirely.
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          npx wrangler d1 export mikeos-db --remote --output=pre-migration-backup.sql
+          npx wrangler d1 export mikeos-db --remote --output=pre-migration-backup.sql --table=entities --table=links
           echo "entity_count_before=$(npx wrangler d1 execute mikeos-db --remote --json --command 'SELECT COUNT(*) as n FROM entities' | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>console.log(JSON.parse(d)[0].results[0].n))")" >> "$GITHUB_ENV"
       - uses: actions/upload-artifact@v4
         with:
