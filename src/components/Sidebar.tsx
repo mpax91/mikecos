@@ -1,10 +1,23 @@
 import { NavLink } from 'react-router-dom';
-import { useTabs, tabIcon } from '../contexts/TabsContext';
+import { useTabs, tabIcon, type TabKind } from '../contexts/TabsContext';
 
 interface SidebarProps {
   open?: boolean;
   onClose?: () => void;
 }
+
+interface NavItemDef {
+  path: string;
+  label: string;
+  kind: TabKind;
+}
+
+const WORKSPACE_ITEMS: NavItemDef[] = [
+  { path: '/today', label: 'Today', kind: 'today' },
+  { path: '/projects', label: 'Projects', kind: 'projects-list' },
+  { path: '/notes', label: 'Notes', kind: 'notes-list' },
+  { path: '/jots', label: 'Jots', kind: 'jots-list' },
+];
 
 export function Sidebar({ open = false, onClose }: SidebarProps) {
   const { openTab, showContextMenu } = useTabs();
@@ -29,6 +42,21 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
     ]);
   }
 
+  function renderItem({ path, label, kind }: NavItemDef) {
+    return (
+      <NavLink
+        key={path}
+        to={path}
+        onClick={(e) => handleClick(e, path)}
+        onContextMenu={(e) => handleContextMenu(e, path, label)}
+        className={({ isActive }) => `sidebar__nav-item title-case${isActive ? ' is-active' : ''}`}
+      >
+        <span className="sidebar__nav-icon">{tabIcon(kind)}</span>
+        {label}
+      </NavLink>
+    );
+  }
+
   return (
     <>
       {open && <div className="sidebar-backdrop" onClick={onClose} />}
@@ -40,53 +68,17 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
           </button>
         </div>
         <input className="sidebar__search" placeholder="Search" disabled title="Search — coming later" />
-        <nav className="sidebar__nav">
-          <NavLink
-            to="/today"
-            onClick={(e) => handleClick(e, '/today')}
-            onContextMenu={(e) => handleContextMenu(e, '/today', 'Today')}
-            className={({ isActive }) => `sidebar__nav-item title-case${isActive ? ' is-active' : ''}`}
-          >
-            <span className="sidebar__nav-icon">{tabIcon('today')}</span>
-            Today
-          </NavLink>
-          <NavLink
-            to="/projects"
-            onClick={(e) => handleClick(e, '/projects')}
-            onContextMenu={(e) => handleContextMenu(e, '/projects', 'Projects')}
-            className={({ isActive }) => `sidebar__nav-item title-case${isActive ? ' is-active' : ''}`}
-          >
-            <span className="sidebar__nav-icon">{tabIcon('projects-list')}</span>
-            Projects
-          </NavLink>
-          <NavLink
-            to="/notes"
-            onClick={(e) => handleClick(e, '/notes')}
-            onContextMenu={(e) => handleContextMenu(e, '/notes', 'Notes')}
-            className={({ isActive }) => `sidebar__nav-item title-case${isActive ? ' is-active' : ''}`}
-          >
-            <span className="sidebar__nav-icon">{tabIcon('notes-list')}</span>
-            Notes
-          </NavLink>
-          <NavLink
-            to="/jots"
-            onClick={(e) => handleClick(e, '/jots')}
-            onContextMenu={(e) => handleContextMenu(e, '/jots', 'Jots')}
-            className={({ isActive }) => `sidebar__nav-item title-case${isActive ? ' is-active' : ''}`}
-          >
-            <span className="sidebar__nav-icon">{tabIcon('jots-list')}</span>
-            Jots
-          </NavLink>
-          <NavLink
-            to="/settings"
-            onClick={(e) => handleClick(e, '/settings')}
-            onContextMenu={(e) => handleContextMenu(e, '/settings', 'Settings')}
-            className={({ isActive }) => `sidebar__nav-item title-case${isActive ? ' is-active' : ''}`}
-          >
-            <span className="sidebar__nav-icon">{tabIcon('settings')}</span>
-            Settings
-          </NavLink>
-        </nav>
+
+        <div className="sidebar__section">
+          <div className="sidebar__section-label">Workspace</div>
+          <nav className="sidebar__nav">{WORKSPACE_ITEMS.map(renderItem)}</nav>
+        </div>
+
+        <div className="sidebar__spacer" />
+
+        <div className="sidebar__section sidebar__section--bottom">
+          <nav className="sidebar__nav">{renderItem({ path: '/settings', label: 'Settings', kind: 'settings' })}</nav>
+        </div>
       </aside>
     </>
   );

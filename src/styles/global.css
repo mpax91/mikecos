@@ -128,6 +128,33 @@ a {
   color: var(--color-accent-text);
 }
 
+.sidebar__section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sidebar__section-label {
+  font-size: 10.5px;
+  font-weight: var(--weight-medium);
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0 10px;
+}
+
+/* Pushes everything below it (Settings) to the very bottom of the sidebar,
+   same idea as the divider-separated Settings row in the reference layout —
+   it reads as its own section rather than just another workspace item. */
+.sidebar__spacer {
+  flex: 1;
+}
+
+.sidebar__section--bottom {
+  border-top: var(--border-hairline);
+  padding-top: 12px;
+}
+
 /* ---- Main area / tabs ---- */
 
 .main {
@@ -3393,12 +3420,19 @@ a {
 .month-page__grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
+  /* Explicit equal-height rows (rather than relying on implicit "auto" row
+     sizing) — every cell renders the same handful of elements now (date,
+     optional holiday banner, optional task badge), but pinning the row
+     height keeps every day's top edge lined up with the weekday header
+     row above regardless of content, instead of leaving it to each browser's
+     own grid auto-sizing/rounding. */
+  grid-auto-rows: 1fr;
   border-top: var(--border-hairline);
   border-left: var(--border-hairline);
 }
 
 .month-page__cell {
-  min-height: 112px;
+  min-height: 96px;
   border-right: var(--border-hairline);
   border-bottom: var(--border-hairline);
   padding: 6px;
@@ -3406,6 +3440,7 @@ a {
   display: flex;
   flex-direction: column;
   gap: 3px;
+  box-sizing: border-box;
 }
 
 .month-page__cell:hover {
@@ -3459,53 +3494,16 @@ a {
   white-space: nowrap;
 }
 
-.month-page__cell-tasks {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.month-page__task {
+.month-page__task-badge {
   display: flex;
   align-items: center;
   gap: 4px;
-  cursor: pointer;
-  border-radius: 4px;
-  padding: 1px 2px;
-}
-
-.month-page__task:hover {
-  background: rgba(47, 74, 60, 0.08);
-}
-
-.month-page__task-checkbox {
-  width: 12px;
-  height: 12px;
-  flex-shrink: 0;
-  cursor: pointer;
-}
-
-.month-page__task-title {
   font-size: 11.5px;
-  color: var(--color-ink);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.month-page__more-btn {
-  display: block;
-  border: none;
-  background: none;
-  padding: 1px 2px;
-  font-size: 11px;
   color: var(--color-muted);
-  cursor: pointer;
-  text-align: left;
 }
 
-.month-page__more-btn:hover {
-  color: var(--color-accent);
+.month-page__task-badge-icon {
+  font-size: 11px;
 }
 
 @media (max-width: 900px) {

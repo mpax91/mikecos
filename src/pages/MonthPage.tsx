@@ -1,17 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
-import type { Entity, MonthResponse, TodayTask } from '../api/types';
-import { TaskDetailModal } from '../components/TaskDetailModal';
-import { ConfirmModal } from '../components/ConfirmModal';
+import type { MonthResponse } from '../api/types';
 import { getHolidays } from '../utils/holidays';
 import { useReportTabMeta } from '../contexts/TabsContext';
-
-/** How many task rows a cell shows before collapsing the rest into a
- * "+N more" — Google Calendar's own month grid does the same thing, and a
- * MikeOS day can easily have more tasks than 3 rows' worth of vertical
- * room in a 6-row-tall grid. */
-const MAX_VISIBLE_PER_CELL = 3;
 
 function todayLocalISO(): string {
   const d = new Date();
@@ -70,26 +62,16 @@ function formatDayNum(iso: string): number {
 
 const WEEKDAY_LABELS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 
-function MonthTaskRow({ task, onToggle, onOpen }: { task: TodayTask; onToggle: (t: Entity) => void; onOpen: (t: Entity) => void }) {
+/** Compact task-count badge for a cell — same "☑ N" treatment as the open-
+ * task count on a Projects card, rather than spelling out every title in a
+ * cell this small. Month view is a bird's-eye look at what's coming, not a
+ * place to work the backlog — click the cell to open that day's Day view,
+ * where the real list and checkboxes live. */
+function MonthTaskBadge({ count }: { count: number }) {
+  if (count === 0) return null;
   return (
-    <div
-      className="month-page__task"
-      onClick={(e) => {
-        e.stopPropagation();
-        onOpen(task);
-      }}
-    >
-      <input
-        type="checkbox"
-        checked={task.status === 'done'}
-        onChange={(e) => {
-          e.stopPropagation();
-          onToggle(task);
-        }}
-        onClick={(e) => e.stopPropagation()}
-        className="month-page__task-checkbox"
-      />
-      <span className="month-page__task-title">{task.title || 'Untitled Task'}</span>
+    <div className="month-page__task-badge" title={`${count} open task${count === 1 ? '' : 's'}`}>
+      <span className="month-page__task-badge-icon">☑</span> {count}
     </div>
   );
 }
@@ -97,12 +79,11 @@ function MonthTaskRow({ task, onToggle, onOpen }: { task: TodayTask; onToggle: (
 /** Month view — a Google-Calendar-style grid: every day of the visible
  * month (plus the previous/next month's spillover days needed to fill a
  * whole 7-column grid), each cell showing that day's holiday (if any) and
- * up to a handful of tasks due that day, with the rest collapsed into a
- * "+N more". It's a bird's-eye look at what's coming, not a place to work
- * the backlog — no Overdue, Tickler, or Unscheduled shelf here, and no
- * blank ruled lines to fill in; those all stay on Day/Week. Clicking a
- * task opens it in the same detail sidebar Day/Week use; clicking anywhere
- * else in a cell opens that day's Day view. */
+ * a compact count of tasks due that day. It's a bird's-eye look at what's
+ * coming, not a place to work the backlog — no Overdue, Tickler, or
+ * Unscheduled shelf here, and no blank ruled lines to fill in; those all
+ * stay on Day/Week. Clicking anywhere in a cell opens that day's Day view,
+ * where the real list and checkboxes live. */
 export function MonthPage() {
   const { month: monthParam } = useParams<{ month: string }>();
   const navigate = useNavigate();
@@ -111,9 +92,6 @@ export function MonthPage() {
 
   const [data, setData] = useState<MonthResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [taskStack, setTaskStack] = useState<string[]>([]);
-  const [deleting, setDeleting] = useState<Entity | null>(null);
-  const [expandedCell, setExpandedCell] = useState<string | null>(null);
 
   useReportTabMeta(formatMonthHeading(month), 'today');
 
@@ -138,17 +116,11 @@ export function MonthPage() {
     load();
   }, [load]);
 
-  useEffect(() => {
-    setExpandedCell(null);
-  }, [month]);
-
-  const tasksByDate = useMemo(() => {
-    const map = new Map<string, TodayTask[]>();
+  const taskCountByDate = useMemo(() => {
+    const map = new Map<string, number>();
     if (!data) return map;
     for (const t of data.tasks) {
-      const list = map.get(t.due_date!);
-      if (list) list.push(t);
-      else map.set(t.due_date!, [t]);
+      map.set(t.due_date!, (map.get(t.due_date!) ?? 0) + 1);
     }
     return map;
   }, [data]);
@@ -177,36 +149,6 @@ export function MonthPage() {
 
   function openDay(date: string) {
     navigate(date === realToday ? '/today' : `/today/${date}`);
-  }
-
-  function openTask(task: Entity) {
-    setTaskStack([task.id]);
-  }
-
-  function closeTaskModal() {
-    setTaskStack([]);
-    load();
-  }
-
-  function openSubtask(id: string) {
-    setTaskStack((prev) => [...prev, id]);
-  }
-
-  function backTask() {
-    setTaskStack((prev) => prev.slice(0, -1));
-  }
-
-  async function toggleTask(task: Entity) {
-    const next = task.status === 'done' ? 'open' : 'done';
-    setData((prev) => (prev ? { ...prev, tasks: prev.tasks.filter((t) => t.id !== task.id || next !== 'done') } : prev));
-    await api.updateEntity(task.id, { status: next });
-    load();
-  }
-
-  async function deleteTask(task: Entity) {
-    setData((prev) => (prev ? { ...prev, tasks: prev.tasks.filter((t) => t.id !== task.id) } : prev));
-    await api.deleteEntity(task.id);
-    setDeleting(null);
   }
 
   if (error) return <div className="empty-state">Couldn't load this month: {error}</div>;
@@ -259,10 +201,7 @@ export function MonthPage() {
               const inMonth = monthOf(date) === month;
               const isToday = date === realToday;
               const holidays = getHolidays(date);
-              const tasks = tasksByDate.get(date) ?? [];
-              const expanded = expandedCell === date;
-              const visible = expanded ? tasks : tasks.slice(0, MAX_VISIBLE_PER_CELL);
-              const hiddenCount = tasks.length - visible.length;
+              const taskCount = taskCountByDate.get(date) ?? 0;
 
               return (
                 <div
@@ -274,54 +213,12 @@ export function MonthPage() {
                     <span className={`month-page__cell-date${isToday ? ' is-today' : ''}`}>{formatDayNum(date)}</span>
                   </div>
                   {holidays.length > 0 && <div className="month-page__cell-holiday">{holidays.join(' · ')}</div>}
-                  {visible.length > 0 && (
-                    <div className="month-page__cell-tasks">
-                      {visible.map((t) => (
-                        <MonthTaskRow key={t.id} task={t} onToggle={toggleTask} onOpen={openTask} />
-                      ))}
-                    </div>
-                  )}
-                  {hiddenCount > 0 && (
-                    <button
-                      type="button"
-                      className="month-page__more-btn"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setExpandedCell(date);
-                      }}
-                    >
-                      +{hiddenCount} more
-                    </button>
-                  )}
+                  <MonthTaskBadge count={taskCount} />
                 </div>
               );
             })}
           </div>
         </div>
-      )}
-
-      {deleting && (
-        <ConfirmModal
-          title="Delete task?"
-          body={`"${deleting.title || 'Untitled'}" will be permanently deleted.`}
-          onConfirm={() => deleteTask(deleting)}
-          onCancel={() => setDeleting(null)}
-        />
-      )}
-
-      {taskStack.length > 0 && (
-        <TaskDetailModal
-          key={taskStack[taskStack.length - 1]}
-          taskId={taskStack[taskStack.length - 1]}
-          onBack={taskStack.length > 1 ? backTask : undefined}
-          onClose={closeTaskModal}
-          onOpenSubtask={openSubtask}
-          onMutated={load}
-          onRequestDelete={(entityToDelete) => {
-            setTaskStack([]);
-            setDeleting(entityToDelete);
-          }}
-        />
       )}
     </div>
   );
