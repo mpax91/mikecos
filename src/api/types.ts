@@ -84,10 +84,13 @@ export interface TodayResponse {
 }
 
 /** One stale item surfaced by the Tickler — the entity itself plus which
- * bucket it was picked from (jot / note / undated task), used to pick the
- * right icon and "why this is here" phrasing. */
+ * bucket it was picked from (jot / note), used to pick the right icon and
+ * "why this is here" phrasing. Undated tasks used to have their own
+ * staleness bucket here too, but now that the Week view's Unscheduled shelf
+ * shows every undated task (not just the single oldest), that entry would
+ * just be a duplicate of the shelf's own top row — dropped in favor of it. */
 export interface TicklerItem extends Entity {
-  staleness: 'jot' | 'note' | 'task';
+  staleness: 'jot' | 'note';
 }
 
 export interface WeekDay {
@@ -102,4 +105,8 @@ export interface WeekResponse {
   days: WeekDay[];
   overdue: TodayTask[];
   tickler: TicklerItem[];
+  /** Every open task with no due date at all, oldest-touched first — shown
+   * below the week grid so nothing undated gets forgotten, and draggable
+   * onto a day column to schedule it. */
+  unscheduled: TodayTask[];
 }

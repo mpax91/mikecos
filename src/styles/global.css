@@ -2792,16 +2792,24 @@ a {
   border-radius: 8px;
 }
 
-.today-page__subheading {
-  font-size: 12px;
+.today-page__heading {
+  font-size: 34px;
+  margin: 0;
+  line-height: 1.1;
+}
+
+.today-page__date-line {
+  font-size: 13px;
+  font-style: italic;
   color: var(--color-muted);
-  margin: -8px 0 16px;
+  margin-top: 2px;
 }
 
 .today-page__body {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 28px;
+  margin-top: 24px;
 }
 
 .today-page__section-title {
@@ -2810,7 +2818,7 @@ a {
   text-transform: uppercase;
   letter-spacing: 0.03em;
   color: var(--color-muted);
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
 .today-page__section-title--overdue {
@@ -2821,8 +2829,40 @@ a {
   padding: 4px 12px;
 }
 
-.today-page__quick-add input {
+/* Ruled-paper treatment for the Day view's task list — every row (real task
+   or blank line) gets an even, hairline-ruled bottom border and consistent
+   height, so the list reads as lines on a page rather than a plain UI list.
+   Real task rows already carry their own border-bottom; this just makes it
+   uniform and a touch more present, and gives the blank lines the same
+   rhythm so the transition between "written" and "blank" lines is seamless. */
+.today-page__list--ruled .task-row,
+.today-page__list--ruled .blank-line {
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* One empty ruled line, shared by the Day and Week views — a plain input
+   styled to look like a line waiting to be written on rather than a form
+   field, so a page of them reads as an invitation rather than an empty
+   state. */
+.blank-line {
+  display: block;
   width: 100%;
+  border: none;
+  background: transparent;
+  padding: 9px 4px;
+  font-size: 13.5px;
+  color: var(--color-ink);
+  font-family: inherit;
+}
+
+.blank-line::placeholder {
+  color: var(--color-placeholder);
+}
+
+.blank-line:focus {
+  outline: none;
+  background: rgba(47, 74, 60, 0.04);
+  border-radius: 6px;
 }
 
 /* A task shown away from its own project (Today) gets a small tag pointing
@@ -3020,6 +3060,116 @@ a {
 
 .week-page__col-footer-link:hover {
   color: var(--color-accent);
+}
+
+/* A day's blank ruled lines sit right in the same column list as its real
+   tasks, sized to match .week-page__row rather than the larger Day-view
+   ones — same idea, tighter for a 190px column. */
+.week-page__col-list .blank-line {
+  font-size: 13px;
+  padding: 5px 2px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* Draggable rows (real tasks, in Overdue / a day / the Unscheduled shelf) —
+   dnd-kit attaches pointer listeners to these, so touch-action: none stops
+   the browser's own scroll/select gestures from fighting the drag. */
+.week-page__row,
+.week-page__chip {
+  touch-action: none;
+}
+
+.week-page__row.is-dragging,
+.week-page__chip.is-dragging {
+  opacity: 0.35;
+}
+
+/* A day column (or the Unscheduled shelf) currently being dragged over —
+   the accent outline says "drop here" without needing a label. */
+.week-page__col.is-drop-target {
+  border-color: var(--color-accent);
+  border-style: dashed;
+  background: rgba(47, 74, 60, 0.05);
+}
+
+.week-page__drag-overlay {
+  display: flex;
+  align-items: center;
+  background: var(--color-card-bg);
+  border: var(--border-hairline);
+  border-radius: 8px;
+  padding: 6px 12px;
+  box-shadow: 0 8px 24px rgba(46, 42, 34, 0.18);
+  font-size: 13px;
+  color: var(--color-ink);
+  cursor: grabbing;
+}
+
+/* ---- Unscheduled shelf ---- */
+
+.week-page__unscheduled {
+  margin: 20px 4px 0;
+  background: var(--color-card-bg);
+  border: var(--border-hairline);
+  border-radius: var(--radius-card);
+  padding: 14px 16px;
+}
+
+.week-page__unscheduled.is-drop-target {
+  border-color: var(--color-accent);
+  border-style: dashed;
+  background: rgba(47, 74, 60, 0.05);
+}
+
+.week-page__unscheduled-header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.week-page__unscheduled-title {
+  font-size: 12px;
+  font-weight: var(--weight-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-muted);
+}
+
+.week-page__unscheduled-hint {
+  font-size: 11px;
+  color: var(--color-placeholder);
+}
+
+.week-page__unscheduled-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.week-page__chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: var(--border-hairline);
+  border-radius: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+  flex: 0 1 240px;
+  min-width: 160px;
+}
+
+.week-page__chip:hover {
+  background: rgba(47, 74, 60, 0.06);
+}
+
+.week-page__chip-title {
+  font-size: 13px;
+  color: var(--color-ink);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 @media (max-width: 900px) {

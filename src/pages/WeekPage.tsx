@@ -1,10 +1,21 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { DndContext, DragOverlay, PointerSensor, useDraggable, useDroppable, useSensor, useSensors } from '@dnd-kit/core';
+import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core';
 import { api } from '../api/client';
 import type { Entity, TicklerItem, TodayTask, WeekResponse } from '../api/types';
 import { TaskDetailModal } from '../components/TaskDetailModal';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { BlankLine } from '../components/BlankLine';
 import { useReportTabMeta } from '../contexts/TabsContext';
+
+/** Blank ruled lines shown below each day's real tasks — see BlankLine. */
+const BLANK_LINES_PER_DAY = 10;
+
+/** Droppable id prefix for a day column, so handleDragEnd can tell a day
+ * target apart from the 'unscheduled' shelf without a lookup table. */
+const DAY_DROP_PREFIX = 'day:';
+const UNSCHEDULED_DROP_ID = 'unscheduled';
 
 function todayLocalISO(): string {
   const d = new Date();
@@ -52,20 +63,142 @@ function formatWeekRange(start: string, end: string): string {
 const TICKLER_LABEL: Record<TicklerItem['staleness'], string> = {
   jot: 'Untouched jot',
   note: 'Untouched note',
-  task: 'No due date',
 };
 
-function CompactTaskRow({ task, onToggle, onOpen }: { task: TodayTask; onToggle: (t: Entity) => void; onOpen: (t: Entity) => void }) {
+/** A task row that can be picked up and dragged onto a day column or the
+ * Unscheduled shelf to reschedule it — used for every real task shown on
+ * this page (Overdue, a day's tasks, and the Unscheduled shelf itself). */
+function DraggableTaskRow({ task, onToggle, onOpen }: { task: TodayTask; onToggle: (t: Entity) => void; onOpen: (t: Entity) => void }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: task.id });
   return (
-    <div className="week-page__row" onClick={() => onOpen(task)}>
+    <div
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      className={`week-page__row${isDragging ? ' is-dragging' : ''}`}
+      onClick={() => onOpen(task)}
+    >
       <input
         type="checkbox"
         checked={task.status === 'done'}
         onChange={() => onToggle(task)}
         onClick={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
         className="task-row__checkbox"
       />
       <span className="week-page__row-title">{task.title || 'Untitled Task'}</span>
+      {task.project && <span className="task-row__project-tag" title={`In project: ${task.project.title}`}>📁 {task.project.title}</span>}
+    </div>
+  );
+}
+
+/** One day column — a drop target for rescheduling, holding its real tasks
+ * followed by a fixed run of blank ruled lines to write new ones into. */
+function DayColumn({
+  day,
+  data,
+  onToggle,
+  onOpen,
+  onQuickAdd,
+}: {
+  day: WeekResponse['days'][number];
+  data: WeekResponse;
+  onToggle: (t: Entity) => void;
+  onOpen: (t: Entity) => void;
+  onQuickAdd: (date: string, title: string) => void;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: `${DAY_DROP_PREFIX}${day.date}` });
+  const realToday = todayLocalISO();
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`week-page__col${day.isToday ? ' is-today' : ''}${isOver ? ' is-drop-target' : ''}`}
+    >
+      <div className="week-page__col-header">
+        <span className="week-page__col-weekday">{formatDayLabel(day.date).weekday}</span>
+        <span className="week-page__col-date">{formatDayLabel(day.date).day}</span>
+      </div>
+
+      {day.isToday && data.overdue.length > 0 && (
+        <div className="week-page__special week-page__special--overdue">
+          <div className="week-page__special-title">Overdue</div>
+          {data.overdue.map((t) => (
+            <DraggableTaskRow key={t.id} task={t} onToggle={onToggle} onOpen={onOpen} />
+          ))}
+        </div>
+      )}
+
+      {day.isToday && data.tickler.length > 0 && (
+        <div className="week-page__special week-page__special--tickler">
+          <div className="week-page__special-title">Worth revisiting</div>
+          {data.tickler.map((t) => (
+            <div key={t.id} className="week-page__row week-page__row--tickler" onClick={() => onOpen(t)}>
+              <span className="week-page__row-title">{t.title || 'Untitled'}</span>
+              <span className="week-page__tickler-badge">{TICKLER_LABEL[t.staleness]}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="week-page__col-list">
+        {day.tasks.map((t) => (
+          <DraggableTaskRow key={t.id} task={t} onToggle={onToggle} onOpen={onOpen} />
+        ))}
+        {Array.from({ length: BLANK_LINES_PER_DAY }).map((_, i) => (
+          <BlankLine key={i} onSubmit={(title) => onQuickAdd(day.date, title)} />
+        ))}
+      </div>
+
+      <Link to={day.date === realToday ? '/today' : `/today/${day.date}`} className="week-page__col-footer-link">
+        Open day →
+      </Link>
+    </div>
+  );
+}
+
+/** The shelf of every undated open task, below the week grid — also a drop
+ * target, so dragging a scheduled task here clears its due date. */
+function UnscheduledShelf({ tasks, onToggle, onOpen }: { tasks: TodayTask[]; onToggle: (t: Entity) => void; onOpen: (t: Entity) => void }) {
+  const { setNodeRef, isOver } = useDroppable({ id: UNSCHEDULED_DROP_ID });
+  return (
+    <div ref={setNodeRef} className={`week-page__unscheduled${isOver ? ' is-drop-target' : ''}`}>
+      <div className="week-page__unscheduled-header">
+        <span className="week-page__unscheduled-title">Unscheduled</span>
+        <span className="week-page__unscheduled-hint">Drag onto a day to schedule it</span>
+      </div>
+      {tasks.length === 0 ? (
+        <div className="week-page__empty">Nothing waiting — nice.</div>
+      ) : (
+        <div className="week-page__unscheduled-grid">
+          {tasks.map((t) => (
+            <ChipDraggable key={t.id} task={t} onToggle={onToggle} onOpen={onOpen} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ChipDraggable({ task, onToggle, onOpen }: { task: TodayTask; onToggle: (t: Entity) => void; onOpen: (t: Entity) => void }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: task.id });
+  return (
+    <div
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      className={`week-page__chip${isDragging ? ' is-dragging' : ''}`}
+      onClick={() => onOpen(task)}
+    >
+      <input
+        type="checkbox"
+        checked={task.status === 'done'}
+        onChange={() => onToggle(task)}
+        onClick={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
+        className="task-row__checkbox"
+      />
+      <span className="week-page__chip-title">{task.title || 'Untitled Task'}</span>
       {task.project && <span className="task-row__project-tag" title={`In project: ${task.project.title}`}>📁 {task.project.title}</span>}
     </div>
   );
@@ -75,7 +208,10 @@ function CompactTaskRow({ task, onToggle, onOpen }: { task: TodayTask; onToggle:
  * planner's spread rather than the flat single-list feel of the Day view.
  * Overdue and the stale-item Tickler are shown only on whichever column is
  * the real current day (see the /api/week comment for why); every other
- * column is just what's actually due that day, past or future. */
+ * column is just what's actually due that day, past or future. Below the
+ * grid, the Unscheduled shelf surfaces every undated open task so nothing
+ * quietly falls out of view, and every task on the page can be dragged
+ * between days or onto/off the shelf to reschedule it. */
 export function WeekPage() {
   const { start: startParam } = useParams<{ start: string }>();
   const navigate = useNavigate();
@@ -86,6 +222,9 @@ export function WeekPage() {
   const [error, setError] = useState<string | null>(null);
   const [taskStack, setTaskStack] = useState<string[]>([]);
   const [deleting, setDeleting] = useState<Entity | null>(null);
+  const [activeDragId, setActiveDragId] = useState<string | null>(null);
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
   useReportTabMeta(`Week of ${formatShort(start)}`, 'today');
 
@@ -107,6 +246,18 @@ export function WeekPage() {
     navigate(containsToday ? '/today' : `/today/${start}`);
   }
 
+  // Every draggable task on the page, keyed by id, so the DragOverlay and
+  // handleDragEnd can look one up by the id dnd-kit hands back without
+  // caring which bucket (overdue / a day / unscheduled) it came from.
+  const allTasksById = useMemo(() => {
+    const map = new Map<string, TodayTask>();
+    if (!data) return map;
+    for (const t of data.overdue) map.set(t.id, t);
+    for (const day of data.days) for (const t of day.tasks) map.set(t.id, t);
+    for (const t of data.unscheduled) map.set(t.id, t);
+    return map;
+  }, [data]);
+
   async function toggleTask(task: Entity) {
     const next = task.status === 'done' ? 'open' : 'done';
     setData((prev) =>
@@ -115,10 +266,34 @@ export function WeekPage() {
             ...prev,
             overdue: prev.overdue.filter((t) => t.id !== task.id),
             days: prev.days.map((d) => ({ ...d, tasks: d.tasks.filter((t) => t.id !== task.id || next !== 'done') })),
+            unscheduled: prev.unscheduled.filter((t) => t.id !== task.id || next !== 'done'),
           }
         : prev
     );
     await api.updateEntity(task.id, { status: next });
+    load();
+  }
+
+  async function quickAdd(date: string, title: string) {
+    await api.createStandaloneTask(title, date);
+    load();
+  }
+
+  function handleDragStart(event: DragStartEvent) {
+    setActiveDragId(String(event.active.id));
+  }
+
+  async function handleDragEnd(event: DragEndEvent) {
+    setActiveDragId(null);
+    const { active, over } = event;
+    if (!over) return;
+    const taskId = String(active.id);
+    const overId = String(over.id);
+    const nextDueDate = overId === UNSCHEDULED_DROP_ID ? null : overId.startsWith(DAY_DROP_PREFIX) ? overId.slice(DAY_DROP_PREFIX.length) : undefined;
+    if (nextDueDate === undefined) return;
+    const task = allTasksById.get(taskId);
+    if (!task || task.due_date === nextDueDate) return;
+    await api.updateEntity(taskId, { due_date: nextDueDate });
     load();
   }
 
@@ -146,6 +321,7 @@ export function WeekPage() {
             ...prev,
             overdue: prev.overdue.filter((t) => t.id !== task.id),
             days: prev.days.map((d) => ({ ...d, tasks: d.tasks.filter((t) => t.id !== task.id) })),
+            unscheduled: prev.unscheduled.filter((t) => t.id !== task.id),
           }
         : prev
     );
@@ -155,108 +331,86 @@ export function WeekPage() {
 
   if (error) return <div className="empty-state">Couldn't load this week: {error}</div>;
 
+  const activeDragTask = activeDragId ? allTasksById.get(activeDragId) : null;
+
   return (
-    <div>
-      <div className="toolbar-row">
-        <h1 className="heading-serif" style={{ fontSize: 24, margin: 0 }}>
-          {data ? formatWeekRange(data.start, data.end) : formatShort(start)}
-        </h1>
-        <div className="today-page__nav">
-          <div className="today-page__view-toggle">
-            <button type="button" className="today-page__view-btn" onClick={switchToDay}>
-              Day
+    <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+      <div>
+        <div className="toolbar-row">
+          <h1 className="heading-serif" style={{ fontSize: 24, margin: 0 }}>
+            {data ? formatWeekRange(data.start, data.end) : formatShort(start)}
+          </h1>
+          <div className="today-page__nav">
+            <div className="today-page__view-toggle">
+              <button type="button" className="today-page__view-btn" onClick={switchToDay}>
+                Day
+              </button>
+              <button type="button" className="today-page__view-btn is-active">
+                Week
+              </button>
+            </div>
+            {start !== mondayOf(realToday) && (
+              <button type="button" className="btn btn--ghost" onClick={() => goToWeek(mondayOf(realToday))}>
+                This Week
+              </button>
+            )}
+            <button type="button" className="today-page__nav-btn" onClick={() => goToWeek(addDays(start, -7))} aria-label="Previous week" title="Previous week">
+              ‹
             </button>
-            <button type="button" className="today-page__view-btn is-active">
-              Week
+            <button type="button" className="today-page__nav-btn" onClick={() => goToWeek(addDays(start, 7))} aria-label="Next week" title="Next week">
+              ›
             </button>
           </div>
-          {start !== mondayOf(realToday) && (
-            <button type="button" className="btn btn--ghost" onClick={() => goToWeek(mondayOf(realToday))}>
-              This Week
-            </button>
-          )}
-          <button type="button" className="today-page__nav-btn" onClick={() => goToWeek(addDays(start, -7))} aria-label="Previous week" title="Previous week">
-            ‹
-          </button>
-          <button type="button" className="today-page__nav-btn" onClick={() => goToWeek(addDays(start, 7))} aria-label="Next week" title="Next week">
-            ›
-          </button>
         </div>
+
+        {data === null ? (
+          <div className="empty-state">Loading…</div>
+        ) : (
+          <>
+            <div className="week-page__scroll">
+              <div className="week-page__grid">
+                {data.days.map((day) => (
+                  <DayColumn key={day.date} day={day} data={data} onToggle={toggleTask} onOpen={openTask} onQuickAdd={quickAdd} />
+                ))}
+              </div>
+            </div>
+
+            <UnscheduledShelf tasks={data.unscheduled} onToggle={toggleTask} onOpen={openTask} />
+          </>
+        )}
+
+        {deleting && (
+          <ConfirmModal
+            title="Delete task?"
+            body={`"${deleting.title || 'Untitled'}" will be permanently deleted.`}
+            onConfirm={() => deleteTask(deleting)}
+            onCancel={() => setDeleting(null)}
+          />
+        )}
+
+        {taskStack.length > 0 && (
+          <TaskDetailModal
+            key={taskStack[taskStack.length - 1]}
+            taskId={taskStack[taskStack.length - 1]}
+            onBack={taskStack.length > 1 ? backTask : undefined}
+            onClose={closeTaskModal}
+            onOpenSubtask={openSubtask}
+            onMutated={load}
+            onRequestDelete={(entityToDelete) => {
+              setTaskStack([]);
+              setDeleting(entityToDelete);
+            }}
+          />
+        )}
       </div>
 
-      {data === null ? (
-        <div className="empty-state">Loading…</div>
-      ) : (
-        <div className="week-page__scroll">
-          <div className="week-page__grid">
-            {data.days.map((day) => (
-              <div key={day.date} className={`week-page__col${day.isToday ? ' is-today' : ''}`}>
-                <div className="week-page__col-header">
-                  <span className="week-page__col-weekday">{formatDayLabel(day.date).weekday}</span>
-                  <span className="week-page__col-date">{formatDayLabel(day.date).day}</span>
-                </div>
-
-                {day.isToday && data.overdue.length > 0 && (
-                  <div className="week-page__special week-page__special--overdue">
-                    <div className="week-page__special-title">Overdue</div>
-                    {data.overdue.map((t) => (
-                      <CompactTaskRow key={t.id} task={t} onToggle={toggleTask} onOpen={openTask} />
-                    ))}
-                  </div>
-                )}
-
-                {day.isToday && data.tickler.length > 0 && (
-                  <div className="week-page__special week-page__special--tickler">
-                    <div className="week-page__special-title">Worth revisiting</div>
-                    {data.tickler.map((t) => (
-                      <div key={t.id} className="week-page__row week-page__row--tickler" onClick={() => openTask(t)}>
-                        <span className="week-page__row-title">{t.title || 'Untitled'}</span>
-                        <span className="week-page__tickler-badge">{TICKLER_LABEL[t.staleness]}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                <div className="week-page__col-list">
-                  {day.tasks.length === 0 ? (
-                    <div className="week-page__empty">Nothing due</div>
-                  ) : (
-                    day.tasks.map((t) => <CompactTaskRow key={t.id} task={t} onToggle={toggleTask} onOpen={openTask} />)
-                  )}
-                </div>
-
-                <Link to={day.date === realToday ? '/today' : `/today/${day.date}`} className="week-page__col-footer-link">
-                  Open day →
-                </Link>
-              </div>
-            ))}
+      <DragOverlay>
+        {activeDragTask && (
+          <div className="week-page__drag-overlay">
+            <span className="week-page__row-title">{activeDragTask.title || 'Untitled Task'}</span>
           </div>
-        </div>
-      )}
-
-      {deleting && (
-        <ConfirmModal
-          title="Delete task?"
-          body={`"${deleting.title || 'Untitled'}" will be permanently deleted.`}
-          onConfirm={() => deleteTask(deleting)}
-          onCancel={() => setDeleting(null)}
-        />
-      )}
-
-      {taskStack.length > 0 && (
-        <TaskDetailModal
-          key={taskStack[taskStack.length - 1]}
-          taskId={taskStack[taskStack.length - 1]}
-          onBack={taskStack.length > 1 ? backTask : undefined}
-          onClose={closeTaskModal}
-          onOpenSubtask={openSubtask}
-          onMutated={load}
-          onRequestDelete={(entityToDelete) => {
-            setTaskStack([]);
-            setDeleting(entityToDelete);
-          }}
-        />
-      )}
-    </div>
+        )}
+      </DragOverlay>
+    </DndContext>
   );
 }

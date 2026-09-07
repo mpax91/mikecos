@@ -910,12 +910,15 @@ app.get('/api/today', async (c) => {
 
 // GET /api/week?start=YYYY-MM-DD&today=YYYY-MM-DD — a 7-day docket starting
 // on `start` (a Monday, matching a physical weekly planner), one bucket per
-// day of exactly what's due that day. Overdue and the stale-item Tickler are
-// deliberately NOT repeated on every column — "overdue" only means anything
-// relative to the real current day, so both are attached only to whichever
-// day matches `today` (when that day falls inside the visible week at all;
-// looking at a past or future week shows neither, same as a paper planner's
-// other weeks never show today's leftovers).
+// day of exactly what's due that day, plus an `unscheduled` shelf of every
+// open task with no due date at all (draggable onto a day by the client).
+// Overdue and the stale-item Tickler are deliberately NOT repeated on every
+// column — "overdue" only means anything relative to the real current day,
+// so both are attached only to whichever day matches `today` (when that day
+// falls inside the visible week at all; looking at a past or future week
+// shows neither, same as a paper planner's other weeks never show today's
+// leftovers). `unscheduled`, by contrast, isn't day-relative, so it's always
+// returned regardless of which week is being viewed.
 app.get('/api/week', async (c) => {
   const start = c.req.query('start');
   const today = c.req.query('today');
@@ -947,23 +950,33 @@ app.get('/api/week', async (c) => {
   const todayInRange = today && days.includes(today) ? today : null;
   const overdue = todayInRange ? withProject.filter((t) => t.due_date! < todayInRange) : [];
 
+  // Every open task with no due date at all, oldest-touched first — the
+  // "Unscheduled" shelf below the week grid. This used to be represented by
+  // a single stale-undated-task Tickler entry, but now that the whole shelf
+  // is visible and draggable onto a day, that one-item nudge was just a
+  // duplicate of its own top row — dropped in favor of showing the real
+  // list. Capped well above what anyone would actually let pile up, purely
+  // as a sanity ceiling rather than a real pagination boundary.
+  const { results: unscheduledRaw } = await c.env.DB.prepare(
+    `SELECT * FROM entities WHERE type = 'task' AND status = 'open' AND due_date IS NULL ORDER BY COALESCE(last_touched, updated_at) ASC LIMIT 50`
+  ).all<Entity>();
+  const unscheduled = await Promise.all(
+    (unscheduledRaw ?? []).map(async (task) => ({ ...task, project: await resolveProject(task.parent_id) }))
+  );
+
   let tickler: (Entity & { staleness: string })[] = [];
   if (todayInRange) {
-    const [staleJot, staleNote, staleUndatedTask] = await Promise.all([
+    const [staleJot, staleNote] = await Promise.all([
       c.env.DB.prepare(
         `SELECT * FROM entities WHERE type = 'note' AND is_jot = 1 ORDER BY COALESCE(last_touched, updated_at) ASC LIMIT 1`
       ).first<Entity>(),
       c.env.DB.prepare(
         `SELECT * FROM entities WHERE type = 'note' AND is_jot = 0 AND parent_id IS NULL ORDER BY COALESCE(last_touched, updated_at) ASC LIMIT 1`
       ).first<Entity>(),
-      c.env.DB.prepare(
-        `SELECT * FROM entities WHERE type = 'task' AND status = 'open' AND due_date IS NULL ORDER BY COALESCE(last_touched, updated_at) ASC LIMIT 1`
-      ).first<Entity>(),
     ]);
     tickler = [
       staleJot ? { ...staleJot, staleness: 'jot' } : null,
       staleNote ? { ...staleNote, staleness: 'note' } : null,
-      staleUndatedTask ? { ...staleUndatedTask, staleness: 'task' } : null,
     ].filter((x): x is Entity & { staleness: string } => x !== null);
   }
 
@@ -973,7 +986,7 @@ app.get('/api/week', async (c) => {
     tasks: withProject.filter((t) => t.due_date === date),
   }));
 
-  return c.json({ start, end, days: byDay, overdue, tickler });
+  return c.json({ start, end, days: byDay, overdue, tickler, unscheduled });
 });
 
 app.get('/api/health', (c) => c.json({ ok: true, time: now() }));

@@ -5,7 +5,13 @@ import type { Entity, TodayResponse, TodayTask } from '../api/types';
 import { TaskRow } from '../components/TaskRow';
 import { TaskDetailModal } from '../components/TaskDetailModal';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { BlankLine } from '../components/BlankLine';
 import { useReportTabMeta } from '../contexts/TabsContext';
+
+/** Blank ruled lines shown below the day's real tasks — see BlankLine and
+ * the matching constant in WeekPage. Kept in sync with that one by eye
+ * rather than shared, same as the rest of this page's small date helpers. */
+const BLANK_LINES = 10;
 
 function todayLocalISO(): string {
   const d = new Date();
@@ -23,6 +29,23 @@ function formatHeaderDate(iso: string): string {
   const [y, m, d] = iso.split('-').map(Number);
   const dt = new Date(y, m - 1, d);
   return dt.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+}
+
+/** Big heading + small date-line pair for the page header — "Today" reads
+ * as a name up top with the actual date underneath, the same relationship
+ * a paper planner's page has between its printed weekday and the date you
+ * write in yourself. A day that isn't today gets its weekday name as the
+ * big heading instead, with the full date and how far off it is below. */
+function formatDayHeading(iso: string, isToday: boolean): { heading: string; dateLine: string } {
+  const [y, m, d] = iso.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  const monthDay = dt.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+  if (isToday) return { heading: 'Today', dateLine: formatHeaderDate(iso) };
+
+  const [ty, tm, td] = todayLocalISO().split('-').map(Number);
+  const diffDays = Math.round((dt.getTime() - new Date(ty, tm - 1, td).getTime()) / 86400000);
+  const relative = diffDays === 1 ? 'Tomorrow' : diffDays === -1 ? 'Yesterday' : diffDays > 0 ? `In ${diffDays} days` : `${-diffDays} days ago`;
+  return { heading: dt.toLocaleDateString('en-US', { weekday: 'long' }), dateLine: `${monthDay} · ${relative}` };
 }
 
 /** The Monday on or before `iso` — matches WeekPage's own anchoring, so
@@ -56,7 +79,6 @@ export function TodayPage() {
 
   const [data, setData] = useState<TodayResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [quickAdd, setQuickAdd] = useState('');
   const [taskStack, setTaskStack] = useState<string[]>([]);
   const [deleting, setDeleting] = useState<Entity | null>(null);
 
@@ -79,10 +101,7 @@ export function TodayPage() {
     navigate(monday === mondayOf(todayLocalISO()) ? '/today/week' : `/today/week/${monday}`);
   }
 
-  async function createQuickTask() {
-    const title = quickAdd.trim();
-    if (!title) return;
-    setQuickAdd('');
+  async function quickAdd(title: string) {
     await api.createStandaloneTask(title, date);
     load();
   }
@@ -150,14 +169,14 @@ export function TodayPage() {
 
   const overdue = data?.overdue ?? [];
   const dueToday = data?.today ?? [];
-  const isEmpty = data && overdue.length === 0 && dueToday.length === 0;
 
   return (
     <div>
       <div className="toolbar-row">
-        <h1 className="heading-serif" style={{ fontSize: 24, margin: 0 }}>
-          {isToday ? 'Today' : formatHeaderDate(date)}
-        </h1>
+        <div>
+          <h1 className="today-page__heading heading-serif">{formatDayHeading(date, isToday).heading}</h1>
+          <div className="today-page__date-line">{formatDayHeading(date, isToday).dateLine}</div>
+        </div>
         <div className="today-page__nav">
           <div className="today-page__view-toggle">
             <button type="button" className="today-page__view-btn is-active">
@@ -187,8 +206,6 @@ export function TodayPage() {
         </div>
       </div>
 
-      {!isToday && <div className="today-page__subheading">{formatHeaderDate(date)}</div>}
-
       {data === null ? (
         <div className="empty-state">Loading…</div>
       ) : (
@@ -198,27 +215,18 @@ export function TodayPage() {
               <div className="today-page__section-title today-page__section-title--overdue">
                 Overdue ({overdue.length})
               </div>
-              <div className="today-page__list task-list card">{overdue.map(renderRow)}</div>
+              <div className="today-page__list today-page__list--ruled task-list card">{overdue.map(renderRow)}</div>
             </div>
           )}
 
           <div className="today-page__section">
             {overdue.length > 0 && <div className="today-page__section-title">{isToday ? 'Today' : formatHeaderDate(date)}</div>}
-            {isEmpty ? (
-              <div className="empty-state empty-state--section">Nothing due{isToday ? ' today' : ' on this day'}.</div>
-            ) : (
-              <div className="today-page__list task-list card">{dueToday.map(renderRow)}</div>
-            )}
-          </div>
-
-          <div className="today-page__quick-add">
-            <input
-              placeholder={isToday ? 'Add a task for today…' : `Add a task for ${formatHeaderDate(date)}…`}
-              value={quickAdd}
-              onChange={(e) => setQuickAdd(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && createQuickTask()}
-              onBlur={createQuickTask}
-            />
+            <div className="today-page__list today-page__list--ruled task-list card">
+              {dueToday.map(renderRow)}
+              {Array.from({ length: BLANK_LINES }).map((_, i) => (
+                <BlankLine key={i} onSubmit={quickAdd} />
+              ))}
+            </div>
           </div>
         </div>
       )}
