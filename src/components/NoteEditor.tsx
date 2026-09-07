@@ -20,6 +20,13 @@ import { useIsMobile } from '../hooks/useIsMobile';
 
 const AUTOSAVE_DEBOUNCE_MS = 800;
 
+/** Tracks which mounted NoteEditor instance should claim a paste event that
+ * lands nowhere in particular (nothing on the page currently has focus) —
+ * see the fallback effect below. Always the most recently mounted instance,
+ * so the editor the user is actually looking at wins even if a stale one
+ * hasn't finished unmounting. */
+let latestNoteEditorInstanceId = 0;
+
 /** The full extension set for a note/jot document — shared between the real
  * editing surface here and the read-only renderer used for Jot cards, so a
  * card's attachment/link-preview/checklist rendering never silently drifts
@@ -540,6 +547,40 @@ export function NoteEditor({
       }
     };
   }, []);
+
+  const instanceIdRef = useRef(0);
+  useEffect(() => {
+    instanceIdRef.current = ++latestNoteEditorInstanceId;
+  }, []);
+
+  // Fallback for pasting an image/file straight into an editor that isn't
+  // focused yet — which is the normal case for an *existing* jot or note,
+  // not just a rare timing edge: the Notes page never auto-focuses its
+  // editor when you select a note (clicking the list row shouldn't also
+  // jump a cursor into the body), and even Jots' own autoFocus can lose a
+  // race if Cmd/Ctrl+V arrives before the browser finishes moving focus
+  // into the freshly-opened panel. `editorProps.handlePaste` above only
+  // fires once ProseMirror itself is the paste target, so neither case
+  // reaches it. This listens at the document level and steps in only when
+  // nothing else has legitimately claimed the paste (no input, no other
+  // editor, nothing focused at all) — never hijacking a paste meant for a
+  // title field or a different editor — and only the most recently
+  // mounted editor instance claims it, so it always lands in the one
+  // you're actually looking at.
+  useEffect(() => {
+    function onDocumentPaste(event: ClipboardEvent) {
+      if (!editor || editor.isDestroyed) return;
+      if (instanceIdRef.current !== latestNoteEditorInstanceId) return;
+      const target = event.target;
+      if (target !== document.body && target !== document.documentElement) return;
+      const files = Array.from(event.clipboardData?.files ?? []);
+      if (files.length === 0) return;
+      event.preventDefault();
+      void handleFilesAt(files, editor.state.doc.content.size);
+    }
+    document.addEventListener('paste', onDocumentPaste);
+    return () => document.removeEventListener('paste', onDocumentPaste);
+  }, [editor]);
 
   async function handleAttachmentPick(file: File | undefined, atPos?: number) {
     if (!file || !editor) return;
