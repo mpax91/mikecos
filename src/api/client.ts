@@ -1,4 +1,4 @@
-import type { Entity, EntityDetail, EntityType, ProjectListItem, TodayResponse, WeatherResponse, WeekResponse } from './types';
+import type { Entity, EntityDetail, EntityType, MonthResponse, ProjectListItem, TodayResponse, WeatherResponse, WeekResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -165,6 +165,11 @@ export const api = {
    * Overdue/Tickler strip. */
   getWeek: (start: string, today: string) =>
     request<WeekResponse>(`/api/week?start=${encodeURIComponent(start)}&today=${encodeURIComponent(today)}`),
+
+  /** `start`/`end` are the full visible grid (spilling into the
+   * previous/next month's padding days), not just the calendar month. */
+  getMonth: (start: string, end: string) =>
+    request<MonthResponse>(`/api/month?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`),
 
   /** Quick-add on the Today page — a standalone task with no project,
    * due on the given date. */

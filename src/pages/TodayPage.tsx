@@ -136,6 +136,11 @@ export function TodayPage() {
     navigate(weekStart === mondayOf(todayLocalISO()) ? '/today/week' : `/today/week/${weekStart}`);
   }
 
+  function switchToMonth() {
+    const month = date.slice(0, 7);
+    navigate(month === todayLocalISO().slice(0, 7) ? '/today/month' : `/today/month/${month}`);
+  }
+
   async function quickAdd(title: string) {
     await api.createStandaloneTask(title, date);
     load();
@@ -255,6 +260,9 @@ export function TodayPage() {
             </button>
             <button type="button" className="today-page__view-btn" onClick={switchToWeek}>
               Week
+            </button>
+            <button type="button" className="today-page__view-btn" onClick={switchToMonth}>
+              Month
             </button>
           </div>
           {!isToday && (

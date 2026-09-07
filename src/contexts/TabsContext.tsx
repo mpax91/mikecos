@@ -20,7 +20,7 @@ interface TabsState {
 const STORAGE_KEY = 'mikeos.tabs.v1';
 
 function inferTabMeta(path: string): { kind: TabKind; title: string } {
-  if (path === '/today' || path.startsWith('/today/')) return { kind: 'today', title: 'Today' };
+  if (path === '/today' || path.startsWith('/today/')) return { kind: 'today', title: path.startsWith('/today/month') ? 'Month' : 'Today' };
   if (path === '/projects') return { kind: 'projects-list', title: 'Projects' };
   if (path === '/notes') return { kind: 'notes-list', title: 'Notes' };
   if (path === '/jots') return { kind: 'jots-list', title: 'Jots' };

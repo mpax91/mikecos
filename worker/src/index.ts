@@ -1009,6 +1009,34 @@ app.get('/api/week', async (c) => {
   return c.json({ start, end, days: byDay, overdue, unscheduled });
 });
 
+// GET /api/month?start=YYYY-MM-DD&end=YYYY-MM-DD — every open task due
+// anywhere in [start, end], flat (not bucketed by day — the client groups
+// them, same as it already computes the grid's padding days from the
+// previous/next month). `start`/`end` are the full visible grid the client
+// is rendering (the Sunday on/before the 1st through the Saturday on/after
+// the last day), not just the calendar month itself, so a task due on one
+// of those spillover days still shows up in its cell. No Overdue/Tickler/
+// Unscheduled here — the Month view is a bird's-eye look at what's due
+// when, not a place to work the backlog (that's what Day/Week are for).
+app.get('/api/month', async (c) => {
+  const start = c.req.query('start');
+  const end = c.req.query('end');
+  if (!start || !end) return c.json({ error: 'start and end query params are required (YYYY-MM-DD)' }, 400);
+
+  const { results } = await c.env.DB.prepare(
+    `SELECT * FROM entities WHERE type = 'task' AND status = 'open' AND due_date IS NOT NULL AND due_date >= ? AND due_date <= ? ORDER BY due_date ASC, position ASC`
+  )
+    .bind(start, end)
+    .all<Entity>();
+
+  const resolveProject = makeProjectResolver(c.env.DB);
+  const tasks = await Promise.all(
+    (results ?? []).map(async (task) => ({ ...task, project: await resolveProject(task.parent_id) }))
+  );
+
+  return c.json({ start, end, tasks });
+});
+
 // Bedford Hills, NY 10507 — Mike's fixed home location for the Week/Day
 // views' weather widget. Hardcoded rather than user-configurable for now;
 // if that ever needs to change it's this one constant.

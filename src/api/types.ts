@@ -130,3 +130,14 @@ export interface WeekResponse {
    * onto a day column to schedule it. */
   unscheduled: TodayTask[];
 }
+
+/** GET /api/month — a flat list of every open task due somewhere in the
+ * visible grid ([start, end], which spans the padding days from the
+ * previous/next month too); MonthPage buckets these by due_date itself
+ * rather than the server pre-grouping them into a fixed day list the way
+ * /api/week does. */
+export interface MonthResponse {
+  start: string;
+  end: string;
+  tasks: TodayTask[];
+}

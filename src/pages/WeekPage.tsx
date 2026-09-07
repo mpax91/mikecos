@@ -267,6 +267,11 @@ export function WeekPage() {
     navigate(containsToday ? '/today' : `/today/${start}`);
   }
 
+  function switchToMonth() {
+    const month = start.slice(0, 7);
+    navigate(month === realToday.slice(0, 7) ? '/today/month' : `/today/month/${month}`);
+  }
+
   // Every draggable task on the page, keyed by id, so the DragOverlay and
   // handleDragEnd can look one up by the id dnd-kit hands back without
   // caring which bucket (overdue / a day / unscheduled) it came from.
@@ -368,6 +373,9 @@ export function WeekPage() {
               </button>
               <button type="button" className="today-page__view-btn is-active">
                 Week
+              </button>
+              <button type="button" className="today-page__view-btn" onClick={switchToMonth}>
+                Month
               </button>
             </div>
             {start !== mondayOf(realToday) && (
