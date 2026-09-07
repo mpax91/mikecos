@@ -173,6 +173,17 @@ export function TodayPage() {
     setTaskStack([task.id]);
   }
 
+  // The Tickler surfaces notes and jots, not tasks — opening one in the
+  // task-detail sidebar (openTask's modal, built for editing a task) was
+  // never right for them. A note has its own real page to go to; a jot
+  // doesn't have a URL of its own yet (JotsPage selects one via in-page
+  // state, not a route param), so the best available fix today is landing
+  // on the Jots list rather than the wrong sidebar.
+  function openTickler(item: TicklerItem) {
+    if (item.staleness === 'note') navigate(`/notes/${item.id}`);
+    else navigate('/jots');
+  }
+
   function closeTaskModal() {
     setTaskStack([]);
     load();
@@ -297,7 +308,7 @@ export function TodayPage() {
               <div className="today-page__section-title">Worth revisiting</div>
               <div className="today-page__tickler card">
                 {tickler.map((t) => (
-                  <div key={t.id} className="today-page__tickler-row" onClick={() => openTask(t)}>
+                  <div key={t.id} className="today-page__tickler-row" onClick={() => openTickler(t)}>
                     <span className="today-page__tickler-title">{t.title || 'Untitled'}</span>
                     <span className="today-page__tickler-badge">{TICKLER_LABEL[t.staleness]}</span>
                   </div>

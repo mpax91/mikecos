@@ -56,7 +56,7 @@ export function TabBar({ onMenuClick }: TabBarProps) {
           </div>
         ))}
       </div>
-      <button className="tabbar__new" title="New tab" onClick={() => openTab('/projects')}>
+      <button className="tabbar__new" title="New tab" onClick={() => openTab('/today')}>
         +
       </button>
     </div>

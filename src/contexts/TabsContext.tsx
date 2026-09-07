@@ -41,7 +41,7 @@ function makeTab(path: string, hint?: { title?: string; kind?: TabKind }): Tab {
 }
 
 function defaultState(): TabsState {
-  const tab = makeTab('/projects');
+  const tab = makeTab('/today');
   return { tabs: [tab], activeTabId: tab.id };
 }
 
