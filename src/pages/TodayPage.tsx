@@ -107,7 +107,7 @@ export function TodayPage() {
   useReportTabMeta(isToday ? 'Today' : formatHeaderDate(date), 'today');
 
   const load = useCallback(() => {
-    api.getToday(date).then(setData).catch((e) => setError(String(e)));
+    api.getToday(date, todayLocalISO()).then(setData).catch((e) => setError(String(e)));
   }, [date]);
 
   useEffect(() => {

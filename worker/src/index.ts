@@ -898,19 +898,32 @@ async function computeTickler(db: D1Database): Promise<(Entity & { staleness: st
   ].filter((x): x is Entity & { staleness: string } => x !== null);
 }
 
-// GET /api/today?date=YYYY-MM-DD — every open task due on or before `date`,
-// across every project plus standalone tasks, split into Overdue (due
-// before the given date) and Today (due exactly on it) — the core query the
-// daily planner view is built on. A past date works the same way (asking
-// "what was outstanding as of that day"), which is what makes history just
-// a different `date` rather than a separately-maintained thing. Also
-// carries the stale-item Tickler ("Worth revisiting") — this used to live
-// on the Week view but now shows only here, one place instead of repeated
-// across every column.
+// GET /api/today?date=YYYY-MM-DD&today=YYYY-MM-DD — every open task due on
+// or before `date`, across every project plus standalone tasks, split into
+// Overdue and the viewed day itself — the core query the daily planner view
+// is built on. `date` is the day being VIEWED; the optional `today` is the
+// viewer's own real local "today", same idea as /api/week's `today` param.
+// They diverge when Mike uses the next/previous-day arrows to preview a
+// date other than the actual current one — a task due tomorrow shouldn't
+// read as "Overdue" just because he clicked forward to preview tomorrow's
+// page before it's actually arrived. Overdue is therefore judged against
+// whichever of `date`/`today` is earlier: viewing the past still shows the
+// historical "what was outstanding as of that day" snapshot (using `date`,
+// since real-today is later still), while viewing the future is judged
+// against real-today instead (nothing is overdue before it actually
+// happens, no matter how far forward you're peeking). `today` is optional
+// and falls back to `date` when omitted, matching the old behavior for any
+// caller that doesn't pass it. Also carries the stale-item Tickler ("Worth
+// revisiting") — this used to live on the Week view but now shows only
+// here, one place instead of repeated across every column.
 app.get('/api/today', async (c) => {
   const date = c.req.query('date');
   if (!date) return c.json({ error: 'date query param is required (YYYY-MM-DD)' }, 400);
+  const realToday = c.req.query('today') || date;
+  const overdueAsOf = realToday < date ? realToday : date;
 
+  // overdueAsOf is always <= date (it's the earlier of the two), so a
+  // single due_date <= date bound covers both buckets below.
   const { results } = await c.env.DB.prepare(
     `SELECT * FROM entities WHERE type = 'task' AND status = 'open' AND due_date IS NOT NULL AND due_date <= ? ORDER BY due_date ASC, position ASC`
   )
@@ -922,7 +935,7 @@ app.get('/api/today', async (c) => {
     (results ?? []).map(async (task) => ({ ...task, project: await resolveProject(task.parent_id) }))
   );
 
-  const overdue = withProject.filter((t) => t.due_date! < date);
+  const overdue = withProject.filter((t) => t.due_date! < overdueAsOf);
   const today = withProject.filter((t) => t.due_date === date);
   const tickler = await computeTickler(c.env.DB);
 

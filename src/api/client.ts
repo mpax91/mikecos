@@ -154,7 +154,11 @@ export const api = {
 
   // ---- Today (daily planner) ----
 
-  getToday: (date: string) => request<TodayResponse>(`/api/today?date=${encodeURIComponent(date)}`),
+  /** `date` is the day being viewed; `today` is the viewer's own local
+   * "today" so the server can tell a future preview apart from the real
+   * current day when deciding what counts as Overdue. */
+  getToday: (date: string, today: string) =>
+    request<TodayResponse>(`/api/today?date=${encodeURIComponent(date)}&today=${encodeURIComponent(today)}`),
 
   /** `start` is the Monday of the week to show; `today` is the viewer's own
    * local "today" so the server knows which column (if any) gets the
