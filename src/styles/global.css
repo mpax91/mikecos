@@ -2796,18 +2796,10 @@ a {
    back to it — this sits above the heading like a breadcrumb rather than
    living inside the Day/Week toggle, since it's always the same target
    (the week containing whichever date is being viewed) regardless of how
-   you arrived on this page. */
-.today-page__breadcrumb {
-  display: inline-block;
-  font-size: 12px;
-  color: var(--color-muted);
-  text-decoration: none;
-  margin-bottom: 10px;
-}
-
-.today-page__breadcrumb:hover {
-  color: var(--color-accent);
-}
+   you arrived on this page. Reuses .breadcrumb / .breadcrumb__back /
+   .breadcrumb__link (the same back-button chrome Projects/Notes use)
+   instead of its own plain text link, so all three feel like the same
+   control. */
 
 .today-page__heading {
   font-size: 34px;
@@ -2901,6 +2893,133 @@ a {
   outline: none;
   background: rgba(47, 74, 60, 0.04);
   border-radius: 6px;
+}
+
+/* "+ Add another line" — the Day view's escape hatch past its default 10
+   rows, a plain understated control rather than a CTA since it's an
+   occasional override, not the main action on the page. */
+.today-page__add-row-btn {
+  display: block;
+  margin: 6px 2px 0;
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 12px;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+
+.today-page__add-row-btn:hover {
+  color: var(--color-accent);
+}
+
+/* The Day view's "Worth revisiting" tickler — moved here from the Week
+   view (where it used to repeat identically on every column) so it shows
+   just once, for whichever day is actually being looked at. */
+.today-page__tickler {
+  padding: 4px 12px;
+}
+
+.today-page__tickler-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 4px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.today-page__tickler-row:last-child {
+  border-bottom: none;
+}
+
+.today-page__tickler-row:hover {
+  background: rgba(47, 74, 60, 0.06);
+}
+
+.today-page__tickler-title {
+  font-size: 13.5px;
+  color: var(--color-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.today-page__tickler-badge {
+  font-size: 11px;
+  color: var(--color-muted);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* Important Dates — a placeholder Birthdays & Anniversaries group (no
+   CRM/contacts model yet) plus a real, always-populated Holidays group,
+   side by side on desktop and stacked on narrower widths so the empty
+   placeholder doesn't feel like it's wasting the whole section's width. */
+.today-page__important-dates {
+  display: flex;
+  gap: 24px;
+  padding: 16px;
+}
+
+@media (max-width: 720px) {
+  .today-page__important-dates {
+    flex-direction: column;
+    gap: 16px;
+  }
+}
+
+.today-page__important-dates-group {
+  flex: 1;
+  min-width: 0;
+}
+
+.today-page__important-dates-group-title {
+  font-size: 11px;
+  font-weight: var(--weight-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-muted);
+  margin-bottom: 8px;
+}
+
+.today-page__important-dates-empty {
+  font-size: 12.5px;
+  color: var(--color-muted);
+  font-style: italic;
+  line-height: 1.5;
+}
+
+.today-page__important-dates-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.today-page__important-dates-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 13px;
+}
+
+.today-page__important-dates-row:last-child {
+  border-bottom: none;
+}
+
+.today-page__important-dates-name {
+  color: var(--color-ink);
+}
+
+.today-page__important-dates-when {
+  font-size: 11.5px;
+  color: var(--color-accent-secondary);
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 /* A task shown away from its own project (Today) gets a small tag pointing
@@ -3038,10 +3157,6 @@ a {
   background: rgba(196, 108, 45, 0.1);
 }
 
-.week-page__special--tickler {
-  background: var(--color-sidebar);
-}
-
 .week-page__special-title {
   font-size: 10px;
   font-weight: var(--weight-medium);
@@ -3052,10 +3167,6 @@ a {
 
 .week-page__special--overdue .week-page__special-title {
   color: var(--color-accent-secondary);
-}
-
-.week-page__special--tickler .week-page__special-title {
-  color: var(--color-muted);
 }
 
 .week-page__col-list {
@@ -3086,17 +3197,6 @@ a {
   white-space: nowrap;
 }
 
-.week-page__row--tickler {
-  justify-content: space-between;
-}
-
-.week-page__tickler-badge {
-  font-size: 10px;
-  color: var(--color-muted);
-  flex-shrink: 0;
-  white-space: nowrap;
-}
-
 .week-page__empty {
   font-size: 12px;
   color: var(--color-muted);
@@ -3104,10 +3204,10 @@ a {
 }
 
 /* Styled as an actual call-to-action rather than a plain text link — a
-   small filled pill, right-aligned under the column's ruled lines. */
+   small filled pill, centered under the column's ruled lines. */
 .week-page__col-footer-link {
   display: inline-block;
-  align-self: flex-end;
+  align-self: center;
   font-size: 11px;
   font-weight: var(--weight-medium);
   color: var(--color-accent-text);

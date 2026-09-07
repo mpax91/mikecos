@@ -1,19 +1,32 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
-import type { Entity, TodayResponse, TodayTask, WeatherDay } from '../api/types';
+import type { Entity, TicklerItem, TodayResponse, TodayTask, WeatherDay } from '../api/types';
 import { TaskRow } from '../components/TaskRow';
 import { TaskDetailModal } from '../components/TaskDetailModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { BlankLine } from '../components/BlankLine';
 import { WeatherWidget } from '../components/WeatherWidget';
-import { getHolidays } from '../utils/holidays';
+import { getHolidays, getUpcomingHolidays } from '../utils/holidays';
 import { useReportTabMeta } from '../contexts/TabsContext';
 
-/** Blank ruled lines shown below the day's real tasks — see BlankLine and
- * the matching constant in WeekPage. Kept in sync with that one by eye
+/** Default number of rows (real tasks + blank ruled lines combined) shown
+ * before Mike has to explicitly ask for more — see the "+ Add another line"
+ * control. A day with 3 tasks gets 7 blanks; a day with 12 tasks gets none
+ * (its real tasks already exceed the default) rather than forcing it back
+ * down to 10. Kept in sync with WeekPage's per-column blank count by eye
  * rather than shared, same as the rest of this page's small date helpers. */
-const BLANK_LINES = 10;
+const DEFAULT_ROWS = 10;
+
+const TICKLER_LABEL: Record<TicklerItem['staleness'], string> = {
+  jot: 'Untouched jot',
+  note: 'Untouched note',
+};
+
+/** How many days ahead the Important Dates section looks for holidays —
+ * wide enough to give Mike a heads-up ("Labor Day — in 3 days") without
+ * turning into a full month view. */
+const UPCOMING_HOLIDAY_WINDOW = 14;
 
 function todayLocalISO(): string {
   const d = new Date();
@@ -89,6 +102,7 @@ export function TodayPage() {
   const [taskStack, setTaskStack] = useState<string[]>([]);
   const [deleting, setDeleting] = useState<Entity | null>(null);
   const [weather, setWeather] = useState<WeatherDay | undefined>(undefined);
+  const [extraRows, setExtraRows] = useState(0);
 
   useReportTabMeta(isToday ? 'Today' : formatHeaderDate(date), 'today');
 
@@ -99,6 +113,13 @@ export function TodayPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // A fresh default row count on every date switch — "add another line" is
+  // a per-day decision, not something that should carry over to the next
+  // day viewed.
+  useEffect(() => {
+    setExtraRows(0);
+  }, [date]);
 
   // Same forecast fetch as WeekPage — only this page's one viewed date gets
   // used, but re-fetching per date isn't worth a separate endpoint shape.
@@ -188,14 +209,28 @@ export function TodayPage() {
 
   const overdue = data?.overdue ?? [];
   const dueToday = data?.today ?? [];
+  const tickler = data?.tickler ?? [];
 
   const holidays = getHolidays(date);
+  const upcomingHolidays = getUpcomingHolidays(date, UPCOMING_HOLIDAY_WINDOW);
+  const blankCount = Math.max(0, DEFAULT_ROWS + extraRows - dueToday.length);
 
   return (
     <div>
-      <Link to={weekStart === mondayOf(todayLocalISO()) ? '/today/week' : `/today/week/${weekStart}`} className="today-page__breadcrumb">
-        ‹ Week of {formatShort(weekStart)} – {formatShort(addDays(weekStart, 6))}
-      </Link>
+      <div className="breadcrumb">
+        <button
+          type="button"
+          className="breadcrumb__back"
+          onClick={() => navigate(weekStart === mondayOf(todayLocalISO()) ? '/today/week' : `/today/week/${weekStart}`)}
+          title="Back to week"
+          aria-label="Back to week"
+        >
+          ‹
+        </button>
+        <Link to={weekStart === mondayOf(todayLocalISO()) ? '/today/week' : `/today/week/${weekStart}`} className="breadcrumb__link">
+          Week of {formatShort(weekStart)} – {formatShort(addDays(weekStart, 6))}
+        </Link>
+      </div>
 
       <div className="toolbar-row">
         <div>
@@ -254,9 +289,60 @@ export function TodayPage() {
             {overdue.length > 0 && <div className="today-page__section-title">{isToday ? 'Today' : formatHeaderDate(date)}</div>}
             <div className="today-page__list today-page__list--ruled task-list card">
               {dueToday.map(renderRow)}
-              {Array.from({ length: BLANK_LINES }).map((_, i) => (
+              {Array.from({ length: blankCount }).map((_, i) => (
                 <BlankLine key={i} onSubmit={quickAdd} />
               ))}
+            </div>
+            <button type="button" className="today-page__add-row-btn" onClick={() => setExtraRows((n) => n + 1)}>
+              + Add another line
+            </button>
+          </div>
+
+          {tickler.length > 0 && (
+            <div className="today-page__section">
+              <div className="today-page__section-title">Worth revisiting</div>
+              <div className="today-page__tickler card">
+                {tickler.map((t) => (
+                  <div key={t.id} className="today-page__tickler-row" onClick={() => openTask(t)}>
+                    <span className="today-page__tickler-title">{t.title || 'Untitled'}</span>
+                    <span className="today-page__tickler-badge">{TICKLER_LABEL[t.staleness]}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="today-page__section">
+            <div className="today-page__section-title">Important Dates</div>
+            <div className="today-page__important-dates card">
+              <div className="today-page__important-dates-group">
+                <div className="today-page__important-dates-group-title">Birthdays &amp; Anniversaries</div>
+                {/* Placeholder — no contacts/CRM data model yet. Once one
+                    exists, this surfaces upcoming birthdays and
+                    anniversaries the same way the Holidays group below
+                    surfaces observances, rather than being a separate
+                    build. */}
+                <div className="today-page__important-dates-empty">
+                  No contacts yet — birthdays and anniversaries will show up here once MikeOS has a CRM.
+                </div>
+              </div>
+              <div className="today-page__important-dates-group">
+                <div className="today-page__important-dates-group-title">Holidays</div>
+                {upcomingHolidays.length === 0 ? (
+                  <div className="today-page__important-dates-empty">Nothing in the next two weeks.</div>
+                ) : (
+                  <div className="today-page__important-dates-list">
+                    {upcomingHolidays.map((h) => (
+                      <div key={`${h.date}-${h.name}`} className="today-page__important-dates-row">
+                        <span className="today-page__important-dates-name">{h.name}</span>
+                        <span className="today-page__important-dates-when">
+                          {h.daysAway === 0 ? 'Today' : h.daysAway === 1 ? 'Tomorrow' : `In ${h.daysAway} days`}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>

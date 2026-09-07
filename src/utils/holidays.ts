@@ -1,9 +1,13 @@
-/** US federal holidays, common cultural observances, and two family-relevant
+/** US federal holidays, common cultural observances, two family-relevant
  * professional observances (Mike has family in law enforcement and as a
- * PA), computed purely from date-math rules — no API, no stored data, so
- * this never needs updating and never goes stale. Multi-day observances
- * (Police Week, PA Week) produce one entry per day in the range; everything
- * else is a single date. */
+ * PA), and a wide set of lighter fixed-date fun/awareness observances
+ * (National Dog Day, Pi Day, and the like) — Mike explicitly wants the net
+ * cast wide here since the Day view's Important Dates section has the room
+ * for it, and it might surface something worth knowing about. All computed
+ * purely from date-math rules — no API, no stored data, so this never needs
+ * updating and never goes stale. Multi-day observances (Police Week, PA
+ * Week) produce one entry per day in the range; everything else is a single
+ * date. */
 
 export interface Holiday {
   date: string; // 'YYYY-MM-DD'
@@ -86,6 +90,7 @@ function fixedWeekStarting(year: number, month: number, day: number): string[] {
 
 function holidaysForYear(year: number): Holiday[] {
   const list: Holiday[] = [
+    // Federal / major cultural holidays
     { date: iso(year, 1, 1), name: "New Year's Day" },
     { date: nthWeekday(year, 1, 1, 3), name: 'MLK Day' },
     { date: iso(year, 2, 14), name: "Valentine's Day" },
@@ -102,9 +107,42 @@ function holidaysForYear(year: number): Holiday[] {
     { date: iso(year, 10, 31), name: 'Halloween' },
     { date: iso(year, 11, 11), name: 'Veterans Day' },
     { date: nthWeekday(year, 11, 4, 4), name: 'Thanksgiving' },
+    { date: iso(year, 12, 24), name: 'Christmas Eve' },
     { date: iso(year, 12, 25), name: 'Christmas' },
+    { date: iso(year, 12, 31), name: "New Year's Eve" },
     ...calendarWeekContaining(year, 5, 15).map((date) => ({ date, name: 'Police Week' })),
     ...fixedWeekStarting(year, 10, 6).map((date) => ({ date, name: 'PA Week' })),
+
+    // Lighter fixed-date observances — Mike's OK with the extra noise here
+    // since there's room in the Day view's Important Dates section and it
+    // might surface something worth knowing about. Every date below is a
+    // fixed month/day observed the same day every year (verified, not
+    // guessed), so none of these need a special rule function.
+    { date: iso(year, 1, 21), name: 'National Hug Day' },
+    { date: iso(year, 2, 2), name: 'Groundhog Day' },
+    { date: iso(year, 3, 14), name: 'Pi Day' },
+    { date: iso(year, 3, 17), name: "St. Patrick's Day" },
+    { date: iso(year, 3, 20), name: 'International Day of Happiness' },
+    { date: iso(year, 4, 1), name: "April Fools' Day" },
+    { date: iso(year, 4, 10), name: 'National Siblings Day' },
+    { date: iso(year, 4, 22), name: 'Earth Day' },
+    { date: iso(year, 4, 26), name: 'National Pretzel Day' },
+    { date: iso(year, 5, 4), name: 'Star Wars Day' },
+    { date: iso(year, 5, 5), name: 'Cinco de Mayo' },
+    { date: iso(year, 6, 8), name: 'World Oceans Day' },
+    { date: iso(year, 6, 21), name: 'International Yoga Day' },
+    { date: iso(year, 7, 17), name: 'World Emoji Day' },
+    { date: iso(year, 8, 8), name: 'International Cat Day' },
+    { date: iso(year, 8, 19), name: 'World Photography Day' },
+    { date: iso(year, 8, 26), name: 'National Dog Day' },
+    { date: iso(year, 8, 26), name: "Women's Equality Day" },
+    { date: iso(year, 9, 19), name: 'International Talk Like a Pirate Day' },
+    { date: iso(year, 9, 21), name: 'International Day of Peace' },
+    { date: iso(year, 10, 1), name: 'International Coffee Day' },
+    { date: iso(year, 10, 4), name: 'World Animal Day' },
+    { date: iso(year, 10, 16), name: 'World Food Day' },
+    { date: iso(year, 11, 13), name: 'World Kindness Day' },
+    { date: iso(year, 12, 10), name: 'Human Rights Day' },
   ];
   return list;
 }
@@ -127,4 +165,29 @@ export function getHolidays(dateIso: string): string[] {
   return holidaysForYearCached(year)
     .filter((h) => h.date === dateIso)
     .map((h) => h.name);
+}
+
+export interface UpcomingHoliday extends Holiday {
+  daysAway: number; // 0 = today
+}
+
+/** Every holiday/observance from `fromIso` through `days` days out
+ * (inclusive of today), nearest first — the "Labor Day — in 3 days" framing
+ * for the Day view's Important Dates section. Reads across the year
+ * boundary for free since it just walks the cached per-year lists for
+ * whichever year(s) the window touches. */
+export function getUpcomingHolidays(fromIso: string, days: number): UpcomingHoliday[] {
+  const [y, m, d] = fromIso.split('-').map(Number);
+  const from = new Date(y, m - 1, d);
+  const years = new Set([y, new Date(y, m - 1, d + days).getFullYear()]);
+  const pool = Array.from(years).flatMap((yr) => holidaysForYearCached(yr));
+
+  const results: UpcomingHoliday[] = [];
+  for (const h of pool) {
+    const [hy, hm, hd] = h.date.split('-').map(Number);
+    const daysAway = Math.round((new Date(hy, hm - 1, hd).getTime() - from.getTime()) / 86400000);
+    if (daysAway >= 0 && daysAway <= days) results.push({ ...h, daysAway });
+  }
+  results.sort((a, b) => a.daysAway - b.daysAway);
+  return results;
 }

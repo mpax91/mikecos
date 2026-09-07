@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { DndContext, DragOverlay, PointerSensor, useDraggable, useDroppable, useSensor, useSensors } from '@dnd-kit/core';
 import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core';
 import { api } from '../api/client';
-import type { Entity, TicklerItem, TodayTask, WeatherDay, WeekResponse } from '../api/types';
+import type { Entity, TodayTask, WeatherDay, WeekResponse } from '../api/types';
 import { TaskDetailModal } from '../components/TaskDetailModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { BlankLine } from '../components/BlankLine';
@@ -61,11 +61,6 @@ function formatWeekRange(start: string, end: string): string {
   const [ey] = end.split('-').map(Number);
   return sy === ey ? `${formatShort(start)} – ${formatShort(end)}, ${sy}` : `${formatShort(start)}, ${sy} – ${formatShort(end)}, ${ey}`;
 }
-
-const TICKLER_LABEL: Record<TicklerItem['staleness'], string> = {
-  jot: 'Untouched jot',
-  note: 'Untouched note',
-};
 
 /** A task row that can be picked up and dragged onto a day column or the
  * Unscheduled shelf to reschedule it — used for every real task shown on
@@ -143,25 +138,6 @@ function DayColumn({
         </div>
       )}
 
-      {/* Unlike Overdue, this runs on every column, not just today's — Mike
-          wants every day to follow the same template rather than today
-          looking structurally different from the rest of the week. The
-          items themselves are the same set regardless of which column
-          they're shown on (staleness isn't day-relative the way overdue
-          is), which is fine: this is a constant reminder rail, not a
-          per-day computation. */}
-      {data.tickler.length > 0 && (
-        <div className="week-page__special week-page__special--tickler">
-          <div className="week-page__special-title">Worth revisiting</div>
-          {data.tickler.map((t) => (
-            <div key={t.id} className="week-page__row week-page__row--tickler" onClick={() => onOpen(t)}>
-              <span className="week-page__row-title">{t.title || 'Untitled'}</span>
-              <span className="week-page__tickler-badge">{TICKLER_LABEL[t.staleness]}</span>
-            </div>
-          ))}
-        </div>
-      )}
-
       <div className="week-page__col-list">
         {day.tasks.map((t) => (
           <DraggableTaskRow key={t.id} task={t} onToggle={onToggle} onOpen={onOpen} />
@@ -231,12 +207,13 @@ function UnscheduledRow({ task, onToggle, onOpen }: { task: TodayTask; onToggle:
 
 /** Week view — a 7-day docket, Monday first, matching a physical weekly
  * planner's spread rather than the flat single-list feel of the Day view.
- * Overdue and the stale-item Tickler are shown only on whichever column is
- * the real current day (see the /api/week comment for why); every other
- * column is just what's actually due that day, past or future. Below the
- * grid, the Unscheduled shelf surfaces every undated open task so nothing
- * quietly falls out of view, and every task on the page can be dragged
- * between days or onto/off the shelf to reschedule it. */
+ * Overdue is shown only on whichever column is the real current day (see
+ * the /api/week comment for why); every other column is just what's
+ * actually due that day, past or future. The stale-item Tickler now shows
+ * only on the Day view, not repeated here. Below the grid, the Unscheduled
+ * shelf surfaces every undated open task so nothing quietly falls out of
+ * view, and every task on the page can be dragged between days or onto/off
+ * the shelf to reschedule it. */
 export function WeekPage() {
   const { start: startParam } = useParams<{ start: string }>();
   const navigate = useNavigate();

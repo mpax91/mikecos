@@ -881,12 +881,32 @@ app.post('/api/tasks', async (c) => {
   return c.json(entity, 201);
 });
 
+// Shared by /api/today and /api/week: the single stalest un-revisited jot
+// and top-level note, each tagged with which bucket it came from. Not tied
+// to any particular date — it's a "worth revisiting" nudge about whatever
+// has gone longest untouched, so both endpoints compute it the same way.
+async function computeTickler(db: D1Database): Promise<(Entity & { staleness: string })[]> {
+  const [staleJot, staleNote] = await Promise.all([
+    db.prepare(`SELECT * FROM entities WHERE type = 'note' AND is_jot = 1 ORDER BY COALESCE(last_touched, updated_at) ASC LIMIT 1`).first<Entity>(),
+    db
+      .prepare(`SELECT * FROM entities WHERE type = 'note' AND is_jot = 0 AND parent_id IS NULL ORDER BY COALESCE(last_touched, updated_at) ASC LIMIT 1`)
+      .first<Entity>(),
+  ]);
+  return [
+    staleJot ? { ...staleJot, staleness: 'jot' } : null,
+    staleNote ? { ...staleNote, staleness: 'note' } : null,
+  ].filter((x): x is Entity & { staleness: string } => x !== null);
+}
+
 // GET /api/today?date=YYYY-MM-DD — every open task due on or before `date`,
 // across every project plus standalone tasks, split into Overdue (due
 // before the given date) and Today (due exactly on it) — the core query the
 // daily planner view is built on. A past date works the same way (asking
 // "what was outstanding as of that day"), which is what makes history just
-// a different `date` rather than a separately-maintained thing.
+// a different `date` rather than a separately-maintained thing. Also
+// carries the stale-item Tickler ("Worth revisiting") — this used to live
+// on the Week view but now shows only here, one place instead of repeated
+// across every column.
 app.get('/api/today', async (c) => {
   const date = c.req.query('date');
   if (!date) return c.json({ error: 'date query param is required (YYYY-MM-DD)' }, 400);
@@ -904,21 +924,24 @@ app.get('/api/today', async (c) => {
 
   const overdue = withProject.filter((t) => t.due_date! < date);
   const today = withProject.filter((t) => t.due_date === date);
+  const tickler = await computeTickler(c.env.DB);
 
-  return c.json({ date, overdue, today });
+  return c.json({ date, overdue, today, tickler });
 });
 
 // GET /api/week?start=YYYY-MM-DD&today=YYYY-MM-DD — a 7-day docket starting
 // on `start` (a Monday, matching a physical weekly planner), one bucket per
 // day of exactly what's due that day, plus an `unscheduled` shelf of every
 // open task with no due date at all (draggable onto a day by the client).
-// Overdue and the stale-item Tickler are deliberately NOT repeated on every
-// column — "overdue" only means anything relative to the real current day,
-// so both are attached only to whichever day matches `today` (when that day
-// falls inside the visible week at all; looking at a past or future week
-// shows neither, same as a paper planner's other weeks never show today's
-// leftovers). `unscheduled`, by contrast, isn't day-relative, so it's always
-// returned regardless of which week is being viewed.
+// Overdue is deliberately NOT repeated on every column — it only means
+// anything relative to the real current day, so it's attached only to
+// whichever day matches `today` (when that day falls inside the visible
+// week at all; looking at a past or future week shows none, same as a
+// paper planner's other weeks never show today's leftovers). `unscheduled`,
+// by contrast, isn't day-relative, so it's always returned regardless of
+// which week is being viewed. The stale-item Tickler ("Worth revisiting")
+// used to live here too but now shows only on the Day view — see
+// computeTickler and /api/today.
 app.get('/api/week', async (c) => {
   const start = c.req.query('start');
   const today = c.req.query('today');
@@ -964,29 +987,13 @@ app.get('/api/week', async (c) => {
     (unscheduledRaw ?? []).map(async (task) => ({ ...task, project: await resolveProject(task.parent_id) }))
   );
 
-  let tickler: (Entity & { staleness: string })[] = [];
-  if (todayInRange) {
-    const [staleJot, staleNote] = await Promise.all([
-      c.env.DB.prepare(
-        `SELECT * FROM entities WHERE type = 'note' AND is_jot = 1 ORDER BY COALESCE(last_touched, updated_at) ASC LIMIT 1`
-      ).first<Entity>(),
-      c.env.DB.prepare(
-        `SELECT * FROM entities WHERE type = 'note' AND is_jot = 0 AND parent_id IS NULL ORDER BY COALESCE(last_touched, updated_at) ASC LIMIT 1`
-      ).first<Entity>(),
-    ]);
-    tickler = [
-      staleJot ? { ...staleJot, staleness: 'jot' } : null,
-      staleNote ? { ...staleNote, staleness: 'note' } : null,
-    ].filter((x): x is Entity & { staleness: string } => x !== null);
-  }
-
   const byDay = days.map((date) => ({
     date,
     isToday: date === todayInRange,
     tasks: withProject.filter((t) => t.due_date === date),
   }));
 
-  return c.json({ start, end, days: byDay, overdue, tickler, unscheduled });
+  return c.json({ start, end, days: byDay, overdue, unscheduled });
 });
 
 // Bedford Hills, NY 10507 — Mike's fixed home location for the Week/Day

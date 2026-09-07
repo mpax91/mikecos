@@ -81,6 +81,9 @@ export interface TodayResponse {
   date: string;
   overdue: TodayTask[];
   today: TodayTask[];
+  /** The stale-item Tickler ("Worth revisiting") — used to be repeated
+   * across every Week column, now shows just once here on the Day view. */
+  tickler: TicklerItem[];
 }
 
 /** One stale item surfaced by the Tickler — the entity itself plus which
@@ -122,7 +125,6 @@ export interface WeekResponse {
   end: string;
   days: WeekDay[];
   overdue: TodayTask[];
-  tickler: TicklerItem[];
   /** Every open task with no due date at all, oldest-touched first — shown
    * below the week grid so nothing undated gets forgotten, and draggable
    * onto a day column to schedule it. */
