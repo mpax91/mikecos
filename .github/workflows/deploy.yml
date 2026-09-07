@@ -19,11 +19,43 @@ jobs:
         with:
           node-version: 20
       - run: npm install
+      - name: Back up D1 before touching schema
+        # A migration that goes wrong is only a minor incident if there's an
+        # instant, independent way to recover — this makes that true on every
+        # single deploy, regardless of what Cloudflare's own Time Travel
+        # retention happens to cover at the time. Uploaded as a build
+        # artifact so it survives outside of D1 entirely.
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npx wrangler d1 export mikeos-db --remote --output=pre-migration-backup.sql
+          echo "entity_count_before=$(npx wrangler d1 execute mikeos-db --remote --json --command 'SELECT COUNT(*) as n FROM entities' | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>console.log(JSON.parse(d)[0].results[0].n))")" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pre-migration-backup-${{ github.sha }}
+          path: worker/pre-migration-backup.sql
+          retention-days: 30
       - name: Apply D1 migrations (remote)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: npm run db:migrate:remote
+      - name: Verify no rows were lost by the migration
+        # Any schema-recreating migration (widening a CHECK constraint, say)
+        # touches every row in `entities` — if the row count drops, something
+        # went wrong at the database layer and we must NOT proceed to deploy
+        # a Worker built for a schema whose data just got silently damaged.
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          after=$(npx wrangler d1 execute mikeos-db --remote --json --command 'SELECT COUNT(*) as n FROM entities' | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>console.log(JSON.parse(d)[0].results[0].n))")
+          echo "Entities before migration: $entity_count_before, after: $after"
+          if [ "$after" -lt "$entity_count_before" ]; then
+            echo "::error::Row count dropped from $entity_count_before to $after after migration — a backup was uploaded as build artifact pre-migration-backup-${{ github.sha }}. Aborting deploy."
+            exit 1
+          fi
       - name: Deploy Worker
         id: deploy
         env:

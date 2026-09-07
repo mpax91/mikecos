@@ -148,14 +148,16 @@ function extractAttachmentsAndLinks(contentJson: string | null | undefined): {
 // longest surfaces first, unlike Notes' newest-first ordering).
 app.get('/api/jots', async (c) => {
   const { results } = await c.env.DB.prepare(
-    `SELECT * FROM entities WHERE is_top_level = 1 AND type = 'jot'
+    `SELECT * FROM entities WHERE is_top_level = 1 AND type = 'note' AND is_jot = 1
      ORDER BY pinned DESC, COALESCE(last_touched, updated_at) ASC`
   ).all<Entity>();
   return c.json(results ?? []);
 });
 
-// POST /api/jots — create a new jot (type='jot', parent_id=NULL). Title is
-// optional and empty by default — like Keep, most jots never get one.
+// POST /api/jots — create a new jot. Stored as an ordinary type='note' row
+// with is_jot=1 (not a distinct 'jot' type) — see the comment in
+// migrations/0005_jots.sql for why. Title is optional and empty by default
+// — like Keep, most jots never get one.
 app.post('/api/jots', async (c) => {
   const body = await c.req
     .json<{ content?: string | null; title?: string }>()
@@ -164,8 +166,8 @@ app.post('/api/jots', async (c) => {
   const ts = now();
   const searchText = extractPlainText(body.content ?? null);
   await c.env.DB.prepare(
-    `INSERT INTO entities (id, type, title, content, parent_id, is_top_level, status, position, last_touched, created_at, updated_at, search_text)
-     VALUES (?, 'jot', ?, ?, NULL, 1, NULL, 0, ?, ?, ?, ?)`
+    `INSERT INTO entities (id, type, title, content, parent_id, is_top_level, status, position, last_touched, created_at, updated_at, search_text, is_jot)
+     VALUES (?, 'note', ?, ?, NULL, 1, NULL, 0, ?, ?, ?, ?, 1)`
   )
     .bind(id, body.title ?? '', body.content ?? null, ts, ts, ts, searchText)
     .run();
@@ -206,14 +208,14 @@ app.post('/api/entities/:id/convert', async (c) => {
     const isTopLevel = body.parent_id === null ? 1 : 0;
     const maxPos = await c.env.DB.prepare(
       body.parent_id === null
-        ? `SELECT COALESCE(MAX(position), -1) as m FROM entities WHERE parent_id IS NULL AND type = 'note'`
+        ? `SELECT COALESCE(MAX(position), -1) as m FROM entities WHERE parent_id IS NULL AND type = 'note' AND is_jot = 0`
         : 'SELECT COALESCE(MAX(position), -1) as m FROM entities WHERE parent_id = ?'
     )
       .bind(...(body.parent_id === null ? [] : [body.parent_id]))
       .first<{ m: number }>();
 
     await c.env.DB.prepare(
-      `UPDATE entities SET type = 'note', title = ?, parent_id = ?, is_top_level = ?, position = ?, status = NULL, updated_at = ?, last_touched = ? WHERE id = ?`
+      `UPDATE entities SET type = 'note', is_jot = 0, title = ?, parent_id = ?, is_top_level = ?, position = ?, status = NULL, updated_at = ?, last_touched = ? WHERE id = ?`
     )
       .bind(existing.title || 'Untitled Note', body.parent_id, isTopLevel, (maxPos?.m ?? -1) + 1, ts, ts, id)
       .run();
@@ -231,7 +233,7 @@ app.post('/api/entities/:id/convert', async (c) => {
     let nextPos = (maxPos?.m ?? -1) + 1;
 
     await c.env.DB.prepare(
-      `UPDATE entities SET type = 'task', title = ?, content = NULL, search_text = NULL, parent_id = ?, is_top_level = 0, position = ?, status = 'open', updated_at = ?, last_touched = ? WHERE id = ?`
+      `UPDATE entities SET type = 'task', is_jot = 0, title = ?, content = NULL, search_text = NULL, parent_id = ?, is_top_level = 0, position = ?, status = 'open', updated_at = ?, last_touched = ? WHERE id = ?`
     )
       .bind(title, body.parent_id, nextPos, ts, ts, id)
       .run();
@@ -319,7 +321,7 @@ app.post('/api/projects', async (c) => {
 // default-sorts by manual position so drag-reordering keeps working there.
 app.get('/api/notes', async (c) => {
   const { results } = await c.env.DB.prepare(
-    `SELECT * FROM entities WHERE is_top_level = 1 AND type = 'note'
+    `SELECT * FROM entities WHERE is_top_level = 1 AND type = 'note' AND is_jot = 0
      ORDER BY pinned DESC, COALESCE(last_touched, updated_at) DESC`
   ).all<Entity>();
   return c.json(results ?? []);

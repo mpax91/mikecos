@@ -1,4 +1,4 @@
-export type EntityType = 'project' | 'folder' | 'note' | 'task' | 'file' | 'link' | 'jot';
+export type EntityType = 'project' | 'folder' | 'note' | 'task' | 'file' | 'link';
 
 export interface FileMeta {
   r2_key: string;
@@ -35,6 +35,8 @@ export interface Entity {
   status: string | null;
   position: number;
   pinned: number;
+  /** A Jot is stored as type='note' with this flag set, not a distinct type. */
+  is_jot: number;
   last_touched: string | null;
   created_at: string;
   updated_at: string;

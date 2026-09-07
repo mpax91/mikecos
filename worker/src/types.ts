@@ -1,4 +1,4 @@
-export type EntityType = 'project' | 'folder' | 'note' | 'task' | 'file' | 'link' | 'jot';
+export type EntityType = 'project' | 'folder' | 'note' | 'task' | 'file' | 'link';
 export type TaskStatus = 'open' | 'done';
 export type ProjectStatus = 'active' | 'archived';
 
@@ -12,6 +12,7 @@ export interface Entity {
   status: string | null;
   position: number;
   pinned: number; // 0 | 1
+  is_jot: number; // 0 | 1 — a Jot is stored as type='note' with this flag set, not a distinct type (see migrations/0005_jots.sql)
   last_touched: string | null;
   created_at: string;
   updated_at: string;
