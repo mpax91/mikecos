@@ -2886,9 +2886,13 @@ a {
 
 .week-page__grid {
   display: grid;
-  grid-template-columns: repeat(7, minmax(190px, 1fr));
+  grid-template-columns: repeat(7, minmax(150px, 190px));
   gap: 10px;
   padding: 0 4px;
+  /* Fixed-width columns, left-aligned — on a wide desktop screen this keeps
+     each day snug around its content instead of stretching into mostly-empty
+     1fr columns, which was reading as a lot of wasted space. */
+  justify-content: flex-start;
 }
 
 .week-page__col {
@@ -2898,7 +2902,6 @@ a {
   border: var(--border-hairline);
   border-radius: var(--radius-card);
   padding: 10px;
-  min-height: 220px;
 }
 
 .week-page__col.is-today {
