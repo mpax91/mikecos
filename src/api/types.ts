@@ -163,6 +163,24 @@ export interface MeetingsResponse {
   meetings: MeetingItem[];
 }
 
+/** One Google Calendar's connection health, shown on the Settings screen's
+ * Calendar Integrations panel. `configured` is false when the matching
+ * GOOGLE_ICS_URL_* secret isn't set at all; `ok` is false when it's set but
+ * the feed didn't fetch/parse (see `error`). */
+export interface CalendarStatus {
+  id: 'personal' | 'shared';
+  label: string;
+  configured: boolean;
+  ok: boolean;
+  error: string | null;
+  eventCountToday: number;
+}
+
+export interface CalendarStatusResponse {
+  today: string;
+  calendars: CalendarStatus[];
+}
+
 /** A recurring task definition managed on the Settings screen — describes
  * the repeating chore itself (title, project, RRULE, anchor date); the
  * actual task instances that show up on Today/Week/Month are ordinary

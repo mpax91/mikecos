@@ -1371,6 +1371,43 @@ app.get('/api/meetings', async (c) => {
   return c.json({ date, meetings });
 });
 
+// GET /api/calendars/status?today=YYYY-MM-DD — a smoke test for the
+// Settings screen's Calendar Integrations panel: for each of Mike's two
+// Google Calendars, reports whether a secret URL is configured at all, and
+// if so whether the feed actually fetched and parsed (with a real error
+// message on failure, unlike /api/meetings which just treats any failure
+// as "no meetings" so a broken feed never looks worse than an empty one).
+// `today` is optional — defaults to the server's own UTC date, which is
+// only ever off by a few hours around midnight and doesn't matter for a
+// connectivity check.
+app.get('/api/calendars/status', async (c) => {
+  const today = c.req.query('today') || now().slice(0, 10);
+  const configs: { id: 'personal' | 'shared'; label: string; url: string | undefined }[] = [
+    { id: 'personal', label: "Michael's Calendar", url: c.env.GOOGLE_ICS_URL_PERSONAL },
+    { id: 'shared', label: "Nell & Mike's Calendar", url: c.env.GOOGLE_ICS_URL_SHARED },
+  ];
+
+  const calendars = await Promise.all(
+    configs.map(async ({ id, label, url }) => {
+      if (!url) return { id, label, configured: false, ok: false, error: null as string | null, eventCountToday: 0 };
+      try {
+        const upstream = await fetch(url, { cf: { cacheTtl: 60, cacheEverything: true } });
+        if (!upstream.ok) {
+          return { id, label, configured: true, ok: false, error: `Feed returned HTTP ${upstream.status}`, eventCountToday: 0 };
+        }
+        const ics = await upstream.text();
+        const calendarId = calendarIdFromIcsUrl(url) ?? '';
+        const meetings = meetingsForDate([{ ics, calendar: id, calendarId }], today);
+        return { id, label, configured: true, ok: true, error: null as string | null, eventCountToday: meetings.length };
+      } catch (e) {
+        return { id, label, configured: true, ok: false, error: e instanceof Error ? e.message : String(e), eventCountToday: 0 };
+      }
+    })
+  );
+
+  return c.json({ today, calendars });
+});
+
 app.get('/api/health', (c) => c.json({ ok: true, time: now() }));
 
 export default app;

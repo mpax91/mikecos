@@ -1,4 +1,4 @@
-import type { Entity, EntityDetail, EntityType, MeetingsResponse, MonthResponse, ProjectListItem, RecurringTaskDefinition, TodayResponse, WeatherResponse, WeekResponse } from './types';
+import type { CalendarStatusResponse, Entity, EntityDetail, EntityType, MeetingsResponse, MonthResponse, ProjectListItem, RecurringTaskDefinition, TodayResponse, WeatherResponse, WeekResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -222,4 +222,8 @@ export const api = {
    * for the live preview in the create/edit form. */
   previewRrule: (rrule: string, dtstart: string) =>
     request<{ text: string }>(`/api/recurring/preview?rrule=${encodeURIComponent(rrule)}&dtstart=${encodeURIComponent(dtstart)}`),
+
+  /** Connection health for each configured Google Calendar feed — the
+   * Settings screen's Calendar Integrations panel. */
+  getCalendarStatus: (today: string) => request<CalendarStatusResponse>(`/api/calendars/status?today=${encodeURIComponent(today)}`),
 };
