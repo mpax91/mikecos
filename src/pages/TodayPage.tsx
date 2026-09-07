@@ -7,7 +7,7 @@ import { TaskDetailModal } from '../components/TaskDetailModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { BlankLine } from '../components/BlankLine';
 import { WeatherWidget } from '../components/WeatherWidget';
-import { getHolidays, getUpcomingHolidays } from '../utils/holidays';
+import { getHolidays } from '../utils/holidays';
 import { useReportTabMeta } from '../contexts/TabsContext';
 
 /** Default number of rows (real tasks + blank ruled lines combined) shown
@@ -22,11 +22,6 @@ const TICKLER_LABEL: Record<TicklerItem['staleness'], string> = {
   jot: 'Untouched jot',
   note: 'Untouched note',
 };
-
-/** How many days ahead the Important Dates section looks for holidays —
- * wide enough to give Mike a heads-up ("Labor Day — in 3 days") without
- * turning into a full month view. */
-const UPCOMING_HOLIDAY_WINDOW = 14;
 
 function todayLocalISO(): string {
   const d = new Date();
@@ -212,7 +207,6 @@ export function TodayPage() {
   const tickler = data?.tickler ?? [];
 
   const holidays = getHolidays(date);
-  const upcomingHolidays = getUpcomingHolidays(date, UPCOMING_HOLIDAY_WINDOW);
   const blankCount = Math.max(0, DEFAULT_ROWS + extraRows - dueToday.length);
 
   return (
@@ -328,16 +322,17 @@ export function TodayPage() {
               </div>
               <div className="today-page__important-dates-group">
                 <div className="today-page__important-dates-group-title">Holidays</div>
-                {upcomingHolidays.length === 0 ? (
-                  <div className="today-page__important-dates-empty">Nothing in the next two weeks.</div>
+                {/* Scoped to just this one viewed day, same as the header
+                    badge (both read off the same getHolidays(date) list) —
+                    a look-ahead list here would duplicate what the Week
+                    view's per-column holiday line already shows. */}
+                {holidays.length === 0 ? (
+                  <div className="today-page__important-dates-empty">Nothing today.</div>
                 ) : (
                   <div className="today-page__important-dates-list">
-                    {upcomingHolidays.map((h) => (
-                      <div key={`${h.date}-${h.name}`} className="today-page__important-dates-row">
-                        <span className="today-page__important-dates-name">{h.name}</span>
-                        <span className="today-page__important-dates-when">
-                          {h.daysAway === 0 ? 'Today' : h.daysAway === 1 ? 'Tomorrow' : `In ${h.daysAway} days`}
-                        </span>
+                    {holidays.map((name) => (
+                      <div key={name} className="today-page__important-dates-row">
+                        <span className="today-page__important-dates-name">{name}</span>
                       </div>
                     ))}
                   </div>

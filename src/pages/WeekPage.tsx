@@ -142,7 +142,13 @@ function DayColumn({
         {day.tasks.map((t) => (
           <DraggableTaskRow key={t.id} task={t} onToggle={onToggle} onOpen={onOpen} />
         ))}
-        {Array.from({ length: BLANK_LINES_PER_DAY }).map((_, i) => (
+        {/* Blanks fill in only up to the default row count — a day with 2
+            tasks gets 8 blanks (10 total), a day with 12 tasks gets none
+            rather than padding it back down. Matches the Day view's own
+            10-row default; unlike that page, there's no "add another line"
+            here since a full week of per-column add buttons would clutter
+            the grid more than it'd help. */}
+        {Array.from({ length: Math.max(0, BLANK_LINES_PER_DAY - day.tasks.length) }).map((_, i) => (
           <BlankLine key={i} onSubmit={(title) => onQuickAdd(day.date, title)} />
         ))}
       </div>

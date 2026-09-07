@@ -166,28 +166,3 @@ export function getHolidays(dateIso: string): string[] {
     .filter((h) => h.date === dateIso)
     .map((h) => h.name);
 }
-
-export interface UpcomingHoliday extends Holiday {
-  daysAway: number; // 0 = today
-}
-
-/** Every holiday/observance from `fromIso` through `days` days out
- * (inclusive of today), nearest first — the "Labor Day — in 3 days" framing
- * for the Day view's Important Dates section. Reads across the year
- * boundary for free since it just walks the cached per-year lists for
- * whichever year(s) the window touches. */
-export function getUpcomingHolidays(fromIso: string, days: number): UpcomingHoliday[] {
-  const [y, m, d] = fromIso.split('-').map(Number);
-  const from = new Date(y, m - 1, d);
-  const years = new Set([y, new Date(y, m - 1, d + days).getFullYear()]);
-  const pool = Array.from(years).flatMap((yr) => holidaysForYearCached(yr));
-
-  const results: UpcomingHoliday[] = [];
-  for (const h of pool) {
-    const [hy, hm, hd] = h.date.split('-').map(Number);
-    const daysAway = Math.round((new Date(hy, hm - 1, hd).getTime() - from.getTime()) / 86400000);
-    if (daysAway >= 0 && daysAway <= days) results.push({ ...h, daysAway });
-  }
-  results.sort((a, b) => a.daysAway - b.daysAway);
-  return results;
-}

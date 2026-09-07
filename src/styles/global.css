@@ -2998,10 +2998,6 @@ a {
 }
 
 .today-page__important-dates-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
   padding: 5px 0;
   border-bottom: 1px solid var(--color-border);
   font-size: 13px;
@@ -3013,13 +3009,6 @@ a {
 
 .today-page__important-dates-name {
   color: var(--color-ink);
-}
-
-.today-page__important-dates-when {
-  font-size: 11.5px;
-  color: var(--color-accent-secondary);
-  flex-shrink: 0;
-  white-space: nowrap;
 }
 
 /* A task shown away from its own project (Today) gets a small tag pointing
@@ -3175,13 +3164,23 @@ a {
   flex: 1;
 }
 
+/* Same ruled bottom border as the blank lines below it (see
+   .week-page__col-list .blank-line) so a real task's row reads as one more
+   line on the page instead of a gap where the ruling drops out — matching
+   padding keeps the line height identical between the two. */
 .week-page__row {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 2px;
+  padding: 5px 2px;
   cursor: pointer;
   border-radius: 6px;
+  border-bottom: 1px solid var(--color-border);
+  /* dnd-kit attaches pointer listeners to this row, so this stops the
+     browser's own scroll/select gestures from fighting the drag. The
+     Unscheduled shelf's own rows carry the same rule on
+     .week-page__unscheduled-row. */
+  touch-action: none;
 }
 
 .week-page__row:hover {
@@ -3230,14 +3229,6 @@ a {
   font-size: 13px;
   padding: 5px 2px;
   border-bottom: 1px solid var(--color-border);
-}
-
-/* Draggable rows (real tasks, in Overdue / a day) — dnd-kit attaches
-   pointer listeners to these, so touch-action: none stops the browser's
-   own scroll/select gestures from fighting the drag. The Unscheduled
-   shelf's own rows carry the same rule on .week-page__unscheduled-row. */
-.week-page__row {
-  touch-action: none;
 }
 
 .week-page__row.is-dragging {
