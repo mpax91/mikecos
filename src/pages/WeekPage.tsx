@@ -126,7 +126,12 @@ function DayColumn({
           <span className="week-page__col-date">{formatDayLabel(day.date).day}</span>
           <WeatherWidget day={weather} variant="chip" />
         </div>
-        {holidays.length > 0 && <div className="week-page__col-holiday">{holidays.join(' · ')}</div>}
+        {/* Always rendered, even with nothing to say — a holiday name on
+            one column and nothing on the rest used to leave that column's
+            header taller than its neighbors, throwing the whole row out of
+            alignment. A reserved, empty line keeps every column's header
+            the same height whether or not that day has an observance. */}
+        <div className="week-page__col-holiday">{holidays.length > 0 ? holidays.join(' · ') : ' '}</div>
       </div>
 
       {day.isToday && data.overdue.length > 0 && (

@@ -3015,10 +3015,17 @@ a {
   flex: 1;
 }
 
+/* Always present (see the component comment) so every column's header is
+   the same height — line-height fixes its box even when the text content
+   is just a single space. */
 .week-page__col-holiday {
   font-size: 10.5px;
+  line-height: 14px;
   color: var(--color-accent-secondary);
   margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .week-page__special {
