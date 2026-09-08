@@ -1,4 +1,4 @@
-import type { CalendarFeedsResponse, CalendarFeedStatus, Entity, EntityDetail, EntityType, MeetingsRangeResponse, MeetingsResponse, MonthResponse, ProjectListItem, RecurringTaskDefinition, TodayResponse, WeatherResponse, WeekResponse } from './types';
+import type { CalendarFeedsResponse, CalendarFeedStatus, Entity, EntityDetail, EntityType, MeetingsRangeResponse, MeetingsResponse, MonthResponse, ProjectListItem, RecurringTaskDefinition, StatsResponse, TodayResponse, WeatherResponse, WeekResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -180,6 +180,12 @@ export const api = {
    * comment for why this beats one /api/meetings call per visible day. */
   getMeetingsRange: (start: string, end: string) =>
     request<MeetingsRangeResponse>(`/api/meetings/range?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`),
+
+  /** Completed-task rollups (today/week/month/year + a 14-day trend),
+   * anchored on the viewer's own local `date` — see the worker's
+   * /api/stats comment. Used by both the Today page's small completion
+   * count and the standalone Stats page. */
+  getStats: (date: string) => request<StatsResponse>(`/api/stats?date=${encodeURIComponent(date)}`),
 
   /** Quick-add on the Today page — a standalone task with no project,
    * due on the given date. */

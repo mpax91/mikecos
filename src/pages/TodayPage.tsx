@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
-import type { Entity, MeetingItem, TicklerItem, TodayResponse, TodayTask, WeatherDay } from '../api/types';
+import type { Entity, MeetingItem, StatsResponse, TicklerItem, TodayResponse, TodayTask, WeatherDay } from '../api/types';
 import { TaskRow } from '../components/TaskRow';
 import { TaskDetailModal } from '../components/TaskDetailModal';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -108,6 +108,7 @@ export function TodayPage() {
   const [weather, setWeather] = useState<WeatherDay | undefined>(undefined);
   const [extraRows, setExtraRows] = useState(0);
   const [meetings, setMeetings] = useState<MeetingItem[]>([]);
+  const [stats, setStats] = useState<StatsResponse | null>(null);
 
   useReportTabMeta(isToday ? 'Today' : formatHeaderDate(date), 'today');
 
@@ -118,6 +119,19 @@ export function TodayPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Completion count for the viewed day (see the Important Dates note above
+  // — "date" here means whatever day is on screen, not necessarily the real
+  // wall-clock today, same as everything else on this page). A separate,
+  // best-effort fetch rather than folding into /api/today — a stats hiccup
+  // shouldn't take the task list down with it.
+  const loadStats = useCallback(() => {
+    api.getStats(date).then(setStats).catch(() => setStats(null));
+  }, [date]);
+
+  useEffect(() => {
+    loadStats();
+  }, [loadStats]);
 
   // A fresh default row count on every date switch — "add another line" is
   // a per-day decision, not something that should carry over to the next
@@ -178,6 +192,7 @@ export function TodayPage() {
     );
     await api.updateEntity(task.id, { status: 'done' });
     load();
+    loadStats();
   }
 
   async function deleteTask(task: Entity) {
@@ -306,6 +321,14 @@ export function TodayPage() {
 
         <div className="today-page__header-extra">
           {holidays.length > 0 && <div className="today-page__holiday-badge">🎉 {holidays.join(' · ')}</div>}
+          {/* Only shown once something's actually been finished — an empty
+              "0 completed" badge on a fresh morning would just be noise,
+              same reasoning as the holiday badge above. */}
+          {stats !== null && stats.today > 0 && (
+            <Link to="/stats" className="today-page__stats-badge" title="See completion stats">
+              ✅ {stats.today} completed {isToday ? 'today' : 'that day'}
+            </Link>
+          )}
           <WeatherWidget day={weather} variant="sentence" />
         </div>
 

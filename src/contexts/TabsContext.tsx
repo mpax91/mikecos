@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ContextMenu, type ContextMenuItem } from '../components/ContextMenu';
 
-export type TabKind = 'today' | 'projects-list' | 'notes-list' | 'jots-list' | 'settings' | 'project' | 'folder' | 'note';
+export type TabKind = 'today' | 'projects-list' | 'notes-list' | 'jots-list' | 'settings' | 'project' | 'folder' | 'note' | 'stats';
 
 export interface Tab {
   id: string;
@@ -25,6 +25,7 @@ function inferTabMeta(path: string): { kind: TabKind; title: string } {
   if (path === '/notes') return { kind: 'notes-list', title: 'Notes' };
   if (path === '/jots') return { kind: 'jots-list', title: 'Jots' };
   if (path === '/settings') return { kind: 'settings', title: 'Settings' };
+  if (path === '/stats') return { kind: 'stats', title: 'Stats' };
   if (path.startsWith('/projects/')) return { kind: 'project', title: 'Project' };
   if (path.startsWith('/notes/')) return { kind: 'note', title: 'Note' };
   return { kind: 'today', title: 'Today' };
@@ -275,5 +276,6 @@ export function tabIcon(kind: TabKind): string {
   if (kind === 'today') return '📅';
   if (kind === 'jots-list') return '🗒️';
   if (kind === 'settings') return '⚙️';
+  if (kind === 'stats') return '📊';
   return kind === 'notes-list' || kind === 'note' ? '📝' : '📁';
 }

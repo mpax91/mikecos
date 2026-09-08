@@ -17,6 +17,7 @@ const WORKSPACE_ITEMS: NavItemDef[] = [
   { path: '/projects', label: 'Projects', kind: 'projects-list' },
   { path: '/notes', label: 'Notes', kind: 'notes-list' },
   { path: '/jots', label: 'Jots', kind: 'jots-list' },
+  { path: '/stats', label: 'Stats', kind: 'stats' },
 ];
 
 export function Sidebar({ open = false, onClose }: SidebarProps) {

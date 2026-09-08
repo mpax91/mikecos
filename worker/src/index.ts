@@ -14,6 +14,16 @@ app.use('*', async (c, next) => {
 const now = () => new Date().toISOString();
 const uid = () => crypto.randomUUID();
 
+// Same home-timezone treatment the frontend uses for meeting times
+// (MEETING_TZ in TodayPage/WeekPage/MonthPage) — a task finished at
+// 11:40 PM ET should count toward that day, not flip to "tomorrow" just
+// because the worker itself runs in UTC. en-CA's date formatting comes
+// out as YYYY-MM-DD directly, so no reassembly is needed.
+const HOME_TZ = 'America/New_York';
+function localDateString(iso: string, tz: string = HOME_TZ): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(iso));
+}
+
 function childCount(db: D1Database, id: string) {
   return db.prepare('SELECT COUNT(*) as n FROM entities WHERE parent_id = ?').bind(id).first<{ n: number }>();
 }
@@ -646,6 +656,30 @@ app.patch('/api/entities/:id', async (c) => {
     .bind(...values)
     .run();
   if (touchesContent) await touchProjectAncestor(c.env.DB, id);
+
+  // Log completion events for the stats rollups (see migrations/0011) —
+  // this is the single place every "check a task off" in the app goes
+  // through, whether it's the Today page, a project list, Week view, or
+  // the task detail panel, so hooking it here covers all of them. Only
+  // fires on an actual open->done transition, not a no-op PATCH that
+  // happens to repeat the current status. Toggling back off within the
+  // same short window (a misclick) removes the most recent log entry for
+  // this task instead of leaving a phantom completion in the history.
+  if (existing.type === 'task' && body.status !== undefined && body.status !== existing.status) {
+    if (body.status === 'done') {
+      await c.env.DB.prepare(
+        `INSERT INTO task_completions (id, entity_id, title, completed_at, completed_date) VALUES (?, ?, ?, ?, ?)`
+      )
+        .bind(uid(), id, body.title ?? existing.title, ts, localDateString(ts))
+        .run();
+    } else if (existing.status === 'done') {
+      await c.env.DB.prepare(
+        `DELETE FROM task_completions WHERE id = (SELECT id FROM task_completions WHERE entity_id = ? ORDER BY completed_at DESC LIMIT 1)`
+      )
+        .bind(id)
+        .run();
+    }
+  }
 
   const entity = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(id).first<Entity>();
   return c.json(entity);
@@ -1536,6 +1570,71 @@ app.delete('/api/calendars/:id', async (c) => {
   if (!existing) return c.json({ error: 'not found' }, 404);
   await c.env.DB.prepare('DELETE FROM calendar_feeds WHERE id = ?').bind(id).run();
   return c.json({ ok: true });
+});
+
+// GET /api/stats?date=YYYY-MM-DD — completed-task rollups for the Today
+// widget and the Stats page, all anchored on the caller's local `date`
+// (same convention as /api/today's `date`/`today` params) rather than the
+// worker's own UTC clock. `week` follows the app's Monday-first
+// convention (matching Week view); `month`/`year` are calendar buckets.
+// `trend` is the last 14 local days (oldest first, zero-filled) for a
+// simple sparkline/bar view — 14 is enough to see a pattern without
+// turning the stats page into its own calendar.
+function mondayOnOrBefore(iso: string): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  const dow = d.getUTCDay(); // 0=Sun..6=Sat
+  const delta = dow === 0 ? -6 : 1 - dow; // days back to Monday
+  d.setUTCDate(d.getUTCDate() + delta);
+  return d.toISOString().slice(0, 10);
+}
+function addDaysStr(iso: string, delta: number): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + delta);
+  return d.toISOString().slice(0, 10);
+}
+
+app.get('/api/stats', async (c) => {
+  const date = c.req.query('date');
+  if (!date) return c.json({ error: 'date query param is required (YYYY-MM-DD)' }, 400);
+
+  const weekStart = mondayOnOrBefore(date);
+  const weekEnd = addDaysStr(weekStart, 6);
+  const monthPrefix = date.slice(0, 7); // 'YYYY-MM'
+  const yearPrefix = date.slice(0, 4); // 'YYYY'
+  const trendStart = addDaysStr(date, -13);
+
+  const [today, week, month, year, trendRows] = await Promise.all([
+    c.env.DB.prepare(`SELECT COUNT(*) as n FROM task_completions WHERE completed_date = ?`).bind(date).first<{ n: number }>(),
+    c.env.DB.prepare(`SELECT COUNT(*) as n FROM task_completions WHERE completed_date >= ? AND completed_date <= ?`)
+      .bind(weekStart, weekEnd)
+      .first<{ n: number }>(),
+    c.env.DB.prepare(`SELECT COUNT(*) as n FROM task_completions WHERE completed_date LIKE ?`)
+      .bind(`${monthPrefix}-%`)
+      .first<{ n: number }>(),
+    c.env.DB.prepare(`SELECT COUNT(*) as n FROM task_completions WHERE completed_date LIKE ?`)
+      .bind(`${yearPrefix}-%`)
+      .first<{ n: number }>(),
+    c.env.DB.prepare(
+      `SELECT completed_date, COUNT(*) as n FROM task_completions WHERE completed_date >= ? AND completed_date <= ? GROUP BY completed_date`
+    )
+      .bind(trendStart, date)
+      .all<{ completed_date: string; n: number }>(),
+  ]);
+
+  const byDate = new Map((trendRows.results ?? []).map((r) => [r.completed_date, r.n]));
+  const trend: { date: string; count: number }[] = [];
+  for (let d = trendStart; d <= date; d = addDaysStr(d, 1)) {
+    trend.push({ date: d, count: byDate.get(d) ?? 0 });
+  }
+
+  return c.json({
+    date,
+    today: today?.n ?? 0,
+    week: week?.n ?? 0,
+    month: month?.n ?? 0,
+    year: year?.n ?? 0,
+    trend,
+  });
 });
 
 app.get('/api/health', (c) => c.json({ ok: true, time: now() }));

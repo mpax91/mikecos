@@ -9,6 +9,7 @@ import { ProjectsList } from './pages/ProjectsList';
 import { ProjectDetail } from './pages/ProjectDetail';
 import { NotesPage } from './pages/NotesPage';
 import { JotsPage } from './pages/JotsPage';
+import { StatsPage } from './pages/StatsPage';
 import { SettingsPage } from './pages/SettingsPage';
 
 export default function App() {
@@ -33,6 +34,7 @@ export default function App() {
             <Route path="/notes" element={<NotesPage />} />
             <Route path="/notes/:id" element={<NotesPage />} />
             <Route path="/jots" element={<JotsPage />} />
+            <Route path="/stats" element={<StatsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/today" replace />} />
           </Routes>

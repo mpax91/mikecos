@@ -186,6 +186,19 @@ export interface MeetingsRangeResponse {
   meetings: RangeMeetingItem[];
 }
 
+/** Completed-task rollups from GET /api/stats — see the worker's comment
+ * there for how `week`/`month`/`year` are bucketed and why the counts
+ * come from a dedicated completion log rather than the live entities
+ * table. `trend` is the last 14 local days, oldest first, zero-filled. */
+export interface StatsResponse {
+  date: string;
+  today: number;
+  week: number;
+  month: number;
+  year: number;
+  trend: { date: string; count: number }[];
+}
+
 /** One Google Calendar feed, managed self-service on the Settings screen's
  * Calendar Integrations panel (see migrations/0008_calendar_feeds.sql) —
  * `urlPreview` is a masked stand-in for the real secret address, which the
