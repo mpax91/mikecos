@@ -3681,6 +3681,18 @@ a {
   opacity: 0.85;
 }
 
+/* A meeting that's already over — same "struck through in place" treatment
+   as the Week view (see .week-page__row--meeting-past), so a day cell still
+   reads as a full record of what happened, not just what's left. */
+.month-page__meeting-item--past {
+  opacity: 0.6;
+}
+
+.month-page__meeting-item--past .month-page__meeting-item-time,
+.month-page__meeting-item--past .month-page__meeting-item-title {
+  text-decoration: line-through;
+}
+
 .month-page__meeting-item-title {
   /* The actual fix for the Month grid overflowing past the viewport: a
      flex item's default min-width is "auto" (its own content's width), so

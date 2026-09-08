@@ -97,18 +97,30 @@ function MonthTaskBadge({ count }: { count: number }) {
  * a glance without opening the day, and Mike specifically wanted these to
  * read differently from the task badge below them. Caps at
  * MAX_VISIBLE_MEETINGS with a "+N more" line for the rest. */
-function MonthMeetingList({ meetings }: { meetings: RangeMeetingItem[] }) {
+function MonthMeetingList({ meetings, cellDate, realToday }: { meetings: RangeMeetingItem[]; cellDate: string; realToday: string }) {
   if (meetings.length === 0) return null;
   const visible = meetings.slice(0, MAX_VISIBLE_MEETINGS);
   const overflow = meetings.length - visible.length;
+  const now = Date.now();
   return (
     <div className="month-page__meeting-list">
-      {visible.map((m) => (
-        <div key={m.id} className="month-page__meeting-item" title={`${m.allDay ? 'All day' : formatMeetingTime(m.start)} · ${m.title}`}>
-          {!m.allDay && <span className="month-page__meeting-item-time">{formatMeetingTime(m.start)}</span>}
-          <span className="month-page__meeting-item-title">{m.title}</span>
-        </div>
-      ))}
+      {visible.map((m) => {
+        // Same "is this actually over" rule as the Week view: a timed
+        // meeting once its end instant has passed, an all-day one once its
+        // whole local day has (cellDate is that day, already known by the
+        // caller — no per-item date math needed).
+        const isPast = m.allDay ? cellDate < realToday : new Date(m.end).getTime() < now;
+        return (
+          <div
+            key={m.id}
+            className={`month-page__meeting-item${isPast ? ' month-page__meeting-item--past' : ''}`}
+            title={`${m.allDay ? 'All day' : formatMeetingTime(m.start)} · ${m.title}`}
+          >
+            {!m.allDay && <span className="month-page__meeting-item-time">{formatMeetingTime(m.start)}</span>}
+            <span className="month-page__meeting-item-title">{m.title}</span>
+          </div>
+        );
+      })}
       {overflow > 0 && <div className="month-page__meeting-more">+{overflow} more</div>}
     </div>
   );
@@ -276,7 +288,7 @@ export function MonthPage() {
                     <span className={`month-page__cell-date${isToday ? ' is-today' : ''}`}>{formatDayNum(date)}</span>
                   </div>
                   {holidays.length > 0 && <div className="month-page__cell-holiday">{holidays.join(' · ')}</div>}
-                  <MonthMeetingList meetings={dayMeetings} />
+                  <MonthMeetingList meetings={dayMeetings} cellDate={date} realToday={realToday} />
                   <MonthTaskBadge count={taskCount} />
                 </div>
               );
