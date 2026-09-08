@@ -60,6 +60,7 @@ export function TaskDetailModal({
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [dueDate, setDueDate] = useState('');
+  const [dueTime, setDueTime] = useState('');
   const [newSubtask, setNewSubtask] = useState('');
   const [addingLink, setAddingLink] = useState(false);
   const [linkUrl, setLinkUrl] = useState('');
@@ -76,6 +77,7 @@ export function TaskDetailModal({
       const meta = parseTaskMeta(d.entity.content);
       setDescription(meta.description ?? '');
       setDueDate(d.entity.due_date ?? '');
+      setDueTime(d.entity.due_time ?? '');
       const parent = d.breadcrumb[d.breadcrumb.length - 1];
       setParentTitle(parent && parent.type === 'task' ? parent.title || 'Untitled Task' : null);
     });
@@ -115,8 +117,20 @@ export function TaskDetailModal({
 
   function handleDueDateChange(value: string) {
     setDueDate(value);
-    setEntity((prev) => (prev ? { ...prev, due_date: value || null } : prev));
+    // Clearing the date takes the time with it (see the worker's PATCH
+    // handler) — mirror that locally so the time input doesn't keep
+    // showing a value that's about to be wiped server-side.
+    const nextDueTime = value ? dueTime : '';
+    if (!value) setDueTime('');
+    setEntity((prev) => (prev ? { ...prev, due_date: value || null, due_time: nextDueTime || null } : prev));
     api.updateEntity(taskId, { due_date: value || null });
+    onMutated();
+  }
+
+  function handleDueTimeChange(value: string) {
+    setDueTime(value);
+    setEntity((prev) => (prev ? { ...prev, due_time: value || null } : prev));
+    api.updateEntity(taskId, { due_time: value || null });
     onMutated();
   }
 
@@ -242,6 +256,15 @@ export function TaskDetailModal({
           <label className="task-panel__label">Due date</label>
           <div className="task-panel__field-row">
             <input type="date" value={dueDate} onChange={(e) => handleDueDateChange(e.target.value)} />
+            {dueDate && (
+              <input
+                type="time"
+                value={dueTime}
+                onChange={(e) => handleDueTimeChange(e.target.value)}
+                title="Optional time of day"
+                className="task-panel__due-time"
+              />
+            )}
             {dueDate && (
               <button type="button" className="task-panel__clear" onClick={() => handleDueDateChange('')}>
                 Clear

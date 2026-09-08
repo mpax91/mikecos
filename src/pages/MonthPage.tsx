@@ -1,9 +1,23 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
-import type { MeetingsRangeResponse, MonthResponse } from '../api/types';
+import type { MeetingsRangeResponse, MonthResponse, RangeMeetingItem } from '../api/types';
 import { getHolidays } from '../utils/holidays';
 import { useReportTabMeta } from '../contexts/TabsContext';
+
+// Same fixed home-timezone treatment as the Day/Week views' own meeting
+// times — see TodayPage's MEETING_TZ comment.
+const MEETING_TZ = 'America/New_York';
+function formatMeetingTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString('en-US', { timeZone: MEETING_TZ, hour: 'numeric', minute: '2-digit' });
+}
+
+// A cell is only ~96px tall — beyond a few individual event lines it reads
+// as clutter rather than useful detail, so the rest collapse into a "+N
+// more" line, mirroring how Google Calendar's own month grid caps visible
+// events per day. Click-through is still the whole cell (opens the Day
+// view), so nothing shown here is actually unreachable.
+const MAX_VISIBLE_MEETINGS = 3;
 
 function todayLocalISO(): string {
   const d = new Date();
@@ -77,15 +91,25 @@ function MonthTaskBadge({ count }: { count: number }) {
   );
 }
 
-/** Same treatment as MonthTaskBadge, for real Google Calendar events on
- * that day — a bare count here would be ambiguous with the task badge right
- * above it, so this one is explicit about what it's counting too. */
-function MonthMeetingBadge({ count }: { count: number }) {
-  if (count === 0) return null;
-  const label = `${count} meeting${count === 1 ? '' : 's'}`;
+/** Real Google Calendar events on that day, shown as individual line items
+ * (time + title) rather than rolled up into a single count the way tasks
+ * are — unlike a task, a meeting has a specific time that's worth seeing at
+ * a glance without opening the day, and Mike specifically wanted these to
+ * read differently from the task badge below them. Caps at
+ * MAX_VISIBLE_MEETINGS with a "+N more" line for the rest. */
+function MonthMeetingList({ meetings }: { meetings: RangeMeetingItem[] }) {
+  if (meetings.length === 0) return null;
+  const visible = meetings.slice(0, MAX_VISIBLE_MEETINGS);
+  const overflow = meetings.length - visible.length;
   return (
-    <div className="month-page__meeting-badge" title={label}>
-      <span className="month-page__meeting-badge-icon">📅</span> {label}
+    <div className="month-page__meeting-list">
+      {visible.map((m) => (
+        <div key={m.id} className="month-page__meeting-item" title={`${m.allDay ? 'All day' : formatMeetingTime(m.start)} · ${m.title}`}>
+          {!m.allDay && <span className="month-page__meeting-item-time">{formatMeetingTime(m.start)}</span>}
+          <span className="month-page__meeting-item-title">{m.title}</span>
+        </div>
+      ))}
+      {overflow > 0 && <div className="month-page__meeting-more">+{overflow} more</div>}
     </div>
   );
 }
@@ -151,11 +175,13 @@ export function MonthPage() {
     return map;
   }, [data]);
 
-  const meetingCountByDate = useMemo(() => {
-    const map = new Map<string, number>();
+  const meetingsByDate = useMemo(() => {
+    const map = new Map<string, RangeMeetingItem[]>();
     if (!meetingsData) return map;
     for (const m of meetingsData.meetings) {
-      map.set(m.date, (map.get(m.date) ?? 0) + 1);
+      const list = map.get(m.date);
+      if (list) list.push(m);
+      else map.set(m.date, [m]);
     }
     return map;
   }, [meetingsData]);
@@ -237,7 +263,7 @@ export function MonthPage() {
               const isToday = date === realToday;
               const holidays = getHolidays(date);
               const taskCount = taskCountByDate.get(date) ?? 0;
-              const meetingCount = meetingCountByDate.get(date) ?? 0;
+              const dayMeetings = meetingsByDate.get(date) ?? [];
 
               return (
                 <div
@@ -249,7 +275,7 @@ export function MonthPage() {
                     <span className={`month-page__cell-date${isToday ? ' is-today' : ''}`}>{formatDayNum(date)}</span>
                   </div>
                   {holidays.length > 0 && <div className="month-page__cell-holiday">{holidays.join(' · ')}</div>}
-                  <MonthMeetingBadge count={meetingCount} />
+                  <MonthMeetingList meetings={dayMeetings} />
                   <MonthTaskBadge count={taskCount} />
                 </div>
               );

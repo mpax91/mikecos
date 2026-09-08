@@ -223,7 +223,40 @@ export function TodayPage() {
     setTaskStack((prev) => prev.slice(0, -1));
   }
 
-  function renderRow(task: TodayTask) {
+  // Promote/demote among today's own tasks — a plain swap-with-neighbor
+  // reorder, persisted via api.reorderDay (scoped by due_date, not
+  // parent_id, since this list mixes tasks pulled from many different
+  // projects that don't share a parent — see the worker's
+  // /api/tasks/reorder-day comment). Deliberately only offered on the
+  // exact-due-today bucket: Overdue mixes several different due dates, so
+  // "promote" there wouldn't have a coherent meaning.
+  function persistDayReorder(orderedIds: string[]) {
+    api.reorderDay(date, orderedIds).then(load);
+  }
+
+  function promoteTask(task: Entity) {
+    const group = data?.today ?? [];
+    const idx = group.findIndex((t) => t.id === task.id);
+    if (idx <= 0) return;
+    const ordered = [...group];
+    [ordered[idx - 1], ordered[idx]] = [ordered[idx], ordered[idx - 1]];
+    persistDayReorder(ordered.map((t) => t.id));
+  }
+
+  function demoteTask(task: Entity) {
+    const group = data?.today ?? [];
+    const idx = group.findIndex((t) => t.id === task.id);
+    if (idx === -1 || idx >= group.length - 1) return;
+    const ordered = [...group];
+    [ordered[idx], ordered[idx + 1]] = [ordered[idx + 1], ordered[idx]];
+    persistDayReorder(ordered.map((t) => t.id));
+  }
+
+  // `reorderable` gates Promote/Demote to the exact-due-today list only —
+  // Overdue mixes several different due dates, so swapping two of its rows
+  // wouldn't have a coherent meaning (and persistDayReorder operates on
+  // data.today specifically, so it would silently no-op there anyway).
+  function renderRow(task: TodayTask, reorderable = false) {
     return (
       <TaskRow
         key={task.id}
@@ -232,6 +265,8 @@ export function TodayPage() {
         onDelete={(t) => setDeleting(t)}
         onTogglePin={togglePin}
         onOpen={openTask}
+        onPromote={reorderable ? promoteTask : undefined}
+        onDemote={reorderable ? demoteTask : undefined}
         projectTag={task.project}
       />
     );
@@ -315,13 +350,20 @@ export function TodayPage() {
               <div className="today-page__section-title today-page__section-title--overdue">
                 Overdue ({overdue.length})
               </div>
-              <div className="today-page__list today-page__list--ruled task-list card">{overdue.map(renderRow)}</div>
+              <div className="today-page__list today-page__list--ruled task-list card">{overdue.map((task) => renderRow(task))}</div>
             </div>
           )}
 
-          {meetings.length > 0 && (
-            <div className="today-page__section">
-              <div className="today-page__section-title">{isToday ? "Today's Meetings" : 'Meetings'}</div>
+          {/* Always shown, even with nothing to list — a section that only
+              sometimes appears reads as broken/loading rather than "no
+              meetings today", and every other Day view section (Important
+              Dates, the task list itself) is a fixed part of the page's
+              shape the same way. */}
+          <div className="today-page__section">
+            <div className="today-page__section-title">{isToday ? "Today's Meetings" : 'Meetings'}</div>
+            {meetings.length === 0 ? (
+              <div className="empty-state">No meetings {isToday ? 'today' : 'that day'}.</div>
+            ) : (
               <div className="today-page__meetings card">
                 {meetings.map((m) => (
                   <a
@@ -339,13 +381,13 @@ export function TodayPage() {
                   </a>
                 ))}
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
           <div className="today-page__section">
             {overdue.length > 0 && <div className="today-page__section-title">{isToday ? 'Today' : formatHeaderDate(date)}</div>}
             <div className="today-page__list today-page__list--ruled task-list card">
-              {dueToday.map(renderRow)}
+              {dueToday.map((task) => renderRow(task, true))}
               {Array.from({ length: blankCount }).map((_, i) => (
                 <BlankLine key={i} onSubmit={quickAdd} />
               ))}

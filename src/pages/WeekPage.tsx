@@ -138,27 +138,6 @@ function DayColumn({
         <div className="week-page__col-holiday">{holidays.length > 0 ? holidays.join(' · ') : ' '}</div>
       </div>
 
-      {meetings.length > 0 && (
-        <div className="week-page__meetings">
-          {meetings.map((m) => (
-            <a
-              key={m.id}
-              className="week-page__meeting-row"
-              href={m.gcalUrl ?? undefined}
-              target="_blank"
-              rel="noreferrer"
-              onClick={(e) => {
-                if (!m.gcalUrl) e.preventDefault();
-                e.stopPropagation();
-              }}
-            >
-              <span className="week-page__meeting-time">{m.allDay ? 'All day' : formatMeetingTime(m.start)}</span>
-              <span className="week-page__meeting-title">{m.title}</span>
-            </a>
-          ))}
-        </div>
-      )}
-
       {day.isToday && data.overdue.length > 0 && (
         <div className="week-page__special week-page__special--overdue">
           <div className="week-page__special-title">Overdue</div>
@@ -169,16 +148,38 @@ function DayColumn({
       )}
 
       <div className="week-page__col-list">
+        {/* Meetings sit in the same row flow as tasks — each one takes up
+            one of the day's fixed row slots (see the blank-count math
+            below) rather than sitting in its own separately-boxed section
+            above the list, so a day column reads as one consistent stack
+            of rows regardless of whether an entry is a task or a real
+            calendar event. */}
+        {meetings.map((m) => (
+          <a
+            key={m.id}
+            className="week-page__row week-page__row--meeting"
+            href={m.gcalUrl ?? undefined}
+            target="_blank"
+            rel="noreferrer"
+            onClick={(e) => {
+              if (!m.gcalUrl) e.preventDefault();
+              e.stopPropagation();
+            }}
+          >
+            <span className="week-page__meeting-time">{m.allDay ? 'All day' : formatMeetingTime(m.start)}</span>
+            <span className="week-page__row-title">{m.title}</span>
+          </a>
+        ))}
         {day.tasks.map((t) => (
           <DraggableTaskRow key={t.id} task={t} onToggle={onToggle} onOpen={onOpen} />
         ))}
         {/* Blanks fill in only up to the default row count — a day with 2
-            tasks gets 8 blanks (10 total), a day with 12 tasks gets none
-            rather than padding it back down. Matches the Day view's own
-            10-row default; unlike that page, there's no "add another line"
-            here since a full week of per-column add buttons would clutter
-            the grid more than it'd help. */}
-        {Array.from({ length: Math.max(0, BLANK_LINES_PER_DAY - day.tasks.length) }).map((_, i) => (
+            tasks and 1 meeting gets 7 blanks (10 rows total), a day with 12
+            tasks gets none rather than padding it back down. Matches the
+            Day view's own 10-row default; unlike that page, there's no "add
+            another line" here since a full week of per-column add buttons
+            would clutter the grid more than it'd help. */}
+        {Array.from({ length: Math.max(0, BLANK_LINES_PER_DAY - day.tasks.length - meetings.length) }).map((_, i) => (
           <BlankLine key={i} onSubmit={(title) => onQuickAdd(day.date, title)} />
         ))}
       </div>

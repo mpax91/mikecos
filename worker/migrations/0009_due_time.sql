@@ -1,0 +1,11 @@
+-- Optional time-of-day for a task's due date (e.g. "Call Kia" due today at
+-- 2:00 PM, not just "today") — Mike asked for this alongside the due date
+-- itself. Stored separately from due_date rather than folded into a single
+-- datetime column so a task can stay date-only (the common case) with no
+-- time to display or reason about; NULL here always means "no specific
+-- time", never midnight. Meaningless without a due_date, and the API clears
+-- it automatically whenever due_date is cleared (see PATCH /api/entities/:id).
+--
+-- Purely additive — ADD COLUMN only. See 0006_planner.sql / 0005_jots.sql
+-- for why `entities` is never recreated on this database.
+ALTER TABLE entities ADD COLUMN due_time TEXT; -- 'HH:MM' 24-hour, NULL = no specific time

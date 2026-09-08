@@ -1,0 +1,18 @@
+-- Manual ordering for tasks that share the same due_date, independent of
+-- `position` (which orders a task within its own project/parent — reusing
+-- that column for the Day view's own "move up/down" would silently reorder
+-- the task within its project too, since both /api/entities/reorder and
+-- this scope by different, unrelated groupings on the same field). Mike
+-- asked to be able to promote/demote tasks within a day on the Today page,
+-- and the Day/Week views mix tasks pulled from many different projects (and
+-- standalone ones) that don't share a parent_id, so the existing
+-- parent_id-scoped reorder endpoint doesn't apply here at all.
+--
+-- NULL (the default for every existing row) sorts after any real value in
+-- the ORDER BY the API uses, so nothing already on a day's list jumps
+-- around the first time this ships — only tasks Mike has actually
+-- promoted/demoted since get a real ordering.
+--
+-- Purely additive — ADD COLUMN only. See 0006_planner.sql for why
+-- `entities` is never recreated on this database.
+ALTER TABLE entities ADD COLUMN due_position INTEGER;

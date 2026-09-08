@@ -41,6 +41,15 @@ export interface Entity {
   is_jot: number;
   /** 'YYYY-MM-DD', tasks only. Powers the Today page's Overdue/Today split. */
   due_date: string | null;
+  /** 'HH:MM' 24-hour, tasks only, meaningless without due_date — an
+   * optional time of day layered on top of the due date (e.g. "2:00 PM"),
+   * cleared automatically whenever due_date itself is cleared. */
+  due_time: string | null;
+  /** Manual order among tasks sharing the same due_date — the Day view's
+   * promote/demote, independent of `position` (which orders a task within
+   * its own project). NULL for anything never explicitly reordered this
+   * way, sorting after any real value. */
+  due_position: number | null;
   last_touched: string | null;
   created_at: string;
   updated_at: string;

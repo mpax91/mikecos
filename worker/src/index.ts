@@ -558,7 +558,7 @@ app.post('/api/entities', async (c) => {
 app.patch('/api/entities/:id', async (c) => {
   const id = c.req.param('id');
   const body = await c.req.json<
-    Partial<Pick<Entity, 'title' | 'content' | 'status' | 'parent_id' | 'position' | 'pinned' | 'due_date' | 'last_touched'>>
+    Partial<Pick<Entity, 'title' | 'content' | 'status' | 'parent_id' | 'position' | 'pinned' | 'due_date' | 'due_time' | 'last_touched'>>
   >();
 
   const existing = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(id).first<Entity>();
@@ -600,6 +600,18 @@ app.patch('/api/entities/:id', async (c) => {
   if (body.due_date !== undefined) {
     fields.push('due_date = ?');
     values.push(body.due_date);
+    touchesContent = true;
+    // Clearing the due date entirely takes any due time down with it — a
+    // time without a date it belongs to is meaningless, and would
+    // otherwise silently reappear if a due date got set again later.
+    if (!body.due_date && body.due_time === undefined) {
+      fields.push('due_time = ?');
+      values.push(null);
+    }
+  }
+  if (body.due_time !== undefined) {
+    fields.push('due_time = ?');
+    values.push(body.due_time);
     touchesContent = true;
   }
   // Explicit last_touched override — used only to restore a project's own
@@ -950,6 +962,29 @@ app.post('/api/tasks', async (c) => {
   return c.json(entity, 201);
 });
 
+// POST /api/tasks/reorder-day — { date: 'YYYY-MM-DD', ordered_ids: string[] }
+// Promote/demote on the Day view: sets due_position (see
+// migrations/0010_due_position.sql) for whichever of the given ids are
+// actually due on `date`, in the given order. Deliberately its own
+// endpoint rather than reusing POST /api/entities/reorder — that one scopes
+// by parent_id (ordering within a single project), while the Day view's
+// task list mixes tasks pulled from many different projects (and
+// standalone ones) that share a due_date but not a parent, so parent_id
+// scoping wouldn't touch most of them. The `AND due_date = ?` guard means a
+// task that got rescheduled out from under a stale ordered_ids list (a
+// slow client, a race) just gets silently skipped rather than mis-ordered.
+app.post('/api/tasks/reorder-day', async (c) => {
+  const body = await c.req.json<{ date: string; ordered_ids: string[] }>();
+  if (!body.date) return c.json({ error: 'date is required (YYYY-MM-DD)' }, 400);
+  if (!body.ordered_ids?.length) return c.json({ error: 'ordered_ids required' }, 400);
+
+  const stmts = body.ordered_ids.map((entityId, index) =>
+    c.env.DB.prepare(`UPDATE entities SET due_position = ? WHERE id = ? AND due_date = ?`).bind(index, entityId, body.date)
+  );
+  await c.env.DB.batch(stmts);
+  return c.json({ ok: true });
+});
+
 // ---- Recurring task definitions (Settings screen) ----
 //
 // A definition just describes a repeating chore ("mow lawn", every Monday);
@@ -1129,7 +1164,7 @@ app.get('/api/today', async (c) => {
   // overdueAsOf is always <= date (it's the earlier of the two), so a
   // single due_date <= date bound covers both buckets below.
   const { results } = await c.env.DB.prepare(
-    `SELECT * FROM entities WHERE type = 'task' AND status = 'open' AND due_date IS NOT NULL AND due_date <= ? ORDER BY due_date ASC, position ASC`
+    `SELECT * FROM entities WHERE type = 'task' AND status = 'open' AND due_date IS NOT NULL AND due_date <= ? ORDER BY due_date ASC, due_position IS NULL, due_position ASC, position ASC`
   )
     .bind(date)
     .all<Entity>();
@@ -1177,7 +1212,7 @@ app.get('/api/week', async (c) => {
   const end = days[6];
 
   const { results } = await c.env.DB.prepare(
-    `SELECT * FROM entities WHERE type = 'task' AND status = 'open' AND due_date IS NOT NULL AND due_date <= ? ORDER BY due_date ASC, position ASC`
+    `SELECT * FROM entities WHERE type = 'task' AND status = 'open' AND due_date IS NOT NULL AND due_date <= ? ORDER BY due_date ASC, due_position IS NULL, due_position ASC, position ASC`
   )
     .bind(end)
     .all<Entity>();
@@ -1228,7 +1263,7 @@ app.get('/api/month', async (c) => {
   if (!start || !end) return c.json({ error: 'start and end query params are required (YYYY-MM-DD)' }, 400);
 
   const { results } = await c.env.DB.prepare(
-    `SELECT * FROM entities WHERE type = 'task' AND status = 'open' AND due_date IS NOT NULL AND due_date >= ? AND due_date <= ? ORDER BY due_date ASC, position ASC`
+    `SELECT * FROM entities WHERE type = 'task' AND status = 'open' AND due_date IS NOT NULL AND due_date >= ? AND due_date <= ? ORDER BY due_date ASC, due_position IS NULL, due_position ASC, position ASC`
   )
     .bind(start, end)
     .all<Entity>();

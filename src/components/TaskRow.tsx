@@ -44,6 +44,14 @@ function formatDueDate(dueDate: string): { label: string; kind: 'overdue' | 'tod
   return { label, kind: diffDays < 0 ? 'overdue' : 'upcoming' };
 }
 
+/** 'HH:MM' 24h -> a short 12-hour clock label ("2:30 PM") for the due badge. */
+function formatDueTime(dueTime: string): string {
+  const [h, m] = dueTime.split(':').map(Number);
+  const period = h < 12 ? 'AM' : 'PM';
+  const hour12 = h % 12 === 0 ? 12 : h % 12;
+  return `${hour12}:${String(m).padStart(2, '0')} ${period}`;
+}
+
 /** Small paperclip + count on a task row that has file/link attachments —
  * click it to see (and open) them right from the project view, no need to
  * open the task's own detail panel first. */
@@ -161,6 +169,7 @@ export function TaskRow({
             title={dueDate ?? undefined}
           >
             📅 {due.label}
+            {entity.due_time && ` · ${formatDueTime(entity.due_time)}`}
           </span>
         )}
         {openSubtaskCount > 0 && (

@@ -93,7 +93,7 @@ export const api = {
   updateEntity: (
     id: string,
     patch: Partial<
-      Pick<Entity, 'title' | 'content' | 'status' | 'parent_id' | 'position' | 'pinned' | 'due_date' | 'last_touched'>
+      Pick<Entity, 'title' | 'content' | 'status' | 'parent_id' | 'position' | 'pinned' | 'due_date' | 'due_time' | 'last_touched'>
     >
   ) =>
     request<Entity>(`/api/entities/${id}`, {
@@ -187,6 +187,15 @@ export const api = {
     request<Entity>('/api/tasks', {
       method: 'POST',
       body: JSON.stringify({ title, due_date }),
+    }),
+
+  /** Promote/demote on the Day view — persists a new order for exactly the
+   * tasks due on `date` (see the worker's /api/tasks/reorder-day comment
+   * for why this is separate from the project-scoped api.reorder above). */
+  reorderDay: (date: string, ordered_ids: string[]) =>
+    request<{ ok: true }>('/api/tasks/reorder-day', {
+      method: 'POST',
+      body: JSON.stringify({ date, ordered_ids }),
     }),
 
   /** Daily forecast for the next ~16 days at Mike's fixed home location —
