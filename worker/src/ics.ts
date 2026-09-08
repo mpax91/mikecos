@@ -12,7 +12,7 @@ export interface ParsedMeeting {
   start: string; // ISO instant (UTC)
   end: string;
   allDay: boolean;
-  calendar: 'personal' | 'shared';
+  calendar: string;
   gcalUrl: string | null;
 }
 
@@ -205,7 +205,7 @@ function buildGcalUrl(uid: string, calendarId: string): string {
 
 interface FeedSource {
   ics: string;
-  calendar: 'personal' | 'shared';
+  calendar: string;
   calendarId: string;
 }
 

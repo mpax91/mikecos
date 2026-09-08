@@ -3768,6 +3768,16 @@ a {
   border-bottom: none;
 }
 
+.settings-page__calendar-row.is-inactive {
+  opacity: 0.5;
+}
+
+.settings-page__calendar-main {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+
 .settings-page__calendar-label {
   font-size: 14px;
   color: var(--color-ink);

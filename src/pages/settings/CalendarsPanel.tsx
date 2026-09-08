@@ -1,39 +1,54 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../api/client';
-import type { CalendarStatus } from '../../api/types';
+import type { CalendarFeedStatus } from '../../api/types';
+import { Modal } from '../../components/Modal';
+import { ConfirmModal } from '../../components/ConfirmModal';
 
 function todayLocalISO(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-function StatusBadge({ cal }: { cal: CalendarStatus }) {
-  if (!cal.configured) return <span className="settings-page__calendar-badge is-off">Not connected</span>;
+interface FormState {
+  id: string | null; // null while creating
+  label: string;
+  url: string; // blank when editing until Mike types a replacement — see hint text in the modal
+}
+
+function blankForm(): FormState {
+  return { id: null, label: '', url: '' };
+}
+
+function StatusBadge({ cal }: { cal: CalendarFeedStatus }) {
+  if (!cal.active) return <span className="settings-page__calendar-badge is-off">Paused</span>;
   if (!cal.ok) return <span className="settings-page__calendar-badge is-error">Error</span>;
   return <span className="settings-page__calendar-badge is-ok">Connected</span>;
 }
 
-/** Calendar Integrations — a read-only health check for the two Google
- * Calendar feeds Day view pulls "Today's Meetings" from (see the worker's
- * GET /api/meetings and /api/calendars/status). Adding, removing, or
- * rotating a calendar isn't self-service from here yet — the feed URL is a
- * Cloudflare Worker secret, set from a GitHub Actions repository secret on
- * deploy, specifically so the "secret address" URL (equivalent to a
- * password — anyone with it can read the whole calendar) never has to sit
- * in the app's own database or pass through this UI. This panel exists so
- * that when something breaks, Mike can see which calendar and why without
- * digging through Cloudflare/GitHub first. */
+/** Calendar Integrations — self-service management of the Google Calendar
+ * "secret address" (iCal) feeds that populate Today's Meetings. These used
+ * to live only as GitHub Actions / Cloudflare Worker secrets (edit a repo
+ * secret, redeploy, hope for the best); Mike chose to move them into
+ * MikeOS's own database instead so a broken or new calendar can be fixed
+ * right here. The real URL is only ever sent up (create/edit), never back
+ * down — the list always shows a masked `urlPreview` — so editing a feed
+ * means pasting the URL again, not seeing the old one. */
 export function CalendarsPanel() {
-  const [data, setData] = useState<{ today: string; calendars: CalendarStatus[] } | null>(null);
+  const [calendars, setCalendars] = useState<CalendarFeedStatus[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
+
+  const [form, setForm] = useState<FormState | null>(null); // non-null = modal open
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState<CalendarFeedStatus | null>(null);
 
   function load() {
     setChecking(true);
     api
-      .getCalendarStatus(todayLocalISO())
+      .listCalendarFeeds(todayLocalISO())
       .then((res) => {
-        setData(res);
+        setCalendars(res.calendars);
         setError(null);
       })
       .catch((e) => setError(String(e)))
@@ -44,40 +59,147 @@ export function CalendarsPanel() {
     load();
   }, []);
 
+  function openCreate() {
+    setForm(blankForm());
+    setSaveError(null);
+  }
+
+  function openEdit(cal: CalendarFeedStatus) {
+    setForm({ id: cal.id, label: cal.label, url: '' });
+    setSaveError(null);
+  }
+
+  async function handleSave() {
+    if (!form) return;
+    const label = form.label.trim();
+    const url = form.url.trim();
+    if (!label) return;
+    if (!form.id && !url) return; // creating requires a URL; editing may leave it blank to keep the existing one
+    setSaving(true);
+    setSaveError(null);
+    try {
+      if (form.id) {
+        const patch: Partial<{ label: string; url: string }> = { label };
+        if (url) patch.url = url;
+        await api.updateCalendarFeed(form.id, patch);
+      } else {
+        await api.createCalendarFeed({ label, url });
+      }
+      setForm(null);
+      load();
+    } catch (e) {
+      setSaveError(String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleToggleActive(cal: CalendarFeedStatus) {
+    setCalendars((prev) => (prev ? prev.map((c) => (c.id === cal.id ? { ...c, active: !c.active } : c)) : prev));
+    await api.updateCalendarFeed(cal.id, { active: !cal.active });
+    load();
+  }
+
+  async function handleDelete(cal: CalendarFeedStatus) {
+    setCalendars((prev) => (prev ? prev.filter((c) => c.id !== cal.id) : prev));
+    await api.deleteCalendarFeed(cal.id);
+    setDeleting(null);
+  }
+
+  if (error) return <div className="empty-state">Couldn't load calendars: {error}</div>;
+  if (!calendars) return <div className="empty-state">Loading…</div>;
+
   return (
     <div className="settings-page__section">
       <div className="toolbar-row">
         <h2 className="settings-page__section-title">Calendar Integrations</h2>
-        <button className="btn btn--ghost" onClick={load} disabled={checking}>
-          {checking ? 'Checking…' : 'Check again'}
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn--ghost" onClick={load} disabled={checking}>
+            {checking ? 'Checking…' : 'Check again'}
+          </button>
+          <button className="btn" onClick={openCreate}>
+            + Add Calendar
+          </button>
+        </div>
       </div>
       <p className="settings-page__section-hint">
-        These feed "Today's Meetings" on the Day view. Each is a Google Calendar "secret address" (iCal) URL, stored as a
-        Cloudflare Worker secret rather than in MikeOS itself — to add, remove, or replace one, update the
-        <code> GOOGLE_ICS_URL_PERSONAL</code>/<code>GOOGLE_ICS_URL_SHARED</code> repository secrets on GitHub and redeploy.
+        These feed "Today's Meetings" on the Day view. Each is a Google Calendar "secret address" (iCal) URL — from
+        Google Calendar, go to Settings for that calendar → "Integrate calendar" → Secret address in iCal format.
+        Click the dot next to one to pause or resume it.
       </p>
 
-      {error && <div className="empty-state">Couldn't check calendar status: {error}</div>}
-
-      {data && (
+      {calendars.length === 0 ? (
+        <div className="empty-state">No calendars connected yet — add your first one.</div>
+      ) : (
         <div className="settings-page__calendar-list card">
-          {data.calendars.map((cal) => (
-            <div key={cal.id} className="settings-page__calendar-row">
-              <div className="settings-page__calendar-main">
+          {calendars.map((cal) => (
+            <div key={cal.id} className={`settings-page__calendar-row${cal.active ? '' : ' is-inactive'}`}>
+              <button
+                type="button"
+                className="settings-page__recurring-toggle"
+                title={cal.active ? 'Active — click to pause' : 'Paused — click to resume'}
+                onClick={() => handleToggleActive(cal)}
+              >
+                {cal.active ? '●' : '○'}
+              </button>
+              <div className="settings-page__calendar-main" onClick={() => openEdit(cal)}>
                 <div className="settings-page__calendar-label">{cal.label}</div>
-                {cal.configured && cal.ok && (
+                {cal.active && cal.ok && (
                   <div className="settings-page__calendar-meta">
-                    {cal.eventCountToday} event{cal.eventCountToday === 1 ? '' : 's'} today
+                    {cal.eventCountToday} event{cal.eventCountToday === 1 ? '' : 's'} today · {cal.urlPreview}
                   </div>
                 )}
-                {cal.configured && !cal.ok && cal.error && <div className="settings-page__calendar-meta is-error">{cal.error}</div>}
-                {!cal.configured && <div className="settings-page__calendar-meta">No secret URL set for this calendar yet</div>}
+                {cal.active && !cal.ok && (
+                  <div className="settings-page__calendar-meta is-error">{cal.error ?? 'Something went wrong'}</div>
+                )}
+                {!cal.active && <div className="settings-page__calendar-meta">{cal.urlPreview}</div>}
               </div>
               <StatusBadge cal={cal} />
+              <button type="button" className="settings-page__recurring-delete" title="Delete" onClick={() => setDeleting(cal)}>
+                ✕
+              </button>
             </div>
           ))}
         </div>
+      )}
+
+      {form && (
+        <Modal title={form.id ? 'Edit Calendar' : 'Add Calendar'} onClose={() => setForm(null)}>
+          <input
+            autoFocus
+            placeholder="Label (e.g. Michael's Calendar)"
+            value={form.label}
+            onChange={(e) => setForm({ ...form, label: e.target.value })}
+          />
+
+          <label className="settings-page__field-label">Secret address (iCal URL)</label>
+          <input
+            placeholder={form.id ? 'Leave blank to keep the current URL' : 'https://calendar.google.com/calendar/ical/.../basic.ics'}
+            value={form.url}
+            onChange={(e) => setForm({ ...form, url: e.target.value })}
+            style={{ fontFamily: 'monospace' }}
+          />
+
+          {saveError && <div className="settings-page__rrule-error">{saveError}</div>}
+
+          <div className="modal__actions">
+            <button className="btn btn--ghost" onClick={() => setForm(null)}>
+              Cancel
+            </button>
+            <button className="btn" onClick={handleSave} disabled={!form.label.trim() || (!form.id && !form.url.trim()) || saving}>
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {deleting && (
+        <ConfirmModal
+          title="Remove this calendar?"
+          body={`"${deleting.label}" will stop showing up on Today's Meetings.`}
+          onConfirm={() => handleDelete(deleting)}
+          onCancel={() => setDeleting(null)}
+        />
       )}
     </div>
   );

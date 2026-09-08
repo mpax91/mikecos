@@ -154,7 +154,7 @@ export interface MeetingItem {
   start: string;
   end: string;
   allDay: boolean;
-  calendar: 'personal' | 'shared';
+  calendar: string;
   gcalUrl: string | null;
 }
 
@@ -163,22 +163,26 @@ export interface MeetingsResponse {
   meetings: MeetingItem[];
 }
 
-/** One Google Calendar's connection health, shown on the Settings screen's
- * Calendar Integrations panel. `configured` is false when the matching
- * GOOGLE_ICS_URL_* secret isn't set at all; `ok` is false when it's set but
- * the feed didn't fetch/parse (see `error`). */
-export interface CalendarStatus {
-  id: 'personal' | 'shared';
+/** One Google Calendar feed, managed self-service on the Settings screen's
+ * Calendar Integrations panel (see migrations/0008_calendar_feeds.sql) —
+ * `urlPreview` is a masked stand-in for the real secret address, which the
+ * list/detail responses never echo back in full; only creating or editing
+ * a feed sends the real URL, and only in that one direction. `ok`/`error`/
+ * `eventCountToday` come from a live fetch+parse done at request time, not
+ * a cached value, so a broken feed shows exactly why. */
+export interface CalendarFeedStatus {
+  id: string;
   label: string;
-  configured: boolean;
+  urlPreview: string;
+  active: boolean;
   ok: boolean;
   error: string | null;
   eventCountToday: number;
 }
 
-export interface CalendarStatusResponse {
+export interface CalendarFeedsResponse {
   today: string;
-  calendars: CalendarStatus[];
+  calendars: CalendarFeedStatus[];
 }
 
 /** A recurring task definition managed on the Settings screen — describes

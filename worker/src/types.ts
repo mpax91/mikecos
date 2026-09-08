@@ -49,12 +49,4 @@ export interface Env {
   DB: D1Database;
   FILES: R2Bucket;
   ALLOWED_ORIGIN: string;
-  // Secret address ("basic.ics") URLs for Mike's two Google Calendars —
-  // Worker secrets, set via `wrangler secret put` (see the "Set Google
-  // Calendar ICS secrets" step in .github/workflows/deploy.yml), never
-  // committed to the repo. Both optional so the Worker still runs before
-  // they're configured — GET /api/meetings just returns no meetings for
-  // whichever one is unset.
-  GOOGLE_ICS_URL_PERSONAL?: string;
-  GOOGLE_ICS_URL_SHARED?: string;
 }

@@ -1,4 +1,4 @@
-import type { CalendarStatusResponse, Entity, EntityDetail, EntityType, MeetingsResponse, MonthResponse, ProjectListItem, RecurringTaskDefinition, TodayResponse, WeatherResponse, WeekResponse } from './types';
+import type { CalendarFeedsResponse, CalendarFeedStatus, Entity, EntityDetail, EntityType, MeetingsResponse, MonthResponse, ProjectListItem, RecurringTaskDefinition, TodayResponse, WeatherResponse, WeekResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -223,7 +223,23 @@ export const api = {
   previewRrule: (rrule: string, dtstart: string) =>
     request<{ text: string }>(`/api/recurring/preview?rrule=${encodeURIComponent(rrule)}&dtstart=${encodeURIComponent(dtstart)}`),
 
-  /** Connection health for each configured Google Calendar feed — the
-   * Settings screen's Calendar Integrations panel. */
-  getCalendarStatus: (today: string) => request<CalendarStatusResponse>(`/api/calendars/status?today=${encodeURIComponent(today)}`),
+  // ---- Calendar feeds (Settings screen) ----
+
+  /** Every calendar feed with live connection health — the Settings
+   * screen's Calendar Integrations panel. */
+  listCalendarFeeds: (today: string) => request<CalendarFeedsResponse>(`/api/calendars?today=${encodeURIComponent(today)}`),
+
+  createCalendarFeed: (params: { label: string; url: string; active?: boolean }) =>
+    request<CalendarFeedStatus>('/api/calendars', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    }),
+
+  updateCalendarFeed: (id: string, patch: Partial<{ label: string; url: string; active: boolean }>) =>
+    request<CalendarFeedStatus>(`/api/calendars/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }),
+
+  deleteCalendarFeed: (id: string) => request<{ ok: true }>(`/api/calendars/${id}`, { method: 'DELETE' }),
 };

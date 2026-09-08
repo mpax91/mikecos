@@ -1338,74 +1338,144 @@ app.get('/api/weather', async (c) => {
 // anything write-side. Each feed is fetched at the edge with a short
 // cache (5 min — meetings change more often than a weather forecast, so
 // this is much shorter than /api/weather's) rather than on every request.
-// Returns an empty list for a calendar whose secret isn't configured yet,
-// rather than erroring the whole endpoint out.
+// Feeds come from the calendar_feeds table (see GET/POST/PATCH/DELETE
+// /api/calendars below) — a feed with no rows, or every row inactive, just
+// means no meetings, not an error.
 app.get('/api/meetings', async (c) => {
   const date = c.req.query('date');
   if (!date) return c.json({ error: 'date query param is required (YYYY-MM-DD)' }, 400);
 
-  const feedConfigs: { url: string | undefined; calendar: 'personal' | 'shared' }[] = [
-    { url: c.env.GOOGLE_ICS_URL_PERSONAL, calendar: 'personal' },
-    { url: c.env.GOOGLE_ICS_URL_SHARED, calendar: 'shared' },
-  ];
+  const { results } = await c.env.DB.prepare(`SELECT * FROM calendar_feeds WHERE active = 1`).all<CalendarFeedRow>();
 
   const sources = (
     await Promise.all(
-      feedConfigs.map(async ({ url, calendar }) => {
-        if (!url) return null;
-        const calendarId = calendarIdFromIcsUrl(url);
+      (results ?? []).map(async (feed) => {
+        const calendarId = calendarIdFromIcsUrl(feed.url);
         if (!calendarId) return null;
         try {
-          const upstream = await fetch(url, { cf: { cacheTtl: 300, cacheEverything: true } });
+          const upstream = await fetch(feed.url, { cf: { cacheTtl: 300, cacheEverything: true } });
           if (!upstream.ok) return null;
           const ics = await upstream.text();
-          return { ics, calendar, calendarId };
+          return { ics, calendar: feed.id, calendarId };
         } catch {
           return null;
         }
       })
     )
-  ).filter((s): s is { ics: string; calendar: 'personal' | 'shared'; calendarId: string } => s !== null);
+  ).filter((s): s is { ics: string; calendar: string; calendarId: string } => s !== null);
 
   const meetings = meetingsForDate(sources, date);
   return c.json({ date, meetings });
 });
 
-// GET /api/calendars/status?today=YYYY-MM-DD — a smoke test for the
-// Settings screen's Calendar Integrations panel: for each of Mike's two
-// Google Calendars, reports whether a secret URL is configured at all, and
-// if so whether the feed actually fetched and parsed (with a real error
-// message on failure, unlike /api/meetings which just treats any failure
-// as "no meetings" so a broken feed never looks worse than an empty one).
-// `today` is optional — defaults to the server's own UTC date, which is
-// only ever off by a few hours around midnight and doesn't matter for a
-// connectivity check.
-app.get('/api/calendars/status', async (c) => {
+// ---- Calendar feeds (Settings screen's Calendar Integrations panel) ----
+//
+// Each row is one Google Calendar "secret address" (ICS) URL — self-service
+// from Settings rather than a GitHub/Cloudflare secret, per Mike's own
+// call: he'd rather add/edit/remove a calendar himself than go through a
+// repo-secret-plus-redeploy cycle every time. The URL is still sensitive
+// (equivalent to a password — anyone with it can read the whole calendar),
+// so the list/detail responses below never echo it back in full; only
+// POST/PATCH accept it, write-only from the client's perspective.
+
+interface CalendarFeedRow {
+  id: string;
+  label: string;
+  url: string;
+  active: number;
+  created_at: string;
+  updated_at: string;
+}
+
+function maskUrl(url: string): string {
+  if (url.length <= 12) return '••••••••';
+  return `${url.slice(0, 8)}••••••••${url.slice(-8)}`;
+}
+
+// GET /api/calendars?today=YYYY-MM-DD — every feed with a live connection
+// health check (fetched + parsed just now, not cached from an earlier
+// call) so a broken feed shows exactly why, instead of /api/meetings'
+// "any failure just means no meetings" behavior. `today` is optional —
+// defaults to the server's own UTC date, which is only ever off by a few
+// hours around midnight and doesn't matter for a connectivity check.
+app.get('/api/calendars', async (c) => {
   const today = c.req.query('today') || now().slice(0, 10);
-  const configs: { id: 'personal' | 'shared'; label: string; url: string | undefined }[] = [
-    { id: 'personal', label: "Michael's Calendar", url: c.env.GOOGLE_ICS_URL_PERSONAL },
-    { id: 'shared', label: "Nell & Mike's Calendar", url: c.env.GOOGLE_ICS_URL_SHARED },
-  ];
+  const { results } = await c.env.DB.prepare(`SELECT * FROM calendar_feeds ORDER BY created_at ASC`).all<CalendarFeedRow>();
 
   const calendars = await Promise.all(
-    configs.map(async ({ id, label, url }) => {
-      if (!url) return { id, label, configured: false, ok: false, error: null as string | null, eventCountToday: 0 };
+    (results ?? []).map(async (feed) => {
+      const base = { id: feed.id, label: feed.label, urlPreview: maskUrl(feed.url), active: feed.active === 1 };
+      if (feed.active !== 1) return { ...base, ok: false, error: null as string | null, eventCountToday: 0 };
       try {
-        const upstream = await fetch(url, { cf: { cacheTtl: 60, cacheEverything: true } });
-        if (!upstream.ok) {
-          return { id, label, configured: true, ok: false, error: `Feed returned HTTP ${upstream.status}`, eventCountToday: 0 };
-        }
+        const upstream = await fetch(feed.url, { cf: { cacheTtl: 60, cacheEverything: true } });
+        if (!upstream.ok) return { ...base, ok: false, error: `Feed returned HTTP ${upstream.status}`, eventCountToday: 0 };
         const ics = await upstream.text();
-        const calendarId = calendarIdFromIcsUrl(url) ?? '';
-        const meetings = meetingsForDate([{ ics, calendar: id, calendarId }], today);
-        return { id, label, configured: true, ok: true, error: null as string | null, eventCountToday: meetings.length };
+        const calendarId = calendarIdFromIcsUrl(feed.url) ?? '';
+        const meetings = meetingsForDate([{ ics, calendar: feed.id, calendarId }], today);
+        return { ...base, ok: true, error: null as string | null, eventCountToday: meetings.length };
       } catch (e) {
-        return { id, label, configured: true, ok: false, error: e instanceof Error ? e.message : String(e), eventCountToday: 0 };
+        return { ...base, ok: false, error: e instanceof Error ? e.message : String(e), eventCountToday: 0 };
       }
     })
   );
 
   return c.json({ today, calendars });
+});
+
+app.post('/api/calendars', async (c) => {
+  const body = await c.req.json<{ label: string; url: string; active?: boolean }>();
+  const label = body.label?.trim();
+  const url = body.url?.trim();
+  if (!label) return c.json({ error: 'label is required' }, 400);
+  if (!url) return c.json({ error: 'url is required' }, 400);
+  if (!calendarIdFromIcsUrl(url)) {
+    return c.json({ error: "That doesn't look like a Google Calendar secret address (should contain /ical/.../basic.ics)" }, 400);
+  }
+
+  const id = uid();
+  const ts = now();
+  await c.env.DB.prepare(
+    `INSERT INTO calendar_feeds (id, label, url, active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`
+  )
+    .bind(id, label, url, body.active === false ? 0 : 1, ts, ts)
+    .run();
+
+  return c.json({ id, label, urlPreview: maskUrl(url), active: body.active !== false }, 201);
+});
+
+app.patch('/api/calendars/:id', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json<Partial<{ label: string; url: string; active: boolean }>>();
+  const existing = await c.env.DB.prepare('SELECT * FROM calendar_feeds WHERE id = ?').bind(id).first<CalendarFeedRow>();
+  if (!existing) return c.json({ error: 'not found' }, 404);
+
+  if (body.url !== undefined && !calendarIdFromIcsUrl(body.url.trim())) {
+    return c.json({ error: "That doesn't look like a Google Calendar secret address (should contain /ical/.../basic.ics)" }, 400);
+  }
+
+  const fields: string[] = [];
+  const values: unknown[] = [];
+  if (body.label !== undefined) { fields.push('label = ?'); values.push(body.label.trim()); }
+  if (body.url !== undefined) { fields.push('url = ?'); values.push(body.url.trim()); }
+  if (body.active !== undefined) { fields.push('active = ?'); values.push(body.active ? 1 : 0); }
+
+  if (fields.length > 0) {
+    fields.push('updated_at = ?');
+    values.push(now());
+    values.push(id);
+    await c.env.DB.prepare(`UPDATE calendar_feeds SET ${fields.join(', ')} WHERE id = ?`).bind(...values).run();
+  }
+
+  const updated = await c.env.DB.prepare('SELECT * FROM calendar_feeds WHERE id = ?').bind(id).first<CalendarFeedRow>();
+  return c.json({ id: updated!.id, label: updated!.label, urlPreview: maskUrl(updated!.url), active: updated!.active === 1 });
+});
+
+app.delete('/api/calendars/:id', async (c) => {
+  const id = c.req.param('id');
+  const existing = await c.env.DB.prepare('SELECT id FROM calendar_feeds WHERE id = ?').bind(id).first();
+  if (!existing) return c.json({ error: 'not found' }, 404);
+  await c.env.DB.prepare('DELETE FROM calendar_feeds WHERE id = ?').bind(id).run();
+  return c.json({ ok: true });
 });
 
 app.get('/api/health', (c) => c.json({ ok: true, time: now() }));
