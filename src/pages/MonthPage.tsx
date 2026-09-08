@@ -261,6 +261,7 @@ export function MonthPage() {
             {gridDates.map((date) => {
               const inMonth = monthOf(date) === month;
               const isToday = date === realToday;
+              const isPast = date < realToday;
               const holidays = getHolidays(date);
               const taskCount = taskCountByDate.get(date) ?? 0;
               const dayMeetings = meetingsByDate.get(date) ?? [];
@@ -268,7 +269,7 @@ export function MonthPage() {
               return (
                 <div
                   key={date}
-                  className={`month-page__cell${inMonth ? '' : ' is-outside-month'}${isToday ? ' is-today' : ''}`}
+                  className={`month-page__cell${inMonth ? '' : ' is-outside-month'}${isToday ? ' is-today' : ''}${isPast ? ' is-past' : ''}`}
                   onClick={() => openDay(date)}
                 >
                   <div className="month-page__cell-header">

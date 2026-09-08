@@ -1310,10 +1310,35 @@ app.get('/api/week', async (c) => {
     (unscheduledRaw ?? []).map(async (task) => ({ ...task, project: await resolveProject(task.parent_id) }))
   );
 
+  // Completed-task log for the visible week, bucketed by the day they were
+  // actually checked off (completed_date) rather than by due_date — so a
+  // task finished a day late still shows up under the day it was really
+  // done. Only surfaced for days strictly before the viewer's real `today`:
+  // Mike asked to see "progress I've made previously" on past days, and
+  // today's own column already has its own completed-task story (the
+  // checkbox just disappears there, with the Day view's "N Completed Today"
+  // badge as the running count) — duplicating that here would be noise, not
+  // a record. Skipped entirely when `today` wasn't supplied.
+  let completedByDay = new Map<string, { id: string; entity_id: string; title: string; completed_at: string; completed_date: string }[]>();
+  if (today) {
+    const { results: completions } = await c.env.DB.prepare(
+      `SELECT * FROM task_completions WHERE completed_date >= ? AND completed_date <= ? AND completed_date < ? ORDER BY completed_at ASC`
+    )
+      .bind(start, end, today)
+      .all<{ id: string; entity_id: string; title: string; completed_at: string; completed_date: string }>();
+    completedByDay = new Map();
+    for (const row of completions ?? []) {
+      const list = completedByDay.get(row.completed_date);
+      if (list) list.push(row);
+      else completedByDay.set(row.completed_date, [row]);
+    }
+  }
+
   const byDay = days.map((date) => ({
     date,
     isToday: date === todayInRange,
     tasks: withProject.filter((t) => t.due_date === date),
+    completed: completedByDay.get(date) ?? [],
   }));
 
   return c.json({ start, end, days: byDay, overdue, unscheduled });

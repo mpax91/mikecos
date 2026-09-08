@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { DndContext, DragOverlay, PointerSensor, useDraggable, useDroppable, useSensor, useSensors } from '@dnd-kit/core';
 import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core';
 import { api } from '../api/client';
-import type { Entity, MeetingsRangeResponse, RangeMeetingItem, TodayTask, WeatherDay, WeekResponse } from '../api/types';
+import type { CompletionItem, Entity, MeetingsRangeResponse, RangeMeetingItem, TodayTask, WeatherDay, WeekResponse } from '../api/types';
 import { TaskDetailModal } from '../components/TaskDetailModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { BlankLine } from '../components/BlankLine';
@@ -96,6 +96,20 @@ function DraggableTaskRow({ task, onToggle, onOpen }: { task: TodayTask; onToggl
   );
 }
 
+/** A read-only record of a task finished on a past day — not draggable and
+ * its checkbox isn't interactive (unlike DraggableTaskRow's), since "undo"
+ * here is ambiguous: the task's due_date (where it'd reappear as open) can
+ * be a completely different day than the one it was actually completed on.
+ * Still opens the task detail on click, in case Mike wants to see it. */
+function CompletedTaskRow({ item, onOpen }: { item: CompletionItem; onOpen: (id: string) => void }) {
+  return (
+    <div className="week-page__row week-page__row--completed" onClick={() => onOpen(item.entity_id)}>
+      <input type="checkbox" checked readOnly className="task-row__checkbox" onClick={(e) => e.stopPropagation()} />
+      <span className="week-page__row-title">{item.title || 'Untitled Task'}</span>
+    </div>
+  );
+}
+
 /** One day column — a drop target for rescheduling, holding its real tasks
  * followed by a fixed run of blank ruled lines to write new ones into. */
 function DayColumn({
@@ -105,6 +119,7 @@ function DayColumn({
   meetings,
   onToggle,
   onOpen,
+  onOpenCompleted,
   onQuickAdd,
 }: {
   day: WeekResponse['days'][number];
@@ -113,11 +128,16 @@ function DayColumn({
   meetings: RangeMeetingItem[];
   onToggle: (t: Entity) => void;
   onOpen: (t: Entity) => void;
+  onOpenCompleted: (entityId: string) => void;
   onQuickAdd: (date: string, title: string) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `${DAY_DROP_PREFIX}${day.date}` });
   const realToday = todayLocalISO();
   const holidays = getHolidays(day.date);
+  // A timed meeting is "over" once its end instant has passed; an all-day
+  // one (no real time to compare against) is treated as over once its
+  // whole local day has — i.e. this isn't today or a future day.
+  const now = Date.now();
 
   return (
     <div
@@ -154,24 +174,34 @@ function DayColumn({
             above the list, so a day column reads as one consistent stack
             of rows regardless of whether an entry is a task or a real
             calendar event. */}
-        {meetings.map((m) => (
-          <a
-            key={m.id}
-            className="week-page__row week-page__row--meeting"
-            href={m.gcalUrl ?? undefined}
-            target="_blank"
-            rel="noreferrer"
-            onClick={(e) => {
-              if (!m.gcalUrl) e.preventDefault();
-              e.stopPropagation();
-            }}
-          >
-            <span className="week-page__meeting-time">{m.allDay ? 'All day' : formatMeetingTime(m.start)}</span>
-            <span className="week-page__row-title">{m.title}</span>
-          </a>
-        ))}
+        {meetings.map((m) => {
+          const isPast = m.allDay ? day.date < realToday : new Date(m.end).getTime() < now;
+          return (
+            <a
+              key={m.id}
+              className={`week-page__row week-page__row--meeting${isPast ? ' week-page__row--meeting-past' : ''}`}
+              href={m.gcalUrl ?? undefined}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(e) => {
+                if (!m.gcalUrl) e.preventDefault();
+                e.stopPropagation();
+              }}
+            >
+              <span className="week-page__meeting-time">{m.allDay ? 'All day' : formatMeetingTime(m.start)}</span>
+              <span className="week-page__row-title">{m.title}</span>
+            </a>
+          );
+        })}
         {day.tasks.map((t) => (
           <DraggableTaskRow key={t.id} task={t} onToggle={onToggle} onOpen={onOpen} />
+        ))}
+        {/* Past-day record of what got done, per Mike's request — see the
+            worker's /api/week comment for why this is keyed off
+            completed_date rather than due_date, and CompletedTaskRow's own
+            comment for why it isn't draggable or checkbox-interactive. */}
+        {day.completed.map((item) => (
+          <CompletedTaskRow key={item.id} item={item} onOpen={onOpenCompleted} />
         ))}
         {/* Blanks fill in only up to the default row count — a day with 2
             tasks and 1 meeting gets 7 blanks (10 rows total), a day with 12
@@ -179,7 +209,7 @@ function DayColumn({
             Day view's own 10-row default; unlike that page, there's no "add
             another line" here since a full week of per-column add buttons
             would clutter the grid more than it'd help. */}
-        {Array.from({ length: Math.max(0, BLANK_LINES_PER_DAY - day.tasks.length - meetings.length) }).map((_, i) => (
+        {Array.from({ length: Math.max(0, BLANK_LINES_PER_DAY - day.tasks.length - meetings.length - day.completed.length) }).map((_, i) => (
           <BlankLine key={i} onSubmit={(title) => onQuickAdd(day.date, title)} />
         ))}
       </div>
@@ -379,6 +409,10 @@ export function WeekPage() {
     setTaskStack([task.id]);
   }
 
+  function openCompletedTask(entityId: string) {
+    setTaskStack([entityId]);
+  }
+
   function closeTaskModal() {
     setTaskStack([]);
     load();
@@ -459,6 +493,7 @@ export function WeekPage() {
                     meetings={meetingsByDate.get(day.date) ?? []}
                     onToggle={toggleTask}
                     onOpen={openTask}
+                    onOpenCompleted={openCompletedTask}
                     onQuickAdd={quickAdd}
                   />
                 ))}

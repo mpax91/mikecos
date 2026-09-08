@@ -294,8 +294,24 @@ export function meetingsForRange(sources: FeedSource[], startIso: string, endIso
     }
   }
 
-  results.sort((a, b) => a.start.localeCompare(b.start));
-  return results;
+  // Mike has more than one active feed (his own calendar plus a shared
+  // one), and the same real-world event can legitimately come back once
+  // per feed — an invite he accepted that also lives on the shared
+  // calendar, say — which read as unexplained duplicates ("2 events on
+  // SUN... these aren't on my Google calendars at all") even though each
+  // copy is individually correct. There's no reliable cross-calendar id to
+  // key on, so collapse anything with the same title + start + end
+  // (whichever feed it happened to come from) down to one occurrence.
+  const seen = new Set<string>();
+  const deduped = results.filter((m) => {
+    const key = `${m.title.trim().toLowerCase()}|${m.start}|${m.end}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  deduped.sort((a, b) => a.start.localeCompare(b.start));
+  return deduped;
 }
 
 /** Every meeting from the given feeds that falls on `dateIso` (Mike's

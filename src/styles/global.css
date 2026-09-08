@@ -3278,6 +3278,27 @@ a {
   color: var(--color-accent-secondary);
 }
 
+/* A meeting whose time has passed (or, for an all-day one, whose whole day
+   has) — struck through in place rather than removed, so the column still
+   reads as a record of the day, not just what's still ahead. */
+.week-page__row--meeting-past .week-page__row-title,
+.week-page__row--meeting-past .week-page__meeting-time {
+  text-decoration: line-through;
+  opacity: 0.55;
+}
+
+/* A task finished on a past day — see CompletedTaskRow's comment for why
+   it's read-only. Matches the checked/strikethrough treatment tasks get
+   elsewhere in the app (Day view, Stats). */
+.week-page__row--completed .week-page__row-title {
+  text-decoration: line-through;
+  color: var(--color-muted);
+}
+
+.week-page__row--completed .task-row__checkbox {
+  cursor: default;
+}
+
 .week-page__special {
   border-radius: 8px;
   padding: 6px 8px;
@@ -3510,6 +3531,7 @@ a {
 }
 
 .month-page__cell {
+  position: relative;
   min-height: 96px;
   border-right: var(--border-hairline);
   border-bottom: var(--border-hairline);
@@ -3525,6 +3547,34 @@ a {
      text's full width, which pins every column in the row (and the whole
      7-column grid) wider than the 1fr split calls for. */
   min-width: 0;
+}
+
+/* A day that's already happened — a light wash plus a single corner-to-
+   corner slash, so past and upcoming days separate at a glance without
+   needing to read every date number. The slash is drawn as a diagonal
+   gradient line rather than a fixed-angle border trick specifically
+   because it's aspect-ratio-agnostic: it always runs exactly corner to
+   corner no matter how tall vs. wide a cell ends up (5-row vs. 6-row
+   months, different viewport widths), which a fixed-angle line wouldn't.
+   Sits behind the cell's real content (negative z-index, cell itself is
+   the positioned ancestor) so the date/meetings/task badge stay fully
+   legible on top of it. */
+.month-page__cell.is-past {
+  background: rgba(46, 42, 34, 0.035);
+}
+
+.month-page__cell.is-past::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(
+    to top right,
+    transparent calc(50% - 0.5px),
+    var(--color-border) calc(50% - 0.5px),
+    var(--color-border) calc(50% + 0.5px),
+    transparent calc(50% + 0.5px)
+  );
 }
 
 .month-page__cell:hover {

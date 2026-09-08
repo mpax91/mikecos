@@ -115,6 +115,12 @@ export interface WeekDay {
   date: string;
   isToday: boolean;
   tasks: TodayTask[];
+  /** Tasks checked off on this day (bucketed by task_completions'
+   * completed_date, not due_date) — only populated for days before the
+   * viewer's real "today" (see the worker's /api/week comment). Rendered
+   * with a strikethrough as a record of what got done, not an editable
+   * list. */
+  completed: CompletionItem[];
 }
 
 /** One day's forecast from GET /api/weather — the worker's already reduced
