@@ -205,6 +205,23 @@ export interface StatsResponse {
   trend: { date: string; count: number }[];
 }
 
+/** One row of the completion log itself, from GET /api/stats/completions —
+ * the Stats page's "when did I do X" list. `title` is a snapshot from the
+ * moment the task was checked off, independent of whatever's happened to
+ * the task (or the task itself) since. */
+export interface CompletionItem {
+  id: string;
+  entity_id: string;
+  title: string;
+  completed_at: string;
+  completed_date: string;
+}
+
+export interface CompletionsResponse {
+  completions: CompletionItem[];
+  has_more: boolean;
+}
+
 /** One Google Calendar feed, managed self-service on the Settings screen's
  * Calendar Integrations panel (see migrations/0008_calendar_feeds.sql) —
  * `urlPreview` is a masked stand-in for the real secret address, which the

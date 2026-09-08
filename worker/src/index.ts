@@ -1366,34 +1366,34 @@ const WEATHER_LOCATION_LABEL = 'Bedford Hills, NY';
 // anything not named here (rare codes) falls back to a plain "—" so the UI
 // never breaks on an unrecognized code.
 const WEATHER_CODES: Record<number, { icon: string; summary: string }> = {
-  0: { icon: '☀️', summary: 'Clear sky' },
-  1: { icon: '🌤️', summary: 'Mainly clear' },
-  2: { icon: '⛅', summary: 'Partly cloudy' },
+  0: { icon: '☀️', summary: 'Clear Sky' },
+  1: { icon: '🌤️', summary: 'Mainly Clear' },
+  2: { icon: '⛅', summary: 'Partly Cloudy' },
   3: { icon: '☁️', summary: 'Overcast' },
   45: { icon: '🌫️', summary: 'Fog' },
-  48: { icon: '🌫️', summary: 'Depositing rime fog' },
-  51: { icon: '🌦️', summary: 'Light drizzle' },
+  48: { icon: '🌫️', summary: 'Depositing Rime Fog' },
+  51: { icon: '🌦️', summary: 'Light Drizzle' },
   53: { icon: '🌦️', summary: 'Drizzle' },
-  55: { icon: '🌦️', summary: 'Dense drizzle' },
-  56: { icon: '🌧️', summary: 'Freezing drizzle' },
-  57: { icon: '🌧️', summary: 'Freezing drizzle' },
-  61: { icon: '🌧️', summary: 'Light rain' },
+  55: { icon: '🌦️', summary: 'Dense Drizzle' },
+  56: { icon: '🌧️', summary: 'Freezing Drizzle' },
+  57: { icon: '🌧️', summary: 'Freezing Drizzle' },
+  61: { icon: '🌧️', summary: 'Light Rain' },
   63: { icon: '🌧️', summary: 'Rain' },
-  65: { icon: '🌧️', summary: 'Heavy rain' },
-  66: { icon: '🌧️', summary: 'Freezing rain' },
-  67: { icon: '🌧️', summary: 'Freezing rain' },
-  71: { icon: '🌨️', summary: 'Light snow' },
+  65: { icon: '🌧️', summary: 'Heavy Rain' },
+  66: { icon: '🌧️', summary: 'Freezing Rain' },
+  67: { icon: '🌧️', summary: 'Freezing Rain' },
+  71: { icon: '🌨️', summary: 'Light Snow' },
   73: { icon: '🌨️', summary: 'Snow' },
-  75: { icon: '🌨️', summary: 'Heavy snow' },
-  77: { icon: '🌨️', summary: 'Snow grains' },
-  80: { icon: '🌦️', summary: 'Rain showers' },
-  81: { icon: '🌦️', summary: 'Rain showers' },
-  82: { icon: '🌧️', summary: 'Violent rain showers' },
-  85: { icon: '🌨️', summary: 'Snow showers' },
-  86: { icon: '🌨️', summary: 'Heavy snow showers' },
+  75: { icon: '🌨️', summary: 'Heavy Snow' },
+  77: { icon: '🌨️', summary: 'Snow Grains' },
+  80: { icon: '🌦️', summary: 'Rain Showers' },
+  81: { icon: '🌦️', summary: 'Rain Showers' },
+  82: { icon: '🌧️', summary: 'Violent Rain Showers' },
+  85: { icon: '🌨️', summary: 'Snow Showers' },
+  86: { icon: '🌨️', summary: 'Heavy Snow Showers' },
   95: { icon: '⛈️', summary: 'Thunderstorm' },
-  96: { icon: '⛈️', summary: 'Thunderstorm with hail' },
-  99: { icon: '⛈️', summary: 'Thunderstorm with hail' },
+  96: { icon: '⛈️', summary: 'Thunderstorm With Hail' },
+  99: { icon: '⛈️', summary: 'Thunderstorm With Hail' },
 };
 
 // GET /api/weather — a ~16-day daily forecast for Mike's home location, via
@@ -1678,6 +1678,46 @@ app.get('/api/stats', async (c) => {
     year: year?.n ?? 0,
     trend,
   });
+});
+
+// GET /api/stats/completions?q=&limit=&before= — the actual completed-task
+// log itself (not just counts), newest first, for the Stats page's "find
+// when I did X" list. `q` filters by title substring (a plain LIKE is
+// plenty at Mike's personal-app scale); `before` is a completed_at cursor
+// for "load more" — pass the last row's completed_at back to page further
+// into the past rather than re-fetching from the top. Reads from
+// task_completions directly, same as /api/stats, so a task that's since
+// been edited, moved, or deleted doesn't change what this shows: the
+// title is the snapshot from the moment it was checked off (see
+// migrations/0011_task_completions.sql).
+app.get('/api/stats/completions', async (c) => {
+  const q = c.req.query('q')?.trim();
+  const before = c.req.query('before');
+  const limit = Math.min(Math.max(Number(c.req.query('limit')) || 50, 1), 200);
+
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+  if (q) {
+    conditions.push('title LIKE ?');
+    params.push(`%${q}%`);
+  }
+  if (before) {
+    conditions.push('completed_at < ?');
+    params.push(before);
+  }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+  // Fetch one extra row purely to know whether there's another page
+  // without a separate COUNT(*) query.
+  const { results } = await c.env.DB.prepare(
+    `SELECT * FROM task_completions ${where} ORDER BY completed_at DESC LIMIT ?`
+  )
+    .bind(...params, limit + 1)
+    .all<{ id: string; entity_id: string; title: string; completed_at: string; completed_date: string }>();
+
+  const rows = results ?? [];
+  const hasMore = rows.length > limit;
+  return c.json({ completions: rows.slice(0, limit), has_more: hasMore });
 });
 
 app.get('/api/health', (c) => c.json({ ok: true, time: now() }));

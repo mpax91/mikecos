@@ -1,4 +1,4 @@
-import type { CalendarFeedsResponse, CalendarFeedStatus, Entity, EntityDetail, EntityType, MeetingsRangeResponse, MeetingsResponse, MonthResponse, ProjectListItem, RecurringTaskDefinition, StatsResponse, TodayResponse, WeatherResponse, WeekResponse } from './types';
+import type { CalendarFeedsResponse, CalendarFeedStatus, CompletionsResponse, Entity, EntityDetail, EntityType, MeetingsRangeResponse, MeetingsResponse, MonthResponse, ProjectListItem, RecurringTaskDefinition, StatsResponse, TodayResponse, WeatherResponse, WeekResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -186,6 +186,19 @@ export const api = {
    * /api/stats comment. Used by both the Today page's small completion
    * count and the standalone Stats page. */
   getStats: (date: string) => request<StatsResponse>(`/api/stats?date=${encodeURIComponent(date)}`),
+
+  /** The completion log itself, newest first — the Stats page's "find when
+   * I did X" list. `q` filters by title substring; `before` (a completed_at
+   * cursor, from the last row of a previous page) fetches further back for
+   * "load more" rather than re-fetching from the top. */
+  getCompletions: (opts: { q?: string; before?: string; limit?: number } = {}) => {
+    const params = new URLSearchParams();
+    if (opts.q) params.set('q', opts.q);
+    if (opts.before) params.set('before', opts.before);
+    if (opts.limit) params.set('limit', String(opts.limit));
+    const qs = params.toString();
+    return request<CompletionsResponse>(`/api/stats/completions${qs ? `?${qs}` : ''}`);
+  },
 
   /** Quick-add on the Today page — a standalone task with no project,
    * due on the given date. */

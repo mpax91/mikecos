@@ -313,24 +313,17 @@ export function TodayPage() {
         </Link>
       </div>
 
-      <div className="toolbar-row">
+      {/* A 3-column grid rather than the shared .toolbar-row's flex
+          space-between — with three unequal-width groups, space-between
+          only pushes the outer two to the edges and leaves the middle one
+          wherever its neighbors' widths happen to land it, not truly
+          centered. The Day/Week/Month + date nav is the thing worth
+          keeping visually centered regardless of how wide the heading or
+          the completion/weather badges get. */}
+      <div className="today-page__toolbar">
         <div>
           <h1 className="today-page__heading heading-serif">{formatDayHeading(date, isToday).heading}</h1>
           <div className="today-page__date-line">{formatDayHeading(date, isToday).dateLine}</div>
-        </div>
-
-        <div className="today-page__header-extra">
-          {holidays.length > 0 && <div className="today-page__holiday-badge">🎉 {holidays.join(' · ')}</div>}
-          {/* Always shown, even at zero — a "0 Completed Today" badge is a
-              nudge in its own right (unlike the holiday badge above, which
-              genuinely has nothing to say on a non-holiday), so it stays
-              visible instead of only confirming after the fact. */}
-          {stats !== null && (
-            <Link to="/stats" className="today-page__stats-badge" title="See completion stats">
-              ✅ {stats.today} Completed {isToday ? 'Today' : 'That Day'}
-            </Link>
-          )}
-          <WeatherWidget day={weather} variant="sentence" />
         </div>
 
         <div className="today-page__nav">
@@ -362,6 +355,20 @@ export function TodayPage() {
           <button type="button" className="today-page__nav-btn" onClick={() => goToDate(addDays(date, 1))} aria-label="Next day" title="Next day">
             ›
           </button>
+        </div>
+
+        <div className="today-page__header-extra">
+          {holidays.length > 0 && <div className="today-page__holiday-badge">🎉 {holidays.join(' · ')}</div>}
+          {/* Always shown, even at zero — a "0 Completed Today" badge is a
+              nudge in its own right (unlike the holiday badge above, which
+              genuinely has nothing to say on a non-holiday), so it stays
+              visible instead of only confirming after the fact. */}
+          {stats !== null && (
+            <Link to="/stats" className="today-page__stats-badge" title="See completion stats">
+              ✅ {stats.today} Completed {isToday ? 'Today' : 'That Day'}
+            </Link>
+          )}
+          <WeatherWidget day={weather} variant="sentence" />
         </div>
       </div>
 
