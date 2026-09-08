@@ -61,6 +61,12 @@ export interface Entity {
    * lets the project view show a small attachment indicator without a
    * separate fetch per task. */
   media?: Entity[];
+  /** True when this task is the live instance of an active recurring task
+   * definition (see Settings' Recurring Tasks panel) — only populated by
+   * GET /api/today today. Drives the "Recurring" badge in place of the
+   * usual last-modified text, and floats the task to the top of the Day
+   * view's list. */
+  is_recurring?: boolean;
 }
 
 export interface ProjectListItem extends Entity {

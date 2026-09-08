@@ -23,6 +23,7 @@ export interface Entity {
 
   subtasks?: Entity[]; // attached in-memory for task children only, not a DB column
   media?: Entity[]; // attached in-memory for task children only (file/link attachments), not a DB column
+  is_recurring?: boolean; // attached in-memory — true when this task is the live instance of an active recurring_task_definitions row (its current_task_id), not a DB column on entities itself. See markRecurring in index.ts.
 }
 
 export interface Link {

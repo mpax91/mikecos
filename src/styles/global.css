@@ -1762,6 +1762,16 @@ a {
   flex-shrink: 0;
 }
 
+/* Distinguishes a recurring task's instance from a genuine last-modified
+   timestamp — same pill shape, but tinted toward the accent so it reads
+   as a status rather than a stale-looking mistake ("Recurring" instead of
+   a time would look broken without this). */
+.task-row__recurring-badge {
+  color: var(--color-accent);
+  background: rgba(47, 74, 60, 0.1);
+  font-weight: var(--weight-medium);
+}
+
 .project-card__meta {
   flex-shrink: 0;
 }

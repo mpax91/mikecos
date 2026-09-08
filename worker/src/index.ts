@@ -160,6 +160,22 @@ async function spawnDueRecurringTasks(db: D1Database, todayIso: string): Promise
   }
 }
 
+// The set of task ids that are currently the live instance of an active
+// recurring definition — used to tag `is_recurring` on task rows (see
+// tagRecurring below) so the client can mark them distinctly ("Recurring"
+// in place of the usual last-modified badge) and float them to the top of
+// the day's list instead of mixing in wherever their due_position lands.
+async function recurringCurrentTaskIds(db: D1Database): Promise<Set<string>> {
+  const { results } = await db
+    .prepare(`SELECT current_task_id FROM recurring_task_definitions WHERE active = 1 AND current_task_id IS NOT NULL`)
+    .all<{ current_task_id: string }>();
+  return new Set((results ?? []).map((r) => r.current_task_id));
+}
+
+function tagRecurring<T extends Entity>(tasks: T[], recurringIds: Set<string>): T[] {
+  return tasks.map((t) => ({ ...t, is_recurring: recurringIds.has(t.id) }));
+}
+
 // Resolves a task's top-level project ancestor (if any), for the small
 // project tag shown next to a task wherever it's displayed away from its
 // own project (Today, Week). Cached per parent_id for the lifetime of one
@@ -1214,8 +1230,15 @@ app.get('/api/today', async (c) => {
     (results ?? []).map(async (task) => ({ ...task, project: await resolveProject(task.parent_id) }))
   );
 
-  const overdue = withProject.filter((t) => t.due_date! < overdueAsOf);
-  const today = withProject.filter((t) => t.due_date === date);
+  const recurringIds = await recurringCurrentTaskIds(c.env.DB);
+  const overdue = tagRecurring(withProject.filter((t) => t.due_date! < overdueAsOf), recurringIds);
+  // Recurring tasks float to the top of the day's own list — a stable sort
+  // preserves each group's existing due_position order, so this composes
+  // cleanly with promote/demote (which only ever swaps adjacent rows in
+  // whatever order this endpoint returns).
+  const today = tagRecurring(withProject.filter((t) => t.due_date === date), recurringIds).sort(
+    (a, b) => Number(b.is_recurring) - Number(a.is_recurring)
+  );
   const tickler = await computeTickler(c.env.DB);
 
   return c.json({ date, overdue, today, tickler });
