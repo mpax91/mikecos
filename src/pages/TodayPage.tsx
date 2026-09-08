@@ -321,12 +321,13 @@ export function TodayPage() {
 
         <div className="today-page__header-extra">
           {holidays.length > 0 && <div className="today-page__holiday-badge">🎉 {holidays.join(' · ')}</div>}
-          {/* Only shown once something's actually been finished — an empty
-              "0 completed" badge on a fresh morning would just be noise,
-              same reasoning as the holiday badge above. */}
-          {stats !== null && stats.today > 0 && (
+          {/* Always shown, even at zero — a "0 Completed Today" badge is a
+              nudge in its own right (unlike the holiday badge above, which
+              genuinely has nothing to say on a non-holiday), so it stays
+              visible instead of only confirming after the fact. */}
+          {stats !== null && (
             <Link to="/stats" className="today-page__stats-badge" title="See completion stats">
-              ✅ {stats.today} completed {isToday ? 'today' : 'that day'}
+              ✅ {stats.today} Completed {isToday ? 'Today' : 'That Day'}
             </Link>
           )}
           <WeatherWidget day={weather} variant="sentence" />

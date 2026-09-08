@@ -14,6 +14,9 @@ app.use('*', async (c, next) => {
 const now = () => new Date().toISOString();
 const uid = () => crypto.randomUUID();
 
+// 'YYYY-MM-DD' strings compare correctly with plain string comparison.
+const maxIso = (a: string, b: string) => (a > b ? a : b);
+
 // Same home-timezone treatment the frontend uses for meeting times
 // (MEETING_TZ in TodayPage/WeekPage/MonthPage) — a task finished at
 // 11:40 PM ET should count toward that day, not flip to "tomorrow" just
@@ -1190,10 +1193,13 @@ app.get('/api/today', async (c) => {
   const realToday = c.req.query('today') || date;
   const overdueAsOf = realToday < date ? realToday : date;
 
-  // Materialize any recurring tasks due as of the viewer's real "today"
-  // before querying — not `date`, since previewing a future day shouldn't
-  // spawn tomorrow's chore early. See spawnDueRecurringTasks.
-  await spawnDueRecurringTasks(c.env.DB, realToday);
+  // Materialize any recurring tasks due as of whichever is later, the
+  // viewer's real "today" or the day being previewed — a definition only
+  // ever has one live instance at a time (see spawnDueRecurringTasks), so
+  // previewing forward just surfaces that same next occurrence early
+  // rather than spawning a pile of future ones; browsing back to today
+  // afterward finds it already there instead of doubly spawning.
+  await spawnDueRecurringTasks(c.env.DB, maxIso(date, realToday));
 
   // overdueAsOf is always <= date (it's the earlier of the two), so a
   // single due_date <= date bound covers both buckets below.
@@ -1245,6 +1251,14 @@ app.get('/api/week', async (c) => {
   }
   const end = days[6];
 
+  // Materialize any recurring tasks due anywhere in the visible week (or by
+  // the viewer's real "today", if that falls later than the week shown) —
+  // without this, a recurring definition only ever produces a real task
+  // once the Day view has been opened for its due date, so Week view could
+  // go on showing nothing for it indefinitely. See the same reasoning on
+  // /api/today.
+  await spawnDueRecurringTasks(c.env.DB, today ? maxIso(end, today) : end);
+
   const { results } = await c.env.DB.prepare(
     `SELECT * FROM entities WHERE type = 'task' AND status = 'open' AND due_date IS NOT NULL AND due_date <= ? ORDER BY due_date ASC, due_position IS NULL, due_position ASC, position ASC`
   )
@@ -1295,6 +1309,12 @@ app.get('/api/month', async (c) => {
   const start = c.req.query('start');
   const end = c.req.query('end');
   if (!start || !end) return c.json({ error: 'start and end query params are required (YYYY-MM-DD)' }, 400);
+
+  // Same materialization as Day/Week — otherwise a recurring definition
+  // never turns into a real task (and thus never counts toward a cell's "N
+  // open tasks") until someone happens to open the Day view for that date
+  // first. See /api/today.
+  await spawnDueRecurringTasks(c.env.DB, end);
 
   const { results } = await c.env.DB.prepare(
     `SELECT * FROM entities WHERE type = 'task' AND status = 'open' AND due_date IS NOT NULL AND due_date >= ? AND due_date <= ? ORDER BY due_date ASC, due_position IS NULL, due_position ASC, position ASC`
