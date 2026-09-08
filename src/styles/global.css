@@ -3473,6 +3473,13 @@ a {
   grid-auto-rows: 1fr;
   border-top: var(--border-hairline);
   border-left: var(--border-hairline);
+  /* Grid tracks can't be forced wider than their 1fr share by a long,
+     unbreakable line inside a cell (a long meeting title, say) — without
+     this the whole grid quietly grows past the viewport and the page gets
+     a horizontal scrollbar instead of every column staying equal-width and
+     in view. See the matching min-width: 0 on .month-page__cell and the
+     meeting-title chain below, which is what actually needed it. */
+  min-width: 0;
 }
 
 .month-page__cell {
@@ -3485,6 +3492,12 @@ a {
   flex-direction: column;
   gap: 3px;
   box-sizing: border-box;
+  /* A grid item's default min-width is its content's max-content size —
+     without overriding it, one cell with a long unbroken meeting title
+     (see .month-page__meeting-item-title) refuses to shrink below that
+     text's full width, which pins every column in the row (and the whole
+     7-column grid) wider than the 1fr split calls for. */
+  min-width: 0;
 }
 
 .month-page__cell:hover {
@@ -3561,6 +3574,10 @@ a {
   display: flex;
   flex-direction: column;
   gap: 1px;
+  /* Same reasoning as .month-page__cell below — a flex item's default
+     min-width is its content's own size, which would otherwise let a long
+     meeting title veto the whole column's width. */
+  min-width: 0;
 }
 
 .month-page__meeting-item {
@@ -3579,6 +3596,7 @@ a {
   padding: 0 5px;
   overflow: hidden;
   white-space: nowrap;
+  min-width: 0;
 }
 
 .month-page__meeting-item-time {
@@ -3587,6 +3605,16 @@ a {
 }
 
 .month-page__meeting-item-title {
+  /* The actual fix for the Month grid overflowing past the viewport: a
+     flex item's default min-width is "auto" (its own content's width), so
+     a long unbroken title like "Veterans Advisory Committee Monthly
+     Meeting" would otherwise refuse to shrink below its full text width no
+     matter how little room the day cell has — which in turn pins the
+     whole 7-column grid wider than the page, forcing a horizontal
+     scrollbar. flex + min-width: 0 lets this element actually shrink to
+     its share of the row, so overflow/text-overflow below can do their job. */
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
