@@ -163,6 +163,20 @@ export interface MeetingsResponse {
   meetings: MeetingItem[];
 }
 
+/** A meeting occurrence from GET /api/meetings/range — the Week/Month
+ * views' bulk fetch of everything in their visible span, each occurrence
+ * tagged with its own local `date` so the caller can bucket it by day the
+ * same way MonthResponse's tasks are bucketed by due_date. */
+export interface RangeMeetingItem extends MeetingItem {
+  date: string;
+}
+
+export interface MeetingsRangeResponse {
+  start: string;
+  end: string;
+  meetings: RangeMeetingItem[];
+}
+
 /** One Google Calendar feed, managed self-service on the Settings screen's
  * Calendar Integrations panel (see migrations/0008_calendar_feeds.sql) —
  * `urlPreview` is a masked stand-in for the real secret address, which the

@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import type { Env, Entity } from './types';
-import { calendarIdFromIcsUrl, meetingsForDate } from './ics';
+import { calendarIdFromIcsUrl, meetingsForDate, meetingsForRange } from './ics';
 import { describeRrule, isValidRrule, nextDueOccurrenceDate, type RecurringTaskDefinition } from './recurring';
 
 const app = new Hono<{ Bindings: Env }>();
@@ -1326,6 +1326,33 @@ app.get('/api/weather', async (c) => {
   return c.json({ location: WEATHER_LOCATION_LABEL, days });
 });
 
+// Shared by /api/meetings and /api/meetings/range — fetches every active
+// calendar_feeds row's ICS text at the edge (short cache, see the comment
+// below) and reduces it to the {ics, calendar, calendarId} shape ics.ts's
+// meetingsForRange/meetingsForDate expect. A feed whose URL doesn't parse
+// as a calendar id, or whose fetch fails outright, is just dropped rather
+// than surfaced as an error here — /api/calendars is where a broken feed's
+// actual error message shows up for Mike to see.
+async function fetchFeedSources(db: D1Database): Promise<{ ics: string; calendar: string; calendarId: string }[]> {
+  const { results } = await db.prepare(`SELECT * FROM calendar_feeds WHERE active = 1`).all<CalendarFeedRow>();
+  return (
+    await Promise.all(
+      (results ?? []).map(async (feed) => {
+        const calendarId = calendarIdFromIcsUrl(feed.url);
+        if (!calendarId) return null;
+        try {
+          const upstream = await fetch(feed.url, { cf: { cacheTtl: 300, cacheEverything: true } });
+          if (!upstream.ok) return null;
+          const ics = await upstream.text();
+          return { ics, calendar: feed.id, calendarId };
+        } catch {
+          return null;
+        }
+      })
+    )
+  ).filter((s): s is { ics: string; calendar: string; calendarId: string } => s !== null);
+}
+
 // GET /api/meetings?date=YYYY-MM-DD — Mike's real Google Calendar events
 // (not MikeOS tasks) due that day, pulled from the two calendars' secret
 // ICS "basic.ics" addresses (GOOGLE_ICS_URL_PERSONAL / _SHARED — Worker
@@ -1345,27 +1372,25 @@ app.get('/api/meetings', async (c) => {
   const date = c.req.query('date');
   if (!date) return c.json({ error: 'date query param is required (YYYY-MM-DD)' }, 400);
 
-  const { results } = await c.env.DB.prepare(`SELECT * FROM calendar_feeds WHERE active = 1`).all<CalendarFeedRow>();
-
-  const sources = (
-    await Promise.all(
-      (results ?? []).map(async (feed) => {
-        const calendarId = calendarIdFromIcsUrl(feed.url);
-        if (!calendarId) return null;
-        try {
-          const upstream = await fetch(feed.url, { cf: { cacheTtl: 300, cacheEverything: true } });
-          if (!upstream.ok) return null;
-          const ics = await upstream.text();
-          return { ics, calendar: feed.id, calendarId };
-        } catch {
-          return null;
-        }
-      })
-    )
-  ).filter((s): s is { ics: string; calendar: string; calendarId: string } => s !== null);
-
+  const sources = await fetchFeedSources(c.env.DB);
   const meetings = meetingsForDate(sources, date);
   return c.json({ date, meetings });
+});
+
+// GET /api/meetings/range?start=YYYY-MM-DD&end=YYYY-MM-DD — the same real
+// Google Calendar events as /api/meetings, but for the whole visible span
+// of a Week or Month view in one call instead of one request per day; each
+// meeting comes back tagged with its own local `date` so the caller can
+// bucket occurrences by day the same way /api/month already buckets tasks
+// by due_date.
+app.get('/api/meetings/range', async (c) => {
+  const start = c.req.query('start');
+  const end = c.req.query('end');
+  if (!start || !end) return c.json({ error: 'start and end query params are required (YYYY-MM-DD)' }, 400);
+
+  const sources = await fetchFeedSources(c.env.DB);
+  const meetings = meetingsForRange(sources, start, end);
+  return c.json({ start, end, meetings });
 });
 
 // ---- Calendar feeds (Settings screen's Calendar Integrations panel) ----

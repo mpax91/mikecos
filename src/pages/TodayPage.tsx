@@ -319,19 +319,6 @@ export function TodayPage() {
             </div>
           )}
 
-          <div className="today-page__section">
-            {overdue.length > 0 && <div className="today-page__section-title">{isToday ? 'Today' : formatHeaderDate(date)}</div>}
-            <div className="today-page__list today-page__list--ruled task-list card">
-              {dueToday.map(renderRow)}
-              {Array.from({ length: blankCount }).map((_, i) => (
-                <BlankLine key={i} onSubmit={quickAdd} />
-              ))}
-            </div>
-            <button type="button" className="today-page__add-row-btn" onClick={() => setExtraRows((n) => n + 1)}>
-              + Add another line
-            </button>
-          </div>
-
           {meetings.length > 0 && (
             <div className="today-page__section">
               <div className="today-page__section-title">{isToday ? "Today's Meetings" : 'Meetings'}</div>
@@ -354,6 +341,19 @@ export function TodayPage() {
               </div>
             </div>
           )}
+
+          <div className="today-page__section">
+            {overdue.length > 0 && <div className="today-page__section-title">{isToday ? 'Today' : formatHeaderDate(date)}</div>}
+            <div className="today-page__list today-page__list--ruled task-list card">
+              {dueToday.map(renderRow)}
+              {Array.from({ length: blankCount }).map((_, i) => (
+                <BlankLine key={i} onSubmit={quickAdd} />
+              ))}
+            </div>
+            <button type="button" className="today-page__add-row-btn" onClick={() => setExtraRows((n) => n + 1)}>
+              + Add another line
+            </button>
+          </div>
 
           {tickler.length > 0 && (
             <div className="today-page__section">

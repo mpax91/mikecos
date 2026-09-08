@@ -1,4 +1,4 @@
-import type { CalendarFeedsResponse, CalendarFeedStatus, Entity, EntityDetail, EntityType, MeetingsResponse, MonthResponse, ProjectListItem, RecurringTaskDefinition, TodayResponse, WeatherResponse, WeekResponse } from './types';
+import type { CalendarFeedsResponse, CalendarFeedStatus, Entity, EntityDetail, EntityType, MeetingsRangeResponse, MeetingsResponse, MonthResponse, ProjectListItem, RecurringTaskDefinition, TodayResponse, WeatherResponse, WeekResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -174,6 +174,12 @@ export const api = {
   /** Real Google Calendar events (not tasks) due on `date` — Day view only,
    * see the worker's /api/meetings comment for the ICS-feed approach. */
   getMeetings: (date: string) => request<MeetingsResponse>(`/api/meetings?date=${encodeURIComponent(date)}`),
+
+  /** Bulk fetch for Week/Month — every meeting anywhere in [start, end],
+   * each tagged with its own local date. See the worker's /api/meetings/range
+   * comment for why this beats one /api/meetings call per visible day. */
+  getMeetingsRange: (start: string, end: string) =>
+    request<MeetingsRangeResponse>(`/api/meetings/range?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`),
 
   /** Quick-add on the Today page — a standalone task with no project,
    * due on the given date. */

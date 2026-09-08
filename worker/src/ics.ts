@@ -55,6 +55,14 @@ function dayWindowUtc(dateIso: string, tz: string): { start: Date; end: Date } {
   };
 }
 
+/** Which local calendar date (in `tz`) a UTC instant falls on — the inverse
+ * of zonedWallTimeToUtc, used to bucket a multi-day range's occurrences by
+ * day for the Week/Month views. en-CA's locale format is the one built-in
+ * Intl option that already prints as YYYY-MM-DD. */
+function localDateOf(d: Date, tz: string): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+}
+
 // ---- Minimal RFC5545 parsing — just enough of ICS to read a Google
 // Calendar export: line unfolding, VEVENT properties (UID, SUMMARY,
 // DTSTART/DTEND, RRULE, EXDATE, RECURRENCE-ID, STATUS), and the handful of
@@ -209,14 +217,26 @@ interface FeedSource {
   calendarId: string;
 }
 
-/** Every meeting from the given feeds that falls on `dateIso` (Mike's
- * local day, per HOME_TZ) — recurring events expanded via RRULE/EXDATE,
- * with RECURRENCE-ID overrides (a moved/renamed single occurrence)
- * substituted in place of the rule-generated one, and CANCELLED
- * events/occurrences dropped. */
-export function meetingsForDate(sources: FeedSource[], dateIso: string): ParsedMeeting[] {
-  const { start: dayStart, end: dayEnd } = dayWindowUtc(dateIso, HOME_TZ);
-  const results: ParsedMeeting[] = [];
+/** A meeting occurrence tagged with which local calendar date (HOME_TZ) it
+ * falls on — meetingsForDate's single-day callers already know the date
+ * they asked for, but the Week/Month views span many days at once and need
+ * each occurrence bucketed by its own day, the same way MonthResponse
+ * buckets tasks by due_date. */
+export interface RangeMeeting extends ParsedMeeting {
+  date: string;
+}
+
+/** Every meeting from the given feeds falling anywhere in [startIso,
+ * endIso] (inclusive, Mike's local days per HOME_TZ) — recurring events
+ * expanded via RRULE/EXDATE across the whole window in one pass per feed
+ * (rather than once per day), with RECURRENCE-ID overrides (a moved/
+ * renamed single occurrence) substituted in place of the rule-generated
+ * one, and CANCELLED events/occurrences dropped. meetingsForDate below is
+ * just this with startIso === endIso. */
+export function meetingsForRange(sources: FeedSource[], startIso: string, endIso: string): RangeMeeting[] {
+  const { start: rangeStart } = dayWindowUtc(startIso, HOME_TZ);
+  const { end: rangeEnd } = dayWindowUtc(endIso, HOME_TZ);
+  const results: RangeMeeting[] = [];
 
   for (const src of sources) {
     const events = parseIcsEvents(src.ics);
@@ -255,25 +275,34 @@ export function meetingsForDate(sources: FeedSource[], dateIso: string): ParsedM
         for (const ex of base.exdates) set.exdate(ex);
         const duration = base.end.getTime() - base.start.getTime();
 
-        for (const occStart of set.between(dayStart, dayEnd, true)) {
+        for (const occStart of set.between(rangeStart, rangeEnd, true)) {
           const override = overrides.find((o) => o.recurrenceId!.getTime() === occStart.getTime());
           if (override) {
             if (override.status === 'CANCELLED') continue;
-            results.push(toMeeting(override, occStart));
+            results.push({ ...toMeeting(override, occStart), date: localDateOf(occStart, HOME_TZ) });
           } else {
-            results.push(toMeeting({ ...base, start: occStart, end: new Date(occStart.getTime() + duration) }, occStart));
+            const occMeeting = toMeeting({ ...base, start: occStart, end: new Date(occStart.getTime() + duration) }, occStart);
+            results.push({ ...occMeeting, date: localDateOf(occStart, HOME_TZ) });
           }
         }
       } else if (base.allDay) {
-        if (isoDateOnly(base.start) === dateIso) results.push(toMeeting(base, null));
-      } else if (base.start >= dayStart && base.start < dayEnd) {
-        results.push(toMeeting(base, null));
+        const d = isoDateOnly(base.start);
+        if (d >= startIso && d <= endIso) results.push({ ...toMeeting(base, null), date: d });
+      } else if (base.start >= rangeStart && base.start < rangeEnd) {
+        results.push({ ...toMeeting(base, null), date: localDateOf(base.start, HOME_TZ) });
       }
     }
   }
 
   results.sort((a, b) => a.start.localeCompare(b.start));
   return results;
+}
+
+/** Every meeting from the given feeds that falls on `dateIso` (Mike's
+ * local day, per HOME_TZ) — a thin single-day wrapper around
+ * meetingsForRange. */
+export function meetingsForDate(sources: FeedSource[], dateIso: string): ParsedMeeting[] {
+  return meetingsForRange(sources, dateIso, dateIso);
 }
 
 /** Pulls the calendar id straight out of a Google "secret address" ICS

@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { DndContext, DragOverlay, PointerSensor, useDraggable, useDroppable, useSensor, useSensors } from '@dnd-kit/core';
 import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core';
 import { api } from '../api/client';
-import type { Entity, TodayTask, WeatherDay, WeekResponse } from '../api/types';
+import type { Entity, MeetingsRangeResponse, RangeMeetingItem, TodayTask, WeatherDay, WeekResponse } from '../api/types';
 import { TaskDetailModal } from '../components/TaskDetailModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { BlankLine } from '../components/BlankLine';
@@ -62,6 +62,13 @@ function formatWeekRange(start: string, end: string): string {
   return sy === ey ? `${formatShort(start)} – ${formatShort(end)}, ${sy}` : `${formatShort(start)}, ${sy} – ${formatShort(end)}, ${ey}`;
 }
 
+// Same fixed home-timezone treatment as the Day view's own meeting times —
+// see TodayPage's MEETING_TZ comment.
+const MEETING_TZ = 'America/New_York';
+function formatMeetingTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString('en-US', { timeZone: MEETING_TZ, hour: 'numeric', minute: '2-digit' });
+}
+
 /** A task row that can be picked up and dragged onto a day column or the
  * Unscheduled shelf to reschedule it — used for every real task shown on
  * this page (Overdue, a day's tasks, and the Unscheduled shelf itself). */
@@ -95,6 +102,7 @@ function DayColumn({
   day,
   data,
   weather,
+  meetings,
   onToggle,
   onOpen,
   onQuickAdd,
@@ -102,6 +110,7 @@ function DayColumn({
   day: WeekResponse['days'][number];
   data: WeekResponse;
   weather: WeatherDay | undefined;
+  meetings: RangeMeetingItem[];
   onToggle: (t: Entity) => void;
   onOpen: (t: Entity) => void;
   onQuickAdd: (date: string, title: string) => void;
@@ -128,6 +137,27 @@ function DayColumn({
             the same height whether or not that day has an observance. */}
         <div className="week-page__col-holiday">{holidays.length > 0 ? holidays.join(' · ') : ' '}</div>
       </div>
+
+      {meetings.length > 0 && (
+        <div className="week-page__meetings">
+          {meetings.map((m) => (
+            <a
+              key={m.id}
+              className="week-page__meeting-row"
+              href={m.gcalUrl ?? undefined}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(e) => {
+                if (!m.gcalUrl) e.preventDefault();
+                e.stopPropagation();
+              }}
+            >
+              <span className="week-page__meeting-time">{m.allDay ? 'All day' : formatMeetingTime(m.start)}</span>
+              <span className="week-page__meeting-title">{m.title}</span>
+            </a>
+          ))}
+        </div>
+      )}
 
       {day.isToday && data.overdue.length > 0 && (
         <div className="week-page__special week-page__special--overdue">
@@ -232,6 +262,7 @@ export function WeekPage() {
   const [deleting, setDeleting] = useState<Entity | null>(null);
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const [weatherByDate, setWeatherByDate] = useState<Map<string, WeatherDay>>(new Map());
+  const [meetingsData, setMeetingsData] = useState<MeetingsRangeResponse | null>(null);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
@@ -257,6 +288,26 @@ export function WeekPage() {
       .then((res) => setWeatherByDate(new Map(res.days.map((d) => [d.date, d]))))
       .catch(() => {});
   }, []);
+
+  // Real Google Calendar events for the whole visible week — same "nice-to-
+  // have overlay" treatment as the Day view's own meetings fetch.
+  useEffect(() => {
+    api
+      .getMeetingsRange(start, addDays(start, 6))
+      .then(setMeetingsData)
+      .catch(() => setMeetingsData(null));
+  }, [start]);
+
+  const meetingsByDate = useMemo(() => {
+    const map = new Map<string, RangeMeetingItem[]>();
+    if (!meetingsData) return map;
+    for (const m of meetingsData.meetings) {
+      const list = map.get(m.date);
+      if (list) list.push(m);
+      else map.set(m.date, [m]);
+    }
+    return map;
+  }, [meetingsData]);
 
   function goToWeek(nextStart: string) {
     navigate(nextStart === mondayOf(realToday) ? '/today/week' : `/today/week/${nextStart}`);
@@ -404,6 +455,7 @@ export function WeekPage() {
                     day={day}
                     data={data}
                     weather={weatherByDate.get(day.date)}
+                    meetings={meetingsByDate.get(day.date) ?? []}
                     onToggle={toggleTask}
                     onOpen={openTask}
                     onQuickAdd={quickAdd}

@@ -3,7 +3,24 @@ import { api } from '../../api/client';
 import type { RecurringTaskDefinition } from '../../api/types';
 import { Modal } from '../../components/Modal';
 import { ConfirmModal } from '../../components/ConfirmModal';
-import { RECURRENCE_PRESETS, detectPreset, presetLabel, presetToRrule, type RecurrencePreset } from '../../utils/recurrence';
+import { CustomRecurrenceModal } from '../../components/CustomRecurrenceModal';
+import {
+  RECURRENCE_PRESETS,
+  customRuleToRrule,
+  defaultCustomRule,
+  describeCustomRrule,
+  detectPreset,
+  presetLabel,
+  presetToRrule,
+  rruleToCustomRule,
+  type CustomRecurrenceRule,
+  type RecurrencePreset,
+} from '../../utils/recurrence';
+
+function recurrenceRowLabel(rrule: string, dtstart: string): string {
+  const preset = detectPreset(rrule, dtstart);
+  return preset === 'custom' ? describeCustomRrule(rrule, dtstart) : presetLabel(preset, dtstart);
+}
 
 function todayLocalISO(): string {
   const d = new Date();
@@ -40,6 +57,15 @@ export function RecurringTasksPanel() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<RecurringTaskDefinition | null>(null);
+
+  // Picking 'custom' from the Repeats dropdown pops up the Custom
+  // recurrence dialog immediately, same as Google Calendar's own — this
+  // remembers which preset was showing right before that happened, so
+  // Cancelling out of the dialog without ever having a custom rule set can
+  // land the dropdown back on something real instead of stranding it on
+  // 'custom' with nothing behind it.
+  const [customModalOpen, setCustomModalOpen] = useState(false);
+  const [presetBeforeCustom, setPresetBeforeCustom] = useState<RecurrencePreset>('weekly');
 
   function load() {
     api.listRecurring().then(setDefinitions).catch((e) => setError(String(e)));
@@ -91,14 +117,42 @@ export function RecurringTasksPanel() {
     setSaveError(null);
   }
 
-  // Changing the preset (to anything but 'custom') or the start date
-  // recomputes the RRULE automatically — the weekday/month-day a preset
-  // means is always derived from dtstart, so either changing wipes out any
-  // stale rrule from before. 'custom' leaves whatever's already in the
-  // text box alone so switching to it to tweak a preset-generated rule
-  // doesn't blank it.
+  // Changing the preset recomputes the RRULE automatically — the weekday/
+  // month-day a preset means is always derived from dtstart, so changing
+  // either wipes out any stale rrule from before. Picking 'custom' instead
+  // opens the Custom recurrence dialog right away (see customModalOpen);
+  // the dropdown only actually lands on 'custom' once that dialog is saved
+  // with Done, matching how Google Calendar's own dropdown behaves.
   function setPreset(preset: RecurrencePreset) {
-    setForm((prev) => (prev ? { ...prev, preset, rrule: preset === 'custom' ? prev.rrule : presetToRrule(preset, prev.dtstart) } : prev));
+    if (preset === 'custom') {
+      setPresetBeforeCustom(form?.preset ?? 'weekly');
+      setCustomModalOpen(true);
+      setForm((prev) => (prev ? { ...prev, preset: 'custom' } : prev));
+      return;
+    }
+    setForm((prev) => (prev ? { ...prev, preset, rrule: presetToRrule(preset, prev.dtstart) } : prev));
+  }
+
+  function openCustomModalForEdit() {
+    setPresetBeforeCustom('custom');
+    setCustomModalOpen(true);
+  }
+
+  function handleCustomDone(rule: CustomRecurrenceRule) {
+    setForm((prev) => (prev ? { ...prev, preset: 'custom', rrule: customRuleToRrule(rule) } : prev));
+    setCustomModalOpen(false);
+  }
+
+  // Cancelling the dialog before it's ever been saved with Done leaves
+  // nothing custom behind — snap the dropdown back to whatever preset was
+  // showing beforehand rather than stranding it on 'custom' with no rule.
+  // Reopening the dialog to tweak an already-custom rule just closes it
+  // unchanged instead (presetBeforeCustom is 'custom' in that case).
+  function handleCustomCancel() {
+    setCustomModalOpen(false);
+    if (presetBeforeCustom !== 'custom') {
+      setForm((prev) => (prev ? { ...prev, preset: presetBeforeCustom, rrule: presetToRrule(presetBeforeCustom, prev.dtstart) } : prev));
+    }
   }
 
   function setDtstart(dtstart: string) {
@@ -172,7 +226,7 @@ export function RecurringTasksPanel() {
               </button>
               <div className="settings-page__recurring-main" onClick={() => openEdit(def)}>
                 <div className="settings-page__recurring-title">{def.title}</div>
-                <div className="settings-page__recurring-meta">{presetLabel(detectPreset(def.rrule, def.dtstart), def.dtstart)}</div>
+                <div className="settings-page__recurring-meta">{recurrenceRowLabel(def.rrule, def.dtstart)}</div>
               </div>
               <button type="button" className="settings-page__recurring-delete" title="Delete" onClick={() => setDeleting(def)}>
                 ✕
@@ -199,12 +253,9 @@ export function RecurringTasksPanel() {
           </select>
 
           {form.preset === 'custom' && (
-            <input
-              placeholder="FREQ=WEEKLY;BYDAY=MO"
-              value={form.rrule}
-              onChange={(e) => setForm({ ...form, rrule: e.target.value })}
-              style={{ fontFamily: 'monospace', marginTop: 6 }}
-            />
+            <button type="button" className="settings-page__custom-recurrence-edit" onClick={openCustomModalForEdit}>
+              ✎ Edit custom recurrence
+            </button>
           )}
           {preview && <div className="settings-page__rrule-preview">↳ {preview}</div>}
           {previewError && <div className="settings-page__rrule-error">{previewError}</div>}
@@ -220,6 +271,15 @@ export function RecurringTasksPanel() {
             </button>
           </div>
         </Modal>
+      )}
+
+      {customModalOpen && form && (
+        <CustomRecurrenceModal
+          initial={presetBeforeCustom === 'custom' ? rruleToCustomRule(form.rrule, form.dtstart) : defaultCustomRule(form.dtstart)}
+          dtstart={form.dtstart}
+          onDone={handleCustomDone}
+          onCancel={handleCustomCancel}
+        />
       )}
 
       {deleting && (
