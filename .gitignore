@@ -16,6 +16,10 @@ dist-ssr
 worker/.wrangler
 worker/.dev.vars
 
+# Local scratch space (mockups, one-off exploration files) — never meant
+# to be committed, so ignored rather than accidentally tracked.
+scratch/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
