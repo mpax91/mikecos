@@ -1753,14 +1753,15 @@ app.get('/api/stats/completions', async (c) => {
 // (called with no parent_id, the same "inline attachment" mode a note's
 // editor already uses) rather than a bespoke upload path here.
 
-// GET /api/boards — every board, most-recently-active first (updated_at
-// bumps on any item add/move/edit/delete, not just a title change — see
-// touchBoard below), plus each board's own item_count for the list view's
-// card (a plain COUNT rather than a stored counter, at this app's scale).
+// GET /api/boards — pinned boards first (same convention as Projects'
+// pinned-to-top), then most-recently-active (updated_at bumps on any item
+// add/move/edit/delete, not just a title change — see touchBoard below),
+// plus each board's own item_count for the list view's card (a plain
+// COUNT rather than a stored counter, at this app's scale).
 app.get('/api/boards', async (c) => {
   const { results } = await c.env.DB.prepare(
     `SELECT b.*, (SELECT COUNT(*) FROM canvas_items i WHERE i.board_id = b.id) as item_count
-     FROM canvas_boards b ORDER BY b.updated_at DESC`
+     FROM canvas_boards b ORDER BY b.pinned DESC, b.updated_at DESC`
   ).all<CanvasBoard & { item_count: number }>();
   return c.json(results ?? []);
 });
@@ -1787,11 +1788,16 @@ app.get('/api/boards/:id', async (c) => {
 
 app.patch('/api/boards/:id', async (c) => {
   const id = c.req.param('id');
-  const body = await c.req.json<{ title?: string }>();
+  const body = await c.req.json<{ title?: string; pinned?: boolean }>();
   const existing = await c.env.DB.prepare('SELECT id FROM canvas_boards WHERE id = ?').bind(id).first();
   if (!existing) return c.json({ error: 'not found' }, 404);
   if (body.title !== undefined) {
     await c.env.DB.prepare('UPDATE canvas_boards SET title = ?, updated_at = ? WHERE id = ?').bind(body.title.trim() || 'Untitled Board', now(), id).run();
+  }
+  if (body.pinned !== undefined) {
+    // Bumps updated_at same as POST /api/entities/:id/pin does for
+    // Projects — pinning/unpinning counts as touching the board.
+    await c.env.DB.prepare('UPDATE canvas_boards SET pinned = ?, updated_at = ? WHERE id = ?').bind(body.pinned ? 1 : 0, now(), id).run();
   }
   const board = await c.env.DB.prepare('SELECT * FROM canvas_boards WHERE id = ?').bind(id).first<CanvasBoard>();
   return c.json(board);

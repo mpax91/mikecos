@@ -295,6 +295,12 @@ export const api = {
       body: JSON.stringify({ title }),
     }),
 
+  setBoardPinned: (id: string, pinned: boolean) =>
+    request<CanvasBoard>(`/api/boards/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ pinned }),
+    }),
+
   deleteBoard: (id: string) => request<{ ok: true }>(`/api/boards/${id}`, { method: 'DELETE' }),
 
   createBoardItem: (boardId: string, item: { type: CanvasItemType; x: number; y: number; width: number; height: number; content: Record<string, unknown> | ConnectorItemContent; title?: string | null }) =>

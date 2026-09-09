@@ -57,6 +57,7 @@ export type CanvasItemType = 'image' | 'text' | 'note' | 'connector';
 export interface CanvasBoard {
   id: string;
   title: string;
+  pinned: number; // 0 | 1 — pin-to-top on the boards list, same as Entity.pinned for Projects
   created_at: string;
   updated_at: string;
 }

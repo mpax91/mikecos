@@ -14,16 +14,19 @@ function BoardCard({
   onOpen,
   onRename,
   onDelete,
+  onTogglePin,
 }: {
   board: CanvasBoardListItem;
   onOpen: () => void;
   onRename: () => void;
   onDelete: () => void;
+  onTogglePin: () => void;
 }) {
   const { openTab, showContextMenu } = useTabs();
+  const isPinned = board.pinned === 1;
   return (
     <div
-      className="card project-card"
+      className={`card project-card${isPinned ? ' is-pinned' : ''}`}
       onClick={(e) => {
         if (e.metaKey || e.ctrlKey) {
           openTab(`/boards/${board.id}`, { background: true, title: board.title || 'Untitled Board', kind: 'board' });
@@ -38,6 +41,7 @@ function BoardCard({
         ]);
       }}
     >
+      {isPinned && <span className="entity-card__pin" title="Pinned">📌</span>}
       <div style={{ minWidth: 0, flex: 1 }}>
         <p className="project-card__title">
           <span className="project-card__title-text">{board.title || 'Untitled Board'}</span>
@@ -47,13 +51,14 @@ function BoardCard({
         </p>
         <div className="project-card__stats">
           {board.item_count > 0 && (
-            <span title={`${board.item_count} item${board.item_count === 1 ? '' : 's'}`}>📌 {board.item_count}</span>
+            <span title={`${board.item_count} item${board.item_count === 1 ? '' : 's'}`}>🗂️ {board.item_count}</span>
           )}
         </div>
       </div>
       <KebabMenu
         items={[
           { label: 'Rename', onClick: onRename },
+          { label: isPinned ? 'Unpin' : 'Pin to top', onClick: onTogglePin },
           { label: 'Delete', onClick: onDelete, danger: true, separatorBefore: true },
         ]}
       />
@@ -65,8 +70,10 @@ function BoardCard({
  * Deliberately kept as plain a "grid of cards" as Projects/Notes: the
  * interesting part of this feature is what happens once you're inside a
  * board (CanvasBoardPage), not this list. No drag-to-reorder here (unlike
- * Projects) — boards are few enough, and sorted by recent activity, that
- * manual ordering isn't worth the complexity yet. */
+ * Projects) — boards are few enough, and sorted pinned-first then by
+ * recent activity (see GET /api/boards), that manual ordering isn't worth
+ * the complexity yet. Pin-to-top itself, though, is the same feature
+ * Projects has (same KebabMenu item, same `.entity-card__pin` badge). */
 export function BoardsListPage() {
   useReportTabMeta('Boards', 'boards-list');
   const navigate = useNavigate();
@@ -95,6 +102,13 @@ export function BoardsListPage() {
   async function handleRename(board: CanvasBoardListItem, newTitle: string) {
     setBoards((prev) => (prev ? prev.map((b) => (b.id === board.id ? { ...b, title: newTitle } : b)) : prev));
     await api.renameBoard(board.id, newTitle);
+  }
+
+  async function handleTogglePin(board: CanvasBoardListItem) {
+    const next = board.pinned === 1 ? 0 : 1;
+    setBoards((prev) => (prev ? prev.map((b) => (b.id === board.id ? { ...b, pinned: next } : b)) : prev));
+    await api.setBoardPinned(board.id, next === 1);
+    load();
   }
 
   async function handleDelete(board: CanvasBoardListItem) {
@@ -131,6 +145,7 @@ export function BoardsListPage() {
               onOpen={() => navigate(`/boards/${b.id}`)}
               onRename={() => setRenaming(b)}
               onDelete={() => setDeleting(b)}
+              onTogglePin={() => handleTogglePin(b)}
             />
           ))}
         </div>
