@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
 import type { CanvasBoard, CanvasItem, ConnectorItemContent, ImageItemContent, NoteItemContent, TextItemContent } from '../api/types';
 import { useReportTabMeta } from '../contexts/TabsContext';
@@ -436,6 +436,7 @@ function CanvasItemView({
 export function CanvasBoardPage() {
   const { id } = useParams<{ id: string }>();
   const boardId = id!;
+  const navigate = useNavigate();
 
   const [board, setBoard] = useState<CanvasBoard | null>(null);
   const [items, setItems] = useState<CanvasItem[] | null>(null);
@@ -999,9 +1000,20 @@ export function CanvasBoardPage() {
   return (
     <div className="canvas-board">
       <div className="canvas-board__toolbar">
-        <Link to="/boards" className="canvas-board__back" title="Back to Boards">
-          ← Boards
-        </Link>
+        {/* Same back-chip + link chrome as Projects/Today-Week (see
+            Breadcrumb.tsx and .breadcrumb__back) instead of this page's
+            own plain text link, so the back control feels consistent
+            everywhere in the app. No trailing "current" segment needed
+            here — the editable title input right next to it already
+            shows/edits the board's name. */}
+        <div className="breadcrumb canvas-board__breadcrumb">
+          <button type="button" className="breadcrumb__back" onClick={() => navigate('/boards')} title="Back to Boards" aria-label="Back to Boards">
+            ‹
+          </button>
+          <Link to="/boards" className="breadcrumb__link">
+            Boards
+          </Link>
+        </div>
         <input
           className="canvas-board__title-input"
           value={titleDraft}

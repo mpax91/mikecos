@@ -4268,15 +4268,15 @@ a {
   flex: 0 0 auto;
 }
 
-.canvas-board__back {
-  font-size: 13px;
-  color: var(--color-muted);
-  text-decoration: none;
+/* Reuses .breadcrumb / .breadcrumb__back / .breadcrumb__link (the same
+   back-chip chrome Projects/Today-Week use) inline in the toolbar row
+   instead of stacking it above like those pages do — the toolbar is
+   already a single compact bar here, and the editable title input right
+   next to it plays the "current" role a trailing breadcrumb segment
+   would otherwise carry. */
+.canvas-board__breadcrumb {
+  margin-bottom: 0;
   flex-shrink: 0;
-}
-
-.canvas-board__back:hover {
-  color: var(--color-ink);
 }
 
 .canvas-board__title-input {
