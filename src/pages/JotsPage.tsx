@@ -8,6 +8,7 @@ import { ConvertModal } from '../components/ConvertModal';
 import { PlanDateModal } from '../components/PlanDateModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { KebabMenu } from '../components/KebabMenu';
+import { Shelf } from '../components/Shelf';
 import { formatRelativeTime } from '../utils/formatRelativeTime';
 import { isTiptapDocEmpty } from '../utils/tiptapEmpty';
 import { useReportTabMeta } from '../contexts/TabsContext';
@@ -175,6 +176,8 @@ export function JotsPage() {
           Jots
         </h1>
       </div>
+
+      <Shelf composerOpen={composerOpen} onGraduated={load} />
 
       <div className="jots-page__composer-wrap">
         {!composerOpen ? (

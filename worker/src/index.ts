@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import type { CanvasBoard, CanvasConnector, CanvasItem, CanvasItemType, Env, Entity } from './types';
+import type { CanvasBoard, CanvasConnector, CanvasItem, CanvasItemType, Env, Entity, ShelfItem, ShelfItemType } from './types';
 import { calendarIdFromIcsUrl, meetingsForDate, meetingsForRange } from './ics';
 import { describeRrule, isValidRrule, nextDueOccurrenceDate, type RecurringTaskDefinition } from './recurring';
 
@@ -397,6 +397,121 @@ app.post('/api/entities/:id/convert', async (c) => {
   await touchProjectAncestor(c.env.DB, body.parent_id);
   const entity = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(id).first<Entity>();
   return c.json(entity);
+});
+
+// ---- Shelf (self-clearing drop zone on the Jots page) ----
+
+const SHELF_TTL_MS = 7 * 24 * 60 * 60 * 1000; // a week — see migrations/0016_shelf_items.sql
+const SHELF_TYPES: ShelfItemType[] = ['text', 'image', 'link', 'file'];
+
+// GET /api/shelf — sweeps out anything unpinned older than a week (see
+// SHELF_TTL_MS) before returning what's left, pinned first then newest
+// first. The sweep happens here rather than on a cron: at this app's
+// personal scale, "clean up whenever the shelf is next viewed" gets the
+// same end result as a scheduled job with none of a Worker Cron Trigger's
+// setup, and the shelf is never checked so rarely that stale rows would
+// meaningfully pile up between visits.
+app.get('/api/shelf', async (c) => {
+  const cutoff = new Date(Date.now() - SHELF_TTL_MS).toISOString();
+  const { results: expiring } = await c.env.DB.prepare(
+    "SELECT * FROM shelf_items WHERE pinned = 0 AND created_at < ? AND type IN ('image', 'file')"
+  )
+    .bind(cutoff)
+    .all<ShelfItem>();
+  // R2 objects backing an expiring image/file item don't get cleaned up by
+  // the DELETE below on its own — it only drops the D1 row — so purge each
+  // one first, same as DELETE /api/shelf/:id does for a manual delete.
+  for (const it of expiring ?? []) {
+    const meta = JSON.parse(it.content) as { r2_key?: string };
+    if (meta.r2_key) await c.env.FILES.delete(meta.r2_key).catch(() => {});
+  }
+  await c.env.DB.prepare('DELETE FROM shelf_items WHERE pinned = 0 AND created_at < ?').bind(cutoff).run();
+  const { results } = await c.env.DB.prepare('SELECT * FROM shelf_items ORDER BY pinned DESC, created_at DESC').all<ShelfItem>();
+  return c.json(results ?? []);
+});
+
+// POST /api/shelf — drop one item. `content` is pre-shaped by the caller
+// per type (see migrations/0016_shelf_items.sql) — the worker just
+// validates `type` and stores it, the same "trust the client, shape is
+// documented not enforced" pattern canvas_items.content already uses.
+app.post('/api/shelf', async (c) => {
+  const body = await c.req.json<{ type: ShelfItemType; content: Record<string, unknown> }>();
+  if (!SHELF_TYPES.includes(body.type)) return c.json({ error: 'invalid type' }, 400);
+  const id = uid();
+  const ts = now();
+  await c.env.DB.prepare('INSERT INTO shelf_items (id, type, content, pinned, created_at) VALUES (?, ?, ?, 0, ?)')
+    .bind(id, body.type, JSON.stringify(body.content ?? {}), ts)
+    .run();
+  const item = await c.env.DB.prepare('SELECT * FROM shelf_items WHERE id = ?').bind(id).first<ShelfItem>();
+  return c.json(item, 201);
+});
+
+// PATCH /api/shelf/:id — currently only { pinned: boolean }, i.e. "Keep"
+// (exempt this one item from the auto-clear sweep) / "Unkeep".
+app.patch('/api/shelf/:id', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json<{ pinned?: boolean }>();
+  const existing = await c.env.DB.prepare('SELECT id FROM shelf_items WHERE id = ?').bind(id).first();
+  if (!existing) return c.json({ error: 'not found' }, 404);
+  if (body.pinned !== undefined) {
+    await c.env.DB.prepare('UPDATE shelf_items SET pinned = ? WHERE id = ?').bind(body.pinned ? 1 : 0, id).run();
+  }
+  const item = await c.env.DB.prepare('SELECT * FROM shelf_items WHERE id = ?').bind(id).first<ShelfItem>();
+  return c.json(item);
+});
+
+app.delete('/api/shelf/:id', async (c) => {
+  const id = c.req.param('id');
+  const existing = await c.env.DB.prepare('SELECT * FROM shelf_items WHERE id = ?').bind(id).first<ShelfItem>();
+  if (existing && (existing.type === 'image' || existing.type === 'file')) {
+    const meta = JSON.parse(existing.content) as { r2_key?: string };
+    if (meta.r2_key) await c.env.FILES.delete(meta.r2_key).catch(() => {});
+  }
+  await c.env.DB.prepare('DELETE FROM shelf_items WHERE id = ?').bind(id).run();
+  return c.json({ ok: true });
+});
+
+// POST /api/shelf/:id/graduate — turns a shelf item into a real Jot (the
+// one way something on the shelf becomes permanent, short of pinning it)
+// and removes it from the shelf. Builds the same Tiptap `content` shape
+// Jots/Notes already use (see extractAttachmentsAndLinks above for the
+// attachment/linkPreview node shapes) so the resulting Jot is completely
+// ordinary — nothing downstream needs to know it came from the shelf.
+app.post('/api/shelf/:id/graduate', async (c) => {
+  const id = c.req.param('id');
+  const item = await c.env.DB.prepare('SELECT * FROM shelf_items WHERE id = ?').bind(id).first<ShelfItem>();
+  if (!item) return c.json({ error: 'not found' }, 404);
+
+  const meta = JSON.parse(item.content) as Record<string, unknown>;
+  let doc: Record<string, unknown>;
+  if (item.type === 'text') {
+    doc = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: String(meta.text ?? '') }] }] };
+  } else if (item.type === 'link') {
+    doc = { type: 'doc', content: [{ type: 'linkPreview', attrs: { url: meta.url ?? '', title: meta.title ?? null, image: meta.image ?? null, domain: meta.domain ?? null } }] };
+  } else {
+    // image | file
+    doc = {
+      type: 'doc',
+      content: [
+        { type: 'attachment', attrs: { url: `/api/files/${meta.r2_key}`, filename: meta.filename ?? 'file', mimeType: meta.mime_type ?? 'application/octet-stream', r2Key: meta.r2_key ?? '', size: meta.size ?? 0 } },
+      ],
+    };
+  }
+
+  const jotId = uid();
+  const ts = now();
+  const contentJson = JSON.stringify(doc);
+  const searchText = extractPlainText(contentJson);
+  await c.env.DB.prepare(
+    `INSERT INTO entities (id, type, title, content, parent_id, is_top_level, status, position, last_touched, created_at, updated_at, search_text, is_jot)
+     VALUES (?, 'note', '', ?, NULL, 1, NULL, 0, ?, ?, ?, ?, 1)`
+  )
+    .bind(jotId, contentJson, ts, ts, ts, searchText)
+    .run();
+  await c.env.DB.prepare('DELETE FROM shelf_items WHERE id = ?').bind(id).run();
+
+  const jot = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(jotId).first<Entity>();
+  return c.json(jot, 201);
 });
 
 // ---- Projects (top-level) ----

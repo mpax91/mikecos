@@ -1,4 +1,4 @@
-import type { CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, CompletionsResponse, ConnectorItemContent, Entity, EntityDetail, EntityType, MeetingsRangeResponse, MeetingsResponse, MonthResponse, ProjectListItem, RecurringTaskDefinition, StatsResponse, TodayResponse, WeatherResponse, WeekResponse } from './types';
+import type { CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, CompletionsResponse, ConnectorItemContent, Entity, EntityDetail, EntityType, MeetingsRangeResponse, MeetingsResponse, MonthResponse, ProjectListItem, RecurringTaskDefinition, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, WeatherResponse, WeekResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -151,6 +151,29 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ to, parent_id, due_date }),
     }),
+
+  // ---- Shelf (self-clearing drop zone on the Jots page) ----
+
+  listShelf: () => request<ShelfItem[]>('/api/shelf'),
+
+  dropShelfItem: (type: ShelfItemType, content: Record<string, unknown>) =>
+    request<ShelfItem>('/api/shelf', {
+      method: 'POST',
+      body: JSON.stringify({ type, content }),
+    }),
+
+  setShelfItemPinned: (id: string, pinned: boolean) =>
+    request<ShelfItem>(`/api/shelf/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ pinned }),
+    }),
+
+  deleteShelfItem: (id: string) => request<{ ok: true }>(`/api/shelf/${id}`, { method: 'DELETE' }),
+
+  /** Turns a shelf item into an ordinary Jot and removes it from the shelf
+   * — the one way something on the shelf becomes permanent short of
+   * pinning it. */
+  graduateShelfItem: (id: string) => request<Entity>(`/api/shelf/${id}/graduate`, { method: 'POST' }),
 
   // ---- Today (daily planner) ----
 

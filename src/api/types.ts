@@ -345,6 +345,38 @@ export interface CanvasBoardDetail {
   connectors: CanvasConnector[];
 }
 
+// ---- Shelf (self-clearing drop zone on the Jots page) ----
+
+export type ShelfItemType = 'text' | 'image' | 'link' | 'file';
+
+export interface ShelfTextContent {
+  text: string;
+}
+
+/** Shape returned by GET /api/link-preview (and what a shelf link item
+ * stores as-is) — deliberately not FileMeta's/LinkMeta's `preview_`-
+ * prefixed field names, which are Entity's own link-attachment storage
+ * convention; this is the plain unfurl-result shape instead. */
+export interface ShelfLinkContent {
+  url: string;
+  title: string | null;
+  domain: string | null;
+  image: string | null;
+}
+
+/** A parked item on the Shelf — text/link content is JSON per the types
+ * above; image/file content reuses FileMeta (the exact shape
+ * api.uploadInline already returns), since a shelf image/file is nothing
+ * more than an unfiled upload. No title, no rich body: the whole point of
+ * the Shelf is a lighter, more disposable unit than a Jot. */
+export interface ShelfItem {
+  id: string;
+  type: ShelfItemType;
+  content: string;
+  pinned: number; // 0 | 1 — exempt from the auto-clear sweep
+  created_at: string;
+}
+
 /** A recurring task definition managed on the Settings screen — describes
  * the repeating chore itself (title, project, RRULE, anchor date); the
  * actual task instances that show up on Today/Week/Month are ordinary

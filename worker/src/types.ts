@@ -91,6 +91,20 @@ export interface CanvasConnector {
   created_at: string;
 }
 
+// A parked item on the Jots page's "Shelf" — see migrations/0016_shelf_items.sql
+// for the per-type `content` shapes. Deliberately flat/global (no board_id
+// or parent_id): the Shelf is one drop zone for the whole app, not scoped
+// to a project or board.
+export type ShelfItemType = 'text' | 'image' | 'link' | 'file';
+
+export interface ShelfItem {
+  id: string;
+  type: ShelfItemType;
+  content: string;
+  pinned: number; // 0 | 1 — exempts the item from the auto-clear sweep
+  created_at: string;
+}
+
 export interface Env {
   DB: D1Database;
   FILES: R2Bucket;
