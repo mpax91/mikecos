@@ -98,8 +98,25 @@ function ShelfTile({
   onDelete: (item: ShelfItem) => void;
 }) {
   const isPinned = item.pinned === 1;
+  const isDownloadable = item.type === 'image' || item.type === 'file';
   const menu = [
-    { label: isPinned ? 'Unkeep' : 'Keep (skip auto-clear)', onClick: () => onTogglePin(item) },
+    // Same convention as EntityCard's file-download item: a dedicated,
+    // called-out Download action, since clicking the tile body only copies
+    // (an image's copy path may fall back to copying its URL rather than
+    // the actual bytes — Download is the one guaranteed way to get the file).
+    ...(isDownloadable
+      ? [
+          {
+            label: 'Download',
+            onClick: () => {
+              const meta = JSON.parse(item.content) as FileMeta;
+              window.open(api.fileUrl(meta.r2_key, true), '_blank');
+            },
+            positive: true,
+          },
+        ]
+      : []),
+    { label: isPinned ? 'Unkeep' : 'Keep (skip auto-clear)', onClick: () => onTogglePin(item), separatorBefore: isDownloadable },
     { label: 'Save as Jot', onClick: () => onGraduate(item) },
     { label: 'Delete', onClick: () => onDelete(item), danger: true, separatorBefore: true },
   ];
