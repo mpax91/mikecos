@@ -4,9 +4,102 @@ import { api } from '../api/client';
 import type { CanvasBoard, CanvasItem, ImageItemContent, NoteItemContent, TextItemContent } from '../api/types';
 import { useReportTabMeta } from '../contexts/TabsContext';
 
+/** Renders page 1 of a PDF onto a canvas as a lightweight preview — pdfjs
+ * is a heavy dependency (~1MB), so it's only ever dynamically imported
+ * here, the moment a board actually has a PDF item to show, rather than
+ * bloating the main app bundle for everyone. Re-renders whenever the
+ * item's box is resized so the preview stays crisp instead of just being
+ * CSS-stretched. */
+function PdfThumbnail({ url, width, height }: { url: string; width: number; height: number }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setFailed(false);
+    (async () => {
+      try {
+        const pdfjsLib = await import('pdfjs-dist');
+        const workerUrl = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default;
+        pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
+        const dpr = window.devicePixelRatio || 1;
+        const pdf = await pdfjsLib.getDocument(url).promise;
+        if (cancelled) return;
+        const page = await pdf.getPage(1);
+        const unscaledViewport = page.getViewport({ scale: 1 });
+        const fitScale = Math.min(width / unscaledViewport.width, height / unscaledViewport.height);
+        const viewport = page.getViewport({ scale: fitScale * dpr });
+        const canvas = canvasRef.current;
+        if (!canvas || cancelled) return;
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        canvas.style.width = `${viewport.width / dpr}px`;
+        canvas.style.height = `${viewport.height / dpr}px`;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        await page.render({ canvasContext: ctx, viewport }).promise;
+      } catch {
+        if (!cancelled) setFailed(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [url, width, height]);
+
+  if (failed) {
+    return (
+      <div className="canvas-item__file-fallback">
+        <span className="canvas-item__file-icon">📄</span>
+        <span className="canvas-item__file-name">Preview unavailable</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="canvas-item__pdf-preview">
+      <canvas ref={canvasRef} />
+    </div>
+  );
+}
+
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 4;
 const DEFAULT_IMAGE_SIZE = { width: 280, height: 210 };
+const DEFAULT_PDF_SIZE = { width: 260, height: 336 }; // roughly a US Letter page's aspect ratio
+const MAX_UPLOAD_DIMENSION = 480; // cap so a huge screenshot doesn't land as a giant item
+const MIN_UPLOAD_DIMENSION = 160; // floor so a tiny icon isn't microscopic
+
+/** Sizes a newly-dropped/pasted item so it lands at a legible size instead
+ * of always the same fixed box: an image gets its true aspect ratio (fit
+ * within a max/min box) so a wide screenshot isn't squashed into a near-
+ * square frame and forced to shrink further just to read the text in it;
+ * a PDF gets a page-shaped default since its real first-page size isn't
+ * known until it's rendered. */
+async function computeItemSize(file: File): Promise<{ width: number; height: number }> {
+  if (file.type.startsWith('image/')) {
+    try {
+      const bitmap = await createImageBitmap(file);
+      const { width: w, height: h } = bitmap;
+      bitmap.close?.();
+      if (w > 0 && h > 0) {
+        const fit = Math.min(1, MAX_UPLOAD_DIMENSION / Math.max(w, h));
+        let width = w * fit;
+        let height = h * fit;
+        if (Math.max(width, height) < MIN_UPLOAD_DIMENSION) {
+          const grow = MIN_UPLOAD_DIMENSION / Math.max(width, height);
+          width *= grow;
+          height *= grow;
+        }
+        return { width, height };
+      }
+    } catch {
+      // fall through to the generic default below
+    }
+  }
+  if (file.type === 'application/pdf') return DEFAULT_PDF_SIZE;
+  return DEFAULT_IMAGE_SIZE;
+}
 const DEFAULT_TEXT_SIZE = { width: 220, height: 90 };
 const DEFAULT_NOTE_SIZE = { width: 200, height: 160 };
 const MIN_ITEM_SIZE = 60;
@@ -82,8 +175,11 @@ function CanvasItemView({
   if (item.type === 'image') {
     const meta = parseContent<ImageItemContent>(item.content, { r2_key: '', mime_type: '', filename: '' });
     const isImage = meta.mime_type.startsWith('image/');
+    const isPdf = meta.mime_type === 'application/pdf';
     body = isImage ? (
       <img src={api.fileUrl(meta.r2_key)} alt={meta.filename} draggable={false} className="canvas-item__image" />
+    ) : isPdf ? (
+      <PdfThumbnail url={api.fileUrl(meta.r2_key)} width={item.width} height={item.height} />
     ) : (
       <div className="canvas-item__file-fallback" title={meta.filename}>
         <span className="canvas-item__file-icon">📎</span>
@@ -247,30 +343,52 @@ export function CanvasBoardPage() {
 
   // Native (non-React) wheel listener with { passive: false } — React's
   // synthetic onWheel can't reliably preventDefault the page's own scroll
-  // in every browser, which is what makes scroll-wheel zoom feel broken
-  // (the page scrolls AND the canvas zooms). Zoom is centered on the
-  // cursor: the world point currently under the pointer stays under the
-  // pointer after the scale change, which is what makes it feel like
-  // you're zooming "into" something rather than the canvas just resizing
-  // around a fixed corner.
+  // in every browser, which is what makes scroll-wheel interaction feel
+  // broken (the page scrolls AND the canvas moves/zooms).
+  //
+  // Convention matches Figma/Miro rather than the "wheel always zooms"
+  // behavior this started with: plain scrolling (a mouse wheel's vertical
+  // delta, a trackpad's two-finger scroll on either axis, or shift+wheel
+  // for horizontal on a plain mouse) PANS the board — which is what you
+  // want on a canvas that can run long and wide. Zoom is reserved for
+  // Ctrl/Cmd+scroll — which is also what a trackpad pinch-to-zoom gesture
+  // reports as in the browser (ctrlKey is set automatically), so pinch
+  // zoom keeps working without special-casing it. Zoom stays centered on
+  // the cursor: the world point under the pointer stays under the pointer
+  // after the scale change.
   useEffect(() => {
     const el = viewportRef.current;
     if (!el) return;
     function onWheel(e: WheelEvent) {
       e.preventDefault();
-      const rect = el!.getBoundingClientRect();
-      const cursorX = e.clientX - rect.left;
-      const cursorY = e.clientY - rect.top;
-      setView(({ pan: prevPan, scale: prevScale }) => {
-        const worldX = (cursorX - prevPan.x) / prevScale;
-        const worldY = (cursorY - prevPan.y) / prevScale;
-        const nextScale = clamp(prevScale * Math.exp(-e.deltaY * 0.001), MIN_SCALE, MAX_SCALE);
-        return { scale: nextScale, pan: { x: cursorX - worldX * nextScale, y: cursorY - worldY * nextScale } };
-      });
+      if (e.ctrlKey || e.metaKey) {
+        const rect = el!.getBoundingClientRect();
+        const cursorX = e.clientX - rect.left;
+        const cursorY = e.clientY - rect.top;
+        setView(({ pan: prevPan, scale: prevScale }) => {
+          const worldX = (cursorX - prevPan.x) / prevScale;
+          const worldY = (cursorY - prevPan.y) / prevScale;
+          const nextScale = clamp(prevScale * Math.exp(-e.deltaY * 0.001), MIN_SCALE, MAX_SCALE);
+          return { scale: nextScale, pan: { x: cursorX - worldX * nextScale, y: cursorY - worldY * nextScale } };
+        });
+        return;
+      }
+      // Shift turns a plain vertical wheel into horizontal scroll (the
+      // standard convention on a mouse without a horizontal scroll wheel);
+      // a trackpad instead reports its own deltaX directly.
+      const dx = e.shiftKey && e.deltaX === 0 ? e.deltaY : e.deltaX;
+      const dy = e.shiftKey && e.deltaX === 0 ? 0 : e.deltaY;
+      setView((prev) => ({ ...prev, pan: { x: prev.pan.x - dx, y: prev.pan.y - dy } }));
     }
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
-  }, []);
+    // Depends on `board`, not []: the viewport div doesn't exist yet on the
+    // very first render (this page shows a "Loading…" placeholder until
+    // the board fetch resolves), so an effect that only ever ran once on
+    // mount would find viewportRef.current still null and never attach at
+    // all. Re-running once board goes from null to loaded (and again on
+    // navigating to a different board) picks up the real element.
+  }, [board]);
 
   function screenToWorld(clientX: number, clientY: number): { x: number; y: number } {
     const rect = viewportRef.current!.getBoundingClientRect();
@@ -285,7 +403,10 @@ export function CanvasBoardPage() {
     // Middle-click always pans, even over an item (handled here because
     // items stopPropagation on left-click only, not on button 1). A
     // left-click that reaches this handler at all means it landed on the
-    // background itself, not an item.
+    // background itself, not an item. preventDefault on button 1 stops
+    // the browser's own middle-click autoscroll indicator from popping up
+    // and fighting with our own pan gesture.
+    if (e.button === 1) e.preventDefault();
     setSelectedId(null);
     setEditingId(null);
     gesture.current = { kind: 'pan', startX: e.clientX, startY: e.clientY, startPan: pan };
@@ -376,12 +497,12 @@ export function CanvasBoardPage() {
 
   const uploadAt = useCallback(
     async (file: File, worldX: number, worldY: number) => {
-      const uploaded = await api.uploadInline(file);
+      const [uploaded, size] = await Promise.all([api.uploadInline(file), computeItemSize(file)]);
       const item = await api.createBoardItem(boardId, {
         type: 'image',
-        x: worldX - DEFAULT_IMAGE_SIZE.width / 2,
-        y: worldY - DEFAULT_IMAGE_SIZE.height / 2,
-        ...DEFAULT_IMAGE_SIZE,
+        x: worldX - size.width / 2,
+        y: worldY - size.height / 2,
+        ...size,
         content: { r2_key: uploaded.r2_key, mime_type: uploaded.mime_type, filename: uploaded.filename },
       });
       setItems((prev) => [...(prev ?? []), item]);
@@ -597,7 +718,7 @@ export function CanvasBoardPage() {
           <div className="canvas-board__empty-hint">
             Drag photos or files in, paste a screenshot, or use + Text / + Note above to get started.
             <br />
-            Scroll to zoom, middle-click (or drag empty space) to pan.
+            Scroll or middle-click-drag (or drag empty space) to pan, Ctrl/Cmd+scroll to zoom.
           </div>
         )}
         {isDraggingOver && <div className="canvas-board__drop-hint">Drop to add</div>}
