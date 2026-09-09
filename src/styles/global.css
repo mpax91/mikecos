@@ -4606,7 +4606,7 @@ a {
   stroke-width: 14;
   fill: none;
   pointer-events: stroke;
-  cursor: pointer;
+  cursor: grab;
 }
 
 .canvas-connector__line {

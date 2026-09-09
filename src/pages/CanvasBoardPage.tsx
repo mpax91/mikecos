@@ -478,6 +478,7 @@ export function CanvasBoardPage() {
     | { kind: 'drag'; itemId: string; startX: number; startY: number; startItemX: number; startItemY: number }
     | { kind: 'resize'; itemId: string; startX: number; startY: number; startWidth: number; startHeight: number }
     | { kind: 'connector-endpoint'; itemId: string; end: 'from' | 'to'; x: number; y: number }
+    | { kind: 'connector-move'; itemId: string; startX: number; startY: number; startX1: number; startY1: number; startX2: number; startY2: number }
     | null
   >(null);
 
@@ -620,6 +621,21 @@ export function CanvasBoardPage() {
     viewportRef.current?.setPointerCapture(e.pointerId);
   }
 
+  // Grabbing the line itself (not an endpoint handle) moves the whole
+  // connector — the "drag a divider to a different part of the board"
+  // Mike asked for. p1/p2 are the endpoints' already-resolved live
+  // positions (not the raw stored x1/y1/x2/y2, which can be stale for an
+  // attached end) so the drag starts from where the line actually is.
+  // Moving it detaches both ends: a connector you're relocating by its
+  // body isn't meant to stay pinned to whatever card it used to touch.
+  function handleConnectorMoveStart(item: CanvasItem, p1: Point, p2: Point, e: React.PointerEvent) {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    selectItem(item);
+    gesture.current = { kind: 'connector-move', itemId: item.id, startX: e.clientX, startY: e.clientY, startX1: p1.x, startY1: p1.y, startX2: p2.x, startY2: p2.y };
+    viewportRef.current?.setPointerCapture(e.pointerId);
+  }
+
   function handlePointerMove(e: React.PointerEvent) {
     const g = gesture.current;
     if (!g) return;
@@ -641,6 +657,23 @@ export function CanvasBoardPage() {
       const world = screenToWorld(e.clientX, e.clientY);
       gesture.current = { ...g, x: world.x, y: world.y };
       setEndpointDraft({ itemId: g.itemId, end: g.end, x: world.x, y: world.y });
+    } else if (g.kind === 'connector-move') {
+      const dx = (e.clientX - g.startX) / scale;
+      const dy = (e.clientY - g.startY) / scale;
+      const x1 = g.startX1 + dx;
+      const y1 = g.startY1 + dy;
+      const x2 = g.startX2 + dx;
+      const y2 = g.startY2 + dy;
+      setItems((prev) =>
+        prev
+          ? prev.map((it) => {
+              if (it.id !== g.itemId) return it;
+              const meta = parseContent<ConnectorItemContent>(it.content, DEFAULT_CONNECTOR_CONTENT);
+              const nextMeta: ConnectorItemContent = { ...meta, fromItemId: null, toItemId: null, x1, y1, x2, y2 };
+              return { ...it, content: JSON.stringify(nextMeta) };
+            })
+          : prev
+      );
     }
   }
 
@@ -665,6 +698,12 @@ export function CanvasBoardPage() {
           : { ...meta, toItemId: target?.id ?? null, x2: g.x, y2: g.y };
       setItems((prev) => (prev ? prev.map((it) => (it.id === g.itemId ? { ...it, content: JSON.stringify(nextMeta) } : it)) : prev));
       api.updateBoardItem(g.itemId, { content: nextMeta });
+      return;
+    }
+    if (g.kind === 'connector-move') {
+      const connectorItem = items?.find((it) => it.id === g.itemId);
+      if (!connectorItem) return;
+      api.updateBoardItem(g.itemId, { content: parseContent<ConnectorItemContent>(connectorItem.content, DEFAULT_CONNECTOR_CONTENT) });
       return;
     }
     const item = items?.find((it) => it.id === g.itemId);
@@ -1062,8 +1101,7 @@ export function CanvasBoardPage() {
                       x2={p2.x}
                       y2={p2.y}
                       className="canvas-connector__hit"
-                      onPointerDown={(e) => e.stopPropagation()}
-                      onClick={() => selectItem(connectorItem)}
+                      onPointerDown={(e) => handleConnectorMoveStart(connectorItem, p1, p2, e)}
                     />
                     <line
                       x1={p1.x}
