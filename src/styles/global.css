@@ -4538,6 +4538,114 @@ a {
   touch-action: none;
 }
 
+/* Small dots on a selected item's four edges — drag from one to another
+ * item to draw a connector arrow. Kept subtle (only shown on selection,
+ * same as the delete/resize handles) so an unselected board stays clean. */
+.canvas-item__connector-handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--color-card-bg);
+  border: 2px solid var(--color-accent);
+  cursor: crosshair;
+  touch-action: none;
+  z-index: 1;
+}
+
+.canvas-item__connector-handle:hover {
+  background: var(--color-accent);
+}
+
+.canvas-item__connector-handle--n {
+  top: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.canvas-item__connector-handle--s {
+  bottom: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.canvas-item__connector-handle--e {
+  right: -6px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.canvas-item__connector-handle--w {
+  left: -6px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.canvas-board__connectors {
+  overflow: visible;
+}
+
+.canvas-connector__hit {
+  stroke: transparent;
+  stroke-width: 14;
+  fill: none;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+.canvas-connector__line {
+  stroke: var(--color-muted);
+  stroke-width: 2;
+  fill: none;
+  pointer-events: none;
+}
+
+.canvas-connector__line.is-selected {
+  stroke: var(--color-accent-secondary);
+  stroke-width: 2.5;
+}
+
+.canvas-connector__arrowhead {
+  fill: var(--color-muted);
+}
+
+.canvas-connector__arrowhead--selected {
+  fill: var(--color-accent-secondary);
+}
+
+.canvas-connector__draft {
+  stroke: var(--color-accent);
+  stroke-width: 2;
+  stroke-dasharray: 5 4;
+  fill: none;
+  pointer-events: none;
+}
+
+.canvas-connector__delete {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  margin-left: -11px;
+  margin-top: -11px;
+  border-radius: 50%;
+  border: var(--border-hairline);
+  background: var(--color-card-bg);
+  color: var(--color-ink);
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(46, 42, 34, 0.2);
+  z-index: 2;
+}
+
+.canvas-connector__delete:hover {
+  background: var(--color-accent-secondary);
+  color: #fff;
+  border-color: var(--color-accent-secondary);
+}
+
 @media (max-width: 640px) {
   .canvas-board {
     margin: -16px;

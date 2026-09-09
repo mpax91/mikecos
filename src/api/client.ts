@@ -1,4 +1,4 @@
-import type { CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasItem, CanvasItemType, CompletionsResponse, Entity, EntityDetail, EntityType, MeetingsRangeResponse, MeetingsResponse, MonthResponse, ProjectListItem, RecurringTaskDefinition, StatsResponse, TodayResponse, WeatherResponse, WeekResponse } from './types';
+import type { CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, CompletionsResponse, Entity, EntityDetail, EntityType, MeetingsRangeResponse, MeetingsResponse, MonthResponse, ProjectListItem, RecurringTaskDefinition, StatsResponse, TodayResponse, WeatherResponse, WeekResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -310,4 +310,12 @@ export const api = {
     }),
 
   deleteBoardItem: (id: string) => request<{ ok: true }>(`/api/items/${id}`, { method: 'DELETE' }),
+
+  createConnector: (boardId: string, fromItemId: string, toItemId: string) =>
+    request<CanvasConnector>(`/api/boards/${boardId}/connectors`, {
+      method: 'POST',
+      body: JSON.stringify({ from_item_id: fromItemId, to_item_id: toItemId }),
+    }),
+
+  deleteConnector: (id: string) => request<{ ok: true }>(`/api/connectors/${id}`, { method: 'DELETE' }),
 };

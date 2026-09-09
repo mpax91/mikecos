@@ -303,9 +303,22 @@ export interface CanvasItem {
   updated_at: string;
 }
 
+/** An arrow between two items. No stored anchor/side — the board computes
+ * the actual line endpoints from each item's current box at render time
+ * (nearest-edge-midpoint), which is what makes it follow a dragged card
+ * automatically. */
+export interface CanvasConnector {
+  id: string;
+  board_id: string;
+  from_item_id: string;
+  to_item_id: string;
+  created_at: string;
+}
+
 export interface CanvasBoardDetail {
   board: CanvasBoard;
   items: CanvasItem[];
+  connectors: CanvasConnector[];
 }
 
 /** A recurring task definition managed on the Settings screen — describes

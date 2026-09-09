@@ -74,6 +74,17 @@ export interface CanvasItem {
   updated_at: string;
 }
 
+// No stored anchor/side — the line's actual endpoints are derived at
+// render time from each item's current box (nearest-edge-midpoint), which
+// is what makes the arrow "move with" its cards automatically.
+export interface CanvasConnector {
+  id: string;
+  board_id: string;
+  from_item_id: string;
+  to_item_id: string;
+  created_at: string;
+}
+
 export interface Env {
   DB: D1Database;
   FILES: R2Bucket;

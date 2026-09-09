@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import type { CanvasBoard, CanvasItem, CanvasItemType, Env, Entity } from './types';
+import type { CanvasBoard, CanvasConnector, CanvasItem, CanvasItemType, Env, Entity } from './types';
 import { calendarIdFromIcsUrl, meetingsForDate, meetingsForRange } from './ics';
 import { describeRrule, isValidRrule, nextDueOccurrenceDate, type RecurringTaskDefinition } from './recurring';
 
@@ -1781,7 +1781,8 @@ app.get('/api/boards/:id', async (c) => {
   const board = await c.env.DB.prepare('SELECT * FROM canvas_boards WHERE id = ?').bind(id).first<CanvasBoard>();
   if (!board) return c.json({ error: 'not found' }, 404);
   const { results } = await c.env.DB.prepare('SELECT * FROM canvas_items WHERE board_id = ? ORDER BY z_index ASC').bind(id).all<CanvasItem>();
-  return c.json({ board, items: results ?? [] });
+  const { results: connectors } = await c.env.DB.prepare('SELECT * FROM canvas_connectors WHERE board_id = ?').bind(id).all<CanvasConnector>();
+  return c.json({ board, items: results ?? [], connectors: connectors ?? [] });
 });
 
 app.patch('/api/boards/:id', async (c) => {
@@ -1817,6 +1818,7 @@ app.delete('/api/boards/:id', async (c) => {
     })
   );
 
+  await c.env.DB.prepare('DELETE FROM canvas_connectors WHERE board_id = ?').bind(id).run();
   await c.env.DB.prepare('DELETE FROM canvas_items WHERE board_id = ?').bind(id).run();
   await c.env.DB.prepare('DELETE FROM canvas_boards WHERE id = ?').bind(id).run();
   return c.json({ ok: true });
@@ -1914,7 +1916,56 @@ app.delete('/api/items/:id', async (c) => {
     }
   }
 
+  await c.env.DB.prepare('DELETE FROM canvas_connectors WHERE from_item_id = ? OR to_item_id = ?').bind(id, id).run();
   await c.env.DB.prepare('DELETE FROM canvas_items WHERE id = ?').bind(id).run();
+  await touchBoard(c.env.DB, existing.board_id);
+  return c.json({ ok: true });
+});
+
+// POST /api/boards/:id/connectors — link two items with an arrow. No
+// anchor/side is stored (see migrations/0013_canvas_connectors.sql):
+// the endpoints are recomputed from each item's current box every time
+// the board renders, which is what makes the arrow follow a dragged card
+// automatically. Self-links and exact duplicate connectors are rejected
+// since neither makes sense to draw.
+app.post('/api/boards/:id/connectors', async (c) => {
+  const boardId = c.req.param('id');
+  const board = await c.env.DB.prepare('SELECT id FROM canvas_boards WHERE id = ?').bind(boardId).first();
+  if (!board) return c.json({ error: 'board not found' }, 404);
+
+  const body = await c.req.json<{ from_item_id?: string; to_item_id?: string }>();
+  if (!body.from_item_id || !body.to_item_id) return c.json({ error: 'from_item_id and to_item_id are required' }, 400);
+  if (body.from_item_id === body.to_item_id) return c.json({ error: 'cannot connect an item to itself' }, 400);
+
+  const [fromItem, toItem] = await Promise.all([
+    c.env.DB.prepare('SELECT id FROM canvas_items WHERE id = ? AND board_id = ?').bind(body.from_item_id, boardId).first(),
+    c.env.DB.prepare('SELECT id FROM canvas_items WHERE id = ? AND board_id = ?').bind(body.to_item_id, boardId).first(),
+  ]);
+  if (!fromItem || !toItem) return c.json({ error: 'from_item_id and to_item_id must both belong to this board' }, 400);
+
+  const dup = await c.env.DB.prepare(
+    `SELECT id FROM canvas_connectors WHERE board_id = ?
+       AND ((from_item_id = ? AND to_item_id = ?) OR (from_item_id = ? AND to_item_id = ?))`
+  )
+    .bind(boardId, body.from_item_id, body.to_item_id, body.to_item_id, body.from_item_id)
+    .first<{ id: string }>();
+  if (dup) return c.json({ error: 'already connected' }, 409);
+
+  const id = uid();
+  await c.env.DB.prepare('INSERT INTO canvas_connectors (id, board_id, from_item_id, to_item_id, created_at) VALUES (?, ?, ?, ?, ?)')
+    .bind(id, boardId, body.from_item_id, body.to_item_id, now())
+    .run();
+  await touchBoard(c.env.DB, boardId);
+
+  const connector = await c.env.DB.prepare('SELECT * FROM canvas_connectors WHERE id = ?').bind(id).first<CanvasConnector>();
+  return c.json(connector, 201);
+});
+
+app.delete('/api/connectors/:id', async (c) => {
+  const id = c.req.param('id');
+  const existing = await c.env.DB.prepare('SELECT * FROM canvas_connectors WHERE id = ?').bind(id).first<CanvasConnector>();
+  if (!existing) return c.json({ error: 'not found' }, 404);
+  await c.env.DB.prepare('DELETE FROM canvas_connectors WHERE id = ?').bind(id).run();
   await touchBoard(c.env.DB, existing.board_id);
   return c.json({ ok: true });
 });
