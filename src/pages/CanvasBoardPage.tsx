@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../api/client';
-import type { CanvasBoard, CanvasConnector, CanvasItem, ImageItemContent, NoteItemContent, TextItemContent } from '../api/types';
+import type { CanvasBoard, CanvasItem, ConnectorItemContent, ImageItemContent, NoteItemContent, TextItemContent } from '../api/types';
 import { useReportTabMeta } from '../contexts/TabsContext';
 
 interface Rect {
@@ -11,14 +11,22 @@ interface Rect {
   height: number;
 }
 
+interface Point {
+  x: number;
+  y: number;
+}
+
+function itemCenter(rect: Rect): Point {
+  return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+}
+
 /** Where a straight line from a rect's center toward some other point
  * exits the rect's boundary — i.e. a good "arrow starts/ends at the edge
  * of the card, not floating in its middle" anchor point. Standard ray/box
  * intersection: scale the center-to-target vector down by whichever axis
  * hits its half-extent first. */
-function edgePointToward(rect: Rect, towardX: number, towardY: number): { x: number; y: number } {
-  const cx = rect.x + rect.width / 2;
-  const cy = rect.y + rect.height / 2;
+function edgePointToward(rect: Rect, towardX: number, towardY: number): Point {
+  const { x: cx, y: cy } = itemCenter(rect);
   const dx = towardX - cx;
   const dy = towardY - cy;
   if (dx === 0 && dy === 0) return { x: cx, y: cy };
@@ -30,6 +38,45 @@ function edgePointToward(rect: Rect, towardX: number, towardY: number): { x: num
 
 function rectContains(rect: Rect, x: number, y: number): boolean {
   return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
+}
+
+const DEFAULT_CONNECTOR_CONTENT: ConnectorItemContent = { style: 'arrow', fromItemId: null, x1: 0, y1: 0, toItemId: null, x2: 100, y2: 0 };
+
+/** Resolves a connector item's two actual endpoints in world space. An
+ * attached endpoint (fromItemId/toItemId set) is recomputed from that
+ * item's live box every call — the same edge-of-the-card anchoring as the
+ * old item-to-item connector model, just per-endpoint instead of forced
+ * on both ends. `live` overrides one endpoint with an in-progress drag
+ * position (and treats it as temporarily detached, so the preview line
+ * doesn't jump back to the card while you're still dragging away from
+ * it). */
+function connectorEndpoints(
+  item: CanvasItem,
+  itemsById: Map<string, CanvasItem>,
+  live?: { end: 'from' | 'to'; x: number; y: number }
+): { p1: Point; p2: Point } {
+  const meta = parseContent<ConnectorItemContent>(item.content, DEFAULT_CONNECTOR_CONTENT);
+  const raw1 = live?.end === 'from' ? { x: live.x, y: live.y } : { x: meta.x1, y: meta.y1 };
+  const raw2 = live?.end === 'to' ? { x: live.x, y: live.y } : { x: meta.x2, y: meta.y2 };
+  const fromItem = meta.fromItemId && live?.end !== 'from' ? itemsById.get(meta.fromItemId) : undefined;
+  const toItem = meta.toItemId && live?.end !== 'to' ? itemsById.get(meta.toItemId) : undefined;
+  const p2Ref = toItem ? itemCenter(toItem) : raw2;
+  const p1Ref = fromItem ? itemCenter(fromItem) : raw1;
+  const p1 = fromItem ? edgePointToward(fromItem, p2Ref.x, p2Ref.y) : raw1;
+  const p2 = toItem ? edgePointToward(toItem, p1Ref.x, p1Ref.y) : raw2;
+  return { p1, p2 };
+}
+
+/** A non-connector item's box, or a connector item's bounding box derived
+ * from its resolved endpoints — the common shape fitToContent and the
+ * connector SVG layer both need, so callers don't have to special-case
+ * connector items themselves. */
+function itemWorldBounds(item: CanvasItem, itemsById: Map<string, CanvasItem>): Rect {
+  if (item.type !== 'connector') return { x: item.x, y: item.y, width: item.width, height: item.height };
+  const { p1, p2 } = connectorEndpoints(item, itemsById);
+  const minX = Math.min(p1.x, p2.x);
+  const minY = Math.min(p1.y, p2.y);
+  return { x: minX, y: minY, width: Math.max(1, Math.abs(p2.x - p1.x)), height: Math.max(1, Math.abs(p2.y - p1.y)) };
 }
 
 /** Renders page 1 of a PDF onto a canvas as a lightweight preview — pdfjs
@@ -131,6 +178,12 @@ async function computeItemSize(file: File): Promise<{ width: number; height: num
 const DEFAULT_TEXT_SIZE = { width: 220, height: 90 };
 const DEFAULT_NOTE_SIZE = { width: 200, height: 160 };
 const MIN_ITEM_SIZE = 60;
+const DEFAULT_CONNECTOR_LENGTH = 180;
+// How far back from (0,0) a board's content is allowed to start — see the
+// top-left-anchoring comment on the page component below. 0 would flush
+// new items right against the boundary; a little breathing room reads
+// better.
+const NORMALIZE_PAD = 24;
 
 const NOTE_COLORS = ['#F6DE7C', '#B9DDC7', '#F3C6C6', '#C9D9F3'];
 
@@ -141,6 +194,14 @@ function clamp(n: number, min: number, max: number): number {
 interface Pan {
   x: number;
   y: number;
+}
+
+/** A board's top-left corner (world 0,0) is a hard boundary, not just a
+ * starting point — see the page component's top comment for why. Any pan
+ * value the app produces (from a drag, a wheel event, a zoom button, fit-
+ * to-content, whatever) gets funneled through this before it's applied. */
+function clampPan(pan: Pan): Pan {
+  return { x: Math.min(0, pan.x), y: Math.min(0, pan.y) };
 }
 
 function parseContent<T>(raw: string, fallback: T): T {
@@ -158,11 +219,15 @@ function parseContent<T>(raw: string, fallback: T): T {
  * double-click-to-edit are all handled here; the board page owns the
  * actual persistence (onDragEnd/onResizeEnd/onContentChange) and the
  * shared "which item is selected/editing" state, since only one item can
- * be selected or edited at a time. */
+ * be selected or edited at a time.
+ *
+ * Never used for a 'connector' item — those have no box to speak of and
+ * render as lines in the SVG layer instead (see CanvasBoardPage). */
 function CanvasItemView({
   item,
   selected,
   editing,
+  editingTitle,
   onSelect,
   onDragStart,
   onResizeStart,
@@ -170,11 +235,14 @@ function CanvasItemView({
   onContentChange,
   onStopEdit,
   onDelete,
-  onConnectorHandleDown,
+  onStartTitleEdit,
+  onTitleChange,
+  onStopTitleEdit,
 }: {
   item: CanvasItem;
   selected: boolean;
   editing: boolean;
+  editingTitle: boolean;
   onSelect: (e: React.PointerEvent) => void;
   onDragStart: (e: React.PointerEvent) => void;
   onResizeStart: (e: React.PointerEvent) => void;
@@ -182,9 +250,12 @@ function CanvasItemView({
   onContentChange: (text: string) => void;
   onStopEdit: () => void;
   onDelete: () => void;
-  onConnectorHandleDown: (e: React.PointerEvent) => void;
+  onStartTitleEdit: () => void;
+  onTitleChange: (title: string) => void;
+  onStopTitleEdit: () => void;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const titleInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (editing) {
@@ -192,6 +263,13 @@ function CanvasItemView({
       textareaRef.current?.select();
     }
   }, [editing]);
+
+  useEffect(() => {
+    if (editingTitle) {
+      titleInputRef.current?.focus();
+      titleInputRef.current?.select();
+    }
+  }, [editingTitle]);
 
   const style: React.CSSProperties = {
     left: item.x,
@@ -273,9 +351,35 @@ function CanvasItemView({
         onSelect(e);
         onDragStart(e);
       }}
-      onDoubleClick={() => (item.type !== 'image' ? onStartEdit() : undefined)}
+      onDoubleClick={(e) => {
+        e.stopPropagation(); // don't also trigger the background's double-click-to-fit
+        if (item.type !== 'image') onStartEdit();
+      }}
     >
       {body}
+      {/* The title label floats above the box (negative top, inside this
+          already-position:absolute div) rather than eating into it, so it
+          never competes with the item's own content for space. Static
+          text when there's a title and the item isn't selected; an input
+          once selected, whether or not there's a title yet to edit. */}
+      {selected && !editing ? (
+        <input
+          ref={titleInputRef}
+          className="canvas-item__title-input"
+          value={item.title ?? ''}
+          placeholder="Add a title…"
+          onChange={(e) => onTitleChange(e.target.value)}
+          onFocus={onStartTitleEdit}
+          onBlur={onStopTitleEdit}
+          onPointerDown={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape' || e.key === 'Enter') e.currentTarget.blur();
+            e.stopPropagation();
+          }}
+        />
+      ) : (
+        item.title && <div className="canvas-item__title-label">{item.title}</div>
+      )}
       {selected && !editing && (
         <>
           <button
@@ -294,17 +398,6 @@ function CanvasItemView({
               onResizeStart(e);
             }}
           />
-          {(['n', 'e', 's', 'w'] as const).map((side) => (
-            <div
-              key={side}
-              className={`canvas-item__connector-handle canvas-item__connector-handle--${side}`}
-              title="Drag to connect to another item"
-              onPointerDown={(e) => {
-                e.stopPropagation();
-                onConnectorHandleDown(e);
-              }}
-            />
-          ))}
         </>
       )}
     </div>
@@ -312,37 +405,52 @@ function CanvasItemView({
 }
 
 /** The infinite canvas itself — a spatial pinboard distinct from every
- * other document-shaped view in this app. World-space coordinates live on
- * items (x/y/width/height, unbounded, can be negative); the viewport is
- * just a pan offset + zoom scale applied as a single CSS transform on the
- * .canvas-board__world wrapper, so panning/zooming is one GPU-accelerated
- * transform rather than recomputing every item's screen position on every
- * frame — this is what keeps it responsive with a lot of items.
+ * other document-shaped view in this app.
  *
- * Connector arrows link two items by id only, no stored anchor point —
- * drag from one of a selected item's edge handles onto another item to
- * link them; the actual line endpoints are recomputed from each item's
- * live box every render (see edgePointToward above), which is what makes
- * an arrow "move with" its cards as they're dragged around, automatically.
+ * World-space coordinates live on items (x/y/width/height); the viewport
+ * is just a pan offset + zoom scale applied as a single CSS transform on
+ * the .canvas-board__world wrapper, so panning/zooming is one GPU-
+ * accelerated transform rather than recomputing every item's screen
+ * position on every frame — this is what keeps it responsive with a lot
+ * of items.
  *
- * Still deliberately no multi-select/marquee — that's a separate round. */
+ * Unlike the first version of this feature, the plane is NOT unbounded in
+ * every direction: (0,0) is a fixed top-left corner, and content can only
+ * grow right/down from there (clampPan below enforces this on every pan
+ * source — drag, wheel, zoom buttons, fit-to-content). An infinite canvas
+ * that can be panned into arbitrarily-negative space made it too easy to
+ * scroll away from your own content and not know which direction to go
+ * back — anchoring one corner gives panning an orientation. `load()`
+ * below also normalizes any item left over from before this change (or
+ * from a bug) with negative coordinates, shifting everything on that
+ * board back into positive space once, the first time it's opened.
+ *
+ * Connector items ('arrow'/'line' via ConnectorItemContent) are
+ * freestanding — the toolbar's + Arrow / + Divider tools drop one
+ * anywhere, and it does NOT have to touch a card at all. Dragging either
+ * endpoint onto a card "snaps" that end to it (auto-follows from then on,
+ * same edge-anchoring idea as v1's connectors); dragging it back onto
+ * empty canvas un-snaps it. This replaced the original "every card has
+ * connector handles on its edges" model per Mike's feedback that he
+ * didn't want every element originating an arrow. */
 export function CanvasBoardPage() {
   const { id } = useParams<{ id: string }>();
   const boardId = id!;
 
   const [board, setBoard] = useState<CanvasBoard | null>(null);
   const [items, setItems] = useState<CanvasItem[] | null>(null);
-  const [connectors, setConnectors] = useState<CanvasConnector[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [titleDraft, setTitleDraft] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [selectedConnectorId, setSelectedConnectorId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
-  // Live endpoint of an in-progress "drag a connector from this item"
-  // gesture, in world coordinates — drives the dashed preview line. Kept
-  // in React state (unlike the gesture ref below) because it needs to
+  const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
+  // Live position of an in-progress "drag this connector's endpoint"
+  // gesture, in world coordinates — drives both the live preview line and
+  // (via connectorEndpoints' `live` param) suppresses snapping to the
+  // attached card while you're actively dragging away from it. Kept in
+  // React state (unlike the gesture ref below) because it needs to
   // trigger a re-render every pointermove to actually be visible.
-  const [connectDraft, setConnectDraft] = useState<{ fromItemId: string; x: number; y: number } | null>(null);
+  const [endpointDraft, setEndpointDraft] = useState<{ itemId: string; end: 'from' | 'to'; x: number; y: number } | null>(null);
   // pan and scale are kept in one state object (not two separate useState
   // calls) because wheel-zoom needs to compute a new scale AND a
   // compensating new pan together, atomically, from the same previous
@@ -369,7 +477,7 @@ export function CanvasBoardPage() {
     | { kind: 'pan'; startX: number; startY: number; startPan: Pan }
     | { kind: 'drag'; itemId: string; startX: number; startY: number; startItemX: number; startItemY: number }
     | { kind: 'resize'; itemId: string; startX: number; startY: number; startWidth: number; startHeight: number }
-    | { kind: 'connect'; fromItemId: string; x: number; y: number }
+    | { kind: 'connector-endpoint'; itemId: string; end: 'from' | 'to'; x: number; y: number }
     | null
   >(null);
 
@@ -381,8 +489,32 @@ export function CanvasBoardPage() {
       .then((res) => {
         setBoard(res.board);
         setTitleDraft(res.board.title);
-        setItems(res.items);
-        setConnectors(res.connectors);
+        // One-time normalization for a board with any negative-coordinate
+        // item (left over from before top-left anchoring existed, or a
+        // connector detached to a point off in negative space): shift
+        // everything so the whole board starts at/after (0,0). Connector
+        // items keep up automatically since their attached endpoints
+        // recompute from the shifted card; freestanding endpoints are
+        // shifted by the same amount as their explicit x1/y1/x2/y2.
+        const minX = res.items.length > 0 ? Math.min(...res.items.map((it) => it.x)) : 0;
+        const minY = res.items.length > 0 ? Math.min(...res.items.map((it) => it.y)) : 0;
+        if (minX < 0 || minY < 0) {
+          const dx = minX < 0 ? -minX + NORMALIZE_PAD : 0;
+          const dy = minY < 0 ? -minY + NORMALIZE_PAD : 0;
+          const shifted = res.items.map((it) => {
+            if (it.type !== 'connector') return { ...it, x: it.x + dx, y: it.y + dy };
+            const meta = parseContent<ConnectorItemContent>(it.content, DEFAULT_CONNECTOR_CONTENT);
+            const nextMeta: ConnectorItemContent = { ...meta, x1: meta.x1 + dx, y1: meta.y1 + dy, x2: meta.x2 + dx, y2: meta.y2 + dy };
+            return { ...it, x: it.x + dx, y: it.y + dy, content: JSON.stringify(nextMeta) };
+          });
+          setItems(shifted);
+          shifted.forEach((it) => {
+            const patch = it.type === 'connector' ? { x: it.x, y: it.y, content: parseContent<ConnectorItemContent>(it.content, DEFAULT_CONNECTOR_CONTENT) } : { x: it.x, y: it.y };
+            api.updateBoardItem(it.id, patch);
+          });
+        } else {
+          setItems(res.items);
+        }
       })
       .catch((e) => setError(String(e)));
   }, [boardId]);
@@ -390,8 +522,8 @@ export function CanvasBoardPage() {
   useEffect(() => {
     load();
     setSelectedId(null);
-    setSelectedConnectorId(null);
     setEditingId(null);
+    setEditingTitleId(null);
     setView({ pan: { x: 0, y: 0 }, scale: 1 });
   }, [load]);
 
@@ -423,7 +555,7 @@ export function CanvasBoardPage() {
           const worldX = (cursorX - prevPan.x) / prevScale;
           const worldY = (cursorY - prevPan.y) / prevScale;
           const nextScale = clamp(prevScale * Math.exp(-e.deltaY * 0.001), MIN_SCALE, MAX_SCALE);
-          return { scale: nextScale, pan: { x: cursorX - worldX * nextScale, y: cursorY - worldY * nextScale } };
+          return { scale: nextScale, pan: clampPan({ x: cursorX - worldX * nextScale, y: cursorY - worldY * nextScale }) };
         });
         return;
       }
@@ -432,7 +564,7 @@ export function CanvasBoardPage() {
       // a trackpad instead reports its own deltaX directly.
       const dx = e.shiftKey && e.deltaX === 0 ? e.deltaY : e.deltaX;
       const dy = e.shiftKey && e.deltaX === 0 ? 0 : e.deltaY;
-      setView((prev) => ({ ...prev, pan: { x: prev.pan.x - dx, y: prev.pan.y - dy } }));
+      setView((prev) => ({ ...prev, pan: clampPan({ x: prev.pan.x - dx, y: prev.pan.y - dy }) }));
     }
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
@@ -444,13 +576,13 @@ export function CanvasBoardPage() {
     // navigating to a different board) picks up the real element.
   }, [board]);
 
-  function screenToWorld(clientX: number, clientY: number): { x: number; y: number } {
+  function screenToWorld(clientX: number, clientY: number): Point {
     const rect = viewportRef.current!.getBoundingClientRect();
     return { x: (clientX - rect.left - pan.x) / scale, y: (clientY - rect.top - pan.y) / scale };
   }
 
-  // ---- Pan / drag / resize gesture handling (pointer events, so mouse,
-  // touch, and pen all share one code path) ----
+  // ---- Pan / drag / resize / connector gesture handling (pointer events,
+  // so mouse, touch, and pen all share one code path) ----
 
   function handleBackgroundPointerDown(e: React.PointerEvent) {
     if (e.button !== 0 && e.button !== 1) return;
@@ -462,8 +594,8 @@ export function CanvasBoardPage() {
     // and fighting with our own pan gesture.
     if (e.button === 1) e.preventDefault();
     setSelectedId(null);
-    setSelectedConnectorId(null);
     setEditingId(null);
+    setEditingTitleId(null);
     gesture.current = { kind: 'pan', startX: e.clientX, startY: e.clientY, startPan: pan };
     (e.target as Element).setPointerCapture(e.pointerId);
   }
@@ -480,16 +612,11 @@ export function CanvasBoardPage() {
     (e.target as Element).setPointerCapture(e.pointerId);
   }
 
-  function handleConnectorHandleDown(item: CanvasItem, e: React.PointerEvent) {
+  function handleConnectorEndpointDown(item: CanvasItem, end: 'from' | 'to', point: Point, e: React.PointerEvent) {
     if (e.button !== 0) return;
-    const start = { x: item.x + item.width / 2, y: item.y + item.height / 2 };
-    gesture.current = { kind: 'connect', fromItemId: item.id, x: start.x, y: start.y };
-    setConnectDraft({ fromItemId: item.id, ...start });
-    // Capture on the viewport itself (not the handle) so the drag keeps
-    // tracking even once the cursor moves off the small handle element —
-    // handled in onPointerDown at the viewport level below via bubbling
-    // isn't reliable once capture is set elsewhere, so we grab it here on
-    // the nearest ancestor we know stays put for the whole gesture.
+    e.stopPropagation();
+    gesture.current = { kind: 'connector-endpoint', itemId: item.id, end, ...point };
+    setEndpointDraft({ itemId: item.id, end, ...point });
     viewportRef.current?.setPointerCapture(e.pointerId);
   }
 
@@ -497,21 +624,23 @@ export function CanvasBoardPage() {
     const g = gesture.current;
     if (!g) return;
     if (g.kind === 'pan') {
-      setView((prev) => ({ ...prev, pan: { x: g.startPan.x + (e.clientX - g.startX), y: g.startPan.y + (e.clientY - g.startY) } }));
+      setView((prev) => ({ ...prev, pan: clampPan({ x: g.startPan.x + (e.clientX - g.startX), y: g.startPan.y + (e.clientY - g.startY) }) }));
     } else if (g.kind === 'drag') {
       const dx = (e.clientX - g.startX) / scale;
       const dy = (e.clientY - g.startY) / scale;
-      setItems((prev) => (prev ? prev.map((it) => (it.id === g.itemId ? { ...it, x: g.startItemX + dx, y: g.startItemY + dy } : it)) : prev));
+      const x = Math.max(0, g.startItemX + dx);
+      const y = Math.max(0, g.startItemY + dy);
+      setItems((prev) => (prev ? prev.map((it) => (it.id === g.itemId ? { ...it, x, y } : it)) : prev));
     } else if (g.kind === 'resize') {
       const dx = (e.clientX - g.startX) / scale;
       const dy = (e.clientY - g.startY) / scale;
       const width = Math.max(MIN_ITEM_SIZE, g.startWidth + dx);
       const height = Math.max(MIN_ITEM_SIZE, g.startHeight + dy);
       setItems((prev) => (prev ? prev.map((it) => (it.id === g.itemId ? { ...it, width, height } : it)) : prev));
-    } else if (g.kind === 'connect') {
+    } else if (g.kind === 'connector-endpoint') {
       const world = screenToWorld(e.clientX, e.clientY);
       gesture.current = { ...g, x: world.x, y: world.y };
-      setConnectDraft({ fromItemId: g.fromItemId, x: world.x, y: world.y });
+      setEndpointDraft({ itemId: g.itemId, end: g.end, x: world.x, y: world.y });
     }
   }
 
@@ -519,23 +648,23 @@ export function CanvasBoardPage() {
     const g = gesture.current;
     gesture.current = null;
     if (!g || g.kind === 'pan') return;
-    if (g.kind === 'connect') {
-      setConnectDraft(null);
-      // Drop target: the topmost item (by z-index) whose box contains the
-      // release point, excluding the item the arrow started from — a
-      // connector to itself isn't meaningful and the API rejects it too.
+    if (g.kind === 'connector-endpoint') {
+      setEndpointDraft(null);
+      const connectorItem = items?.find((it) => it.id === g.itemId);
+      if (!connectorItem) return;
+      const meta = parseContent<ConnectorItemContent>(connectorItem.content, DEFAULT_CONNECTOR_CONTENT);
+      // Snap target: the topmost OTHER non-connector item whose box
+      // contains the release point (you can't attach an arrow to another
+      // arrow). No target = this endpoint is (or stays) freestanding.
       const target = (items ?? [])
-        .filter((it) => it.id !== g.fromItemId && rectContains(it, g.x, g.y))
+        .filter((it) => it.id !== g.itemId && it.type !== 'connector' && rectContains(it, g.x, g.y))
         .sort((a, b) => b.z_index - a.z_index)[0];
-      if (target) {
-        api
-          .createConnector(boardId, g.fromItemId, target.id)
-          .then((connector) => setConnectors((prev) => [...prev, connector]))
-          .catch(() => {
-            // Already connected, or some other conflict — nothing to
-            // recover here, the drag just doesn't produce a new arrow.
-          });
-      }
+      const nextMeta: ConnectorItemContent =
+        g.end === 'from'
+          ? { ...meta, fromItemId: target?.id ?? null, x1: g.x, y1: g.y }
+          : { ...meta, toItemId: target?.id ?? null, x2: g.x, y2: g.y };
+      setItems((prev) => (prev ? prev.map((it) => (it.id === g.itemId ? { ...it, content: JSON.stringify(nextMeta) } : it)) : prev));
+      api.updateBoardItem(g.itemId, { content: nextMeta });
       return;
     }
     const item = items?.find((it) => it.id === g.itemId);
@@ -551,7 +680,7 @@ export function CanvasBoardPage() {
 
   const nextZ = useCallback(() => (items && items.length > 0 ? Math.max(...items.map((it) => it.z_index)) + 1 : 0), [items]);
 
-  function viewportCenterWorld(): { x: number; y: number } {
+  function viewportCenterWorld(): Point {
     const rect = viewportRef.current?.getBoundingClientRect();
     if (!rect) return { x: 0, y: 0 };
     return screenToWorld(rect.left + rect.width / 2, rect.top + rect.height / 2);
@@ -584,6 +713,22 @@ export function CanvasBoardPage() {
     setItems((prev) => [...(prev ?? []), item]);
     setSelectedId(item.id);
     setEditingId(item.id);
+  }
+
+  async function createConnectorItem(style: 'arrow' | 'line') {
+    const center = viewportCenterWorld();
+    const half = DEFAULT_CONNECTOR_LENGTH / 2;
+    const content: ConnectorItemContent = { style, fromItemId: null, x1: center.x - half, y1: center.y, toItemId: null, x2: center.x + half, y2: center.y };
+    const item = await api.createBoardItem(boardId, {
+      type: 'connector',
+      x: center.x - half,
+      y: center.y,
+      width: DEFAULT_CONNECTOR_LENGTH,
+      height: 1,
+      content,
+    });
+    setItems((prev) => [...(prev ?? []), item]);
+    setSelectedId(item.id);
   }
 
   const uploadAt = useCallback(
@@ -654,49 +799,77 @@ export function CanvasBoardPage() {
     setEditingId(null);
   }
 
-  async function deleteItem(item: CanvasItem) {
-    setItems((prev) => (prev ? prev.filter((it) => it.id !== item.id) : prev));
-    // The API cascades this server-side (DELETE /api/items/:id also drops
-    // any connector touching it), but the client's already-loaded
-    // `connectors` list won't reflect that on its own — prune it here too
-    // so a dangling arrow doesn't linger until the next reload.
-    setConnectors((prev) => prev.filter((c) => c.from_item_id !== item.id && c.to_item_id !== item.id));
-    setSelectedId(null);
-    await api.deleteBoardItem(item.id);
+  function handleTitleFieldChange(item: CanvasItem, title: string) {
+    setItems((prev) => (prev ? prev.map((it) => (it.id === item.id ? { ...it, title } : it)) : prev));
   }
 
-  async function deleteConnector(connector: CanvasConnector) {
-    setConnectors((prev) => prev.filter((c) => c.id !== connector.id));
-    setSelectedConnectorId(null);
-    await api.deleteConnector(connector.id);
+  function stopTitleEdit(item: CanvasItem) {
+    setEditingTitleId(null);
+    const latest = items?.find((it) => it.id === item.id);
+    api.updateBoardItem(item.id, { title: latest?.title?.trim() || null });
+  }
+
+  async function deleteItem(item: CanvasItem) {
+    // A connector attached to the item being deleted doesn't disappear
+    // with it — it detaches, freezing at its last resolved position, so
+    // deleting a card doesn't silently destroy arrows you drew around it.
+    const itemsById = new Map((items ?? []).map((it) => [it.id, it]));
+    const detachPatches = (items ?? [])
+      .filter((it) => it.type === 'connector' && it.id !== item.id)
+      .map((connector) => {
+        const meta = parseContent<ConnectorItemContent>(connector.content, DEFAULT_CONNECTOR_CONTENT);
+        if (meta.fromItemId !== item.id && meta.toItemId !== item.id) return null;
+        const { p1, p2 } = connectorEndpoints(connector, itemsById);
+        const nextMeta: ConnectorItemContent = { ...meta };
+        if (meta.fromItemId === item.id) {
+          nextMeta.fromItemId = null;
+          nextMeta.x1 = p1.x;
+          nextMeta.y1 = p1.y;
+        }
+        if (meta.toItemId === item.id) {
+          nextMeta.toItemId = null;
+          nextMeta.x2 = p2.x;
+          nextMeta.y2 = p2.y;
+        }
+        return { id: connector.id, content: nextMeta };
+      })
+      .filter((p): p is { id: string; content: ConnectorItemContent } => p !== null);
+
+    setItems((prev) =>
+      prev
+        ? prev
+            .filter((it) => it.id !== item.id)
+            .map((it) => {
+              const patch = detachPatches.find((p) => p.id === it.id);
+              return patch ? { ...it, content: JSON.stringify(patch.content) } : it;
+            })
+        : prev
+    );
+    setSelectedId(null);
+    await api.deleteBoardItem(item.id);
+    await Promise.all(detachPatches.map((p) => api.updateBoardItem(p.id, { content: p.content })));
   }
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (editingId) return; // let the textarea's own key handling own this
+      if (editingId || editingTitleId) return; // let the input/textarea's own key handling own this
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
-      if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (selectedId) {
-          const item = items?.find((it) => it.id === selectedId);
-          if (item) deleteItem(item);
-        } else if (selectedConnectorId) {
-          const connector = connectors.find((c) => c.id === selectedConnectorId);
-          if (connector) deleteConnector(connector);
-        }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId) {
+        const item = items?.find((it) => it.id === selectedId);
+        if (item) deleteItem(item);
       } else if (e.key === 'Escape') {
         setSelectedId(null);
-        setSelectedConnectorId(null);
-        if (gesture.current?.kind === 'connect') {
+        if (gesture.current?.kind === 'connector-endpoint') {
           gesture.current = null;
-          setConnectDraft(null);
+          setEndpointDraft(null);
         }
       }
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId, selectedConnectorId, editingId, items, connectors]);
+  }, [selectedId, editingId, editingTitleId, items]);
 
   function selectItem(item: CanvasItem) {
     if (item.z_index < nextZ() - 1) {
@@ -707,12 +880,6 @@ export function CanvasBoardPage() {
       api.updateBoardItem(item.id, { z_index: z });
     }
     setSelectedId(item.id);
-    setSelectedConnectorId(null);
-  }
-
-  function selectConnector(connector: CanvasConnector) {
-    setSelectedConnectorId(connector.id);
-    setSelectedId(null);
   }
 
   // ---- Zoom controls ----
@@ -725,7 +892,7 @@ export function CanvasBoardPage() {
       const worldX = (cx - prevPan.x) / prevScale;
       const worldY = (cy - prevPan.y) / prevScale;
       const nextScale = clamp(prevScale * factor, MIN_SCALE, MAX_SCALE);
-      return { scale: nextScale, pan: { x: cx - worldX * nextScale, y: cy - worldY * nextScale } };
+      return { scale: nextScale, pan: clampPan({ x: cx - worldX * nextScale, y: cy - worldY * nextScale }) };
     });
   }
 
@@ -735,16 +902,18 @@ export function CanvasBoardPage() {
 
   function fitToContent() {
     if (!items || items.length === 0 || !viewportRef.current) return resetZoom();
-    const minX = Math.min(...items.map((it) => it.x));
-    const minY = Math.min(...items.map((it) => it.y));
-    const maxX = Math.max(...items.map((it) => it.x + it.width));
-    const maxY = Math.max(...items.map((it) => it.y + it.height));
+    const itemsById = new Map(items.map((it) => [it.id, it]));
+    const bounds = items.map((it) => itemWorldBounds(it, itemsById));
+    const minX = Math.min(...bounds.map((b) => b.x));
+    const minY = Math.min(...bounds.map((b) => b.y));
+    const maxX = Math.max(...bounds.map((b) => b.x + b.width));
+    const maxY = Math.max(...bounds.map((b) => b.y + b.height));
     const rect = viewportRef.current.getBoundingClientRect();
     const pad = 60;
     const nextScale = clamp(Math.min((rect.width - pad * 2) / (maxX - minX), (rect.height - pad * 2) / (maxY - minY)), MIN_SCALE, MAX_SCALE);
     setView({
       scale: nextScale,
-      pan: { x: rect.width / 2 - ((minX + maxX) / 2) * nextScale, y: rect.height / 2 - ((minY + maxY) / 2) * nextScale },
+      pan: clampPan({ x: rect.width / 2 - ((minX + maxX) / 2) * nextScale, y: rect.height / 2 - ((minY + maxY) / 2) * nextScale }),
     });
   }
 
@@ -761,16 +930,23 @@ export function CanvasBoardPage() {
   if (error) return <div className="empty-state">Couldn't load this board: {error}</div>;
   if (!board || items === null) return <div className="empty-state">Loading…</div>;
 
+  const itemsById = new Map(items.map((it) => [it.id, it]));
+  const connectorItems = items.filter((it) => it.type === 'connector');
+  const boxItems = items.filter((it) => it.type !== 'connector');
+  const selectedConnector = selectedId ? connectorItems.find((it) => it.id === selectedId) : undefined;
+
   // See the long comment on the <svg> below for why this exists at all —
   // short version: the connector layer must be sized to real content
-  // bounds, not 0 or some fixed number, on an unbounded canvas.
-  const connectorPointsX = items.flatMap((it) => [it.x, it.x + it.width]);
-  const connectorPointsY = items.flatMap((it) => [it.y, it.y + it.height]);
-  if (connectDraft) {
-    connectorPointsX.push(connectDraft.x);
-    connectorPointsY.push(connectDraft.y);
-  }
-  const CONNECTOR_BOUNDS_PAD = 20; // room for stroke width + arrowhead at the extremes
+  // bounds, not 0 or some fixed number.
+  const connectorPointsX: number[] = [];
+  const connectorPointsY: number[] = [];
+  connectorItems.forEach((ci) => {
+    const live = endpointDraft && endpointDraft.itemId === ci.id ? endpointDraft : undefined;
+    const { p1, p2 } = connectorEndpoints(ci, itemsById, live);
+    connectorPointsX.push(p1.x, p2.x);
+    connectorPointsY.push(p1.y, p2.y);
+  });
+  const CONNECTOR_BOUNDS_PAD = 20; // room for stroke width + arrowhead + endpoint handles at the extremes
   const connectorBounds =
     connectorPointsX.length > 0
       ? {
@@ -800,6 +976,12 @@ export function CanvasBoardPage() {
           <button type="button" className="btn btn--ghost" onClick={createNoteItem}>
             + Note
           </button>
+          <button type="button" className="btn btn--ghost" onClick={() => createConnectorItem('arrow')} title="Add a freestanding arrow">
+            + Arrow
+          </button>
+          <button type="button" className="btn btn--ghost" onClick={() => createConnectorItem('line')} title="Add a divider line">
+            + Divider
+          </button>
           <div className="canvas-board__zoom-group">
             <button type="button" className="canvas-board__zoom-btn" onClick={() => zoomBy(0.8)} title="Zoom out">
               −
@@ -811,7 +993,7 @@ export function CanvasBoardPage() {
               +
             </button>
           </div>
-          <button type="button" className="btn btn--ghost" onClick={fitToContent} disabled={items.length === 0}>
+          <button type="button" className="btn btn--ghost" onClick={fitToContent} disabled={items.length === 0} title="Fit all content in view">
             Fit
           </button>
         </div>
@@ -824,6 +1006,7 @@ export function CanvasBoardPage() {
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
+        onDoubleClick={() => fitToContent()}
         onDragOver={(e) => {
           e.preventDefault();
           setIsDraggingOver(true);
@@ -836,82 +1019,73 @@ export function CanvasBoardPage() {
           style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})` }}
         >
           {/* Sized to the actual bounding box of everything it needs to
-              draw (items + the in-progress draft line), not a fixed or
-              zero size: a zero-size SVG with overflow:visible looks like
-              it should paint its overflowing children anywhere, and does
-              in isolation, but Chromium clips it to nothing once its
-              ancestor (.canvas-board__world, which has will-change:
-              transform for the pan/zoom GPU layer) gets promoted to its
-              own compositor layer — a real quirk hit while building this,
-              not a hypothetical. A fixed large size would dodge that too,
-              but this is a genuinely unbounded canvas, so anything fixed
-              is just a smaller version of the same bug waiting to happen
-              once a board gets big enough. The inner <g> translates by
-              -bounds so every line/marker below can keep using plain
-              world-space coordinates, same as items' left/top. Sits first
-              among the world div's children (and every item has z-index
-              >= 0) so arrows stay behind cards without an explicit
-              z-index dance. */}
+              draw (connector endpoints + the in-progress drag), not a
+              fixed or zero size: a zero-size SVG with overflow:visible
+              looks like it should paint its overflowing children
+              anywhere, and does in isolation, but Chromium clips it to
+              nothing once its ancestor (.canvas-board__world, which has
+              will-change: transform for the pan/zoom GPU layer) gets
+              promoted to its own compositor layer — a real quirk hit
+              while building this, not a hypothetical. A fixed large size
+              would dodge that too, but this is a genuinely large canvas,
+              so anything fixed is just a smaller version of the same bug
+              waiting to happen. The inner <g> translates by -bounds so
+              every line/marker below can keep using plain world-space
+              coordinates, same as items' left/top. Sits first among the
+              world div's children so connector lines stay behind every
+              card regardless of the connector's own z-index — connectors
+              are meant to read as background relationships/dividers, not
+              things that cover up cards. */}
           <svg
             className="canvas-board__connectors"
             style={{ position: 'absolute', left: connectorBounds.minX, top: connectorBounds.minY, width: connectorBounds.maxX - connectorBounds.minX, height: connectorBounds.maxY - connectorBounds.minY, overflow: 'visible' }}
           >
             <g transform={`translate(${-connectorBounds.minX}, ${-connectorBounds.minY})`}>
-            <defs>
-              <marker id="canvas-arrowhead" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-                <path d="M0,0 L10,5 L0,10 z" className="canvas-connector__arrowhead" />
-              </marker>
-              <marker id="canvas-arrowhead-selected" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-                <path d="M0,0 L10,5 L0,10 z" className="canvas-connector__arrowhead canvas-connector__arrowhead--selected" />
-              </marker>
-            </defs>
-            {connectors.map((connector) => {
-              const from = items.find((it) => it.id === connector.from_item_id);
-              const to = items.find((it) => it.id === connector.to_item_id);
-              if (!from || !to) return null; // stale until the next load — deleteItem prunes these client-side
-              const toCenter = { x: to.x + to.width / 2, y: to.y + to.height / 2 };
-              const fromCenter = { x: from.x + from.width / 2, y: from.y + from.height / 2 };
-              const p1 = edgePointToward(from, toCenter.x, toCenter.y);
-              const p2 = edgePointToward(to, fromCenter.x, fromCenter.y);
-              const isSelected = selectedConnectorId === connector.id;
-              return (
-                <g key={connector.id}>
-                  <line
-                    x1={p1.x}
-                    y1={p1.y}
-                    x2={p2.x}
-                    y2={p2.y}
-                    className="canvas-connector__hit"
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onClick={() => selectConnector(connector)}
-                  />
-                  <line
-                    x1={p1.x}
-                    y1={p1.y}
-                    x2={p2.x}
-                    y2={p2.y}
-                    className={`canvas-connector__line${isSelected ? ' is-selected' : ''}`}
-                    markerEnd={`url(#canvas-arrowhead${isSelected ? '-selected' : ''})`}
-                  />
-                </g>
-              );
-            })}
-            {connectDraft &&
-              (() => {
-                const from = items.find((it) => it.id === connectDraft.fromItemId);
-                if (!from) return null;
-                const p1 = edgePointToward(from, connectDraft.x, connectDraft.y);
-                return <line x1={p1.x} y1={p1.y} x2={connectDraft.x} y2={connectDraft.y} className="canvas-connector__draft" />;
-              })()}
+              <defs>
+                <marker id="canvas-arrowhead" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M0,0 L10,5 L0,10 z" className="canvas-connector__arrowhead" />
+                </marker>
+                <marker id="canvas-arrowhead-selected" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M0,0 L10,5 L0,10 z" className="canvas-connector__arrowhead canvas-connector__arrowhead--selected" />
+                </marker>
+              </defs>
+              {connectorItems.map((connectorItem) => {
+                const meta = parseContent<ConnectorItemContent>(connectorItem.content, DEFAULT_CONNECTOR_CONTENT);
+                const live = endpointDraft && endpointDraft.itemId === connectorItem.id ? endpointDraft : undefined;
+                const { p1, p2 } = connectorEndpoints(connectorItem, itemsById, live);
+                const isSelected = selectedId === connectorItem.id;
+                return (
+                  <g key={connectorItem.id}>
+                    <line
+                      x1={p1.x}
+                      y1={p1.y}
+                      x2={p2.x}
+                      y2={p2.y}
+                      className="canvas-connector__hit"
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={() => selectItem(connectorItem)}
+                    />
+                    <line
+                      x1={p1.x}
+                      y1={p1.y}
+                      x2={p2.x}
+                      y2={p2.y}
+                      className={`canvas-connector__line canvas-connector__line--${meta.style}${isSelected ? ' is-selected' : ''}`}
+                      markerEnd={meta.style === 'arrow' ? `url(#canvas-arrowhead${isSelected ? '-selected' : ''})` : undefined}
+                    />
+                  </g>
+                );
+              })}
             </g>
           </svg>
 
-          {items.map((item) => (
+          {boxItems.map((item) => (
             <CanvasItemView
               key={item.id}
               item={item}
               selected={selectedId === item.id}
               editing={editingId === item.id}
+              editingTitle={editingTitleId === item.id}
               onSelect={() => selectItem(item)}
               onDragStart={(e) => handleItemDragStart(item, e)}
               onResizeStart={(e) => handleItemResizeStart(item, e)}
@@ -919,40 +1093,49 @@ export function CanvasBoardPage() {
               onContentChange={(text) => handleContentChange(item, text)}
               onStopEdit={stopEdit}
               onDelete={() => deleteItem(item)}
-              onConnectorHandleDown={(e) => handleConnectorHandleDown(item, e)}
+              onStartTitleEdit={() => setEditingTitleId(item.id)}
+              onTitleChange={(title) => handleTitleFieldChange(item, title)}
+              onStopTitleEdit={() => stopTitleEdit(item)}
             />
           ))}
 
-          {selectedConnectorId &&
+          {selectedConnector &&
             (() => {
-              const connector = connectors.find((c) => c.id === selectedConnectorId);
-              const from = connector && items.find((it) => it.id === connector.from_item_id);
-              const to = connector && items.find((it) => it.id === connector.to_item_id);
-              if (!connector || !from || !to) return null;
-              const mid = {
-                x: (edgePointToward(from, to.x + to.width / 2, to.y + to.height / 2).x + edgePointToward(to, from.x + from.width / 2, from.y + from.height / 2).x) / 2,
-                y: (edgePointToward(from, to.x + to.width / 2, to.y + to.height / 2).y + edgePointToward(to, from.x + from.width / 2, from.y + from.height / 2).y) / 2,
-              };
+              const live = endpointDraft && endpointDraft.itemId === selectedConnector.id ? endpointDraft : undefined;
+              const { p1, p2 } = connectorEndpoints(selectedConnector, itemsById, live);
+              const mid = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
               return (
-                <button
-                  type="button"
-                  className="canvas-connector__delete"
-                  style={{ left: mid.x, top: mid.y }}
-                  title="Delete connector"
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onClick={() => deleteConnector(connector)}
-                >
-                  ✕
-                </button>
+                <>
+                  <div
+                    className="canvas-connector__endpoint-handle"
+                    style={{ left: p1.x, top: p1.y }}
+                    onPointerDown={(e) => handleConnectorEndpointDown(selectedConnector, 'from', p1, e)}
+                  />
+                  <div
+                    className="canvas-connector__endpoint-handle"
+                    style={{ left: p2.x, top: p2.y }}
+                    onPointerDown={(e) => handleConnectorEndpointDown(selectedConnector, 'to', p2, e)}
+                  />
+                  <button
+                    type="button"
+                    className="canvas-connector__delete"
+                    style={{ left: mid.x, top: mid.y }}
+                    title="Delete"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={() => deleteItem(selectedConnector)}
+                  >
+                    ✕
+                  </button>
+                </>
               );
             })()}
         </div>
 
         {items.length === 0 && !isDraggingOver && (
           <div className="canvas-board__empty-hint">
-            Drag photos or files in, paste a screenshot, or use + Text / + Note above to get started.
+            Drag photos or files in, paste a screenshot, or use the toolbar above to get started.
             <br />
-            Scroll or middle-click-drag (or drag empty space) to pan, Ctrl/Cmd+scroll to zoom.
+            Scroll or middle-click-drag (or drag empty space) to pan, Ctrl/Cmd+scroll to zoom, double-click to fit.
           </div>
         )}
         {isDraggingOver && <div className="canvas-board__drop-hint">Drop to add</div>}

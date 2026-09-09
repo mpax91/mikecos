@@ -1846,6 +1846,7 @@ app.post('/api/boards/:id/items', async (c) => {
     width: number;
     height: number;
     content: Record<string, unknown>;
+    title?: string | null;
   }>();
   if (!body.type || typeof body.x !== 'number' || typeof body.y !== 'number' || typeof body.width !== 'number' || typeof body.height !== 'number') {
     return c.json({ error: 'type, x, y, width, and height are required' }, 400);
@@ -1855,10 +1856,10 @@ app.post('/api/boards/:id/items', async (c) => {
   const id = uid();
   const ts = now();
   await c.env.DB.prepare(
-    `INSERT INTO canvas_items (id, board_id, type, x, y, width, height, z_index, content, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO canvas_items (id, board_id, type, x, y, width, height, z_index, content, title, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
-    .bind(id, boardId, body.type, body.x, body.y, body.width, body.height, (maxZ?.m ?? -1) + 1, JSON.stringify(body.content ?? {}), ts, ts)
+    .bind(id, boardId, body.type, body.x, body.y, body.width, body.height, (maxZ?.m ?? -1) + 1, JSON.stringify(body.content ?? {}), body.title?.trim() || null, ts, ts)
     .run();
   await touchBoard(c.env.DB, boardId);
 
@@ -1876,7 +1877,7 @@ app.patch('/api/items/:id', async (c) => {
   const existing = await c.env.DB.prepare('SELECT * FROM canvas_items WHERE id = ?').bind(id).first<CanvasItem>();
   if (!existing) return c.json({ error: 'not found' }, 404);
 
-  const body = await c.req.json<Partial<{ x: number; y: number; width: number; height: number; z_index: number; content: Record<string, unknown> }>>();
+  const body = await c.req.json<Partial<{ x: number; y: number; width: number; height: number; z_index: number; content: Record<string, unknown>; title: string | null }>>();
   const fields: string[] = [];
   const values: unknown[] = [];
   for (const key of ['x', 'y', 'width', 'height', 'z_index'] as const) {
@@ -1888,6 +1889,10 @@ app.patch('/api/items/:id', async (c) => {
   if (body.content !== undefined) {
     fields.push('content = ?');
     values.push(JSON.stringify(body.content));
+  }
+  if (body.title !== undefined) {
+    fields.push('title = ?');
+    values.push(body.title?.trim() || null);
   }
   if (fields.length > 0) {
     fields.push('updated_at = ?');

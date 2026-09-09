@@ -252,7 +252,10 @@ export interface CalendarFeedsResponse {
 
 // ---- Canvas boards (infinite-canvas pinboard) ----
 
-export type CanvasItemType = 'image' | 'text' | 'note';
+// 'connector' is a freestanding line/arrow object placed via the toolbar
+// (+ Arrow / + Divider) — just another item, not a relationship stored
+// between two other items. See ConnectorItemContent below.
+export type CanvasItemType = 'image' | 'text' | 'note' | 'connector';
 
 export interface CanvasBoard {
   id: string;
@@ -282,13 +285,31 @@ export interface NoteItemContent {
   color: string;
 }
 
+/** A freestanding line or arrow. Each endpoint is EITHER attached to
+ * another item (by id — its live position is recomputed from that item's
+ * current box every render, so the line "follows" a dragged card
+ * automatically) OR freestanding (an explicit world-space point, stored
+ * here, that only moves when you drag that endpoint yourself). Nothing
+ * requires an endpoint to be attached at all — "arrows on their own" was
+ * the point, not every card needing to originate one. */
+export interface ConnectorItemContent {
+  style: 'arrow' | 'line';
+  fromItemId: string | null;
+  x1: number;
+  y1: number;
+  toItemId: string | null;
+  x2: number;
+  y2: number;
+}
+
 /** One free-floating item on a board — x/y/width/height are board-space
  * pixels at 1:1 zoom (unbounded, can be negative), not screen pixels; the
  * canvas applies its own pan/zoom transform on top. `content` is a raw JSON
  * string, same as Entity.content elsewhere in this app — parse it per
- * `type` (see ImageItemContent/TextItemContent/NoteItemContent) at the
- * point of use rather than eagerly, since the union isn't discriminated at
- * the type level. */
+ * `type` (see ImageItemContent/TextItemContent/NoteItemContent/
+ * ConnectorItemContent) at the point of use rather than eagerly, since the
+ * union isn't discriminated at the type level. `title` is a small optional
+ * caption shown above the item — organizational only, never required. */
 export interface CanvasItem {
   id: string;
   board_id: string;
@@ -299,14 +320,16 @@ export interface CanvasItem {
   height: number;
   z_index: number;
   content: string;
+  title: string | null;
   created_at: string;
   updated_at: string;
 }
 
-/** An arrow between two items. No stored anchor/side — the board computes
- * the actual line endpoints from each item's current box at render time
- * (nearest-edge-midpoint), which is what makes it follow a dragged card
- * automatically. */
+/** Deprecated: the old item-to-item "drag from a card's edge handle"
+ * connector model. No longer created or read by the UI (see
+ * ConnectorItemContent for what replaced it — a freestanding item type)
+ * but the type and its API/table are left in place rather than ripped
+ * out, since removing a D1 table is never safe to do casually. */
 export interface CanvasConnector {
   id: string;
   board_id: string;

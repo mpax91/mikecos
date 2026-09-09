@@ -4538,47 +4538,63 @@ a {
   touch-action: none;
 }
 
-/* Small dots on a selected item's four edges — drag from one to another
- * item to draw a connector arrow. Kept subtle (only shown on selection,
- * same as the delete/resize handles) so an unselected board stays clean. */
-.canvas-item__connector-handle {
+/* A small optional caption floating above an item's box — organizational
+ * only, never required. Positioned via a negative top offset inside the
+ * item's own already-`position: absolute` box so it never consumes layout
+ * space or shifts the item itself. */
+.canvas-item__title-label {
   position: absolute;
-  width: 10px;
-  height: 10px;
+  top: -22px;
+  left: 0;
+  max-width: 100%;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+.canvas-item__title-input {
+  position: absolute;
+  top: -26px;
+  left: 0;
+  width: 100%;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-ink);
+  background: var(--color-card-bg);
+  border: var(--border-hairline);
+  border-radius: 4px;
+  padding: 2px 6px;
+  z-index: 2;
+}
+
+/* A draggable circular handle on a selected connector's endpoint — drag
+ * onto another item to snap that end to it, or onto empty canvas to
+ * un-snap. Visually similar to the old per-item connector handles it
+ * replaced, but there are only ever two of them (one per endpoint of the
+ * selected connector), not four per item. */
+.canvas-connector__endpoint-handle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  margin-top: -6px;
   border-radius: 50%;
   background: var(--color-card-bg);
-  border: 2px solid var(--color-accent);
+  border: 2px solid var(--color-accent-secondary);
   cursor: crosshair;
   touch-action: none;
-  z-index: 1;
+  /* Above the delete button (z-index: 2) — on a short connector the
+     midpoint delete button can land right on top of an endpoint, and the
+     endpoint needs to stay draggable in that case. */
+  z-index: 3;
 }
 
-.canvas-item__connector-handle:hover {
-  background: var(--color-accent);
-}
-
-.canvas-item__connector-handle--n {
-  top: -6px;
-  left: 50%;
-  transform: translateX(-50%);
-}
-
-.canvas-item__connector-handle--s {
-  bottom: -6px;
-  left: 50%;
-  transform: translateX(-50%);
-}
-
-.canvas-item__connector-handle--e {
-  right: -6px;
-  top: 50%;
-  transform: translateY(-50%);
-}
-
-.canvas-item__connector-handle--w {
-  left: -6px;
-  top: 50%;
-  transform: translateY(-50%);
+.canvas-connector__endpoint-handle:hover {
+  background: var(--color-accent-secondary);
 }
 
 .canvas-board__connectors {
@@ -4605,20 +4621,23 @@ a {
   stroke-width: 2.5;
 }
 
+/* Dividers read as a background separator, not a relationship — thinner
+ * and dashed so they're visually distinct from arrows at a glance. */
+.canvas-connector__line--line {
+  stroke-dasharray: 6 5;
+  stroke-width: 1.5;
+}
+
+.canvas-connector__line--line.is-selected {
+  stroke-width: 2;
+}
+
 .canvas-connector__arrowhead {
   fill: var(--color-muted);
 }
 
 .canvas-connector__arrowhead--selected {
   fill: var(--color-accent-secondary);
-}
-
-.canvas-connector__draft {
-  stroke: var(--color-accent);
-  stroke-width: 2;
-  stroke-dasharray: 5 4;
-  fill: none;
-  pointer-events: none;
 }
 
 .canvas-connector__delete {

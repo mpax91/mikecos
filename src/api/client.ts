@@ -1,4 +1,4 @@
-import type { CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, CompletionsResponse, Entity, EntityDetail, EntityType, MeetingsRangeResponse, MeetingsResponse, MonthResponse, ProjectListItem, RecurringTaskDefinition, StatsResponse, TodayResponse, WeatherResponse, WeekResponse } from './types';
+import type { CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, CompletionsResponse, ConnectorItemContent, Entity, EntityDetail, EntityType, MeetingsRangeResponse, MeetingsResponse, MonthResponse, ProjectListItem, RecurringTaskDefinition, StatsResponse, TodayResponse, WeatherResponse, WeekResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -297,13 +297,13 @@ export const api = {
 
   deleteBoard: (id: string) => request<{ ok: true }>(`/api/boards/${id}`, { method: 'DELETE' }),
 
-  createBoardItem: (boardId: string, item: { type: CanvasItemType; x: number; y: number; width: number; height: number; content: Record<string, unknown> }) =>
+  createBoardItem: (boardId: string, item: { type: CanvasItemType; x: number; y: number; width: number; height: number; content: Record<string, unknown> | ConnectorItemContent; title?: string | null }) =>
     request<CanvasItem>(`/api/boards/${boardId}/items`, {
       method: 'POST',
       body: JSON.stringify(item),
     }),
 
-  updateBoardItem: (id: string, patch: Partial<{ x: number; y: number; width: number; height: number; z_index: number; content: Record<string, unknown> }>) =>
+  updateBoardItem: (id: string, patch: Partial<{ x: number; y: number; width: number; height: number; z_index: number; content: Record<string, unknown> | ConnectorItemContent; title: string | null }>) =>
     request<CanvasItem>(`/api/items/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(patch),

@@ -48,7 +48,11 @@ export interface LinkMeta {
   preview_domain?: string | null;
 }
 
-export type CanvasItemType = 'image' | 'text' | 'note';
+// 'connector' is a freestanding line/arrow object (added migrations/0014 —
+// see CanvasItemView / the connector-content comment in CanvasBoardPage.tsx
+// on the frontend for the shape of its `content`), not a relationship
+// between two other items stored elsewhere — it's just another item.
+export type CanvasItemType = 'image' | 'text' | 'note' | 'connector';
 
 export interface CanvasBoard {
   id: string;
@@ -70,6 +74,7 @@ export interface CanvasItem {
   height: number;
   z_index: number;
   content: string;
+  title: string | null;
   created_at: string;
   updated_at: string;
 }
