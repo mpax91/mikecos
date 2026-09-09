@@ -1507,7 +1507,7 @@ a {
 }
 
 .task-row:hover .task-row__kebab,
-.task-row .kebab-menu:has(.kebab-menu__dropdown) {
+.task-row .kebab-menu[data-open] {
   opacity: 1;
 }
 
