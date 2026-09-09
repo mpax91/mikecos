@@ -1,4 +1,4 @@
-import type { CalendarFeedsResponse, CalendarFeedStatus, CompletionsResponse, Entity, EntityDetail, EntityType, MeetingsRangeResponse, MeetingsResponse, MonthResponse, ProjectListItem, RecurringTaskDefinition, StatsResponse, TodayResponse, WeatherResponse, WeekResponse } from './types';
+import type { CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasItem, CanvasItemType, CompletionsResponse, Entity, EntityDetail, EntityType, MeetingsRangeResponse, MeetingsResponse, MonthResponse, ProjectListItem, RecurringTaskDefinition, StatsResponse, TodayResponse, WeatherResponse, WeekResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -276,4 +276,38 @@ export const api = {
     }),
 
   deleteCalendarFeed: (id: string) => request<{ ok: true }>(`/api/calendars/${id}`, { method: 'DELETE' }),
+
+  // ---- Canvas boards (infinite-canvas pinboard) ----
+
+  listBoards: () => request<CanvasBoardListItem[]>('/api/boards'),
+
+  createBoard: (title?: string) =>
+    request<CanvasBoard>('/api/boards', {
+      method: 'POST',
+      body: JSON.stringify({ title }),
+    }),
+
+  getBoard: (id: string) => request<CanvasBoardDetail>(`/api/boards/${id}`),
+
+  renameBoard: (id: string, title: string) =>
+    request<CanvasBoard>(`/api/boards/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ title }),
+    }),
+
+  deleteBoard: (id: string) => request<{ ok: true }>(`/api/boards/${id}`, { method: 'DELETE' }),
+
+  createBoardItem: (boardId: string, item: { type: CanvasItemType; x: number; y: number; width: number; height: number; content: Record<string, unknown> }) =>
+    request<CanvasItem>(`/api/boards/${boardId}/items`, {
+      method: 'POST',
+      body: JSON.stringify(item),
+    }),
+
+  updateBoardItem: (id: string, patch: Partial<{ x: number; y: number; width: number; height: number; z_index: number; content: Record<string, unknown> }>) =>
+    request<CanvasItem>(`/api/items/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }),
+
+  deleteBoardItem: (id: string) => request<{ ok: true }>(`/api/items/${id}`, { method: 'DELETE' }),
 };

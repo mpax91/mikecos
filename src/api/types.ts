@@ -250,6 +250,64 @@ export interface CalendarFeedsResponse {
   calendars: CalendarFeedStatus[];
 }
 
+// ---- Canvas boards (infinite-canvas pinboard) ----
+
+export type CanvasItemType = 'image' | 'text' | 'note';
+
+export interface CanvasBoard {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** A board as returned by the boards list — adds a live item count for the
+ * card, computed server-side rather than stored. */
+export interface CanvasBoardListItem extends CanvasBoard {
+  item_count: number;
+}
+
+export interface ImageItemContent {
+  r2_key: string;
+  mime_type: string;
+  filename: string;
+}
+
+export interface TextItemContent {
+  text: string;
+}
+
+export interface NoteItemContent {
+  text: string;
+  color: string;
+}
+
+/** One free-floating item on a board — x/y/width/height are board-space
+ * pixels at 1:1 zoom (unbounded, can be negative), not screen pixels; the
+ * canvas applies its own pan/zoom transform on top. `content` is a raw JSON
+ * string, same as Entity.content elsewhere in this app — parse it per
+ * `type` (see ImageItemContent/TextItemContent/NoteItemContent) at the
+ * point of use rather than eagerly, since the union isn't discriminated at
+ * the type level. */
+export interface CanvasItem {
+  id: string;
+  board_id: string;
+  type: CanvasItemType;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  z_index: number;
+  content: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CanvasBoardDetail {
+  board: CanvasBoard;
+  items: CanvasItem[];
+}
+
 /** A recurring task definition managed on the Settings screen — describes
  * the repeating chore itself (title, project, RRULE, anchor date); the
  * actual task instances that show up on Today/Week/Month are ordinary

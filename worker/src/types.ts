@@ -48,6 +48,32 @@ export interface LinkMeta {
   preview_domain?: string | null;
 }
 
+export type CanvasItemType = 'image' | 'text' | 'note';
+
+export interface CanvasBoard {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// `content` is stored as a JSON TEXT column (see migrations/0012_canvas_boards.sql
+// for the per-type shape) — kept as a raw string here, same as Entity.content,
+// and parsed/typed only where a handler actually needs to look inside it.
+export interface CanvasItem {
+  id: string;
+  board_id: string;
+  type: CanvasItemType;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  z_index: number;
+  content: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Env {
   DB: D1Database;
   FILES: R2Bucket;

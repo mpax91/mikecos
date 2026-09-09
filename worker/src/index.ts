@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import type { Env, Entity } from './types';
+import type { CanvasBoard, CanvasItem, CanvasItemType, Env, Entity } from './types';
 import { calendarIdFromIcsUrl, meetingsForDate, meetingsForRange } from './ics';
 import { describeRrule, isValidRrule, nextDueOccurrenceDate, type RecurringTaskDefinition } from './recurring';
 
@@ -1743,6 +1743,180 @@ app.get('/api/stats/completions', async (c) => {
   const rows = results ?? [];
   const hasMore = rows.length > limit;
   return c.json({ completions: rows.slice(0, limit), has_more: hasMore });
+});
+
+// ---- Canvas boards (infinite-canvas pinboard feature) ----
+//
+// A board is a lightweight container; the real content is its items (see
+// migrations/0012_canvas_boards.sql for the schema and per-type `content`
+// shapes). Image items reuse the existing R2-backed /api/upload endpoint
+// (called with no parent_id, the same "inline attachment" mode a note's
+// editor already uses) rather than a bespoke upload path here.
+
+// GET /api/boards — every board, most-recently-active first (updated_at
+// bumps on any item add/move/edit/delete, not just a title change — see
+// touchBoard below), plus each board's own item_count for the list view's
+// card (a plain COUNT rather than a stored counter, at this app's scale).
+app.get('/api/boards', async (c) => {
+  const { results } = await c.env.DB.prepare(
+    `SELECT b.*, (SELECT COUNT(*) FROM canvas_items i WHERE i.board_id = b.id) as item_count
+     FROM canvas_boards b ORDER BY b.updated_at DESC`
+  ).all<CanvasBoard & { item_count: number }>();
+  return c.json(results ?? []);
+});
+
+app.post('/api/boards', async (c) => {
+  const body = await c.req.json<{ title?: string }>();
+  const id = uid();
+  const ts = now();
+  await c.env.DB.prepare(`INSERT INTO canvas_boards (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)`)
+    .bind(id, body.title?.trim() || 'Untitled Board', ts, ts)
+    .run();
+  const board = await c.env.DB.prepare('SELECT * FROM canvas_boards WHERE id = ?').bind(id).first<CanvasBoard>();
+  return c.json(board, 201);
+});
+
+app.get('/api/boards/:id', async (c) => {
+  const id = c.req.param('id');
+  const board = await c.env.DB.prepare('SELECT * FROM canvas_boards WHERE id = ?').bind(id).first<CanvasBoard>();
+  if (!board) return c.json({ error: 'not found' }, 404);
+  const { results } = await c.env.DB.prepare('SELECT * FROM canvas_items WHERE board_id = ? ORDER BY z_index ASC').bind(id).all<CanvasItem>();
+  return c.json({ board, items: results ?? [] });
+});
+
+app.patch('/api/boards/:id', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json<{ title?: string }>();
+  const existing = await c.env.DB.prepare('SELECT id FROM canvas_boards WHERE id = ?').bind(id).first();
+  if (!existing) return c.json({ error: 'not found' }, 404);
+  if (body.title !== undefined) {
+    await c.env.DB.prepare('UPDATE canvas_boards SET title = ?, updated_at = ? WHERE id = ?').bind(body.title.trim() || 'Untitled Board', now(), id).run();
+  }
+  const board = await c.env.DB.prepare('SELECT * FROM canvas_boards WHERE id = ?').bind(id).first<CanvasBoard>();
+  return c.json(board);
+});
+
+// DELETE /api/boards/:id — removes the board and every item row on it.
+// Image items' underlying R2 objects are deleted too (best-effort, same
+// pattern as DELETE /api/entities/:id's file cleanup) so a deleted board
+// doesn't leave orphaned uploads behind.
+app.delete('/api/boards/:id', async (c) => {
+  const id = c.req.param('id');
+  const existing = await c.env.DB.prepare('SELECT id FROM canvas_boards WHERE id = ?').bind(id).first();
+  if (!existing) return c.json({ error: 'not found' }, 404);
+
+  const { results: items } = await c.env.DB.prepare(`SELECT * FROM canvas_items WHERE board_id = ? AND type = 'image'`).bind(id).all<CanvasItem>();
+  await Promise.all(
+    (items ?? []).map(async (item) => {
+      try {
+        const { r2_key } = JSON.parse(item.content) as { r2_key?: string };
+        if (r2_key) await c.env.FILES.delete(r2_key);
+      } catch {
+        // malformed content JSON — nothing to clean up, not worth failing the whole delete over
+      }
+    })
+  );
+
+  await c.env.DB.prepare('DELETE FROM canvas_items WHERE board_id = ?').bind(id).run();
+  await c.env.DB.prepare('DELETE FROM canvas_boards WHERE id = ?').bind(id).run();
+  return c.json({ ok: true });
+});
+
+async function touchBoard(db: D1Database, boardId: string) {
+  await db.prepare('UPDATE canvas_boards SET updated_at = ? WHERE id = ?').bind(now(), boardId).run();
+}
+
+// POST /api/boards/:id/items — create one item at a given position. x/y/
+// width/height are caller-supplied (the canvas computes them client-side
+// from the drop point / default size) rather than derived server-side,
+// since placement is inherently a UI concern here. z_index defaults to
+// one past the board's current highest, so a freshly created item always
+// starts on top.
+app.post('/api/boards/:id/items', async (c) => {
+  const boardId = c.req.param('id');
+  const board = await c.env.DB.prepare('SELECT id FROM canvas_boards WHERE id = ?').bind(boardId).first();
+  if (!board) return c.json({ error: 'board not found' }, 404);
+
+  const body = await c.req.json<{
+    type: CanvasItemType;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    content: Record<string, unknown>;
+  }>();
+  if (!body.type || typeof body.x !== 'number' || typeof body.y !== 'number' || typeof body.width !== 'number' || typeof body.height !== 'number') {
+    return c.json({ error: 'type, x, y, width, and height are required' }, 400);
+  }
+
+  const maxZ = await c.env.DB.prepare('SELECT COALESCE(MAX(z_index), -1) as m FROM canvas_items WHERE board_id = ?').bind(boardId).first<{ m: number }>();
+  const id = uid();
+  const ts = now();
+  await c.env.DB.prepare(
+    `INSERT INTO canvas_items (id, board_id, type, x, y, width, height, z_index, content, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  )
+    .bind(id, boardId, body.type, body.x, body.y, body.width, body.height, (maxZ?.m ?? -1) + 1, JSON.stringify(body.content ?? {}), ts, ts)
+    .run();
+  await touchBoard(c.env.DB, boardId);
+
+  const item = await c.env.DB.prepare('SELECT * FROM canvas_items WHERE id = ?').bind(id).first<CanvasItem>();
+  return c.json(item, 201);
+});
+
+// PATCH /api/items/:id — move (x/y), resize (width/height), restack
+// (z_index — "bring to front" sends max(existing)+1, computed client-side
+// from the board's already-loaded items), or edit (content, e.g. a text/
+// note item's typed text). Only the fields present in the body are
+// touched, same partial-update convention as PATCH /api/entities/:id.
+app.patch('/api/items/:id', async (c) => {
+  const id = c.req.param('id');
+  const existing = await c.env.DB.prepare('SELECT * FROM canvas_items WHERE id = ?').bind(id).first<CanvasItem>();
+  if (!existing) return c.json({ error: 'not found' }, 404);
+
+  const body = await c.req.json<Partial<{ x: number; y: number; width: number; height: number; z_index: number; content: Record<string, unknown> }>>();
+  const fields: string[] = [];
+  const values: unknown[] = [];
+  for (const key of ['x', 'y', 'width', 'height', 'z_index'] as const) {
+    if (body[key] !== undefined) {
+      fields.push(`${key} = ?`);
+      values.push(body[key]);
+    }
+  }
+  if (body.content !== undefined) {
+    fields.push('content = ?');
+    values.push(JSON.stringify(body.content));
+  }
+  if (fields.length > 0) {
+    fields.push('updated_at = ?');
+    values.push(now());
+    await c.env.DB.prepare(`UPDATE canvas_items SET ${fields.join(', ')} WHERE id = ?`).bind(...values, id).run();
+    await touchBoard(c.env.DB, existing.board_id);
+  }
+
+  const item = await c.env.DB.prepare('SELECT * FROM canvas_items WHERE id = ?').bind(id).first<CanvasItem>();
+  return c.json(item);
+});
+
+// DELETE /api/items/:id — also purges the R2 object for an image item,
+// same reasoning as DELETE /api/boards/:id above.
+app.delete('/api/items/:id', async (c) => {
+  const id = c.req.param('id');
+  const existing = await c.env.DB.prepare('SELECT * FROM canvas_items WHERE id = ?').bind(id).first<CanvasItem>();
+  if (!existing) return c.json({ error: 'not found' }, 404);
+
+  if (existing.type === 'image') {
+    try {
+      const { r2_key } = JSON.parse(existing.content) as { r2_key?: string };
+      if (r2_key) await c.env.FILES.delete(r2_key);
+    } catch {
+      // malformed content JSON — nothing to clean up
+    }
+  }
+
+  await c.env.DB.prepare('DELETE FROM canvas_items WHERE id = ?').bind(id).run();
+  await touchBoard(c.env.DB, existing.board_id);
+  return c.json({ ok: true });
 });
 
 app.get('/api/health', (c) => c.json({ ok: true, time: now() }));

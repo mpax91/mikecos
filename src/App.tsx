@@ -11,6 +11,8 @@ import { NotesPage } from './pages/NotesPage';
 import { JotsPage } from './pages/JotsPage';
 import { StatsPage } from './pages/StatsPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { BoardsListPage } from './pages/BoardsListPage';
+import { CanvasBoardPage } from './pages/CanvasBoardPage';
 
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -35,6 +37,8 @@ export default function App() {
             <Route path="/notes/:id" element={<NotesPage />} />
             <Route path="/jots" element={<JotsPage />} />
             <Route path="/stats" element={<StatsPage />} />
+            <Route path="/boards" element={<BoardsListPage />} />
+            <Route path="/boards/:id" element={<CanvasBoardPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/today" replace />} />
           </Routes>
