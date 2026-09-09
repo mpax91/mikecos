@@ -101,7 +101,7 @@ export interface ShelfItem {
   id: string;
   type: ShelfItemType;
   content: string;
-  pinned: number; // 0 | 1 — exempts the item from the auto-clear sweep
+  pinned: number; // 0 | 1 — pin-to-top, same as Entity.pinned
   created_at: string;
 }
 

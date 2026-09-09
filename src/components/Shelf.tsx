@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
 import type { FileMeta, ShelfItem, ShelfLinkContent, ShelfTextContent } from '../api/types';
 import { KebabMenu } from './KebabMenu';
-import { ConfirmModal } from './ConfirmModal';
 import { Toast } from './Toast';
 import { formatRelativeTime } from '../utils/formatRelativeTime';
 
@@ -116,7 +115,7 @@ function ShelfTile({
           },
         ]
       : []),
-    { label: isPinned ? 'Unkeep' : 'Keep (skip auto-clear)', onClick: () => onTogglePin(item), separatorBefore: isDownloadable },
+    { label: isPinned ? 'Unpin' : 'Pin to top', onClick: () => onTogglePin(item), separatorBefore: isDownloadable },
     { label: 'Save as Jot', onClick: () => onGraduate(item) },
     { label: 'Delete', onClick: () => onDelete(item), danger: true, separatorBefore: true },
   ];
@@ -170,18 +169,18 @@ function ShelfTile({
   );
 }
 
-/** The Shelf — a self-clearing drop zone sitting above the Jot cards on the
- * Jots page: paste (or drag, or type) a snippet/screenshot/link/file and it
- * shows up as a small disposable tile, no title or editor required. Same
- * idea as Jots ("quick capture, deliberately temporary") at an even
- * lighter unit — one atomic thing per tile instead of a little document —
- * and it ages itself out (see the worker's SHELF_TTL_MS) instead of
- * relying on the Tickler to nag you into cleaning it up. "Save as Jot"
- * graduates one into a real, permanent Jot when it's worth keeping; "Keep"
- * exempts it from the auto-clear sweep without graduating it. */
+/** The Shelf — a drop zone sitting above the Jot cards on the Jots page:
+ * paste (or drag, or type) a snippet/screenshot/link/file and it shows up
+ * as a small disposable tile, no title or editor required. Same idea as
+ * Jots ("quick capture, deliberately temporary") at an even lighter unit —
+ * one atomic thing per tile instead of a little document. Deliberately no
+ * auto-clear: items sit here until deleted one at a time, same as anything
+ * else in the app — nothing here vanishes on a timer Mike doesn't control.
+ * "Save as Jot" graduates one into a real, permanent Jot when it's worth
+ * keeping; "Pin to top" just reorders it to the front, same as Jots,
+ * Boards, and Projects. */
 export function Shelf({ composerOpen, onGraduated }: { composerOpen: boolean; onGraduated?: () => void }) {
   const [items, setItems] = useState<ShelfItem[] | null>(null);
-  const [clearing, setClearing] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
   const load = useCallback(() => {
@@ -278,7 +277,6 @@ export function Shelf({ composerOpen, onGraduated }: { composerOpen: boolean; on
     const next = item.pinned === 1 ? false : true;
     setItems((prev) => (prev ? prev.map((it) => (it.id === item.id ? { ...it, pinned: next ? 1 : 0 } : it)) : prev));
     await api.setShelfItemPinned(item.id, next);
-    setToast(next ? 'Kept — won’t auto-clear' : 'Unkept');
   }
 
   async function handleGraduate(item: ShelfItem) {
@@ -293,30 +291,14 @@ export function Shelf({ composerOpen, onGraduated }: { composerOpen: boolean; on
     await api.deleteShelfItem(item.id);
   }
 
-  async function handleClearAll() {
-    setClearing(false);
-    const toRemove = (items ?? []).filter((it) => it.pinned === 0);
-    setItems((prev) => (prev ? prev.filter((it) => it.pinned === 1) : prev));
-    await Promise.all(toRemove.map((it) => api.deleteShelfItem(it.id)));
-  }
-
-  const unpinnedCount = (items ?? []).filter((it) => it.pinned === 0).length;
-
   return (
     <div className="shelf">
       <div className="shelf__head">
         <span className="shelf__label">Shelf</span>
         {items && items.length > 0 && (
-          <div className="shelf__meta">
-            <span>
-              {items.length} thing{items.length === 1 ? '' : 's'} parked here
-            </span>
-            {unpinnedCount > 0 && (
-              <button type="button" className="shelf__clear" onClick={() => setClearing(true)}>
-                Clear
-              </button>
-            )}
-          </div>
+          <span className="shelf__meta">
+            {items.length} thing{items.length === 1 ? '' : 's'} parked here
+          </span>
         )}
       </div>
 
@@ -333,16 +315,6 @@ export function Shelf({ composerOpen, onGraduated }: { composerOpen: boolean; on
           />
         ))}
       </div>
-
-      {clearing && (
-        <ConfirmModal
-          title="Clear the shelf?"
-          body={`${unpinnedCount} unpinned item${unpinnedCount === 1 ? '' : 's'} will be removed. Anything kept stays.`}
-          confirmLabel="Clear"
-          onConfirm={handleClearAll}
-          onCancel={() => setClearing(false)}
-        />
-      )}
 
       {toast && <Toast message={toast} onDismiss={() => setToast(null)} />}
     </div>

@@ -399,33 +399,14 @@ app.post('/api/entities/:id/convert', async (c) => {
   return c.json(entity);
 });
 
-// ---- Shelf (self-clearing drop zone on the Jots page) ----
+// ---- Shelf (drop zone on the Jots page) ----
 
-const SHELF_TTL_MS = 7 * 24 * 60 * 60 * 1000; // a week — see migrations/0016_shelf_items.sql
 const SHELF_TYPES: ShelfItemType[] = ['text', 'image', 'link', 'file'];
 
-// GET /api/shelf — sweeps out anything unpinned older than a week (see
-// SHELF_TTL_MS) before returning what's left, pinned first then newest
-// first. The sweep happens here rather than on a cron: at this app's
-// personal scale, "clean up whenever the shelf is next viewed" gets the
-// same end result as a scheduled job with none of a Worker Cron Trigger's
-// setup, and the shelf is never checked so rarely that stale rows would
-// meaningfully pile up between visits.
+// GET /api/shelf — pinned first, then newest first. Deliberately no
+// auto-clear sweep: Mike wants items to sit here until he explicitly
+// deletes them, not vanish on a timer he doesn't control.
 app.get('/api/shelf', async (c) => {
-  const cutoff = new Date(Date.now() - SHELF_TTL_MS).toISOString();
-  const { results: expiring } = await c.env.DB.prepare(
-    "SELECT * FROM shelf_items WHERE pinned = 0 AND created_at < ? AND type IN ('image', 'file')"
-  )
-    .bind(cutoff)
-    .all<ShelfItem>();
-  // R2 objects backing an expiring image/file item don't get cleaned up by
-  // the DELETE below on its own — it only drops the D1 row — so purge each
-  // one first, same as DELETE /api/shelf/:id does for a manual delete.
-  for (const it of expiring ?? []) {
-    const meta = JSON.parse(it.content) as { r2_key?: string };
-    if (meta.r2_key) await c.env.FILES.delete(meta.r2_key).catch(() => {});
-  }
-  await c.env.DB.prepare('DELETE FROM shelf_items WHERE pinned = 0 AND created_at < ?').bind(cutoff).run();
   const { results } = await c.env.DB.prepare('SELECT * FROM shelf_items ORDER BY pinned DESC, created_at DESC').all<ShelfItem>();
   return c.json(results ?? []);
 });
@@ -446,8 +427,8 @@ app.post('/api/shelf', async (c) => {
   return c.json(item, 201);
 });
 
-// PATCH /api/shelf/:id — currently only { pinned: boolean }, i.e. "Keep"
-// (exempt this one item from the auto-clear sweep) / "Unkeep".
+// PATCH /api/shelf/:id — currently only { pinned: boolean }, i.e. "Pin to
+// top" / "Unpin", matching the same pattern on Jots, Boards, and Projects.
 app.patch('/api/shelf/:id', async (c) => {
   const id = c.req.param('id');
   const body = await c.req.json<{ pinned?: boolean }>();

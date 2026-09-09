@@ -373,7 +373,7 @@ export interface ShelfItem {
   id: string;
   type: ShelfItemType;
   content: string;
-  pinned: number; // 0 | 1 — exempt from the auto-clear sweep
+  pinned: number; // 0 | 1 — pin-to-top, same as other Shelf item ordering
   created_at: string;
 }
 
