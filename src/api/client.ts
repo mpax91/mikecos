@@ -1,4 +1,4 @@
-import type { CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactDetail, ContactNote, Entity, EntityDetail, EntityType, ImportBatch, ImportCommitResponse, ImportDecision, ImportPreviewResponse, MeetingsRangeResponse, MeetingsResponse, MonthResponse, ProjectListItem, RecurringTaskDefinition, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, WeatherResponse, WeekResponse } from './types';
+import type { CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactDetail, ContactNote, Entity, EntityDetail, EntityType, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, MeetingsRangeResponse, MeetingsResponse, MonthResponse, OrphanedImportsResponse, ProjectListItem, RecurringTaskDefinition, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, WeatherResponse, WeekResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -220,13 +220,37 @@ export const api = {
       body: JSON.stringify({ content, filename, kind }),
     }),
 
-  commitContactImport: (kind: 'contacts' | 'voter_file', filename: string, decisions: ImportDecision[]) =>
-    request<ImportCommitResponse>('/api/contacts/import/commit', {
+  /** Chunked commit flow — call start() once, then commitChunk() repeatedly
+   * with bounded slices of the full decisions array (so one huge file never
+   * rides in a single request that can be killed partway through with no
+   * trace), then finish() once. See ImportCommitStartResponse's comment. */
+  startContactImportCommit: (kind: 'contacts' | 'voter_file', filename: string, totalRows: number) =>
+    request<ImportCommitStartResponse>('/api/contacts/import/commit/start', {
       method: 'POST',
-      body: JSON.stringify({ kind, filename, decisions }),
+      body: JSON.stringify({ kind, filename, totalRows }),
+    }),
+
+  commitContactImportChunk: (batchId: string, kind: 'contacts' | 'voter_file', decisions: ImportDecision[]) =>
+    request<ImportCommitChunkResponse>('/api/contacts/import/commit/chunk', {
+      method: 'POST',
+      body: JSON.stringify({ batchId, kind, decisions }),
+    }),
+
+  finishContactImportCommit: (batchId: string) =>
+    request<ImportBatch>('/api/contacts/import/commit/finish', {
+      method: 'POST',
+      body: JSON.stringify({ batchId }),
     }),
 
   listImportHistory: () => request<ImportBatch[]>('/api/contacts/import/history'),
+
+  /** Real contact/voter_record rows left behind by an import that died
+   * before its batch summary row was written — the production bug the
+   * chunked commit flow above fixes. Settings surfaces this so Mike can
+   * clean it up himself rather than it silently lingering. */
+  getOrphanedImports: () => request<OrphanedImportsResponse>('/api/contacts/import/orphaned'),
+
+  clearOrphanedImports: () => request<ClearOrphanedImportsResponse>('/api/contacts/import/orphaned', { method: 'DELETE' }),
 
   // ---- Today (daily planner) ----
 

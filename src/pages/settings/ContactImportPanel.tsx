@@ -1,9 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../../api/client';
-import type { ImportBatch, ImportDecision, ImportMatch, ImportPreviewResponse } from '../../api/types';
+import type { ImportBatch, ImportDecision, ImportMatch, ImportPreviewResponse, OrphanedImportsResponse } from '../../api/types';
 import { formatRelativeTime } from '../../utils/formatRelativeTime';
 
 type Kind = 'contacts' | 'voter_file';
+
+// Each chunk rides in its own request so one huge file (the 12k-row Bedford
+// voter roll, in production) never sits in a single request long enough to
+// get killed partway through — see api.commitContactImportChunk's comment.
+const CHUNK_SIZE = 150;
 
 function UploadCard({
   kind,
@@ -90,14 +95,38 @@ export function ContactImportPanel() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
   const [history, setHistory] = useState<ImportBatch[] | null>(null);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [orphaned, setOrphaned] = useState<OrphanedImportsResponse | null>(null);
+  const [confirmingClear, setConfirmingClear] = useState(false);
+  const [clearing, setClearing] = useState(false);
 
   function loadHistory() {
     api.listImportHistory().then(setHistory).catch(() => {});
   }
 
+  function loadOrphaned() {
+    api.getOrphanedImports().then(setOrphaned).catch(() => {});
+  }
+
   useEffect(() => {
     loadHistory();
+    loadOrphaned();
   }, []);
+
+  async function handleClearOrphaned() {
+    setClearing(true);
+    setError(null);
+    try {
+      const res = await api.clearOrphanedImports();
+      setResult(`Removed ${res.deletedCount} leftover contact${res.deletedCount === 1 ? '' : 's'} from an incomplete import.`);
+      setConfirmingClear(false);
+      loadOrphaned();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setClearing(false);
+    }
+  }
 
   async function handleFile(file: File, kind: Kind) {
     setError(null);
@@ -131,6 +160,7 @@ export function ContactImportPanel() {
     if (!preview || !allReviewed) return;
     setBusy(true);
     setError(null);
+    setProgress(null);
     try {
       const decisions: ImportDecision[] = [
         ...preview.auto.map((m) => ({ record: m.record, action: 'merge' as const, contactId: m.existingContactId })),
@@ -142,15 +172,37 @@ export function ContactImportPanel() {
             : { record: m.record, action: 'new' as const };
         }),
       ];
-      const res = await api.commitContactImport(preview.kind, preview.filename, decisions);
-      setResult(`Imported "${preview.filename}" — ${res.newCount} new, ${res.updatedCount} updated.`);
+
+      const { batchId } = await api.startContactImportCommit(preview.kind, preview.filename, decisions.length);
+
+      let newCount = 0;
+      let updatedCount = 0;
+      setProgress({ done: 0, total: decisions.length });
+      for (let i = 0; i < decisions.length; i += CHUNK_SIZE) {
+        const chunk = decisions.slice(i, i + CHUNK_SIZE);
+        const res = await api.commitContactImportChunk(batchId, preview.kind, chunk);
+        newCount += res.newCount;
+        updatedCount += res.updatedCount;
+        setProgress({ done: Math.min(i + chunk.length, decisions.length), total: decisions.length });
+      }
+
+      await api.finishContactImportCommit(batchId);
+
+      setResult(`Imported "${preview.filename}" — ${newCount} new, ${updatedCount} updated.`);
       setPreview(null);
       setResolutions(new Map());
       loadHistory();
+      loadOrphaned();
     } catch (e) {
-      setError(String(e));
+      setError(
+        `${String(e)} — the import may be incomplete. Check Import History below; if it shows "Incomplete", ` +
+          `it's safe to re-upload the same file (already-imported rows will just be matched and skipped or merged).`
+      );
+      loadHistory();
+      loadOrphaned();
     } finally {
       setBusy(false);
+      setProgress(null);
     }
   }
 
@@ -202,14 +254,53 @@ export function ContactImportPanel() {
             </div>
           )}
 
+          {progress && (
+            <div className="contact-import__progress">
+              <div className="contact-import__progress-bar">
+                <div
+                  className="contact-import__progress-fill"
+                  style={{ width: `${progress.total ? Math.round((progress.done / progress.total) * 100) : 0}%` }}
+                />
+              </div>
+              <span className="contact-import__review-hint">
+                Importing… {progress.done.toLocaleString()} / {progress.total.toLocaleString()}
+              </span>
+            </div>
+          )}
+
           <div className="modal__actions" style={{ marginTop: 12 }}>
-            <button className="btn btn--ghost" onClick={() => setPreview(null)}>
+            <button className="btn btn--ghost" onClick={() => setPreview(null)} disabled={busy}>
               Cancel
             </button>
             <button className="btn" onClick={handleImport} disabled={!allReviewed || busy}>
-              {allReviewed ? 'Import' : `Resolve ${preview.review.length - reviewResolvedCount} more`}
+              {busy ? 'Importing…' : allReviewed ? 'Import' : `Resolve ${preview.review.length - reviewResolvedCount} more`}
             </button>
           </div>
+        </div>
+      )}
+
+      {orphaned && orphaned.count > 0 && (
+        <div className="contact-import__orphaned">
+          <h3 className="contact-import__card-title">Incomplete Import Found</h3>
+          <p className="contact-import__card-desc">
+            {orphaned.count.toLocaleString()} contact{orphaned.count === 1 ? '' : 's'} were left behind by an import
+            that didn't finish{orphaned.sample.length > 0 ? ` (e.g. "${orphaned.sample[0].name}")` : ''}. It's safe to
+            remove these and re-upload the file — nothing else in your Contacts is affected.
+          </p>
+          {!confirmingClear ? (
+            <button type="button" className="btn btn--ghost" onClick={() => setConfirmingClear(true)}>
+              Clear Incomplete Import
+            </button>
+          ) : (
+            <div className="modal__actions">
+              <button type="button" className="btn btn--ghost" onClick={() => setConfirmingClear(false)} disabled={clearing}>
+                Never mind
+              </button>
+              <button type="button" className="btn btn--danger" onClick={handleClearOrphaned} disabled={clearing}>
+                {clearing ? 'Removing…' : `Remove ${orphaned.count.toLocaleString()} contact${orphaned.count === 1 ? '' : 's'}`}
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -221,8 +312,13 @@ export function ContactImportPanel() {
               <span>{h.filename}</span>
               <span className="contact-import__review-hint">
                 {h.kind === 'voter_file' ? 'Voter file' : 'Contacts'} · {h.new_count} new · {h.updated_count} updated
+                {h.total_rows != null ? ` of ${h.total_rows.toLocaleString()}` : ''}
               </span>
-              <span className="last-modified-badge">{formatRelativeTime(h.created_at)}</span>
+              {h.status === 'in_progress' ? (
+                <span className="chip contact-import__status-badge">Incomplete</span>
+              ) : (
+                <span className="last-modified-badge">{formatRelativeTime(h.created_at)}</span>
+              )}
             </div>
           ))}
         </div>

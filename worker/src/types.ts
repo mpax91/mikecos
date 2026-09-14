@@ -132,12 +132,16 @@ export interface Contact {
   updated_at: string;
 }
 
+export type ImportBatchStatus = 'in_progress' | 'complete';
+
 export interface ImportBatch {
   id: string;
   kind: 'contacts' | 'voter_file';
   filename: string;
   new_count: number;
   updated_count: number;
+  status: ImportBatchStatus;
+  total_rows: number | null;
   created_at: string;
 }
 

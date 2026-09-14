@@ -1077,35 +1077,43 @@ app.post('/api/contacts/import/preview', async (c) => {
   });
 });
 
-// POST /api/contacts/import/commit — the client sends back every record
-// from the preview (auto-matches, newly-created, and whatever the review
-// queue was resolved to) as one decision list, so the whole import
-// commits in a single deterministic pass with nothing held server-side
-// between preview and commit.
-app.post('/api/contacts/import/commit', async (c) => {
-  const body = await c.req.json<{
-    kind: 'contacts' | 'voter_file';
-    filename: string;
-    decisions: { record: ParsedContactRecord; action: 'merge' | 'new'; contactId?: string }[];
-  }>();
-  if (!body.decisions?.length) return c.json({ error: 'no decisions' }, 400);
+// Import commits are chunked into three steps (start / chunk / finish)
+// instead of one request processing the whole file. The original
+// single-request version died in production on a 12,109-row voter file —
+// sequential per-row awaits with nothing chunked or batched meant the
+// request just ran until something (a platform time limit, a dropped
+// connection) killed it partway through, and since the import_batches
+// summary row was only written at the very end, the failure left 192 real
+// contacts in the database with zero trace that anything had gone wrong.
+// The fix: create the batch row up front as 'in_progress' so a crash is
+// visible instead of silent, and let the client drive bounded-size chunks
+// so no single request can run long enough to hit that limit again.
+type ImportDecision = { record: ParsedContactRecord; action: 'merge' | 'new'; contactId?: string };
 
-  const batchId = uid();
-  const ts = now();
+// Processes one bounded slice of decisions. 'new' rows (the common case
+// for a first-time import) are inserted via a single atomic db.batch()
+// call instead of one awaited statement per row — far fewer network round
+// trips, and all-or-nothing for that slice. 'merge' rows still need a
+// SELECT before deciding what to write (the additive-only-merge logic
+// depends on the existing row's current values), so those stay sequential
+// — but they're typically a small fraction of any chunk.
+async function processDecisionChunk(
+  db: D1Database,
+  kind: 'contacts' | 'voter_file',
+  decisions: ImportDecision[],
+  batchId: string,
+  ts: string
+): Promise<{ newCount: number; updatedCount: number }> {
   let newCount = 0;
   let updatedCount = 0;
+  const newStmts: D1PreparedStatement[] = [];
 
-  for (const decision of body.decisions) {
+  for (const decision of decisions) {
     const r = decision.record;
-    let contactId: string;
 
     if (decision.action === 'merge' && decision.contactId) {
-      contactId = decision.contactId;
-      // Additive-only merge — only fills fields that are currently empty
-      // on the existing contact. This is the actual mechanism behind
-      // "without losing anything locally": an import can add missing
-      // information, never overwrite something Mike already entered.
-      const existing = await c.env.DB.prepare('SELECT * FROM contacts WHERE id = ?').bind(contactId).first<Contact>();
+      const contactId = decision.contactId;
+      const existing = await db.prepare('SELECT * FROM contacts WHERE id = ?').bind(contactId).first<Contact>();
       if (existing) {
         const fields: [string, unknown][] = [];
         if (!existing.company && r.company) fields.push(['company', r.company]);
@@ -1127,80 +1135,183 @@ app.post('/api/contacts/import/commit', async (c) => {
         if (fields.length > 0) {
           fields.push(['updated_at', ts]);
           const setClause = fields.map(([k]) => `${k} = ?`).join(', ');
-          await c.env.DB.prepare(`UPDATE contacts SET ${setClause} WHERE id = ?`)
+          await db
+            .prepare(`UPDATE contacts SET ${setClause} WHERE id = ?`)
             .bind(...fields.map(([, v]) => v), contactId)
             .run();
           updatedCount++;
         }
       }
+      if (kind === 'voter_file') {
+        newStmts.push(
+          db
+            .prepare(
+              `INSERT INTO voter_records (id, contact_id, party, voter_age, household_members, voting_history, raw_data, import_batch_id, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            )
+            .bind(
+              uid(),
+              contactId,
+              r.party,
+              r.voter_age,
+              r.household_members ? JSON.stringify(r.household_members) : null,
+              r.voting_history ? JSON.stringify(r.voting_history) : null,
+              JSON.stringify(r.raw),
+              batchId,
+              ts,
+              ts
+            )
+        );
+      }
     } else {
-      contactId = uid();
       // A row that doesn't match anyone becomes its own new contact — for
       // a voter-file row this is the expected common case, not an error,
       // but it's tagged source 'voter_file' rather than 'manual' so it
       // stays out of circles/reach-out nudges meant for people Mike
       // actually knows (see ContactsListPage's default view).
-      await c.env.DB.prepare(
-        `INSERT INTO contacts
-           (id, name, company, title, circle, emails, phones, address,
-            birthday_month, birthday_day, birthday_year,
-            anniversary_month, anniversary_day, anniversary_year,
-            pinned, source, import_batch_id, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, 0, ?, ?, ?, ?)`
-      )
-        .bind(
-          contactId,
-          r.name,
-          r.company,
-          r.title,
-          r.circleHint ?? 'other',
-          JSON.stringify(r.emails),
-          JSON.stringify(r.phones),
-          r.address,
-          r.birthday_month,
-          r.birthday_day,
-          r.birthday_year,
-          body.kind === 'voter_file' ? 'voter_file' : 'contact_import',
-          batchId,
-          ts,
-          ts
-        )
-        .run();
+      const contactId = uid();
+      newStmts.push(
+        db
+          .prepare(
+            `INSERT INTO contacts
+               (id, name, company, title, circle, emails, phones, address,
+                birthday_month, birthday_day, birthday_year,
+                anniversary_month, anniversary_day, anniversary_year,
+                pinned, source, import_batch_id, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, 0, ?, ?, ?, ?)`
+          )
+          .bind(
+            contactId,
+            r.name,
+            r.company,
+            r.title,
+            r.circleHint ?? 'other',
+            JSON.stringify(r.emails),
+            JSON.stringify(r.phones),
+            r.address,
+            r.birthday_month,
+            r.birthday_day,
+            r.birthday_year,
+            kind === 'voter_file' ? 'voter_file' : 'contact_import',
+            batchId,
+            ts,
+            ts
+          )
+      );
       newCount++;
-    }
-
-    if (body.kind === 'voter_file') {
-      const voterId = uid();
-      await c.env.DB.prepare(
-        `INSERT INTO voter_records (id, contact_id, party, voter_age, household_members, voting_history, raw_data, import_batch_id, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      )
-        .bind(
-          voterId,
-          contactId,
-          r.party,
-          r.voter_age,
-          r.household_members ? JSON.stringify(r.household_members) : null,
-          r.voting_history ? JSON.stringify(r.voting_history) : null,
-          JSON.stringify(r.raw),
-          batchId,
-          ts,
-          ts
-        )
-        .run();
+      if (kind === 'voter_file') {
+        newStmts.push(
+          db
+            .prepare(
+              `INSERT INTO voter_records (id, contact_id, party, voter_age, household_members, voting_history, raw_data, import_batch_id, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            )
+            .bind(
+              uid(),
+              contactId,
+              r.party,
+              r.voter_age,
+              r.household_members ? JSON.stringify(r.household_members) : null,
+              r.voting_history ? JSON.stringify(r.voting_history) : null,
+              JSON.stringify(r.raw),
+              batchId,
+              ts,
+              ts
+            )
+        );
+      }
     }
   }
 
-  await c.env.DB.prepare('INSERT INTO import_batches (id, kind, filename, new_count, updated_count, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-    .bind(batchId, body.kind, body.filename, newCount, updatedCount, ts)
+  if (newStmts.length > 0) await db.batch(newStmts);
+  return { newCount, updatedCount };
+}
+
+// POST /api/contacts/import/commit/start — creates the batch row
+// immediately, before any record is written, as 'in_progress'. This is
+// what makes an incomplete import visible instead of silent: even if
+// every following chunk request fails, Settings can show "this import
+// never finished" instead of nothing at all.
+app.post('/api/contacts/import/commit/start', async (c) => {
+  const body = await c.req.json<{ kind: 'contacts' | 'voter_file'; filename: string; totalRows: number }>();
+  const batchId = uid();
+  await c.env.DB.prepare(
+    'INSERT INTO import_batches (id, kind, filename, new_count, updated_count, status, total_rows, created_at) VALUES (?, ?, ?, 0, 0, ?, ?, ?)'
+  )
+    .bind(batchId, body.kind, body.filename, 'in_progress', body.totalRows ?? null, now())
+    .run();
+  return c.json({ batchId });
+});
+
+// POST /api/contacts/import/commit/chunk — processes one bounded slice of
+// decisions (the client keeps chunks small, e.g. ~150 rows) and adds this
+// chunk's counts onto the batch's running total.
+app.post('/api/contacts/import/commit/chunk', async (c) => {
+  const body = await c.req.json<{ batchId: string; kind: 'contacts' | 'voter_file'; decisions: ImportDecision[] }>();
+  if (!body.batchId) return c.json({ error: 'batchId required' }, 400);
+  if (!body.decisions?.length) return c.json({ error: 'no decisions' }, 400);
+
+  const ts = now();
+  const { newCount, updatedCount } = await processDecisionChunk(c.env.DB, body.kind, body.decisions, body.batchId, ts);
+
+  await c.env.DB.prepare('UPDATE import_batches SET new_count = new_count + ?, updated_count = updated_count + ? WHERE id = ?')
+    .bind(newCount, updatedCount, body.batchId)
     .run();
 
-  return c.json({ batchId, newCount, updatedCount });
+  return c.json({ newCount, updatedCount });
+});
+
+// POST /api/contacts/import/commit/finish — marks the batch complete once
+// every chunk has been sent. A batch left 'in_progress' means the client
+// stopped partway (closed the tab, lost connection, hit an error) — the
+// data already written is real, but Settings can flag it as incomplete
+// rather than presenting it as a normal finished import.
+app.post('/api/contacts/import/commit/finish', async (c) => {
+  const body = await c.req.json<{ batchId: string }>();
+  if (!body.batchId) return c.json({ error: 'batchId required' }, 400);
+  await c.env.DB.prepare("UPDATE import_batches SET status = 'complete' WHERE id = ?").bind(body.batchId).run();
+  const batch = await c.env.DB.prepare('SELECT * FROM import_batches WHERE id = ?').bind(body.batchId).first<ImportBatch>();
+  return c.json(batch);
 });
 
 app.get('/api/contacts/import/history', async (c) => {
   const { results } = await c.env.DB.prepare('SELECT * FROM import_batches ORDER BY created_at DESC LIMIT 20').all<ImportBatch>();
   return c.json(results ?? []);
+});
+
+// GET/DELETE /api/contacts/import/orphaned — cleanup for imports that
+// died before this chunked flow existed (or, in principle, any future
+// chunk that fails after commit/start but before commit/finish): a
+// contact whose import_batch_id doesn't match any row in import_batches
+// is debris from a run that never completed, not real data worth
+// keeping. Scoped precisely to that condition, so it can never touch a
+// contact from a normal completed import or a manually-created one
+// (which has import_batch_id = NULL).
+app.get('/api/contacts/import/orphaned', async (c) => {
+  const { results } = await c.env.DB.prepare(
+    `SELECT id, name, source, import_batch_id FROM contacts
+     WHERE import_batch_id IS NOT NULL AND import_batch_id NOT IN (SELECT id FROM import_batches)
+     LIMIT 5`
+  ).all<{ id: string; name: string; source: string; import_batch_id: string }>();
+  const { results: countRows } = await c.env.DB.prepare(
+    `SELECT COUNT(*) as n FROM contacts
+     WHERE import_batch_id IS NOT NULL AND import_batch_id NOT IN (SELECT id FROM import_batches)`
+  ).all<{ n: number }>();
+  return c.json({ count: countRows?.[0]?.n ?? 0, sample: results ?? [] });
+});
+
+app.delete('/api/contacts/import/orphaned', async (c) => {
+  const { results: orphanIds } = await c.env.DB.prepare(
+    `SELECT id FROM contacts WHERE import_batch_id IS NOT NULL AND import_batch_id NOT IN (SELECT id FROM import_batches)`
+  ).all<{ id: string }>();
+  const ids = (orphanIds ?? []).map((r) => r.id);
+  if (ids.length === 0) return c.json({ deletedCount: 0 });
+
+  const placeholders = ids.map(() => '?').join(', ');
+  await c.env.DB.prepare(`DELETE FROM voter_records WHERE contact_id IN (${placeholders})`).bind(...ids).run();
+  await c.env.DB.prepare(`DELETE FROM contact_notes WHERE contact_id IN (${placeholders})`).bind(...ids).run();
+  await c.env.DB.prepare(`DELETE FROM contacts WHERE id IN (${placeholders})`).bind(...ids).run();
+  return c.json({ deletedCount: ids.length });
 });
 
 // ---- Projects (top-level) ----

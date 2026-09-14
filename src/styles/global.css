@@ -5338,6 +5338,44 @@ a {
   flex: 0 0 auto;
 }
 
+.contact-import__progress {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.contact-import__progress-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--color-border);
+  overflow: hidden;
+}
+
+.contact-import__progress-fill {
+  height: 100%;
+  background: var(--color-accent);
+  transition: width 0.2s ease;
+}
+
+.contact-import__orphaned {
+  background: color-mix(in srgb, var(--color-accent-secondary) 8%, var(--color-card-bg));
+  border: var(--border-hairline);
+  border-radius: var(--radius-card);
+  padding: 16px;
+  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.contact-import__status-badge {
+  color: var(--color-accent-secondary);
+  border-color: var(--color-accent-secondary);
+  flex: 0 0 auto;
+}
+
 .contact-import__history {
   margin-top: 8px;
 }

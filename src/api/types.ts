@@ -450,11 +450,21 @@ export interface ImportDecision {
   contactId?: string;
 }
 
-export interface ImportCommitResponse {
+/** The commit flow is chunked so one huge file (e.g. a 12k-row voter file)
+ * never rides in a single request that can get killed partway through with
+ * no trace — see worker/src/index.ts's processDecisionChunk comment for the
+ * full story. Client flow: start() once, commitChunk() repeatedly with
+ * bounded slices of the decisions array, finish() once at the end. */
+export interface ImportCommitStartResponse {
   batchId: string;
+}
+
+export interface ImportCommitChunkResponse {
   newCount: number;
   updatedCount: number;
 }
+
+export type ImportBatchStatus = 'in_progress' | 'complete';
 
 export interface ImportBatch {
   id: string;
@@ -462,7 +472,22 @@ export interface ImportBatch {
   filename: string;
   new_count: number;
   updated_count: number;
+  status: ImportBatchStatus;
+  total_rows: number | null;
   created_at: string;
+}
+
+/** GET /api/contacts/import/orphaned — real contact/voter_record rows left
+ * behind by an import whose batch summary row never got written (the bug
+ * the chunked commit flow fixes). Structurally can never match a manually-
+ * created contact (import_batch_id IS NULL) or a normal completed import. */
+export interface OrphanedImportsResponse {
+  count: number;
+  sample: { id: string; name: string; source: string; import_batch_id: string }[];
+}
+
+export interface ClearOrphanedImportsResponse {
+  deletedCount: number;
 }
 
 export type ContactNoteSourceType = 'quick_note' | 'jot' | 'note' | 'task';
