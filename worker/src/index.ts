@@ -10,9 +10,14 @@ import type {
   ContactNote,
   Env,
   Entity,
+  Habit,
+  HabitLog,
+  HealthLog,
   ImportBatch,
+  JournalEntry,
   ShelfItem,
   ShelfItemType,
+  TaskReschedule,
   VoterRecord,
 } from './types';
 import { calendarIdFromIcsUrl, meetingsForDate, meetingsForRange } from './ics';
@@ -1988,6 +1993,19 @@ app.patch('/api/entities/:id', async (c) => {
     }
   }
 
+  // Log a "pushed" event for the Journal (see migrations/0020_journal.sql)
+  // whenever an already-due-dated task's due date moves to a different,
+  // still non-null date — the only shape of due_date change that's really
+  // a "push" rather than first-time scheduling (no date -> a date) or
+  // clearing it (a date -> no date), neither of which this fires for.
+  if (existing.type === 'task' && body.due_date !== undefined && existing.due_date && body.due_date && body.due_date !== existing.due_date) {
+    await c.env.DB.prepare(
+      `INSERT INTO task_reschedules (id, entity_id, title, from_due_date, to_due_date, rescheduled_at, rescheduled_date) VALUES (?, ?, ?, ?, ?, ?, ?)`
+    )
+      .bind(uid(), id, body.title ?? existing.title, existing.due_date, body.due_date, ts, localDateString(ts))
+      .run();
+  }
+
   const entity = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(id).first<Entity>();
   return c.json(entity);
 });
@@ -3266,6 +3284,188 @@ app.delete('/api/connectors/:id', async (c) => {
   if (!existing) return c.json({ error: 'not found' }, 404);
   await c.env.DB.prepare('DELETE FROM canvas_connectors WHERE id = ?').bind(id).run();
   await touchBoard(c.env.DB, existing.board_id);
+  return c.json({ ok: true });
+});
+
+// ---- Journal ----
+//
+// A day's journal entry is mostly computed, not stored: journal_entries
+// only holds the freeform text Mike adds himself (see
+// migrations/0020_journal.sql for the full reasoning). Everything else
+// shown on a day — calendar events, completed/pushed tasks, notes, contact
+// quick-notes, habit values, health stats — is read live from the tables
+// that already own it, so there's nothing here to keep in sync.
+//
+// A generous same-UTC-day-plus-neighbors window is fetched for created_at
+// lookups (notes, contact notes) and then filtered precisely in
+// application code with localDateString — the same helper task_completions
+// already trusts — rather than duplicating timezone math in SQL. Personal
+// data volumes here are small, so the extra rows fetched per call cost
+// nothing.
+app.get('/api/journal/:date', async (c) => {
+  const date = c.req.param('date');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return c.json({ error: 'date must be YYYY-MM-DD' }, 400);
+
+  // A window wide enough that any UTC-vs-local-day skew around `date`
+  // still falls inside it, then narrowed exactly by localDateString below.
+  const prevDate = localDateString(new Date(new Date(`${date}T12:00:00Z`).getTime() - 86400000).toISOString());
+  const nextDate = localDateString(new Date(new Date(`${date}T12:00:00Z`).getTime() + 86400000).toISOString());
+  const windowStart = `${prevDate}T00:00:00.000Z`;
+  const windowEnd = `${nextDate}T23:59:59.999Z`;
+
+  const entry = await c.env.DB.prepare('SELECT * FROM journal_entries WHERE date = ?').bind(date).first<JournalEntry>();
+
+  const { results: completions } = await c.env.DB
+    .prepare('SELECT * FROM task_completions WHERE completed_date = ? ORDER BY completed_at ASC')
+    .bind(date)
+    .all<{ id: string; entity_id: string; title: string; completed_at: string; completed_date: string }>();
+
+  const { results: reschedules } = await c.env.DB
+    .prepare('SELECT * FROM task_reschedules WHERE rescheduled_date = ? ORDER BY rescheduled_at ASC')
+    .bind(date)
+    .all<TaskReschedule>();
+
+  const { results: noteRows } = await c.env.DB
+    .prepare(`SELECT id, title, is_jot, created_at FROM entities WHERE type = 'note' AND created_at >= ? AND created_at <= ? ORDER BY created_at ASC`)
+    .bind(windowStart, windowEnd)
+    .all<{ id: string; title: string; is_jot: number; created_at: string }>();
+  const notes = (noteRows ?? []).filter((n) => localDateString(n.created_at) === date);
+
+  const { results: contactNoteRows } = await c.env.DB
+    .prepare(
+      `SELECT cn.id, cn.contact_id, cn.text, cn.created_at, c.name as contact_name
+       FROM contact_notes cn JOIN contacts c ON c.id = cn.contact_id
+       WHERE cn.created_at >= ? AND cn.created_at <= ? ORDER BY cn.created_at ASC`
+    )
+    .bind(windowStart, windowEnd)
+    .all<{ id: string; contact_id: string; text: string; created_at: string; contact_name: string }>();
+  const contactNotes = (contactNoteRows ?? []).filter((n) => localDateString(n.created_at) === date);
+
+  const { results: habits } = await c.env.DB.prepare('SELECT * FROM habits WHERE active = 1 ORDER BY position ASC').all<Habit>();
+  const { results: habitLogRows } = await c.env.DB.prepare('SELECT * FROM habit_logs WHERE date = ?').bind(date).all<HabitLog>();
+  const habitLogsByHabit = new Map((habitLogRows ?? []).map((l) => [l.habit_id, l]));
+  const habitsWithLogs = (habits ?? []).map((h) => ({ ...h, log: habitLogsByHabit.get(h.id) ?? null }));
+
+  const health = await c.env.DB.prepare('SELECT * FROM health_logs WHERE date = ?').bind(date).first<HealthLog>();
+
+  return c.json({
+    date,
+    entry: entry ?? null,
+    tasksCompleted: completions ?? [],
+    tasksPushed: reschedules ?? [],
+    notes,
+    contactNotes,
+    habits: habitsWithLogs,
+    health: health ?? null,
+  });
+});
+
+// PATCH /api/journal/:date — upserts just the freeform content for the
+// day. Separate from the GET above since this is the only part of a
+// journal entry that's ever actually written directly.
+app.patch('/api/journal/:date', async (c) => {
+  const date = c.req.param('date');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return c.json({ error: 'date must be YYYY-MM-DD' }, 400);
+  const body = await c.req.json<{ content: string }>();
+  const ts = now();
+  const searchText = extractPlainText(body.content);
+
+  await c.env.DB.prepare(
+    `INSERT INTO journal_entries (date, content, search_text, created_at, updated_at) VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(date) DO UPDATE SET content = excluded.content, search_text = excluded.search_text, updated_at = excluded.updated_at`
+  )
+    .bind(date, body.content, searchText, ts, ts)
+    .run();
+
+  const entry = await c.env.DB.prepare('SELECT * FROM journal_entries WHERE date = ?').bind(date).first<JournalEntry>();
+  return c.json(entry);
+});
+
+// ---- Habits ----
+app.get('/api/habits', async (c) => {
+  const includeArchived = c.req.query('archived') === '1';
+  const sql = includeArchived
+    ? 'SELECT * FROM habits ORDER BY position ASC'
+    : 'SELECT * FROM habits WHERE active = 1 ORDER BY position ASC';
+  const { results } = await c.env.DB.prepare(sql).all<Habit>();
+  return c.json(results ?? []);
+});
+
+app.post('/api/habits', async (c) => {
+  const body = await c.req.json<{ name: string; unit?: string | null; target_value?: number | null }>();
+  if (!body.name?.trim()) return c.json({ error: 'name required' }, 400);
+  const id = uid();
+  const ts = now();
+  const { results: maxPos } = await c.env.DB.prepare('SELECT COALESCE(MAX(position), -1) as maxPos FROM habits').all<{ maxPos: number }>();
+  const position = (maxPos?.[0]?.maxPos ?? -1) + 1;
+  await c.env.DB.prepare(
+    `INSERT INTO habits (id, name, unit, target_value, active, position, created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?, ?)`
+  )
+    .bind(id, body.name.trim(), body.unit ?? null, body.target_value ?? null, position, ts, ts)
+    .run();
+  const habit = await c.env.DB.prepare('SELECT * FROM habits WHERE id = ?').bind(id).first<Habit>();
+  return c.json(habit, 201);
+});
+
+app.patch('/api/habits/:id', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json<Partial<Pick<Habit, 'name' | 'unit' | 'target_value' | 'active' | 'position'>>>();
+  const existing = await c.env.DB.prepare('SELECT id FROM habits WHERE id = ?').bind(id).first();
+  if (!existing) return c.json({ error: 'not found' }, 404);
+
+  const fields: string[] = [];
+  const values: unknown[] = [];
+  for (const key of ['name', 'unit', 'target_value', 'active', 'position'] as const) {
+    if (body[key] !== undefined) {
+      fields.push(`${key} = ?`);
+      values.push(body[key]);
+    }
+  }
+  if (fields.length === 0) return c.json({ error: 'no fields to update' }, 400);
+  fields.push('updated_at = ?');
+  values.push(now());
+  values.push(id);
+  await c.env.DB.prepare(`UPDATE habits SET ${fields.join(', ')} WHERE id = ?`).bind(...values).run();
+
+  const habit = await c.env.DB.prepare('SELECT * FROM habits WHERE id = ?').bind(id).first<Habit>();
+  return c.json(habit);
+});
+
+app.delete('/api/habits/:id', async (c) => {
+  const id = c.req.param('id');
+  await c.env.DB.prepare('DELETE FROM habit_logs WHERE habit_id = ?').bind(id).run();
+  await c.env.DB.prepare('DELETE FROM habits WHERE id = ?').bind(id).run();
+  return c.json({ ok: true });
+});
+
+// POST /api/habits/:id/logs — upserts this habit's value for a given day
+// (body: { date, value }). A second log for the same habit/day overwrites
+// rather than accumulating — (habit_id, date) is the row's whole identity,
+// see migrations/0020_journal.sql.
+app.post('/api/habits/:id/logs', async (c) => {
+  const habitId = c.req.param('id');
+  const body = await c.req.json<{ date: string; value: number }>();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(body.date ?? '')) return c.json({ error: 'date must be YYYY-MM-DD' }, 400);
+  if (typeof body.value !== 'number' || Number.isNaN(body.value)) return c.json({ error: 'value must be a number' }, 400);
+  const habit = await c.env.DB.prepare('SELECT id FROM habits WHERE id = ?').bind(habitId).first();
+  if (!habit) return c.json({ error: 'habit not found' }, 404);
+
+  const ts = now();
+  await c.env.DB.prepare(
+    `INSERT INTO habit_logs (habit_id, date, value, created_at, updated_at) VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(habit_id, date) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+  )
+    .bind(habitId, body.date, body.value, ts, ts)
+    .run();
+
+  const log = await c.env.DB.prepare('SELECT * FROM habit_logs WHERE habit_id = ? AND date = ?').bind(habitId, body.date).first<HabitLog>();
+  return c.json(log);
+});
+
+app.delete('/api/habits/:id/logs/:date', async (c) => {
+  const habitId = c.req.param('id');
+  const date = c.req.param('date');
+  await c.env.DB.prepare('DELETE FROM habit_logs WHERE habit_id = ? AND date = ?').bind(habitId, date).run();
   return c.json({ ok: true });
 });
 

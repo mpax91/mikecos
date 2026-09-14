@@ -1,4 +1,4 @@
-import type { CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactDetail, ContactNote, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, MeetingsRangeResponse, MeetingsResponse, MonthResponse, OrphanedImportsResponse, ProjectListItem, RecurringTaskDefinition, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, WeatherResponse, WeekResponse } from './types';
+import type { CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactDetail, ContactNote, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitLog, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, MeetingsRangeResponse, MeetingsResponse, MonthResponse, OrphanedImportsResponse, ProjectListItem, RecurringTaskDefinition, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, WeatherResponse, WeekResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -456,4 +456,26 @@ export const api = {
     }),
 
   deleteConnector: (id: string) => request<{ ok: true }>(`/api/connectors/${id}`, { method: 'DELETE' }),
+
+  // ---- Journal ----
+  getJournalDay: (date: string) => request<JournalDayResponse>(`/api/journal/${date}`),
+
+  updateJournalEntry: (date: string, content: string) =>
+    request<JournalEntry>(`/api/journal/${date}`, { method: 'PATCH', body: JSON.stringify({ content }) }),
+
+  listHabits: (includeArchived = false) => request<Habit[]>(`/api/habits${includeArchived ? '?archived=1' : ''}`),
+
+  createHabit: (name: string, unit?: string | null, targetValue?: number | null) =>
+    request<Habit>('/api/habits', { method: 'POST', body: JSON.stringify({ name, unit, target_value: targetValue }) }),
+
+  updateHabit: (id: string, patch: Partial<Pick<Habit, 'name' | 'unit' | 'target_value' | 'active' | 'position'>>) =>
+    request<Habit>(`/api/habits/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+
+  deleteHabit: (id: string) => request<{ ok: true }>(`/api/habits/${id}`, { method: 'DELETE' }),
+
+  logHabit: (habitId: string, date: string, value: number) =>
+    request<HabitLog>(`/api/habits/${habitId}/logs`, { method: 'POST', body: JSON.stringify({ date, value }) }),
+
+  deleteHabitLog: (habitId: string, date: string) =>
+    request<{ ok: true }>(`/api/habits/${habitId}/logs/${date}`, { method: 'DELETE' }),
 };

@@ -599,3 +599,93 @@ export interface RecurringTaskDefinition {
   created_at: string;
   updated_at: string;
 }
+
+/** Journal — see worker/src/index.ts's "Journal" section. journal_entries
+ * only ever holds the freeform text Mike adds himself; everything else on
+ * GET /api/journal/:date is computed live from the tables that already own
+ * it (task_completions, task_reschedules, entities, contact_notes, habits/
+ * habit_logs, health_logs), not duplicated storage. */
+export interface JournalEntry {
+  date: string; // 'YYYY-MM-DD'
+  content: string | null; // Tiptap JSON
+  search_text: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TaskCompletionEvent {
+  id: string;
+  entity_id: string;
+  title: string;
+  completed_at: string;
+  completed_date: string;
+}
+
+export interface TaskReschedule {
+  id: string;
+  entity_id: string;
+  title: string;
+  from_due_date: string;
+  to_due_date: string;
+  rescheduled_at: string;
+  rescheduled_date: string;
+}
+
+export interface JournalNote {
+  id: string;
+  title: string;
+  is_jot: number; // 0 | 1
+  created_at: string;
+}
+
+export interface JournalContactNote {
+  id: string;
+  contact_id: string;
+  text: string;
+  created_at: string;
+  contact_name: string;
+}
+
+export interface HabitLog {
+  habit_id: string;
+  date: string;
+  value: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** A habit is quantified rather than plain done/not-done — `unit`/
+ * `target_value` are both optional, so a simple habit just logs 1 (or any
+ * number) per day with no target shown. `log` is this specific day's value,
+ * attached only on GET /api/journal/:date's habit list — null means nothing
+ * logged for that habit on that day yet. */
+export interface Habit {
+  id: string;
+  name: string;
+  unit: string | null;
+  target_value: number | null;
+  active: number; // 0 | 1
+  position: number;
+  created_at: string;
+  updated_at: string;
+  log?: HabitLog | null;
+}
+
+export interface HealthLog {
+  date: string;
+  raw_data: string; // JSON — full parsed row from the Google Health export, shape TBD
+  import_batch_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface JournalDayResponse {
+  date: string;
+  entry: JournalEntry | null;
+  tasksCompleted: TaskCompletionEvent[];
+  tasksPushed: TaskReschedule[];
+  notes: JournalNote[];
+  contactNotes: JournalContactNote[];
+  habits: Habit[];
+  health: HealthLog | null;
+}

@@ -15,6 +15,7 @@ import { BoardsListPage } from './pages/BoardsListPage';
 import { CanvasBoardPage } from './pages/CanvasBoardPage';
 import { ContactsListPage } from './pages/ContactsListPage';
 import { ContactDetailPage } from './pages/ContactDetailPage';
+import { JournalPage } from './pages/JournalPage';
 
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -43,6 +44,8 @@ export default function App() {
             <Route path="/boards/:id" element={<CanvasBoardPage />} />
             <Route path="/contacts" element={<ContactsListPage />} />
             <Route path="/contacts/:id" element={<ContactDetailPage />} />
+            <Route path="/journal" element={<JournalPage />} />
+            <Route path="/journal/:date" element={<JournalPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/today" replace />} />
           </Routes>

@@ -171,6 +171,51 @@ export interface ContactNote {
   created_at: string;
 }
 
+export interface JournalEntry {
+  date: string; // 'YYYY-MM-DD'
+  content: string | null; // Tiptap JSON
+  search_text: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TaskReschedule {
+  id: string;
+  entity_id: string;
+  title: string;
+  from_due_date: string;
+  to_due_date: string;
+  rescheduled_at: string;
+  rescheduled_date: string; // 'YYYY-MM-DD'
+}
+
+export interface Habit {
+  id: string;
+  name: string;
+  unit: string | null;
+  target_value: number | null;
+  active: number; // 0 | 1
+  position: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface HabitLog {
+  habit_id: string;
+  date: string; // 'YYYY-MM-DD'
+  value: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface HealthLog {
+  date: string; // 'YYYY-MM-DD'
+  raw_data: string; // JSON
+  import_batch_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Env {
   DB: D1Database;
   FILES: R2Bucket;
