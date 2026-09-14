@@ -482,8 +482,27 @@ export interface ContactNote {
   created_at: string;
 }
 
+/** A blended-in row from a voter-file import — see migrations/0018_contact_import.sql.
+ * Shown as its own section on the contact page, separate from the
+ * personal info Mike maintains himself. `raw_data` carries the full
+ * original CSV row so nothing the file contained is ever lost, even
+ * columns we don't have a dedicated field for. */
+export interface VoterRecord {
+  id: string;
+  contact_id: string;
+  party: string | null;
+  voter_age: number | null;
+  household_members: string | null; // JSON string[]
+  voting_history: string | null; // JSON
+  raw_data: string; // JSON — the full original row
+  import_batch_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ContactDetail extends Contact {
   notes: ContactNote[];
+  voterRecords: VoterRecord[];
 }
 
 /** A recurring task definition managed on the Settings screen — describes

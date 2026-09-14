@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
-import type { ContactCircle, ContactDetail, ContactNote } from '../api/types';
+import type { ContactCircle, ContactDetail, ContactNote, VoterRecord } from '../api/types';
 import { Modal } from '../components/Modal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { KebabMenu } from '../components/KebabMenu';
@@ -122,6 +122,92 @@ function EditDetailsModal({ contact, onSave, onClose }: { contact: ContactDetail
         </button>
       </div>
     </Modal>
+  );
+}
+
+/** The voter-file data blended into this contact — kept in its own
+ * section, visually separate from the personal info Mike maintains
+ * himself (see migrations/0018_contact_import.sql). `raw_data` is shown
+ * as a collapsible "all imported fields" list so whatever columns a
+ * given voter file happens to have — even ones we don't parse into a
+ * dedicated field — are still there to look up, not silently dropped. */
+function VoterRecordSection({ records }: { records: VoterRecord[] }) {
+  const [openIds, setOpenIds] = useState<Set<string>>(new Set());
+  if (records.length === 0) return null;
+
+  function toggle(id: string) {
+    setOpenIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  return (
+    <div>
+      <h2 className="contact-detail__section-title">Voter Record</h2>
+      {records.map((r) => {
+        const household = r.household_members ? (JSON.parse(r.household_members) as string[]) : [];
+        const historyRaw = r.voting_history ? (JSON.parse(r.voting_history) as string) : '';
+        const history = historyRaw
+          ? historyRaw
+              .split(/[;,]/)
+              .map((s) => s.trim())
+              .filter(Boolean)
+          : [];
+        const raw = JSON.parse(r.raw_data) as Record<string, string>;
+        const isOpen = openIds.has(r.id);
+        return (
+          <div key={r.id} className="voter-record">
+            <div className="voter-record__row">
+              {r.party && <span className="chip chip--accent">{r.party}</span>}
+              {r.voter_age != null && (
+                <span className="voter-record__field">
+                  <strong>Age</strong> {r.voter_age}
+                </span>
+              )}
+            </div>
+
+            {household.length > 0 && (
+              <div className="voter-record__field">
+                <strong>Household</strong> {household.join(', ')}
+              </div>
+            )}
+
+            {history.length > 0 && (
+              <div className="voter-record__field">
+                <strong>Voting history</strong>
+                <div className="voter-record__history">
+                  {history.map((h) => (
+                    <span key={h} className="chip">
+                      {h}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <button type="button" className="voter-record__toggle" onClick={() => toggle(r.id)}>
+              {isOpen ? 'Hide' : 'Show'} all imported fields
+            </button>
+
+            {isOpen && (
+              <div className="voter-record__raw">
+                {Object.entries(raw)
+                  .filter(([, v]) => v)
+                  .map(([k, v]) => (
+                    <div key={k} className="voter-record__raw-row">
+                      <span className="voter-record__raw-key">{k}</span>
+                      <span className="voter-record__raw-value">{v}</span>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -335,6 +421,8 @@ export function ContactDetailPage() {
           )}
         </div>
       </div>
+
+      <VoterRecordSection records={contact.voterRecords} />
 
       <h2 className="contact-detail__section-title">Notes</h2>
 

@@ -13,6 +13,7 @@ import type {
   ImportBatch,
   ShelfItem,
   ShelfItemType,
+  VoterRecord,
 } from './types';
 import { calendarIdFromIcsUrl, meetingsForDate, meetingsForRange } from './ics';
 import { describeRrule, isValidRrule, nextDueOccurrenceDate, type RecurringTaskDefinition } from './recurring';
@@ -581,9 +582,9 @@ app.post('/api/contacts', async (c) => {
   return c.json(contact, 201);
 });
 
-// GET /api/contacts/:id — the contact plus its full note feed, newest
-// first. One request for the whole detail page rather than a second round
-// trip for notes.
+// GET /api/contacts/:id — the contact plus its full note feed (newest
+// first) and any voter-file records blended into it. One request for the
+// whole detail page rather than a round trip per section.
 app.get('/api/contacts/:id', async (c) => {
   const id = c.req.param('id');
   const contact = await c.env.DB.prepare('SELECT * FROM contacts WHERE id = ?').bind(id).first<Contact>();
@@ -591,7 +592,10 @@ app.get('/api/contacts/:id', async (c) => {
   const { results: notes } = await c.env.DB.prepare('SELECT * FROM contact_notes WHERE contact_id = ? ORDER BY created_at DESC')
     .bind(id)
     .all<ContactNote>();
-  return c.json({ ...contact, notes: notes ?? [] });
+  const { results: voterRecords } = await c.env.DB.prepare('SELECT * FROM voter_records WHERE contact_id = ? ORDER BY created_at DESC')
+    .bind(id)
+    .all<VoterRecord>();
+  return c.json({ ...contact, notes: notes ?? [], voterRecords: voterRecords ?? [] });
 });
 
 app.patch('/api/contacts/:id', async (c) => {
