@@ -1050,6 +1050,24 @@ function normalizeName(n: string): string {
   return n.toLowerCase().trim().replace(/\s+/g, ' ');
 }
 
+// Bedford's voter file names as "FIRST MIDDLE LAST" (e.g. "ARI R ABBOUD"),
+// middle initial included — a personal contact from Google is almost never
+// going to have that middle initial ("Ari Abboud"), so a plain normalized
+// string comparison missed the great majority of real matches between the
+// two files. Reducing to just the first and last token (dropping anything
+// in between) is what actually lines these up. This only widens what
+// surfaces in the "review" queue for a one-click same-person/different-
+// person decision — it never auto-merges on its own, so a loosened match
+// is a safe trade: worse case is one extra click, not a wrong merge.
+function nameMatchKey(n: string): string {
+  const parts = normalizeName(n)
+    .replace(/[.,]/g, '')
+    .split(' ')
+    .filter(Boolean);
+  if (parts.length <= 2) return parts.join(' ');
+  return `${parts[0]} ${parts[parts.length - 1]}`;
+}
+
 interface ImportMatch {
   record: ParsedContactRecord;
   matchType: 'auto' | 'review' | 'new';
@@ -1076,7 +1094,7 @@ async function matchRecords(db: D1Database, records: ParsedContactRecord[]): Pro
   for (const c of existing ?? []) {
     for (const e of JSON.parse(c.emails || '[]') as string[]) byEmail.set(normalizeEmail(e), c.id);
     for (const p of JSON.parse(c.phones || '[]') as string[]) byPhone.set(normalizePhone(p), c.id);
-    byName.set(normalizeName(c.name), c.id);
+    byName.set(nameMatchKey(c.name), c.id);
     nameOf.set(c.id, c.name);
   }
 
@@ -1089,7 +1107,7 @@ async function matchRecords(db: D1Database, records: ParsedContactRecord[]): Pro
       const hit = byPhone.get(normalizePhone(p));
       if (hit) return { record, matchType: 'auto' as const, existingContactId: hit, existingName: nameOf.get(hit) };
     }
-    const nameHit = byName.get(normalizeName(record.name));
+    const nameHit = byName.get(nameMatchKey(record.name));
     if (nameHit) return { record, matchType: 'review' as const, existingContactId: nameHit, existingName: nameOf.get(nameHit) };
     return { record, matchType: 'new' as const };
   });
