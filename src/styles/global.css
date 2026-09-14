@@ -5437,6 +5437,30 @@ a {
   border-bottom: none;
 }
 
+.contact-import__undo-trigger {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--color-muted);
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+  flex: 0 0 auto;
+}
+
+.contact-import__undo-trigger:hover {
+  color: var(--color-accent-secondary);
+}
+
+.contact-import__undo-confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 100%;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
 /* ---- Contacts & Settings — mobile (phone widths) ----
    Contacts is the surface Mike reads and writes on most from his phone,
    so this gets its own pass rather than relying on the desktop layout

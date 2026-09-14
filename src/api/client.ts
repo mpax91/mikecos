@@ -1,4 +1,4 @@
-import type { CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactDetail, ContactNote, Entity, EntityDetail, EntityType, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, MeetingsRangeResponse, MeetingsResponse, MonthResponse, OrphanedImportsResponse, ProjectListItem, RecurringTaskDefinition, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, WeatherResponse, WeekResponse } from './types';
+import type { CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactDetail, ContactNote, DeleteImportBatchResponse, Entity, EntityDetail, EntityType, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, MeetingsRangeResponse, MeetingsResponse, MonthResponse, OrphanedImportsResponse, ProjectListItem, RecurringTaskDefinition, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, WeatherResponse, WeekResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -252,6 +252,12 @@ export const api = {
   getOrphanedImports: () => request<OrphanedImportsResponse>('/api/contacts/import/orphaned'),
 
   clearOrphanedImports: () => request<ClearOrphanedImportsResponse>('/api/contacts/import/orphaned', { method: 'DELETE' }),
+
+  /** Undoes one whole import — only the contacts it newly created, not any
+   * it merely filled in fields on. For cleaning up after a bad import
+   * (a parser bug, the wrong file) so it can be re-run cleanly. */
+  deleteImportBatch: (batchId: string) =>
+    request<DeleteImportBatchResponse>(`/api/contacts/import/batch/${batchId}`, { method: 'DELETE' }),
 
   // ---- Today (daily planner) ----
 

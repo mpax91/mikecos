@@ -819,6 +819,19 @@ function splitMulti(value: string): string[] {
     .filter(Boolean);
 }
 
+// Google Contacts' own multi-value "Labels"/"Group Membership" column uses
+// " ::: " between group names (e.g. "* myContacts ::: Family ::: Golf
+// Buddies"), not a comma or semicolon — splitMulti would treat the whole
+// thing as one label, which never matches a plain "family" against
+// CIRCLE_ALIASES. Split on both so a contact's real group memberships are
+// actually visible to circleFromLabel one at a time.
+function splitLabels(value: string): string[] {
+  return value
+    .split(/\s*:::\s*|[;,]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 // Best-effort date parsing for whatever format a birthday/DOB column shows
 // up in (MM/DD/YYYY, YYYY-MM-DD, "March 3 1990", ...) — falls back to null
 // rather than throwing, since a malformed date shouldn't sink the row.
@@ -869,9 +882,18 @@ function parseContactsCsv(text: string): ParsedContactRecord[] {
   const rows = parseCsv(text);
   if (rows.length < 2) return [];
   const headers = rows[0];
-  const nameIdx = findColumn(headers, ['name', 'full name', 'display name']);
+  // firstIdx/lastIdx are found BEFORE nameIdx, and take priority when both
+  // are present — findColumn's generic 'name' alias matches by substring
+  // when there's no exact "Name" column, and "First Name"/"Last Name" (a
+  // real Google Contacts export never has a literal "Name" column, only
+  // these) both contain "name" as a substring. Checking 'name' first meant
+  // it always matched the *First Name* column and never got as far as
+  // looking for Last Name at all — every imported contact silently lost
+  // their last name. See also findColumn's own exact-match-first, then
+  // substring-fallback order, which is what makes this collision possible.
   const firstIdx = findColumn(headers, ['first name', 'given name']);
   const lastIdx = findColumn(headers, ['last name', 'family name']);
+  const nameIdx = findColumn(headers, ['full name', 'display name', 'name']);
   const emailIdx = findColumn(headers, ['e mail 1 value', 'email', 'e mail']);
   const phoneIdx = findColumn(headers, ['phone 1 value', 'phone', 'phone number']);
   const companyIdx = findColumn(headers, ['organization 1 name', 'company', 'organization']);
@@ -883,7 +905,8 @@ function parseContactsCsv(text: string): ParsedContactRecord[] {
   const records: ParsedContactRecord[] = [];
   for (const row of rows.slice(1)) {
     const get = (idx: number) => (idx >= 0 && idx < row.length ? row[idx].trim() : '');
-    const name = nameIdx >= 0 ? get(nameIdx) : [get(firstIdx), get(lastIdx)].filter(Boolean).join(' ');
+    const fromParts = [get(firstIdx), get(lastIdx)].filter(Boolean).join(' ');
+    const name = fromParts || (nameIdx >= 0 ? get(nameIdx) : '');
     if (!name) continue;
     const bday = birthdayIdx >= 0 ? parseDateParts(get(birthdayIdx)) : { month: null, day: null, year: null };
     const raw: Record<string, string> = {};
@@ -895,7 +918,7 @@ function parseContactsCsv(text: string): ParsedContactRecord[] {
       address: addressIdx >= 0 ? get(addressIdx) || null : null,
       company: companyIdx >= 0 ? get(companyIdx) || null : null,
       title: titleIdx >= 0 ? get(titleIdx) || null : null,
-      circleHint: labelsIdx >= 0 ? circleFromLabel(splitMulti(get(labelsIdx))) : null,
+      circleHint: labelsIdx >= 0 ? circleFromLabel(splitLabels(get(labelsIdx))) : null,
       birthday_month: bday.month,
       birthday_day: bday.day,
       birthday_year: bday.year,
@@ -1296,6 +1319,33 @@ app.post('/api/contacts/import/commit/finish', async (c) => {
 app.get('/api/contacts/import/history', async (c) => {
   const { results } = await c.env.DB.prepare('SELECT * FROM import_batches ORDER BY created_at DESC LIMIT 20').all<ImportBatch>();
   return c.json(results ?? []);
+});
+
+// DELETE /api/contacts/import/batch/:id — undo a whole import. Only ever
+// deletes contacts newly CREATED by that batch (import_batch_id = :id);
+// a contact that already existed and just got fields filled in by that
+// import is untouched, since undoing "filled in a blank email" isn't safe
+// to do automatically and isn't what this is for. Exists so a parsing bug
+// (like the Google Contacts first-name-only bug this shipped alongside)
+// can be cleanly undone and re-imported once fixed, rather than living
+// with hundreds of wrong contacts or hand-deleting them one at a time.
+app.delete('/api/contacts/import/batch/:id', async (c) => {
+  const batchId = c.req.param('id');
+  const { results: rows } = await c.env.DB.prepare('SELECT id FROM contacts WHERE import_batch_id = ?').bind(batchId).all<{ id: string }>();
+  const ids = (rows ?? []).map((r) => r.id);
+
+  const ID_CHUNK = 50;
+  const stmts: D1PreparedStatement[] = [];
+  for (let i = 0; i < ids.length; i += ID_CHUNK) {
+    const chunk = ids.slice(i, i + ID_CHUNK);
+    const placeholders = chunk.map(() => '?').join(', ');
+    stmts.push(c.env.DB.prepare(`DELETE FROM voter_records WHERE contact_id IN (${placeholders})`).bind(...chunk));
+    stmts.push(c.env.DB.prepare(`DELETE FROM contact_notes WHERE contact_id IN (${placeholders})`).bind(...chunk));
+    stmts.push(c.env.DB.prepare(`DELETE FROM contacts WHERE id IN (${placeholders})`).bind(...chunk));
+  }
+  stmts.push(c.env.DB.prepare('DELETE FROM import_batches WHERE id = ?').bind(batchId));
+  await c.env.DB.batch(stmts);
+  return c.json({ deletedCount: ids.length });
 });
 
 // GET/DELETE /api/contacts/import/orphaned — cleanup for imports that

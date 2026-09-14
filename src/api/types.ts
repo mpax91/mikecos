@@ -490,6 +490,13 @@ export interface ClearOrphanedImportsResponse {
   deletedCount: number;
 }
 
+/** DELETE /api/contacts/import/batch/:id — undo one whole import (only
+ * contacts that batch newly created; a contact it merely filled in fields
+ * on is untouched). Used to clean up after a parser bug and re-import. */
+export interface DeleteImportBatchResponse {
+  deletedCount: number;
+}
+
 export type ContactNoteSourceType = 'quick_note' | 'jot' | 'note' | 'task';
 
 /** A single quick, unstructured note tied to a contact — the Bill-Clinton-

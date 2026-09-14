@@ -99,6 +99,8 @@ export function ContactImportPanel() {
   const [orphaned, setOrphaned] = useState<OrphanedImportsResponse | null>(null);
   const [confirmingClear, setConfirmingClear] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [undoingBatchId, setUndoingBatchId] = useState<string | null>(null);
+  const [confirmingUndoId, setConfirmingUndoId] = useState<string | null>(null);
 
   function loadHistory() {
     api.listImportHistory().then(setHistory).catch(() => {});
@@ -125,6 +127,22 @@ export function ContactImportPanel() {
       setError(String(e));
     } finally {
       setClearing(false);
+    }
+  }
+
+  async function handleUndoBatch(batch: ImportBatch) {
+    setUndoingBatchId(batch.id);
+    setError(null);
+    try {
+      const res = await api.deleteImportBatch(batch.id);
+      setResult(`Undid "${batch.filename}" — removed ${res.deletedCount.toLocaleString()} contact${res.deletedCount === 1 ? '' : 's'} it created. Safe to re-upload the file now.`);
+      setConfirmingUndoId(null);
+      loadHistory();
+      loadOrphaned();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setUndoingBatchId(null);
     }
   }
 
@@ -318,6 +336,23 @@ export function ContactImportPanel() {
                 <span className="chip contact-import__status-badge">Incomplete</span>
               ) : (
                 <span className="last-modified-badge">{formatRelativeTime(h.created_at)}</span>
+              )}
+              {confirmingUndoId === h.id ? (
+                <span className="contact-import__undo-confirm">
+                  <span className="contact-import__review-hint">Remove the {h.new_count} contact{h.new_count === 1 ? '' : 's'} this created?</span>
+                  <button type="button" className="btn btn--ghost" onClick={() => setConfirmingUndoId(null)} disabled={undoingBatchId === h.id}>
+                    Never mind
+                  </button>
+                  <button type="button" className="btn btn--danger" onClick={() => handleUndoBatch(h)} disabled={undoingBatchId === h.id}>
+                    {undoingBatchId === h.id ? 'Undoing…' : 'Undo Import'}
+                  </button>
+                </span>
+              ) : (
+                h.new_count > 0 && (
+                  <button type="button" className="contact-import__undo-trigger" onClick={() => setConfirmingUndoId(h.id)}>
+                    Undo
+                  </button>
+                )
               )}
             </div>
           ))}
