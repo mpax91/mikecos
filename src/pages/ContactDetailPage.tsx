@@ -264,28 +264,51 @@ export function ContactDetailPage() {
       <div className="contact-detail__card">
         <div className="contact-detail__avatar">{initials(contact.name)}</div>
         <div className="contact-detail__fields">
-          {phones.map((p) => (
-            <a key={p} className="contact-detail__field" href={`tel:${p.replace(/[^\d+]/g, '')}`}>
-              <span className="contact-detail__field-icon">📞</span>
-              <span className="contact-detail__field-value">{p}</span>
-            </a>
-          ))}
+          {phones.map((p) => {
+            const clean = p.replace(/[^\d+]/g, '');
+            return (
+              <div key={p} className="contact-detail__field">
+                <span className="contact-detail__field-icon">📞</span>
+                <span className="contact-detail__field-value">{p}</span>
+                <span className="contact-detail__field-actions">
+                  <a className="contact-detail__field-action" href={`tel:${clean}`} title="Call" aria-label={`Call ${p}`}>
+                    📞
+                  </a>
+                  <a className="contact-detail__field-action" href={`sms:${clean}`} title="Text" aria-label={`Text ${p}`}>
+                    💬
+                  </a>
+                </span>
+              </div>
+            );
+          })}
           {emails.map((e) => (
-            <a key={e} className="contact-detail__field" href={`mailto:${e}`}>
+            <div key={e} className="contact-detail__field">
               <span className="contact-detail__field-icon">✉️</span>
               <span className="contact-detail__field-value">{e}</span>
-            </a>
+              <span className="contact-detail__field-actions">
+                <a className="contact-detail__field-action" href={`mailto:${e}`} title="Email" aria-label={`Email ${e}`}>
+                  ✉️
+                </a>
+              </span>
+            </div>
           ))}
           {contact.address && (
-            <a
-              className="contact-detail__field"
-              href={`https://maps.google.com/?q=${encodeURIComponent(contact.address)}`}
-              target="_blank"
-              rel="noreferrer"
-            >
+            <div className="contact-detail__field">
               <span className="contact-detail__field-icon">📍</span>
               <span className="contact-detail__field-value">{contact.address}</span>
-            </a>
+              <span className="contact-detail__field-actions">
+                <a
+                  className="contact-detail__field-action"
+                  href={`https://maps.google.com/?q=${encodeURIComponent(contact.address)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  title="Open in Maps"
+                  aria-label="Open in Maps"
+                >
+                  🗺️
+                </a>
+              </span>
+            </div>
           )}
           {(contact.company || contact.title) && (
             <div className="contact-detail__field">
