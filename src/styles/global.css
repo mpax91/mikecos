@@ -5078,3 +5078,115 @@ a {
 .contact-edit-form__date-row input {
   margin-bottom: 0;
 }
+
+/* ---- Contact & voter file import (Settings) ---- */
+
+.contact-import__cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+  margin: 18px 0;
+}
+
+.contact-import__card {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.contact-import__card-title {
+  font-size: 14px;
+  margin: 0;
+}
+
+.contact-import__card-desc {
+  font-size: 12px;
+  color: var(--color-muted);
+  margin: 0 0 4px;
+  line-height: 1.5;
+}
+
+.contact-import__error {
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--color-accent-secondary) 12%, var(--color-card-bg));
+  color: var(--color-accent-secondary);
+  font-size: 13px;
+  margin-bottom: 14px;
+}
+
+.contact-import__result {
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--color-accent) 12%, var(--color-card-bg));
+  color: var(--color-ink);
+  font-size: 13px;
+  margin-bottom: 14px;
+}
+
+.contact-import__preview {
+  background: var(--color-card-bg);
+  border: var(--border-hairline);
+  border-radius: var(--radius-card);
+  padding: 16px;
+  margin-bottom: 20px;
+}
+
+.contact-import__preview-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  font-size: 13px;
+  color: var(--color-muted);
+}
+
+.contact-import__review-list {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.contact-import__review-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border: var(--border-hairline);
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.contact-import__review-hint {
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.contact-import__review-actions {
+  display: flex;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.contact-import__history {
+  margin-top: 8px;
+}
+
+.contact-import__history-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 13px;
+}
+
+.contact-import__history-row:last-child {
+  border-bottom: none;
+}

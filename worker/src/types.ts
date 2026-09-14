@@ -127,6 +127,29 @@ export interface Contact {
   anniversary_year: number | null;
   pinned: number; // 0 | 1
   source: string;
+  import_batch_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ImportBatch {
+  id: string;
+  kind: 'contacts' | 'voter_file';
+  filename: string;
+  new_count: number;
+  updated_count: number;
+  created_at: string;
+}
+
+export interface VoterRecord {
+  id: string;
+  contact_id: string;
+  party: string | null;
+  voter_age: number | null;
+  household_members: string | null; // JSON string[]
+  voting_history: string | null; // JSON
+  raw_data: string; // JSON
+  import_batch_id: string;
   created_at: string;
   updated_at: string;
 }

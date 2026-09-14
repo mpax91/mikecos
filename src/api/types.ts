@@ -398,8 +398,71 @@ export interface Contact {
   anniversary_year: number | null;
   pinned: number; // 0 | 1
   source: string;
+  import_batch_id: string | null;
   created_at: string;
   updated_at: string;
+}
+
+// ---- Contact / voter-file import ----
+
+/** One row parsed from an uploaded CSV or vCard, before matching. `raw`
+ * carries the entire original row (or a compact vCard summary) — round-
+ * tripped through preview and commit unchanged, and for a voter-file row
+ * it's what lands in voter_records.raw_data so nothing from the source
+ * file is lost even for columns this app has no dedicated field for. */
+export interface ParsedContactRecord {
+  name: string;
+  emails: string[];
+  phones: string[];
+  address: string | null;
+  company: string | null;
+  title: string | null;
+  circleHint: ContactCircle | null;
+  birthday_month: number | null;
+  birthday_day: number | null;
+  birthday_year: number | null;
+  party: string | null;
+  voter_age: number | null;
+  household_members: string[] | null;
+  voting_history: unknown;
+  raw: Record<string, string>;
+}
+
+export interface ImportMatch {
+  record: ParsedContactRecord;
+  matchType: 'auto' | 'review' | 'new';
+  existingContactId?: string;
+  existingName?: string;
+}
+
+export interface ImportPreviewResponse {
+  kind: 'contacts' | 'voter_file';
+  filename: string;
+  totalRows: number;
+  auto: ImportMatch[];
+  review: ImportMatch[];
+  fresh: ImportMatch[];
+}
+
+export interface ImportDecision {
+  record: ParsedContactRecord;
+  action: 'merge' | 'new';
+  contactId?: string;
+}
+
+export interface ImportCommitResponse {
+  batchId: string;
+  newCount: number;
+  updatedCount: number;
+}
+
+export interface ImportBatch {
+  id: string;
+  kind: 'contacts' | 'voter_file';
+  filename: string;
+  new_count: number;
+  updated_count: number;
+  created_at: string;
 }
 
 export type ContactNoteSourceType = 'quick_note' | 'jot' | 'note' | 'task';

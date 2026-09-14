@@ -1,4 +1,4 @@
-import type { CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactDetail, ContactNote, Entity, EntityDetail, EntityType, MeetingsRangeResponse, MeetingsResponse, MonthResponse, ProjectListItem, RecurringTaskDefinition, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, WeatherResponse, WeekResponse } from './types';
+import type { CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactDetail, ContactNote, Entity, EntityDetail, EntityType, ImportBatch, ImportCommitResponse, ImportDecision, ImportPreviewResponse, MeetingsRangeResponse, MeetingsResponse, MonthResponse, ProjectListItem, RecurringTaskDefinition, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, WeatherResponse, WeekResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -213,6 +213,20 @@ export const api = {
 
   deleteContactNote: (contactId: string, noteId: string) =>
     request<{ ok: true }>(`/api/contacts/${contactId}/notes/${noteId}`, { method: 'DELETE' }),
+
+  previewContactImport: (content: string, filename: string, kind: 'contacts' | 'voter_file') =>
+    request<ImportPreviewResponse>('/api/contacts/import/preview', {
+      method: 'POST',
+      body: JSON.stringify({ content, filename, kind }),
+    }),
+
+  commitContactImport: (kind: 'contacts' | 'voter_file', filename: string, decisions: ImportDecision[]) =>
+    request<ImportCommitResponse>('/api/contacts/import/commit', {
+      method: 'POST',
+      body: JSON.stringify({ kind, filename, decisions }),
+    }),
+
+  listImportHistory: () => request<ImportBatch[]>('/api/contacts/import/history'),
 
   // ---- Today (daily planner) ----
 

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useReportTabMeta } from '../contexts/TabsContext';
 import { RecurringTasksPanel } from './settings/RecurringTasksPanel';
 import { CalendarsPanel } from './settings/CalendarsPanel';
+import { ContactImportPanel } from './settings/ContactImportPanel';
 
 interface Category {
   id: string;
@@ -16,6 +17,7 @@ interface Category {
 const CATEGORIES: Category[] = [
   { id: 'recurring', label: 'Recurring Tasks', icon: '🔁' },
   { id: 'calendars', label: 'Calendar Integrations', icon: '📅' },
+  { id: 'contact-import', label: 'Contact Import', icon: '👤' },
 ];
 
 export function SettingsPage() {
@@ -48,6 +50,7 @@ export function SettingsPage() {
         <div className="settings-page__panel">
           {active === 'recurring' && <RecurringTasksPanel />}
           {active === 'calendars' && <CalendarsPanel />}
+          {active === 'contact-import' && <ContactImportPanel />}
         </div>
       </div>
     </div>

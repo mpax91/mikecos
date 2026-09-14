@@ -10,6 +10,7 @@ import type {
   ContactNote,
   Env,
   Entity,
+  ImportBatch,
   ShelfItem,
   ShelfItemType,
 } from './types';
@@ -685,6 +686,517 @@ app.delete('/api/contacts/:id/notes/:noteId', async (c) => {
   const noteId = c.req.param('noteId');
   await c.env.DB.prepare('DELETE FROM contact_notes WHERE id = ?').bind(noteId).run();
   return c.json({ ok: true });
+});
+
+// ---- Contact import (CSV / vCard, personal contacts and voter file) ----
+
+interface ParsedContactRecord {
+  name: string;
+  emails: string[];
+  phones: string[];
+  address: string | null;
+  company: string | null;
+  title: string | null;
+  circleHint: ContactCircle | null;
+  birthday_month: number | null;
+  birthday_day: number | null;
+  birthday_year: number | null;
+  party: string | null;
+  voter_age: number | null;
+  household_members: string[] | null;
+  voting_history: unknown;
+  raw: Record<string, string>;
+}
+
+// Minimal RFC 4180 CSV parser — handles quoted fields, embedded commas/
+// newlines, and "" as an escaped quote. Not a full spec implementation,
+// just enough for real-world exports; no external dependency for
+// something this bounded.
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = '';
+  let inQuotes = false;
+  let i = 0;
+  while (i < text.length) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') {
+          field += '"';
+          i += 2;
+          continue;
+        }
+        inQuotes = false;
+        i++;
+        continue;
+      }
+      field += ch;
+      i++;
+      continue;
+    }
+    if (ch === '"') {
+      inQuotes = true;
+      i++;
+      continue;
+    }
+    if (ch === ',') {
+      row.push(field);
+      field = '';
+      i++;
+      continue;
+    }
+    if (ch === '\r') {
+      i++;
+      continue;
+    }
+    if (ch === '\n') {
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = '';
+      i++;
+      continue;
+    }
+    field += ch;
+    i++;
+  }
+  if (field.length > 0 || row.length > 0) {
+    row.push(field);
+    rows.push(row);
+  }
+  return rows.filter((r) => r.some((f) => f.trim() !== ''));
+}
+
+// Header names vary a lot between Google's CSV export, a county voter
+// file, and a hand-made spreadsheet — matched by a normalized alias list
+// rather than requiring an exact header, so a differently-worded export
+// still imports instead of silently finding nothing.
+function normalizeHeader(h: string): string {
+  return h.toLowerCase().trim().replace(/[_-]/g, ' ').replace(/\s+/g, ' ');
+}
+
+function findColumn(headers: string[], aliases: string[]): number {
+  const normalized = headers.map(normalizeHeader);
+  for (const alias of aliases) {
+    const idx = normalized.indexOf(alias);
+    if (idx !== -1) return idx;
+  }
+  for (const alias of aliases) {
+    const idx = normalized.findIndex((h) => h.includes(alias));
+    if (idx !== -1) return idx;
+  }
+  return -1;
+}
+
+function splitMulti(value: string): string[] {
+  return value
+    .split(/[;,]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+// Best-effort date parsing for whatever format a birthday/DOB column shows
+// up in (MM/DD/YYYY, YYYY-MM-DD, "March 3 1990", ...) — falls back to null
+// rather than throwing, since a malformed date shouldn't sink the row.
+function parseDateParts(value: string): { month: number | null; day: number | null; year: number | null } {
+  const trimmed = value.trim();
+  if (!trimmed) return { month: null, day: null, year: null };
+  let m = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return { year: +m[1], month: +m[2], day: +m[3] };
+  m = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+  if (m) {
+    const year = m[3].length === 2 ? 2000 + +m[3] : +m[3];
+    return { month: +m[1], day: +m[2], year };
+  }
+  const parsed = new Date(trimmed);
+  if (!Number.isNaN(parsed.getTime())) {
+    return { month: parsed.getMonth() + 1, day: parsed.getDate(), year: parsed.getFullYear() };
+  }
+  return { month: null, day: null, year: null };
+}
+
+const CIRCLE_ALIASES: Record<string, ContactCircle> = {
+  family: 'family',
+  friends: 'friends',
+  friend: 'friends',
+  neighbors: 'neighbors',
+  neighbor: 'neighbors',
+  community: 'community',
+  professional: 'professional',
+  work: 'professional',
+  colleagues: 'professional',
+};
+
+// Google/Apple/Samsung "labels"/"categories" become circles for free on
+// import, rather than everyone landing in 'other' and needing manual
+// re-sorting — this is what lets an already-organized address book carry
+// its structure straight over.
+function circleFromLabel(labels: string[]): ContactCircle | null {
+  for (const label of labels) {
+    const hit = CIRCLE_ALIASES[label.toLowerCase().trim()];
+    if (hit) return hit;
+  }
+  return null;
+}
+
+// Parses a Google-style (or similar) contacts CSV export. Column presence
+// varies by export vintage/source, so every column is looked up by alias.
+function parseContactsCsv(text: string): ParsedContactRecord[] {
+  const rows = parseCsv(text);
+  if (rows.length < 2) return [];
+  const headers = rows[0];
+  const nameIdx = findColumn(headers, ['name', 'full name', 'display name']);
+  const firstIdx = findColumn(headers, ['first name', 'given name']);
+  const lastIdx = findColumn(headers, ['last name', 'family name']);
+  const emailIdx = findColumn(headers, ['e mail 1 value', 'email', 'e mail']);
+  const phoneIdx = findColumn(headers, ['phone 1 value', 'phone', 'phone number']);
+  const companyIdx = findColumn(headers, ['organization 1 name', 'company', 'organization']);
+  const titleIdx = findColumn(headers, ['organization 1 title', 'title', 'job title']);
+  const addressIdx = findColumn(headers, ['address 1 formatted', 'address', 'street address']);
+  const birthdayIdx = findColumn(headers, ['birthday']);
+  const labelsIdx = findColumn(headers, ['labels', 'group membership', 'category', 'categories']);
+
+  const records: ParsedContactRecord[] = [];
+  for (const row of rows.slice(1)) {
+    const get = (idx: number) => (idx >= 0 && idx < row.length ? row[idx].trim() : '');
+    const name = nameIdx >= 0 ? get(nameIdx) : [get(firstIdx), get(lastIdx)].filter(Boolean).join(' ');
+    if (!name) continue;
+    const bday = birthdayIdx >= 0 ? parseDateParts(get(birthdayIdx)) : { month: null, day: null, year: null };
+    const raw: Record<string, string> = {};
+    headers.forEach((h, i) => (raw[h] = row[i] ?? ''));
+    records.push({
+      name,
+      emails: emailIdx >= 0 ? splitMulti(get(emailIdx)) : [],
+      phones: phoneIdx >= 0 ? splitMulti(get(phoneIdx)) : [],
+      address: addressIdx >= 0 ? get(addressIdx) || null : null,
+      company: companyIdx >= 0 ? get(companyIdx) || null : null,
+      title: titleIdx >= 0 ? get(titleIdx) || null : null,
+      circleHint: labelsIdx >= 0 ? circleFromLabel(splitMulti(get(labelsIdx))) : null,
+      birthday_month: bday.month,
+      birthday_day: bday.day,
+      birthday_year: bday.year,
+      party: null,
+      voter_age: null,
+      household_members: null,
+      voting_history: null,
+      raw,
+    });
+  }
+  return records;
+}
+
+// Parses a voter-file CSV — same alias-matching approach, tuned to the
+// fields a county voter roll typically has.
+function parseVoterCsv(text: string): ParsedContactRecord[] {
+  const rows = parseCsv(text);
+  if (rows.length < 2) return [];
+  const headers = rows[0];
+  const nameIdx = findColumn(headers, ['name', 'voter name', 'full name']);
+  const firstIdx = findColumn(headers, ['first name']);
+  const lastIdx = findColumn(headers, ['last name']);
+  const ageIdx = findColumn(headers, ['age']);
+  const dobIdx = findColumn(headers, ['date of birth', 'dob', 'birthday', 'birth date']);
+  const addressIdx = findColumn(headers, ['address', 'residence address', 'street address']);
+  const partyIdx = findColumn(headers, ['party', 'party affiliation', 'party registration']);
+  const familyIdx = findColumn(headers, ['family members', 'household members', 'household']);
+  const historyIdx = findColumn(headers, ['voting history', 'vote history', 'elections voted']);
+
+  const records: ParsedContactRecord[] = [];
+  for (const row of rows.slice(1)) {
+    const get = (idx: number) => (idx >= 0 && idx < row.length ? row[idx].trim() : '');
+    const name = nameIdx >= 0 ? get(nameIdx) : [get(firstIdx), get(lastIdx)].filter(Boolean).join(' ');
+    if (!name) continue;
+    const bday = dobIdx >= 0 ? parseDateParts(get(dobIdx)) : { month: null, day: null, year: null };
+    const ageVal = ageIdx >= 0 ? parseInt(get(ageIdx), 10) : NaN;
+    const raw: Record<string, string> = {};
+    headers.forEach((h, i) => (raw[h] = row[i] ?? ''));
+    records.push({
+      name,
+      emails: [],
+      phones: [],
+      address: addressIdx >= 0 ? get(addressIdx) || null : null,
+      company: null,
+      title: null,
+      circleHint: null,
+      birthday_month: bday.month,
+      birthday_day: bday.day,
+      birthday_year: bday.year,
+      party: partyIdx >= 0 ? get(partyIdx) || null : null,
+      voter_age: Number.isFinite(ageVal) ? ageVal : null,
+      household_members: familyIdx >= 0 ? splitMulti(get(familyIdx)) : null,
+      voting_history: historyIdx >= 0 ? get(historyIdx) || null : null,
+      raw,
+    });
+  }
+  return records;
+}
+
+// Parses a vCard (.vcf) export — the format Apple Contacts, Samsung
+// Contacts, and Outlook all use (Google can export it too). A pragmatic
+// subset of RFC 6350 — FN/N, EMAIL, TEL, ADR, ORG, TITLE, BDAY,
+// CATEGORIES — covering what these apps actually export, not the full
+// spec. Multiple vCards concatenated in one file (the usual "export all
+// contacts" shape) are split on BEGIN:VCARD.
+function parseVCard(text: string): ParsedContactRecord[] {
+  const cards = text.split(/BEGIN:VCARD/i).slice(1);
+  const records: ParsedContactRecord[] = [];
+  for (const card of cards) {
+    const lines = card
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+    let name = '';
+    let org = '';
+    let title = '';
+    let address: string | null = null;
+    const emails: string[] = [];
+    const phones: string[] = [];
+    let categories: string[] = [];
+    let bday = { month: null as number | null, day: null as number | null, year: null as number | null };
+    for (const line of lines) {
+      const colonIdx = line.indexOf(':');
+      if (colonIdx === -1) continue;
+      const keyPart = line.slice(0, colonIdx);
+      const value = line.slice(colonIdx + 1).trim();
+      const key = keyPart.split(';')[0].toUpperCase();
+      if (key === 'FN') name = value;
+      else if (key === 'N' && !name) name = value.split(';').filter(Boolean).reverse().join(' ');
+      else if (key === 'EMAIL') emails.push(value);
+      else if (key === 'TEL') phones.push(value);
+      else if (key === 'ORG') org = value.split(';')[0];
+      else if (key === 'TITLE') title = value;
+      else if (key === 'ADR') address = value.split(';').filter(Boolean).join(', ');
+      else if (key === 'BDAY') bday = parseDateParts(value);
+      else if (key === 'CATEGORIES') categories = splitMulti(value);
+    }
+    if (!name) continue;
+    records.push({
+      name,
+      emails,
+      phones,
+      address,
+      company: org || null,
+      title: title || null,
+      circleHint: circleFromLabel(categories),
+      birthday_month: bday.month,
+      birthday_day: bday.day,
+      birthday_year: bday.year,
+      party: null,
+      voter_age: null,
+      household_members: null,
+      voting_history: null,
+      raw: { name, org, title, address: address ?? '', emails: emails.join(';'), phones: phones.join(';') },
+    });
+  }
+  return records;
+}
+
+function normalizeEmail(e: string): string {
+  return e.toLowerCase().trim();
+}
+
+function normalizePhone(p: string): string {
+  return p.replace(/\D/g, '');
+}
+
+function normalizeName(n: string): string {
+  return n.toLowerCase().trim().replace(/\s+/g, ' ');
+}
+
+interface ImportMatch {
+  record: ParsedContactRecord;
+  matchType: 'auto' | 'review' | 'new';
+  existingContactId?: string;
+  existingName?: string;
+}
+
+// Matching policy — deliberately simple, field-equality only, no fuzzy
+// scoring: an exact email or phone match is confident enough to merge
+// automatically; an exact normalized-name match with no matching contact
+// info could be the same person or two different people sharing a common
+// name, so it queues for a one-click review instead of guessing; anything
+// else becomes a new contact. Everything happens in memory against the
+// full contacts table rather than one query per row, since even a
+// several-thousand-row voter file is small next to a per-row round trip.
+async function matchRecords(db: D1Database, records: ParsedContactRecord[]): Promise<ImportMatch[]> {
+  const { results: existing } = await db
+    .prepare('SELECT id, name, emails, phones FROM contacts')
+    .all<{ id: string; name: string; emails: string; phones: string }>();
+  const byEmail = new Map<string, string>();
+  const byPhone = new Map<string, string>();
+  const byName = new Map<string, string>();
+  const nameOf = new Map<string, string>();
+  for (const c of existing ?? []) {
+    for (const e of JSON.parse(c.emails || '[]') as string[]) byEmail.set(normalizeEmail(e), c.id);
+    for (const p of JSON.parse(c.phones || '[]') as string[]) byPhone.set(normalizePhone(p), c.id);
+    byName.set(normalizeName(c.name), c.id);
+    nameOf.set(c.id, c.name);
+  }
+
+  return records.map((record) => {
+    for (const e of record.emails) {
+      const hit = byEmail.get(normalizeEmail(e));
+      if (hit) return { record, matchType: 'auto' as const, existingContactId: hit, existingName: nameOf.get(hit) };
+    }
+    for (const p of record.phones) {
+      const hit = byPhone.get(normalizePhone(p));
+      if (hit) return { record, matchType: 'auto' as const, existingContactId: hit, existingName: nameOf.get(hit) };
+    }
+    const nameHit = byName.get(normalizeName(record.name));
+    if (nameHit) return { record, matchType: 'review' as const, existingContactId: nameHit, existingName: nameOf.get(nameHit) };
+    return { record, matchType: 'new' as const };
+  });
+}
+
+// POST /api/contacts/import/preview — parses and matches without writing
+// anything, so Settings can show counts and the review queue before
+// anything touches the database.
+app.post('/api/contacts/import/preview', async (c) => {
+  const body = await c.req.json<{ content: string; filename: string; kind: 'contacts' | 'voter_file' }>();
+  if (!body.content) return c.json({ error: 'content required' }, 400);
+  const isVCard = /BEGIN:VCARD/i.test(body.content.slice(0, 2000)) || /\.vcf$/i.test(body.filename);
+
+  const records = body.kind === 'voter_file' ? parseVoterCsv(body.content) : isVCard ? parseVCard(body.content) : parseContactsCsv(body.content);
+  if (records.length === 0) {
+    return c.json({ error: "No rows recognized — check the file has a header row with a name column, or that it's a valid vCard export" }, 400);
+  }
+
+  const matches = await matchRecords(c.env.DB, records);
+  return c.json({
+    kind: body.kind,
+    filename: body.filename,
+    totalRows: records.length,
+    auto: matches.filter((m) => m.matchType === 'auto'),
+    review: matches.filter((m) => m.matchType === 'review'),
+    fresh: matches.filter((m) => m.matchType === 'new'),
+  });
+});
+
+// POST /api/contacts/import/commit — the client sends back every record
+// from the preview (auto-matches, newly-created, and whatever the review
+// queue was resolved to) as one decision list, so the whole import
+// commits in a single deterministic pass with nothing held server-side
+// between preview and commit.
+app.post('/api/contacts/import/commit', async (c) => {
+  const body = await c.req.json<{
+    kind: 'contacts' | 'voter_file';
+    filename: string;
+    decisions: { record: ParsedContactRecord; action: 'merge' | 'new'; contactId?: string }[];
+  }>();
+  if (!body.decisions?.length) return c.json({ error: 'no decisions' }, 400);
+
+  const batchId = uid();
+  const ts = now();
+  let newCount = 0;
+  let updatedCount = 0;
+
+  for (const decision of body.decisions) {
+    const r = decision.record;
+    let contactId: string;
+
+    if (decision.action === 'merge' && decision.contactId) {
+      contactId = decision.contactId;
+      // Additive-only merge — only fills fields that are currently empty
+      // on the existing contact. This is the actual mechanism behind
+      // "without losing anything locally": an import can add missing
+      // information, never overwrite something Mike already entered.
+      const existing = await c.env.DB.prepare('SELECT * FROM contacts WHERE id = ?').bind(contactId).first<Contact>();
+      if (existing) {
+        const fields: [string, unknown][] = [];
+        if (!existing.company && r.company) fields.push(['company', r.company]);
+        if (!existing.title && r.title) fields.push(['title', r.title]);
+        if (!existing.address && r.address) fields.push(['address', r.address]);
+        if (!existing.birthday_month && r.birthday_month) {
+          fields.push(['birthday_month', r.birthday_month], ['birthday_day', r.birthday_day], ['birthday_year', r.birthday_year]);
+        }
+        const existingEmails = JSON.parse(existing.emails || '[]') as string[];
+        const existingEmailSet = new Set(existingEmails.map(normalizeEmail));
+        const mergedEmails = [...existingEmails, ...r.emails.filter((e) => !existingEmailSet.has(normalizeEmail(e)))];
+        if (mergedEmails.length !== existingEmails.length) fields.push(['emails', JSON.stringify(mergedEmails)]);
+
+        const existingPhones = JSON.parse(existing.phones || '[]') as string[];
+        const existingPhoneSet = new Set(existingPhones.map(normalizePhone));
+        const mergedPhones = [...existingPhones, ...r.phones.filter((p) => !existingPhoneSet.has(normalizePhone(p)))];
+        if (mergedPhones.length !== existingPhones.length) fields.push(['phones', JSON.stringify(mergedPhones)]);
+
+        if (fields.length > 0) {
+          fields.push(['updated_at', ts]);
+          const setClause = fields.map(([k]) => `${k} = ?`).join(', ');
+          await c.env.DB.prepare(`UPDATE contacts SET ${setClause} WHERE id = ?`)
+            .bind(...fields.map(([, v]) => v), contactId)
+            .run();
+          updatedCount++;
+        }
+      }
+    } else {
+      contactId = uid();
+      // A row that doesn't match anyone becomes its own new contact — for
+      // a voter-file row this is the expected common case, not an error,
+      // but it's tagged source 'voter_file' rather than 'manual' so it
+      // stays out of circles/reach-out nudges meant for people Mike
+      // actually knows (see ContactsListPage's default view).
+      await c.env.DB.prepare(
+        `INSERT INTO contacts
+           (id, name, company, title, circle, emails, phones, address,
+            birthday_month, birthday_day, birthday_year,
+            anniversary_month, anniversary_day, anniversary_year,
+            pinned, source, import_batch_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, 0, ?, ?, ?, ?)`
+      )
+        .bind(
+          contactId,
+          r.name,
+          r.company,
+          r.title,
+          r.circleHint ?? 'other',
+          JSON.stringify(r.emails),
+          JSON.stringify(r.phones),
+          r.address,
+          r.birthday_month,
+          r.birthday_day,
+          r.birthday_year,
+          body.kind === 'voter_file' ? 'voter_file' : 'contact_import',
+          batchId,
+          ts,
+          ts
+        )
+        .run();
+      newCount++;
+    }
+
+    if (body.kind === 'voter_file') {
+      const voterId = uid();
+      await c.env.DB.prepare(
+        `INSERT INTO voter_records (id, contact_id, party, voter_age, household_members, voting_history, raw_data, import_batch_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+        .bind(
+          voterId,
+          contactId,
+          r.party,
+          r.voter_age,
+          r.household_members ? JSON.stringify(r.household_members) : null,
+          r.voting_history ? JSON.stringify(r.voting_history) : null,
+          JSON.stringify(r.raw),
+          batchId,
+          ts,
+          ts
+        )
+        .run();
+    }
+  }
+
+  await c.env.DB.prepare('INSERT INTO import_batches (id, kind, filename, new_count, updated_count, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+    .bind(batchId, body.kind, body.filename, newCount, updatedCount, ts)
+    .run();
+
+  return c.json({ batchId, newCount, updatedCount });
+});
+
+app.get('/api/contacts/import/history', async (c) => {
+  const { results } = await c.env.DB.prepare('SELECT * FROM import_batches ORDER BY created_at DESC LIMIT 20').all<ImportBatch>();
+  return c.json(results ?? []);
 });
 
 // ---- Projects (top-level) ----
