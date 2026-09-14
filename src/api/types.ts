@@ -537,6 +537,14 @@ export interface ContactDetail extends Contact {
   voterRecords: VoterRecord[];
 }
 
+/** Manual dedup — for the pairs the import matcher's automatic name/
+ * nickname rules still can't catch (a misspelling, an unlisted nickname).
+ * Folds `mergeFromId` into the target contact (additive-only, same rule as
+ * an import merge) and deletes it. */
+export interface MergeContactRequest {
+  mergeFromId: string;
+}
+
 /** A recurring task definition managed on the Settings screen — describes
  * the repeating chore itself (title, project, RRULE, anchor date); the
  * actual task instances that show up on Today/Week/Month are ordinary

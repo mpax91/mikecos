@@ -660,9 +660,66 @@ app.patch('/api/contacts/:id', async (c) => {
 
 app.delete('/api/contacts/:id', async (c) => {
   const id = c.req.param('id');
+  await c.env.DB.prepare('DELETE FROM voter_records WHERE contact_id = ?').bind(id).run();
   await c.env.DB.prepare('DELETE FROM contact_notes WHERE contact_id = ?').bind(id).run();
   await c.env.DB.prepare('DELETE FROM contacts WHERE id = ?').bind(id).run();
   return c.json({ ok: true });
+});
+
+// POST /api/contacts/:id/merge — manual duplicate cleanup for the pairs
+// nameMatchKey still can't catch on its own (a nickname not in its list,
+// a misspelling, two genuinely different-looking names Mike recognizes as
+// the same person). `mergeFromId` is folded INTO `:id` and then deleted:
+// additive-only onto the surviving contact (same rule as an import merge —
+// only fills blank fields, unions emails/phones), and every voter_records/
+// contact_notes row moves over rather than getting lost.
+app.post('/api/contacts/:id/merge', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json<{ mergeFromId: string }>();
+  const mergeFromId = body.mergeFromId;
+  if (!mergeFromId || mergeFromId === id) return c.json({ error: 'mergeFromId required and must differ from :id' }, 400);
+
+  const target = await c.env.DB.prepare('SELECT * FROM contacts WHERE id = ?').bind(id).first<Contact>();
+  const source = await c.env.DB.prepare('SELECT * FROM contacts WHERE id = ?').bind(mergeFromId).first<Contact>();
+  if (!target || !source) return c.json({ error: 'contact not found' }, 404);
+
+  const fields: [string, unknown][] = [];
+  if (!target.company && source.company) fields.push(['company', source.company]);
+  if (!target.title && source.title) fields.push(['title', source.title]);
+  if (!target.address && source.address) fields.push(['address', source.address]);
+  if (!target.birthday_month && source.birthday_month) {
+    fields.push(['birthday_month', source.birthday_month], ['birthday_day', source.birthday_day], ['birthday_year', source.birthday_year]);
+  }
+  if (!target.anniversary_month && source.anniversary_month) {
+    fields.push(['anniversary_month', source.anniversary_month], ['anniversary_day', source.anniversary_day], ['anniversary_year', source.anniversary_year]);
+  }
+
+  const targetEmails = JSON.parse(target.emails || '[]') as string[];
+  const targetEmailSet = new Set(targetEmails.map(normalizeEmail));
+  const sourceEmails = JSON.parse(source.emails || '[]') as string[];
+  const mergedEmails = [...targetEmails, ...sourceEmails.filter((e) => !targetEmailSet.has(normalizeEmail(e)))];
+  if (mergedEmails.length !== targetEmails.length) fields.push(['emails', JSON.stringify(mergedEmails)]);
+
+  const targetPhones = JSON.parse(target.phones || '[]') as string[];
+  const targetPhoneSet = new Set(targetPhones.map(normalizePhone));
+  const sourcePhones = JSON.parse(source.phones || '[]') as string[];
+  const mergedPhones = [...targetPhones, ...sourcePhones.filter((p) => !targetPhoneSet.has(normalizePhone(p)))];
+  if (mergedPhones.length !== targetPhones.length) fields.push(['phones', JSON.stringify(mergedPhones)]);
+
+  const ts = now();
+  const stmts: D1PreparedStatement[] = [];
+  if (fields.length > 0) {
+    fields.push(['updated_at', ts]);
+    const setClause = fields.map(([k]) => `${k} = ?`).join(', ');
+    stmts.push(c.env.DB.prepare(`UPDATE contacts SET ${setClause} WHERE id = ?`).bind(...fields.map(([, v]) => v), id));
+  }
+  stmts.push(c.env.DB.prepare('UPDATE voter_records SET contact_id = ? WHERE contact_id = ?').bind(id, mergeFromId));
+  stmts.push(c.env.DB.prepare('UPDATE contact_notes SET contact_id = ? WHERE contact_id = ?').bind(id, mergeFromId));
+  stmts.push(c.env.DB.prepare('DELETE FROM contacts WHERE id = ?').bind(mergeFromId));
+  await c.env.DB.batch(stmts);
+
+  const merged = await c.env.DB.prepare('SELECT * FROM contacts WHERE id = ?').bind(id).first<Contact>();
+  return c.json(merged);
 });
 
 // POST /api/contacts/:id/notes — the quick-add: one line of freeform text,
@@ -1059,13 +1116,74 @@ function normalizeName(n: string): string {
 // surfaces in the "review" queue for a one-click same-person/different-
 // person decision — it never auto-merges on its own, so a loosened match
 // is a safe trade: worse case is one extra click, not a wrong merge.
+const NAME_HONORIFICS = new Set(['hon', 'dr', 'mr', 'mrs', 'ms', 'miss', 'rev', 'prof', 'sen', 'rep', 'capt', 'col', 'gen', 'sgt']);
+const NAME_SUFFIXES = new Set(['jr', 'sr', 'ii', 'iii', 'iv', 'v', 'esq', 'phd', 'md']);
+
+// A handful of common nickname/formal-name pairs — enough that "Greg"
+// matches "Gregory" and "Mike" matches "Michael" without needing a huge
+// dictionary. Deliberately biased toward older/traditional names, since a
+// county voter roll skews that way far more than a friends-and-family
+// address book does. Every entry maps to one canonical form so either
+// spelling normalizes the same way.
+const NICKNAME_CANON: Record<string, string> = {
+  mike: 'michael', mikey: 'michael',
+  greg: 'gregory',
+  bob: 'robert', bobby: 'robert', rob: 'robert', robbie: 'robert',
+  bill: 'william', billy: 'william', will: 'william',
+  liz: 'elizabeth', beth: 'elizabeth', betty: 'elizabeth', eliza: 'elizabeth', lisa: 'elizabeth', betsy: 'elizabeth',
+  tom: 'thomas', tommy: 'thomas',
+  jim: 'james', jimmy: 'james', jamie: 'james',
+  dave: 'david', davy: 'david',
+  chris: 'christopher', kris: 'christopher',
+  steve: 'steven', stevie: 'steven',
+  dan: 'daniel', danny: 'daniel',
+  ken: 'kenneth', kenny: 'kenneth',
+  ed: 'edward', eddie: 'edward', ted: 'edward', teddy: 'edward',
+  nick: 'nicholas', nicky: 'nicholas',
+  matt: 'matthew',
+  sam: 'samuel', sammy: 'samuel',
+  tony: 'anthony',
+  rich: 'richard', rick: 'richard', ricky: 'richard', dick: 'richard',
+  joe: 'joseph', joey: 'joseph',
+  jack: 'john', johnny: 'john',
+  peggy: 'margaret', maggie: 'margaret', meg: 'margaret',
+  sally: 'sarah', sadie: 'sarah',
+  molly: 'mary', polly: 'mary',
+  kate: 'katherine', katie: 'katherine', kathy: 'katherine', kay: 'katherine', cathy: 'katherine',
+  nell: 'cornelia', nellie: 'cornelia',
+  gene: 'eugene',
+  al: 'albert', bert: 'albert',
+  andy: 'andrew', drew: 'andrew',
+  ben: 'benjamin', benny: 'benjamin',
+  charlie: 'charles', chuck: 'charles',
+  frank: 'francis', frankie: 'francis',
+  gerry: 'gerald', jerry: 'gerald',
+  larry: 'lawrence',
+  pat: 'patricia', patty: 'patricia', tricia: 'patricia',
+  ron: 'ronald', ronnie: 'ronald',
+  vince: 'vincent',
+  walt: 'walter',
+};
+
+function canonicalFirstName(token: string): string {
+  return NICKNAME_CANON[token] ?? token;
+}
+
+// Loosens a raw name down to a first+last comparison key: drops honorifics
+// ("Hon.", "Dr.") and generational suffixes ("Jr.", "III") so they don't
+// get mistaken for a middle/first token, drops whatever's between the
+// first and last name (a voter file's middle initial, most often), and
+// canonicalizes common nicknames so "Greg"/"Gregory" and "Mike"/"Michael"
+// compare equal. Only widens the review queue — see matchRecords — never
+// auto-merges on its own, so a broader match here is a safe trade.
 function nameMatchKey(n: string): string {
   const parts = normalizeName(n)
     .replace(/[.,]/g, '')
     .split(' ')
-    .filter(Boolean);
-  if (parts.length <= 2) return parts.join(' ');
-  return `${parts[0]} ${parts[parts.length - 1]}`;
+    .filter((p) => p && !NAME_HONORIFICS.has(p) && !NAME_SUFFIXES.has(p));
+  if (parts.length === 0) return '';
+  if (parts.length === 1) return canonicalFirstName(parts[0]);
+  return `${canonicalFirstName(parts[0])} ${parts[parts.length - 1]}`;
 }
 
 interface ImportMatch {

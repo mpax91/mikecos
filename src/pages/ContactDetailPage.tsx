@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
-import type { ContactCircle, ContactDetail, ContactNote, VoterRecord } from '../api/types';
+import type { Contact, ContactCircle, ContactDetail, ContactNote, VoterRecord } from '../api/types';
 import { Modal } from '../components/Modal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { KebabMenu } from '../components/KebabMenu';
@@ -236,6 +236,82 @@ function VoterRecordSection({ records }: { records: VoterRecord[] }) {
   );
 }
 
+/** Manual duplicate cleanup — for the pairs the import matcher's automatic
+ * name/nickname rules still can't catch (a misspelling, a nickname it
+ * doesn't know). Search picks the OTHER contact; that one gets folded into
+ * the contact you're currently viewing (additive-only) and deleted. */
+function MergeDuplicateModal({
+  currentContact,
+  onMerge,
+  onClose,
+}: {
+  currentContact: ContactDetail;
+  onMerge: (mergeFromId: string) => void;
+  onClose: () => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<Contact[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [selected, setSelected] = useState<Contact | null>(null);
+
+  useEffect(() => {
+    if (!query.trim()) {
+      setResults([]);
+      return;
+    }
+    setSearching(true);
+    const handle = setTimeout(() => {
+      api
+        .listContacts({ q: query, includeVoters: true })
+        .then((r) => setResults(r.filter((c) => c.id !== currentContact.id)))
+        .finally(() => setSearching(false));
+    }, 250);
+    return () => clearTimeout(handle);
+  }, [query, currentContact.id]);
+
+  return (
+    <Modal title={`Merge a duplicate into "${currentContact.name}"`} onClose={onClose}>
+      {!selected ? (
+        <>
+          <p className="contact-detail__section-hint" style={{ marginTop: 0 }}>
+            Search for the duplicate contact — it'll be folded into "{currentContact.name}" (filling in anything
+            blank, keeping everything already here) and then removed.
+          </p>
+          <input autoFocus placeholder="Search contacts and the voter roll…" value={query} onChange={(e) => setQuery(e.target.value)} />
+          {searching && <div className="empty-state empty-state--section">Searching…</div>}
+          {!searching && query.trim() && results.length === 0 && <div className="empty-state empty-state--section">No matches.</div>}
+          {results.length > 0 && (
+            <div className="contact-import__review-list" style={{ marginTop: 12 }}>
+              {results.slice(0, 20).map((c) => (
+                <button key={c.id} type="button" className="contact-import__review-row" style={{ cursor: 'pointer', width: '100%', textAlign: 'left' }} onClick={() => setSelected(c)}>
+                  <strong>{c.name}</strong>
+                  <span className="contact-import__review-hint"> {circleLabel(c.circle)}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </>
+      ) : (
+        <p>
+          Merge <strong>{selected.name}</strong> into <strong>{currentContact.name}</strong>? "{selected.name}" will be
+          removed; anything it has that "{currentContact.name}" doesn't (emails, phone, address, birthday, voter
+          record) will move over.
+        </p>
+      )}
+      <div className="modal__actions">
+        <button className="btn btn--ghost" onClick={selected ? () => setSelected(null) : onClose}>
+          {selected ? 'Back' : 'Cancel'}
+        </button>
+        {selected && (
+          <button className="btn" onClick={() => onMerge(selected.id)}>
+            Merge
+          </button>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
 function NoteRow({ note, onResolve, onDelete }: { note: ContactNote; onResolve: (resolved: boolean) => void; onDelete: () => void }) {
   const hasReminder = !!note.remind_at && !note.remind_resolved;
   return (
@@ -278,6 +354,7 @@ export function ContactDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [merging, setMerging] = useState(false);
   const [noteDraft, setNoteDraft] = useState('');
   const [remindMe, setRemindMe] = useState(false);
 
@@ -307,6 +384,13 @@ export function ContactDetailPage() {
   async function handleDelete() {
     await api.deleteContact(contactId);
     navigate('/contacts');
+  }
+
+  async function handleMerge(mergeFromId: string) {
+    const merged = await api.mergeContact(contactId, mergeFromId);
+    setMerging(false);
+    setContact((prev) => (prev ? { ...prev, ...merged } : prev));
+    load(); // notes/voterRecords moved over by the merge — refetch to pick them up
   }
 
   async function handleAddNote() {
@@ -363,6 +447,7 @@ export function ContactDetailPage() {
           items={[
             { label: 'Edit', onClick: () => setEditing(true) },
             { label: isPinned ? 'Unpin' : 'Pin to top', onClick: handleTogglePin },
+            { label: 'Merge a duplicate into this contact…', onClick: () => setMerging(true) },
             { label: 'Delete', onClick: () => setDeleting(true), danger: true, separatorBefore: true },
           ]}
         />
@@ -478,6 +563,8 @@ export function ContactDetailPage() {
       )}
 
       {editing && <EditDetailsModal contact={contact} onSave={handleSaveDetails} onClose={() => setEditing(false)} />}
+
+      {merging && <MergeDuplicateModal currentContact={contact} onMerge={handleMerge} onClose={() => setMerging(false)} />}
 
       {deleting && (
         <ConfirmModal

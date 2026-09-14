@@ -200,6 +200,13 @@ export const api = {
 
   deleteContact: (id: string) => request<{ ok: true }>(`/api/contacts/${id}`, { method: 'DELETE' }),
 
+  /** Manual duplicate cleanup — folds mergeFromId into id (additive-only:
+   * only fills blank fields, unions emails/phones) and deletes mergeFromId,
+   * moving its notes and any voter record over. For duplicates the import
+   * matcher's name/nickname rules don't catch on their own. */
+  mergeContact: (id: string, mergeFromId: string) =>
+    request<Contact>(`/api/contacts/${id}/merge`, { method: 'POST', body: JSON.stringify({ mergeFromId }) }),
+
   addContactNote: (contactId: string, text: string, remindInDays?: number) =>
     request<ContactNote>(`/api/contacts/${contactId}/notes`, {
       method: 'POST',
