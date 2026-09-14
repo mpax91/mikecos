@@ -25,6 +25,19 @@ app.use('*', async (c, next) => {
   return corsMiddleware(c, next);
 });
 
+// Hono's default unhandled-error response is a bare "Internal Server Error"
+// with no body — fine for not leaking internals to an outside caller, but
+// this app has exactly one caller (its own frontend, same person on both
+// ends) and that blank response is what turned a real, diagnosable D1 error
+// into an opaque "API 500" for Mike with nothing to go on. Surface the
+// actual message instead so a report like that comes with something
+// actionable in it; still logs server-side too, in case Cloudflare's own
+// logs are checked directly.
+app.onError((err, c) => {
+  console.error(err);
+  return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
+});
+
 const now = () => new Date().toISOString();
 const uid = () => crypto.randomUUID();
 
