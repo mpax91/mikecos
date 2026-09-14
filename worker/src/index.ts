@@ -519,14 +519,28 @@ const CIRCLES: ContactCircle[] = ['family', 'friends', 'neighbors', 'community',
 // finds Alice even though her name doesn't contain it.
 // ?circle= filters to one circle.
 // ?reminders=1 returns only contacts with an unresolved, due check-in note.
+// ?voters=1 includes standalone voter-roll entries (source='voter_file' —
+// a voter-file row that didn't match any personal contact, so it became its
+// own contact with no relationship to Mike at all). These default to
+// EXCLUDED: personal contacts are the CRM, the voter roll is 12k+ rows of
+// people Mike has never met, and mixing them in by default is exactly what
+// made it "feel like" personal contacts weren't searchable — a search for
+// a common name returns far more voter-roll matches than personal ones, and
+// they buried each other in an unsorted mix. A merged contact (voter data
+// blended onto a contact Mike already had) keeps its original source and is
+// never affected by this filter.
 app.get('/api/contacts', async (c) => {
   const q = c.req.query('q')?.trim();
   const circle = c.req.query('circle');
   const remindersOnly = c.req.query('reminders') === '1';
+  const includeVoters = c.req.query('voters') === '1';
 
   let sql = 'SELECT * FROM contacts WHERE 1=1';
   const binds: unknown[] = [];
 
+  if (!includeVoters) {
+    sql += " AND source != 'voter_file'";
+  }
   if (q) {
     sql += ' AND (name LIKE ? OR id IN (SELECT contact_id FROM contact_notes WHERE text LIKE ?))';
     binds.push(`%${q}%`, `%${q}%`);
@@ -539,7 +553,12 @@ app.get('/api/contacts', async (c) => {
     sql += " AND id IN (SELECT contact_id FROM contact_notes WHERE remind_resolved = 0 AND remind_at IS NOT NULL AND remind_at <= ?)";
     binds.push(now());
   }
-  sql += ' ORDER BY pinned DESC, name ASC';
+  // COLLATE NOCASE — voter-roll names import as ALL CAPS while personal
+  // contacts keep normal case; a plain binary ORDER BY name ASC sorts every
+  // uppercase name before any lowercase one (ASCII 'A' < 'a'), which packs
+  // all voter entries before personal ones regardless of actual alphabetical
+  // order. Matters most when includeVoters=1, but correct either way.
+  sql += ' ORDER BY pinned DESC, name COLLATE NOCASE ASC';
 
   const { results } = await c.env.DB.prepare(sql).bind(...binds).all<Contact>();
   return c.json(results ?? []);

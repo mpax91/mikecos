@@ -130,8 +130,14 @@ function EditDetailsModal({ contact, onSave, onClose }: { contact: ContactDetail
  * himself (see migrations/0018_contact_import.sql). `raw_data` is shown
  * as a collapsible "all imported fields" list so whatever columns a
  * given voter file happens to have — even ones we don't parse into a
- * dedicated field — are still there to look up, not silently dropped. */
+ * dedicated field — are still there to look up, not silently dropped.
+ *
+ * Collapsed by default: personal contact info is the primary thing this
+ * card is about, and voter data — even when it's there — is secondary
+ * reference material, not something that should compete with it for
+ * attention the moment the page loads. */
 function VoterRecordSection({ records }: { records: VoterRecord[] }) {
+  const [sectionOpen, setSectionOpen] = useState(false);
   const [openIds, setOpenIds] = useState<Set<string>>(new Set());
   if (records.length === 0) return null;
 
@@ -145,9 +151,28 @@ function VoterRecordSection({ records }: { records: VoterRecord[] }) {
   }
 
   return (
-    <div>
-      <h2 className="contact-detail__section-title">Voter Record</h2>
-      {records.map((r) => {
+    <div className="voter-record-section">
+      <button
+        type="button"
+        className="voter-record-section__header"
+        onClick={() => setSectionOpen((v) => !v)}
+        aria-expanded={sectionOpen}
+      >
+        <span className="contact-detail__section-title voter-record-section__title">
+          Voter Record
+          {records[0]?.party && <span className="chip chip--accent voter-record-section__party">{records[0].party}</span>}
+        </span>
+        <span className="voter-record-section__caret">{sectionOpen ? '▾' : '▸'}</span>
+      </button>
+
+      {!sectionOpen && (
+        <p className="contact-detail__section-hint voter-record-section__hint">
+          From the Bedford voter file — click to view registration, household, and voting history.
+        </p>
+      )}
+
+      {sectionOpen &&
+      records.map((r) => {
         const household = r.household_members ? (JSON.parse(r.household_members) as string[]) : [];
         const historyRaw = r.voting_history ? (JSON.parse(r.voting_history) as string) : '';
         const history = historyRaw

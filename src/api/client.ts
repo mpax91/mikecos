@@ -177,11 +177,12 @@ export const api = {
 
   // ---- Contacts (personal CRM) ----
 
-  listContacts: (opts?: { q?: string; circle?: ContactCircle; remindersOnly?: boolean }) => {
+  listContacts: (opts?: { q?: string; circle?: ContactCircle; remindersOnly?: boolean; includeVoters?: boolean }) => {
     const params = new URLSearchParams();
     if (opts?.q) params.set('q', opts.q);
     if (opts?.circle) params.set('circle', opts.circle);
     if (opts?.remindersOnly) params.set('reminders', '1');
+    if (opts?.includeVoters) params.set('voters', '1');
     const qs = params.toString();
     return request<Contact[]>(`/api/contacts${qs ? `?${qs}` : ''}`);
   },

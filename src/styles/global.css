@@ -5047,6 +5047,48 @@ a {
   color: var(--color-ink);
 }
 
+.contact-detail__section-hint {
+  font-size: 12px;
+  color: var(--color-muted);
+  margin: -4px 0 14px;
+}
+
+.voter-record-section {
+  margin-bottom: 20px;
+}
+
+.voter-record-section__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.voter-record-section__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.voter-record-section__party {
+  font-size: 11px;
+}
+
+.voter-record-section__caret {
+  color: var(--color-muted);
+  font-size: 13px;
+}
+
+.voter-record-section__hint {
+  margin-top: -6px;
+}
+
 .voter-record {
   background: var(--color-card-bg);
   border: var(--border-hairline);

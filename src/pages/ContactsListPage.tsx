@@ -85,16 +85,27 @@ export function ContactsListPage() {
   const [circleFilter, setCircleFilter] = useState<ContactCircle | null>(null);
   const [remindersOnly, setRemindersOnly] = useState(false);
   const [reminderCount, setReminderCount] = useState(0);
+  // Standalone voter-roll entries (12k+ people Mike has never met) are
+  // excluded by default — see api.listContacts' `voters` param — so the
+  // list and search stay about the personal contacts this CRM is actually
+  // for. This toggle is the escape hatch when he does want to look someone
+  // up in the roll itself.
+  const [includeVoters, setIncludeVoters] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [deleting, setDeleting] = useState<Contact | null>(null);
 
   const load = useCallback(() => {
     api
-      .listContacts({ q: query || undefined, circle: circleFilter ?? undefined, remindersOnly: remindersOnly || undefined })
+      .listContacts({
+        q: query || undefined,
+        circle: circleFilter ?? undefined,
+        remindersOnly: remindersOnly || undefined,
+        includeVoters: includeVoters || undefined,
+      })
       .then(setContacts)
       .catch((e) => setError(String(e)));
-  }, [query, circleFilter, remindersOnly]);
+  }, [query, circleFilter, remindersOnly, includeVoters]);
 
   useEffect(() => {
     load();
@@ -144,7 +155,7 @@ export function ContactsListPage() {
 
       <div className="toolbar-row" style={{ marginTop: 4, flexWrap: 'wrap', gap: 8 }}>
         <input
-          placeholder="Search contacts and notes…"
+          placeholder={includeVoters ? 'Search contacts, notes, and the voter roll…' : 'Search contacts and notes…'}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           style={{ maxWidth: 260 }}
@@ -177,6 +188,14 @@ export function ContactsListPage() {
             🔔 {reminderCount} need{reminderCount === 1 ? 's' : ''} a check-in
           </button>
         )}
+        <button
+          type="button"
+          className={`chip${includeVoters ? ' is-active' : ''}`}
+          onClick={() => setIncludeVoters((v) => !v)}
+          title="Include people from the voter roll who aren't already one of your contacts"
+        >
+          🗳️ Voter Roll {includeVoters ? 'shown' : 'hidden'}
+        </button>
       </div>
 
       {!contacts ? (
