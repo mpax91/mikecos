@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../../api/client';
-import type { ImportBatch, ImportDecision, ImportMatch, ImportPreviewResponse, OrphanedImportsResponse, VoterNamesPreviewResponse } from '../../api/types';
+import type { DuplicateCandidate, ImportBatch, ImportDecision, ImportMatch, ImportPreviewResponse, OrphanedImportsResponse, VoterNamesPreviewResponse } from '../../api/types';
 import { formatRelativeTime } from '../../utils/formatRelativeTime';
 
 type Kind = 'contacts' | 'voter_file';
@@ -13,6 +13,11 @@ const CHUNK_SIZE = 150;
 // Same reasoning as CHUNK_SIZE above, applied to the voter-name bulk
 // cleanup instead of a fresh import.
 const NAME_CLEANUP_CHUNK_SIZE = 200;
+
+// How many duplicate-candidate rows to render before "show all" — the
+// scanner can surface a lot of pairs, and there's no need to paint them
+// all at once when the list is going to shrink as Mike merges through it.
+const DUPLICATES_INITIAL_SHOW = 25;
 
 function UploadCard({
   kind,
@@ -79,6 +84,58 @@ function ReviewRow({
   );
 }
 
+/** One duplicate-candidate row — a personal contact matched against one or
+ * more standalone voter-roll contacts sharing its name. `voters.length` is
+ * almost always 1 (one Merge button); when it's more than one (two
+ * different voter-roll people whose names happen to reduce to the same
+ * key), each gets its own button since only Mike can tell which — if
+ * either — is really the same person. */
+function DuplicateRow({
+  candidate,
+  onMerge,
+  mergingVoterId,
+}: {
+  candidate: DuplicateCandidate;
+  onMerge: (voterId: string) => void;
+  mergingVoterId: string | null;
+}) {
+  return (
+    <div className="contact-import__review-row">
+      <div>
+        <strong>{candidate.personal.name}</strong>
+        <span className="contact-import__review-hint"> ({circleLabelFor(candidate.personal.circle)}) — matches the voter roll</span>
+      </div>
+      <div className="contact-import__review-actions">
+        {candidate.voters.map((v) => (
+          <button
+            key={v.id}
+            type="button"
+            className="chip"
+            onClick={() => onMerge(v.id)}
+            disabled={mergingVoterId === v.id}
+            title={`Merge "${v.name}" into "${candidate.personal.name}"`}
+          >
+            {mergingVoterId === v.id ? 'Merging…' : `Merge "${v.name}"`}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const CIRCLE_LABELS: Record<string, string> = {
+  family: 'Family',
+  friends: 'Friends',
+  neighbors: 'Neighbors',
+  community: 'Community',
+  professional: 'Professional',
+  other: 'Other',
+};
+
+function circleLabelFor(circle: string): string {
+  return CIRCLE_LABELS[circle] ?? 'Other';
+}
+
 /** Contact & Voter File Import — Settings panel for bringing personal
  * contacts (Google's CSV export, or a vCard export from Apple/Samsung/
  * Outlook) and the Bedford voter roll (CSV) into MikeOS's Contacts.
@@ -108,6 +165,9 @@ export function ContactImportPanel() {
   const [nameCleanup, setNameCleanup] = useState<VoterNamesPreviewResponse | null>(null);
   const [confirmingNameCleanup, setConfirmingNameCleanup] = useState(false);
   const [nameCleanupProgress, setNameCleanupProgress] = useState<{ done: number; total: number } | null>(null);
+  const [duplicates, setDuplicates] = useState<DuplicateCandidate[] | null>(null);
+  const [mergingVoterId, setMergingVoterId] = useState<string | null>(null);
+  const [showAllDuplicates, setShowAllDuplicates] = useState(false);
 
   function loadHistory() {
     api.listImportHistory().then(setHistory).catch(() => {});
@@ -121,11 +181,41 @@ export function ContactImportPanel() {
     api.previewVoterNameCleanup().then(setNameCleanup).catch(() => {});
   }
 
+  function loadDuplicates() {
+    api
+      .listDuplicateCandidates()
+      .then((r) => setDuplicates(r.candidates))
+      .catch(() => {});
+  }
+
   useEffect(() => {
     loadHistory();
     loadOrphaned();
     loadNameCleanup();
+    loadDuplicates();
   }, []);
+
+  async function handleMergeDuplicate(personalId: string, voterId: string) {
+    setMergingVoterId(voterId);
+    setError(null);
+    try {
+      await api.mergeContact(personalId, voterId);
+      // Optimistic: drop just this voter from its candidate (or the whole
+      // candidate if that was its only match) rather than re-fetching the
+      // whole scan, which can be a few hundred rows on a full contact list.
+      setDuplicates((prev) =>
+        prev
+          ? prev
+              .map((cand) => (cand.personal.id === personalId ? { ...cand, voters: cand.voters.filter((v) => v.id !== voterId) } : cand))
+              .filter((cand) => cand.voters.length > 0)
+          : prev
+      );
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setMergingVoterId(null);
+    }
+  }
 
   async function handleCleanupVoterNames() {
     if (!nameCleanup) return;
@@ -400,6 +490,25 @@ export function ContactImportPanel() {
                 Clean Up {nameCleanup.changeCount.toLocaleString()} Name{nameCleanup.changeCount === 1 ? '' : 's'}
               </button>
             </div>
+          )}
+        </div>
+      )}
+
+      {duplicates && duplicates.length > 0 && (
+        <div className="contact-import__orphaned">
+          <h3 className="contact-import__card-title">Possible Duplicates</h3>
+          <p className="contact-import__card-desc">
+            {duplicates.length.toLocaleString()} contact{duplicates.length === 1 ? '' : 's'} in your circles {duplicates.length === 1 ? 'has a' : 'have'} a
+            matching name on the voter roll. Merge the ones that are really the same person — this never overwrites what you already
+            have, it only fills in blanks.
+          </p>
+          {(showAllDuplicates ? duplicates : duplicates.slice(0, DUPLICATES_INITIAL_SHOW)).map((c) => (
+            <DuplicateRow key={c.personal.id} candidate={c} onMerge={(voterId) => handleMergeDuplicate(c.personal.id, voterId)} mergingVoterId={mergingVoterId} />
+          ))}
+          {duplicates.length > DUPLICATES_INITIAL_SHOW && (
+            <button type="button" className="btn btn--ghost" onClick={() => setShowAllDuplicates((v) => !v)}>
+              {showAllDuplicates ? 'Show fewer' : `Show all ${duplicates.length.toLocaleString()}`}
+            </button>
           )}
         </div>
       )}

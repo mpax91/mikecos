@@ -1,4 +1,4 @@
-import type { CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactDetail, ContactNote, DeleteImportBatchResponse, Entity, EntityDetail, EntityType, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, MeetingsRangeResponse, MeetingsResponse, MonthResponse, OrphanedImportsResponse, ProjectListItem, RecurringTaskDefinition, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, WeatherResponse, WeekResponse } from './types';
+import type { CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactDetail, ContactNote, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, MeetingsRangeResponse, MeetingsResponse, MonthResponse, OrphanedImportsResponse, ProjectListItem, RecurringTaskDefinition, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, WeatherResponse, WeekResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -206,6 +206,11 @@ export const api = {
    * matcher's name/nickname rules don't catch on their own. */
   mergeContact: (id: string, mergeFromId: string) =>
     request<Contact>(`/api/contacts/${id}/merge`, { method: 'POST', body: JSON.stringify({ mergeFromId }) }),
+
+  /** Scans for likely duplicates already in the database — a personal
+   * contact whose name matches one or more standalone voter-roll contacts.
+   * Detection only; each candidate still needs its own mergeContact call. */
+  listDuplicateCandidates: () => request<DuplicateCandidatesResponse>('/api/contacts/duplicates'),
 
   addContactNote: (contactId: string, text: string, remindInDays?: number) =>
     request<ContactNote>(`/api/contacts/${contactId}/notes`, {

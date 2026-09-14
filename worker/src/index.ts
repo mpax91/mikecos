@@ -601,6 +601,58 @@ app.post('/api/contacts', async (c) => {
   return c.json(contact, 201);
 });
 
+// GET /api/contacts/duplicates — finds likely duplicate pairs already
+// sitting in the database (as opposed to /api/contacts/import/preview's
+// matching, which only runs against a file being imported right now).
+// Groups every contact by nameMatchKey and reports a candidate wherever
+// exactly one PERSONAL contact (source != 'voter_file') shares a key with
+// one or more standalone voter-roll contacts. Deliberately skips a key
+// where more than one personal contact collides — that's ambiguous (which
+// one is the real match?) and not safe to suggest automatically. Doesn't
+// touch anything itself; each candidate still needs the one-click Merge
+// action (POST /api/contacts/:id/merge) to actually combine them, since
+// name-only matching can be wrong — most often two different people who
+// share a name (a parent and child, most commonly).
+//
+// Registered BEFORE /api/contacts/:id below: a static "/duplicates" segment
+// and the ":id" param route are at the same path depth, and in practice
+// this router matches whichever is registered first rather than always
+// preferring the static route — so this has to come first or every request
+// here gets swallowed by the :id handler as a "contact not found".
+app.get('/api/contacts/duplicates', async (c) => {
+  const { results } = await c.env.DB.prepare('SELECT id, name, circle, source FROM contacts').all<{
+    id: string;
+    name: string;
+    circle: string;
+    source: string;
+  }>();
+  const rows = results ?? [];
+
+  const byKey = new Map<string, { personal: typeof rows; voters: typeof rows }>();
+  for (const r of rows) {
+    const key = nameMatchKey(r.name);
+    if (!key) continue;
+    if (!byKey.has(key)) byKey.set(key, { personal: [], voters: [] });
+    const bucket = byKey.get(key)!;
+    if (r.source === 'voter_file') bucket.voters.push(r);
+    else bucket.personal.push(r);
+  }
+
+  const candidates: { key: string; personal: { id: string; name: string; circle: string }; voters: { id: string; name: string }[] }[] = [];
+  for (const [key, bucket] of byKey) {
+    if (bucket.personal.length === 1 && bucket.voters.length >= 1) {
+      candidates.push({
+        key,
+        personal: { id: bucket.personal[0].id, name: bucket.personal[0].name, circle: bucket.personal[0].circle },
+        voters: bucket.voters.map((v) => ({ id: v.id, name: v.name })),
+      });
+    }
+  }
+  candidates.sort((a, b) => a.personal.name.localeCompare(b.personal.name));
+
+  return c.json({ candidates });
+});
+
 // GET /api/contacts/:id — the contact plus its full note feed (newest
 // first) and any voter-file records blended into it. One request for the
 // whole detail page rather than a round trip per section.

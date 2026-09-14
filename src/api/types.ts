@@ -564,6 +564,22 @@ export interface MergeContactRequest {
   mergeFromId: string;
 }
 
+/** GET /api/contacts/duplicates — likely duplicate pairs already sitting
+ * in the database: one personal contact whose name matches one or more
+ * standalone voter-roll contacts. `voters` can have more than one entry
+ * (rare — two different voter-roll people whose names happen to reduce to
+ * the same key); each still needs its own Merge click. Detection only —
+ * nothing here is merged until POST /api/contacts/:id/merge runs. */
+export interface DuplicateCandidate {
+  key: string;
+  personal: { id: string; name: string; circle: ContactCircle };
+  voters: { id: string; name: string }[];
+}
+
+export interface DuplicateCandidatesResponse {
+  candidates: DuplicateCandidate[];
+}
+
 /** A recurring task definition managed on the Settings screen — describes
  * the repeating chore itself (title, project, RRULE, anchor date); the
  * actual task instances that show up on Today/Week/Month are ordinary
