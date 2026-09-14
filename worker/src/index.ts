@@ -1,6 +1,18 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import type { CanvasBoard, CanvasConnector, CanvasItem, CanvasItemType, Env, Entity, ShelfItem, ShelfItemType } from './types';
+import type {
+  CanvasBoard,
+  CanvasConnector,
+  CanvasItem,
+  CanvasItemType,
+  Contact,
+  ContactCircle,
+  ContactNote,
+  Env,
+  Entity,
+  ShelfItem,
+  ShelfItemType,
+} from './types';
 import { calendarIdFromIcsUrl, meetingsForDate, meetingsForRange } from './ics';
 import { describeRrule, isValidRrule, nextDueOccurrenceDate, type RecurringTaskDefinition } from './recurring';
 
@@ -493,6 +505,186 @@ app.post('/api/shelf/:id/graduate', async (c) => {
 
   const jot = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(jotId).first<Entity>();
   return c.json(jot, 201);
+});
+
+// ---- Contacts (personal CRM) ----
+
+const CIRCLES: ContactCircle[] = ['family', 'friends', 'neighbors', 'community', 'professional', 'other'];
+
+// GET /api/contacts — pinned first, then alphabetical (this is a lookup
+// list you browse by name, unlike Jots/Shelf's recency ordering).
+// ?q= searches both contact names and their note text, so "restaurant"
+// finds Alice even though her name doesn't contain it.
+// ?circle= filters to one circle.
+// ?reminders=1 returns only contacts with an unresolved, due check-in note.
+app.get('/api/contacts', async (c) => {
+  const q = c.req.query('q')?.trim();
+  const circle = c.req.query('circle');
+  const remindersOnly = c.req.query('reminders') === '1';
+
+  let sql = 'SELECT * FROM contacts WHERE 1=1';
+  const binds: unknown[] = [];
+
+  if (q) {
+    sql += ' AND (name LIKE ? OR id IN (SELECT contact_id FROM contact_notes WHERE text LIKE ?))';
+    binds.push(`%${q}%`, `%${q}%`);
+  }
+  if (circle && CIRCLES.includes(circle as ContactCircle)) {
+    sql += ' AND circle = ?';
+    binds.push(circle);
+  }
+  if (remindersOnly) {
+    sql += " AND id IN (SELECT contact_id FROM contact_notes WHERE remind_resolved = 0 AND remind_at IS NOT NULL AND remind_at <= ?)";
+    binds.push(now());
+  }
+  sql += ' ORDER BY pinned DESC, name ASC';
+
+  const { results } = await c.env.DB.prepare(sql).bind(...binds).all<Contact>();
+  return c.json(results ?? []);
+});
+
+app.post('/api/contacts', async (c) => {
+  const body = await c.req.json<Partial<Contact>>();
+  if (!body.name?.trim()) return c.json({ error: 'name required' }, 400);
+  const id = uid();
+  const ts = now();
+  const circle = CIRCLES.includes(body.circle as ContactCircle) ? body.circle : 'other';
+  await c.env.DB.prepare(
+    `INSERT INTO contacts
+       (id, name, company, title, circle, emails, phones, address,
+        birthday_month, birthday_day, birthday_year,
+        anniversary_month, anniversary_day, anniversary_year,
+        pinned, source, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'manual', ?, ?)`
+  )
+    .bind(
+      id,
+      body.name.trim(),
+      body.company ?? null,
+      body.title ?? null,
+      circle,
+      JSON.stringify(body.emails ?? []),
+      JSON.stringify(body.phones ?? []),
+      body.address ?? null,
+      body.birthday_month ?? null,
+      body.birthday_day ?? null,
+      body.birthday_year ?? null,
+      body.anniversary_month ?? null,
+      body.anniversary_day ?? null,
+      body.anniversary_year ?? null,
+      ts,
+      ts
+    )
+    .run();
+  const contact = await c.env.DB.prepare('SELECT * FROM contacts WHERE id = ?').bind(id).first<Contact>();
+  return c.json(contact, 201);
+});
+
+// GET /api/contacts/:id — the contact plus its full note feed, newest
+// first. One request for the whole detail page rather than a second round
+// trip for notes.
+app.get('/api/contacts/:id', async (c) => {
+  const id = c.req.param('id');
+  const contact = await c.env.DB.prepare('SELECT * FROM contacts WHERE id = ?').bind(id).first<Contact>();
+  if (!contact) return c.json({ error: 'not found' }, 404);
+  const { results: notes } = await c.env.DB.prepare('SELECT * FROM contact_notes WHERE contact_id = ? ORDER BY created_at DESC')
+    .bind(id)
+    .all<ContactNote>();
+  return c.json({ ...contact, notes: notes ?? [] });
+});
+
+app.patch('/api/contacts/:id', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json<Partial<Contact>>();
+  const existing = await c.env.DB.prepare('SELECT id FROM contacts WHERE id = ?').bind(id).first();
+  if (!existing) return c.json({ error: 'not found' }, 404);
+
+  // Build the SET clause from whichever fields were actually sent, same
+  // partial-update pattern as PATCH /api/entities/:id — a contact's edit
+  // form only sends what changed, not the whole record.
+  const fields: [string, unknown][] = [];
+  const simple: (keyof Contact)[] = [
+    'name',
+    'company',
+    'title',
+    'address',
+    'birthday_month',
+    'birthday_day',
+    'birthday_year',
+    'anniversary_month',
+    'anniversary_day',
+    'anniversary_year',
+  ];
+  for (const key of simple) {
+    if (key in body) fields.push([key, (body as Record<string, unknown>)[key] ?? null]);
+  }
+  if (body.circle !== undefined && CIRCLES.includes(body.circle as ContactCircle)) fields.push(['circle', body.circle]);
+  if (body.emails !== undefined) fields.push(['emails', JSON.stringify(body.emails)]);
+  if (body.phones !== undefined) fields.push(['phones', JSON.stringify(body.phones)]);
+  if (body.pinned !== undefined) fields.push(['pinned', body.pinned ? 1 : 0]);
+
+  if (fields.length > 0) {
+    fields.push(['updated_at', now()]);
+    const setClause = fields.map(([k]) => `${k} = ?`).join(', ');
+    await c.env.DB.prepare(`UPDATE contacts SET ${setClause} WHERE id = ?`)
+      .bind(...fields.map(([, v]) => v), id)
+      .run();
+  }
+  const contact = await c.env.DB.prepare('SELECT * FROM contacts WHERE id = ?').bind(id).first<Contact>();
+  return c.json(contact);
+});
+
+app.delete('/api/contacts/:id', async (c) => {
+  const id = c.req.param('id');
+  await c.env.DB.prepare('DELETE FROM contact_notes WHERE contact_id = ?').bind(id).run();
+  await c.env.DB.prepare('DELETE FROM contacts WHERE id = ?').bind(id).run();
+  return c.json({ ok: true });
+});
+
+// POST /api/contacts/:id/notes — the quick-add: one line of freeform text,
+// optionally flagged to resurface later. `remind_in_days` is resolved to an
+// actual date here (server clock, not the client's) rather than trusting a
+// client-computed timestamp.
+app.post('/api/contacts/:id/notes', async (c) => {
+  const contactId = c.req.param('id');
+  const body = await c.req.json<{ text: string; remind_in_days?: number }>();
+  if (!body.text?.trim()) return c.json({ error: 'text required' }, 400);
+  const contact = await c.env.DB.prepare('SELECT id FROM contacts WHERE id = ?').bind(contactId).first();
+  if (!contact) return c.json({ error: 'not found' }, 404);
+
+  const id = uid();
+  const ts = now();
+  const remindAt = body.remind_in_days
+    ? new Date(Date.now() + body.remind_in_days * 24 * 60 * 60 * 1000).toISOString()
+    : null;
+  await c.env.DB.prepare(
+    `INSERT INTO contact_notes (id, contact_id, text, source_type, source_id, remind_at, remind_resolved, created_at)
+     VALUES (?, ?, ?, 'quick_note', NULL, ?, 0, ?)`
+  )
+    .bind(id, contactId, body.text.trim(), remindAt, ts)
+    .run();
+  const note = await c.env.DB.prepare('SELECT * FROM contact_notes WHERE id = ?').bind(id).first<ContactNote>();
+  return c.json(note, 201);
+});
+
+// PATCH /api/contacts/:id/notes/:noteId — currently only for resolving
+// (dismissing) a check-in reminder once you've acted on it.
+app.patch('/api/contacts/:id/notes/:noteId', async (c) => {
+  const noteId = c.req.param('noteId');
+  const body = await c.req.json<{ remind_resolved?: boolean }>();
+  if (body.remind_resolved !== undefined) {
+    await c.env.DB.prepare('UPDATE contact_notes SET remind_resolved = ? WHERE id = ?')
+      .bind(body.remind_resolved ? 1 : 0, noteId)
+      .run();
+  }
+  const note = await c.env.DB.prepare('SELECT * FROM contact_notes WHERE id = ?').bind(noteId).first<ContactNote>();
+  return c.json(note);
+});
+
+app.delete('/api/contacts/:id/notes/:noteId', async (c) => {
+  const noteId = c.req.param('noteId');
+  await c.env.DB.prepare('DELETE FROM contact_notes WHERE id = ?').bind(noteId).run();
+  return c.json({ ok: true });
 });
 
 // ---- Projects (top-level) ----

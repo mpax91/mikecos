@@ -105,6 +105,45 @@ export interface ShelfItem {
   created_at: string;
 }
 
+// See migrations/0017_contacts.sql for the reasoning behind this shape —
+// multi-value fields and split month/day/year dates, kept off the Entity
+// schema entirely.
+export type ContactCircle = 'family' | 'friends' | 'neighbors' | 'community' | 'professional' | 'other';
+
+export interface Contact {
+  id: string;
+  name: string;
+  company: string | null;
+  title: string | null;
+  circle: ContactCircle;
+  emails: string; // JSON string[]
+  phones: string; // JSON string[]
+  address: string | null;
+  birthday_month: number | null;
+  birthday_day: number | null;
+  birthday_year: number | null;
+  anniversary_month: number | null;
+  anniversary_day: number | null;
+  anniversary_year: number | null;
+  pinned: number; // 0 | 1
+  source: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ContactNoteSourceType = 'quick_note' | 'jot' | 'note' | 'task';
+
+export interface ContactNote {
+  id: string;
+  contact_id: string;
+  text: string;
+  source_type: ContactNoteSourceType;
+  source_id: string | null;
+  remind_at: string | null;
+  remind_resolved: number; // 0 | 1
+  created_at: string;
+}
+
 export interface Env {
   DB: D1Database;
   FILES: R2Bucket;

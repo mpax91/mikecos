@@ -13,6 +13,8 @@ import { StatsPage } from './pages/StatsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { BoardsListPage } from './pages/BoardsListPage';
 import { CanvasBoardPage } from './pages/CanvasBoardPage';
+import { ContactsListPage } from './pages/ContactsListPage';
+import { ContactDetailPage } from './pages/ContactDetailPage';
 
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -39,6 +41,8 @@ export default function App() {
             <Route path="/stats" element={<StatsPage />} />
             <Route path="/boards" element={<BoardsListPage />} />
             <Route path="/boards/:id" element={<CanvasBoardPage />} />
+            <Route path="/contacts" element={<ContactsListPage />} />
+            <Route path="/contacts/:id" element={<ContactDetailPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/today" replace />} />
           </Routes>

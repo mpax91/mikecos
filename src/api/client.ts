@@ -1,4 +1,4 @@
-import type { CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, CompletionsResponse, ConnectorItemContent, Entity, EntityDetail, EntityType, MeetingsRangeResponse, MeetingsResponse, MonthResponse, ProjectListItem, RecurringTaskDefinition, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, WeatherResponse, WeekResponse } from './types';
+import type { CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactDetail, ContactNote, Entity, EntityDetail, EntityType, MeetingsRangeResponse, MeetingsResponse, MonthResponse, ProjectListItem, RecurringTaskDefinition, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, WeatherResponse, WeekResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -174,6 +174,45 @@ export const api = {
    * — the one way something on the shelf becomes permanent short of
    * pinning it. */
   graduateShelfItem: (id: string) => request<Entity>(`/api/shelf/${id}/graduate`, { method: 'POST' }),
+
+  // ---- Contacts (personal CRM) ----
+
+  listContacts: (opts?: { q?: string; circle?: ContactCircle; remindersOnly?: boolean }) => {
+    const params = new URLSearchParams();
+    if (opts?.q) params.set('q', opts.q);
+    if (opts?.circle) params.set('circle', opts.circle);
+    if (opts?.remindersOnly) params.set('reminders', '1');
+    const qs = params.toString();
+    return request<Contact[]>(`/api/contacts${qs ? `?${qs}` : ''}`);
+  },
+
+  createContact: (params: { name: string; circle?: ContactCircle }) =>
+    request<Contact>('/api/contacts', { method: 'POST', body: JSON.stringify(params) }),
+
+  getContact: (id: string) => request<ContactDetail>(`/api/contacts/${id}`),
+
+  updateContact: (id: string, params: Partial<Contact>) =>
+    request<Contact>(`/api/contacts/${id}`, { method: 'PATCH', body: JSON.stringify(params) }),
+
+  setContactPinned: (id: string, pinned: boolean) =>
+    request<Contact>(`/api/contacts/${id}`, { method: 'PATCH', body: JSON.stringify({ pinned }) }),
+
+  deleteContact: (id: string) => request<{ ok: true }>(`/api/contacts/${id}`, { method: 'DELETE' }),
+
+  addContactNote: (contactId: string, text: string, remindInDays?: number) =>
+    request<ContactNote>(`/api/contacts/${contactId}/notes`, {
+      method: 'POST',
+      body: JSON.stringify({ text, remind_in_days: remindInDays }),
+    }),
+
+  resolveContactNoteReminder: (contactId: string, noteId: string, resolved: boolean) =>
+    request<ContactNote>(`/api/contacts/${contactId}/notes/${noteId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ remind_resolved: resolved }),
+    }),
+
+  deleteContactNote: (contactId: string, noteId: string) =>
+    request<{ ok: true }>(`/api/contacts/${contactId}/notes/${noteId}`, { method: 'DELETE' }),
 
   // ---- Today (daily planner) ----
 

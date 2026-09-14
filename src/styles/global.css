@@ -1803,7 +1803,7 @@ a {
   font-weight: var(--weight-medium);
 }
 
-.modal input, .modal textarea {
+.modal input, .modal textarea, .modal select {
   width: 100%;
   padding: 8px 10px;
   border-radius: 8px;
@@ -1811,6 +1811,7 @@ a {
   background: #fff;
   font-size: 13px;
   margin-bottom: 10px;
+  font-family: inherit;
 }
 
 .modal textarea {
@@ -4906,4 +4907,174 @@ a {
     flex-wrap: wrap;
     row-gap: 8px;
   }
+}
+
+/* ---- Contacts (personal CRM) ---- */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: var(--border-hairline);
+  background: var(--color-card-bg);
+  color: var(--color-muted);
+  font-size: 12px;
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+}
+
+.chip.is-active {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-accent-text);
+}
+
+.chip--accent {
+  border-color: var(--color-accent-secondary);
+  color: var(--color-accent-secondary);
+}
+
+.chip--accent.is-active {
+  background: var(--color-accent-secondary);
+  border-color: var(--color-accent-secondary);
+  color: #fff;
+}
+
+.contact-detail__summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0 18px;
+  font-size: 13px;
+  color: var(--color-muted);
+}
+
+.contact-note-composer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.contact-note-composer input[type='text'],
+.contact-note-composer input:not([type]) {
+  flex: 1;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: var(--border-hairline);
+  background: var(--color-card-bg);
+  font-size: 13px;
+}
+
+.contact-note-composer__remind {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-muted);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.contact-note-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.contact-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 4px;
+  border-bottom: var(--border-hairline);
+}
+
+.contact-note__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.contact-note__text {
+  font-size: 13.5px;
+  color: var(--color-ink);
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.contact-note__meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.contact-note__reminder {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--color-accent-secondary);
+  font-weight: var(--weight-medium);
+}
+
+.contact-note__reminder-done {
+  background: none;
+  border: 1px solid var(--color-accent-secondary);
+  border-radius: 6px;
+  color: var(--color-accent-secondary);
+  font-size: 10.5px;
+  padding: 1px 6px;
+  cursor: pointer;
+}
+
+.contact-note__reminder-done:hover {
+  background: var(--color-accent-secondary);
+  color: #fff;
+}
+
+.contact-note__delete {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--color-placeholder);
+  font-size: 10px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.contact-note:hover .contact-note__delete {
+  opacity: 1;
+}
+
+.contact-note__delete:hover {
+  background: var(--color-ink);
+  color: var(--color-card-bg);
+}
+
+.contact-edit-form__label {
+  display: block;
+  font-size: 11px;
+  font-weight: var(--weight-medium);
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 4px 0 6px;
+}
+
+.contact-edit-form__date-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.4fr;
+  gap: 8px;
+}
+
+.contact-edit-form__date-row input {
+  margin-bottom: 0;
 }
