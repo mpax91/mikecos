@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../../api/client';
-import type { ImportBatch, ImportDecision, ImportMatch, ImportPreviewResponse, OrphanedImportsResponse } from '../../api/types';
+import type { ImportBatch, ImportDecision, ImportMatch, ImportPreviewResponse, OrphanedImportsResponse, VoterNamesPreviewResponse } from '../../api/types';
 import { formatRelativeTime } from '../../utils/formatRelativeTime';
 
 type Kind = 'contacts' | 'voter_file';
@@ -9,6 +9,10 @@ type Kind = 'contacts' | 'voter_file';
 // voter roll, in production) never sits in a single request long enough to
 // get killed partway through — see api.commitContactImportChunk's comment.
 const CHUNK_SIZE = 150;
+
+// Same reasoning as CHUNK_SIZE above, applied to the voter-name bulk
+// cleanup instead of a fresh import.
+const NAME_CLEANUP_CHUNK_SIZE = 200;
 
 function UploadCard({
   kind,
@@ -101,6 +105,9 @@ export function ContactImportPanel() {
   const [clearing, setClearing] = useState(false);
   const [undoingBatchId, setUndoingBatchId] = useState<string | null>(null);
   const [confirmingUndoId, setConfirmingUndoId] = useState<string | null>(null);
+  const [nameCleanup, setNameCleanup] = useState<VoterNamesPreviewResponse | null>(null);
+  const [confirmingNameCleanup, setConfirmingNameCleanup] = useState(false);
+  const [nameCleanupProgress, setNameCleanupProgress] = useState<{ done: number; total: number } | null>(null);
 
   function loadHistory() {
     api.listImportHistory().then(setHistory).catch(() => {});
@@ -110,10 +117,43 @@ export function ContactImportPanel() {
     api.getOrphanedImports().then(setOrphaned).catch(() => {});
   }
 
+  function loadNameCleanup() {
+    api.previewVoterNameCleanup().then(setNameCleanup).catch(() => {});
+  }
+
   useEffect(() => {
     loadHistory();
     loadOrphaned();
+    loadNameCleanup();
   }, []);
+
+  async function handleCleanupVoterNames() {
+    if (!nameCleanup) return;
+    setError(null);
+    setNameCleanupProgress({ done: 0, total: nameCleanup.totalVoterContacts });
+    try {
+      let offset = 0;
+      let totalUpdated = 0;
+      // Loop the chunked endpoint until it says done, same pattern as the
+      // chunked import commit — bounded requests instead of one that could
+      // run long enough on ~12k rows to hit the same limit that motivated
+      // that fix in the first place.
+      while (true) {
+        const res = await api.cleanupVoterNamesChunk(offset, NAME_CLEANUP_CHUNK_SIZE);
+        totalUpdated += res.updated;
+        offset = res.nextOffset;
+        setNameCleanupProgress({ done: offset, total: nameCleanup.totalVoterContacts });
+        if (res.done) break;
+      }
+      setResult(`Cleaned up ${totalUpdated.toLocaleString()} voter-roll name${totalUpdated === 1 ? '' : 's'} — honorifics and middle initials dropped, Title Case applied.`);
+      setConfirmingNameCleanup(false);
+      loadNameCleanup();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setNameCleanupProgress(null);
+    }
+  }
 
   async function handleClearOrphaned() {
     setClearing(true);
@@ -316,6 +356,48 @@ export function ContactImportPanel() {
               </button>
               <button type="button" className="btn btn--danger" onClick={handleClearOrphaned} disabled={clearing}>
                 {clearing ? 'Removing…' : `Remove ${orphaned.count.toLocaleString()} contact${orphaned.count === 1 ? '' : 's'}`}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {nameCleanup && nameCleanup.changeCount > 0 && (
+        <div className="contact-import__orphaned">
+          <h3 className="contact-import__card-title">Voter Roll Names Need Cleanup</h3>
+          <p className="contact-import__card-desc">
+            {nameCleanup.changeCount.toLocaleString()} of your {nameCleanup.totalVoterContacts.toLocaleString()} voter-roll
+            contacts still have their raw import name — honorifics and middle initials included, all caps
+            {nameCleanup.sample.length > 0 && (
+              <>
+                {' '}(e.g. "{nameCleanup.sample[0].before}" → "{nameCleanup.sample[0].after}")
+              </>
+            )}
+            . This just renames them — nothing is merged or deleted.
+          </p>
+          {nameCleanupProgress ? (
+            <div className="contact-import__progress">
+              <div className="contact-import__progress-bar">
+                <div
+                  className="contact-import__progress-fill"
+                  style={{ width: `${nameCleanupProgress.total ? Math.round((nameCleanupProgress.done / nameCleanupProgress.total) * 100) : 0}%` }}
+                />
+              </div>
+              <span className="contact-import__review-hint">
+                Cleaning up… {nameCleanupProgress.done.toLocaleString()} / {nameCleanupProgress.total.toLocaleString()}
+              </span>
+            </div>
+          ) : !confirmingNameCleanup ? (
+            <button type="button" className="btn btn--ghost" onClick={() => setConfirmingNameCleanup(true)}>
+              Clean Up Voter Names
+            </button>
+          ) : (
+            <div className="modal__actions">
+              <button type="button" className="btn btn--ghost" onClick={() => setConfirmingNameCleanup(false)}>
+                Never mind
+              </button>
+              <button type="button" className="btn" onClick={handleCleanupVoterNames}>
+                Clean Up {nameCleanup.changeCount.toLocaleString()} Name{nameCleanup.changeCount === 1 ? '' : 's'}
               </button>
             </div>
           )}

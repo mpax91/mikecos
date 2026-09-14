@@ -497,6 +497,25 @@ export interface DeleteImportBatchResponse {
   deletedCount: number;
 }
 
+/** GET /api/contacts/voter-names/preview — how many standalone voter-roll
+ * contacts would be renamed (honorific/middle-initial stripped, Title
+ * Case) by the bulk cleanup below, with a few before/after examples. */
+export interface VoterNamesPreviewResponse {
+  totalVoterContacts: number;
+  changeCount: number;
+  sample: { id: string; before: string; after: string }[];
+}
+
+/** POST /api/contacts/voter-names/cleanup-chunk — one bounded slice of the
+ * bulk voter-name cleanup; the client loops this (same shape as the
+ * chunked import commit) until `done`. */
+export interface VoterNamesCleanupChunkResponse {
+  processed: number;
+  updated: number;
+  nextOffset: number;
+  done: boolean;
+}
+
 export type ContactNoteSourceType = 'quick_note' | 'jot' | 'note' | 'task';
 
 /** A single quick, unstructured note tied to a contact — the Bill-Clinton-

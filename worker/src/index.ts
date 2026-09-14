@@ -1008,14 +1008,18 @@ function parseVoterCsv(text: string): ParsedContactRecord[] {
   const records: ParsedContactRecord[] = [];
   for (const row of rows.slice(1)) {
     const get = (idx: number) => (idx >= 0 && idx < row.length ? row[idx].trim() : '');
-    const name = nameIdx >= 0 ? get(nameIdx) : [get(firstIdx), get(lastIdx)].filter(Boolean).join(' ');
-    if (!name) continue;
+    const rawName = nameIdx >= 0 ? get(nameIdx) : [get(firstIdx), get(lastIdx)].filter(Boolean).join(' ');
+    if (!rawName) continue;
     const bday = dobIdx >= 0 ? parseDateParts(get(dobIdx)) : { month: null, day: null, year: null };
     const ageVal = ageIdx >= 0 ? parseInt(get(ageIdx), 10) : NaN;
     const raw: Record<string, string> = {};
     headers.forEach((h, i) => (raw[h] = row[i] ?? ''));
     records.push({
-      name,
+      // Display name is cleaned up (no honorific, no middle initial, Title
+      // Case instead of the file's ALL CAPS) — see cleanVoterDisplayName's
+      // comment. The untouched original is still preserved in `raw` below,
+      // which lands in voter_records.raw_data.
+      name: cleanVoterDisplayName(rawName),
       emails: [],
       phones: [],
       address: addressIdx >= 0 ? get(addressIdx) || null : null,
@@ -1184,6 +1188,45 @@ function nameMatchKey(n: string): string {
   if (parts.length === 0) return '';
   if (parts.length === 1) return canonicalFirstName(parts[0]);
   return `${canonicalFirstName(parts[0])} ${parts[parts.length - 1]}`;
+}
+
+// Title-cases one word ("PALLADINO" -> "Palladino"), capitalizing after an
+// apostrophe or hyphen too ("O'BRIEN" -> "O'Brien", "SMITH-JONES" ->
+// "Smith-Jones"). No dictionary of name-specific exceptions (won't get
+// "McDonald" — becomes "Mcdonald") — a plain, predictable rule beats a
+// half-covered list of special cases here.
+function titleCaseWord(word: string): string {
+  return word.toLowerCase().replace(/(^|['-])([a-z])/g, (_m, sep: string, ch: string) => sep + ch.toUpperCase());
+}
+
+function titleCaseName(name: string): string {
+  return name
+    .split(' ')
+    .filter(Boolean)
+    .map(titleCaseWord)
+    .join(' ');
+}
+
+// Turns a raw voter-file name ("HON. MICHAEL A. PALLADINO") into the same
+// shape a personal contact's name normally has ("Michael Palladino") —
+// drops honorifics/suffixes and any middle name/initial (same reduction as
+// nameMatchKey, just applied to what's actually STORED and DISPLAYED, not
+// only used for comparison), then title-cases it instead of leaving it
+// however the source file capitalized it (voter rolls are typically ALL
+// CAPS). The full original value is never lost — it's still in
+// voter_records.raw_data — this only changes the Contact.name shown on the
+// card and in lists. Used both for brand-new voter-sourced contacts at
+// import time and for the one-time bulk cleanup of ones already imported
+// (see POST /api/contacts/voter-names/cleanup-chunk).
+function cleanVoterDisplayName(raw: string): string {
+  const parts = raw
+    .trim()
+    .replace(/[.,]/g, '')
+    .split(/\s+/)
+    .filter((p) => p && !NAME_HONORIFICS.has(p.toLowerCase()) && !NAME_SUFFIXES.has(p.toLowerCase()));
+  if (parts.length === 0) return titleCaseName(raw);
+  const core = parts.length <= 2 ? parts : [parts[0], parts[parts.length - 1]];
+  return titleCaseName(core.join(' '));
 }
 
 interface ImportMatch {
@@ -1482,6 +1525,54 @@ app.delete('/api/contacts/import/batch/:id', async (c) => {
   stmts.push(c.env.DB.prepare('DELETE FROM import_batches WHERE id = ?').bind(batchId));
   await c.env.DB.batch(stmts);
   return c.json({ deletedCount: ids.length });
+});
+
+// GET /api/contacts/voter-names/preview — how many standalone voter-roll
+// contacts (source = 'voter_file') would have their display name changed
+// by cleanVoterDisplayName, plus a few before/after examples, for a
+// confirm-before-running dialog. Scoped to source = 'voter_file' only: a
+// contact that started as (or got merged into) a personal contact keeps
+// whatever name Mike or Google gave it — this never touches those.
+app.get('/api/contacts/voter-names/preview', async (c) => {
+  const { results } = await c.env.DB.prepare("SELECT id, name FROM contacts WHERE source = 'voter_file'").all<{ id: string; name: string }>();
+  const rows = results ?? [];
+  const changed = rows
+    .map((r) => ({ id: r.id, before: r.name, after: cleanVoterDisplayName(r.name) }))
+    .filter((r) => r.after && r.after !== r.before);
+  return c.json({ totalVoterContacts: rows.length, changeCount: changed.length, sample: changed.slice(0, 5) });
+});
+
+// POST /api/contacts/voter-names/cleanup-chunk — the actual rename, run in
+// bounded slices (client loops this, same shape as the import commit's
+// chunking) rather than one request touching all ~12k voter contacts at
+// once — that unbounded-single-request pattern is exactly the production
+// bug the chunked import commit exists to avoid; no reason to reintroduce
+// it here. Ordered by id (stable across calls, unlike ordering by name —
+// which this endpoint is busy changing) so offset-based paging stays
+// consistent as rows are updated mid-scan.
+app.post('/api/contacts/voter-names/cleanup-chunk', async (c) => {
+  const body = await c.req.json<{ offset: number; limit: number }>();
+  const offset = body.offset ?? 0;
+  const limit = Math.min(body.limit ?? 200, 500);
+
+  const { results } = await c.env.DB.prepare("SELECT id, name FROM contacts WHERE source = 'voter_file' ORDER BY id LIMIT ? OFFSET ?")
+    .bind(limit, offset)
+    .all<{ id: string; name: string }>();
+  const rows = results ?? [];
+
+  const ts = now();
+  const stmts: D1PreparedStatement[] = [];
+  let updated = 0;
+  for (const r of rows) {
+    const cleaned = cleanVoterDisplayName(r.name);
+    if (cleaned && cleaned !== r.name) {
+      stmts.push(c.env.DB.prepare('UPDATE contacts SET name = ?, updated_at = ? WHERE id = ?').bind(cleaned, ts, r.id));
+      updated++;
+    }
+  }
+  if (stmts.length > 0) await c.env.DB.batch(stmts);
+
+  return c.json({ processed: rows.length, updated, nextOffset: offset + rows.length, done: rows.length < limit });
 });
 
 // GET/DELETE /api/contacts/import/orphaned — cleanup for imports that

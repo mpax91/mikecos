@@ -1,4 +1,4 @@
-import type { CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactDetail, ContactNote, DeleteImportBatchResponse, Entity, EntityDetail, EntityType, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, MeetingsRangeResponse, MeetingsResponse, MonthResponse, OrphanedImportsResponse, ProjectListItem, RecurringTaskDefinition, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, WeatherResponse, WeekResponse } from './types';
+import type { CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactDetail, ContactNote, DeleteImportBatchResponse, Entity, EntityDetail, EntityType, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, MeetingsRangeResponse, MeetingsResponse, MonthResponse, OrphanedImportsResponse, ProjectListItem, RecurringTaskDefinition, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, WeatherResponse, WeekResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -265,6 +265,19 @@ export const api = {
    * (a parser bug, the wrong file) so it can be re-run cleanly. */
   deleteImportBatch: (batchId: string) =>
     request<DeleteImportBatchResponse>(`/api/contacts/import/batch/${batchId}`, { method: 'DELETE' }),
+
+  /** Bulk voter-name cleanup — strips honorifics/middle initials and
+   * Title-Cases standalone voter-roll contacts already sitting in the DB
+   * with their raw, ALL-CAPS import name. previewVoterNameCleanup shows
+   * the count before running; cleanupVoterNamesChunk does the actual work
+   * in bounded slices the client loops through. */
+  previewVoterNameCleanup: () => request<VoterNamesPreviewResponse>('/api/contacts/voter-names/preview'),
+
+  cleanupVoterNamesChunk: (offset: number, limit: number) =>
+    request<VoterNamesCleanupChunkResponse>('/api/contacts/voter-names/cleanup-chunk', {
+      method: 'POST',
+      body: JSON.stringify({ offset, limit }),
+    }),
 
   // ---- Today (daily planner) ----
 
