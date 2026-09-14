@@ -1307,10 +1307,22 @@ app.delete('/api/contacts/import/orphaned', async (c) => {
   const ids = (orphanIds ?? []).map((r) => r.id);
   if (ids.length === 0) return c.json({ deletedCount: 0 });
 
-  const placeholders = ids.map(() => '?').join(', ');
-  await c.env.DB.prepare(`DELETE FROM voter_records WHERE contact_id IN (${placeholders})`).bind(...ids).run();
-  await c.env.DB.prepare(`DELETE FROM contact_notes WHERE contact_id IN (${placeholders})`).bind(...ids).run();
-  await c.env.DB.prepare(`DELETE FROM contacts WHERE id IN (${placeholders})`).bind(...ids).run();
+  // D1 caps bound variables per statement well under SQLite's own 999 —
+  // a real production import (192 orphaned rows, discovered fixing the
+  // chunked-commit bug above) blew past it with "too many SQL variables"
+  // on a single big IN (...) list. Chunk the ids and run every delete
+  // statement, across all three tables, as one atomic db.batch() call —
+  // established pattern already used for the chunked import commit itself.
+  const ID_CHUNK = 50;
+  const stmts: D1PreparedStatement[] = [];
+  for (let i = 0; i < ids.length; i += ID_CHUNK) {
+    const chunk = ids.slice(i, i + ID_CHUNK);
+    const placeholders = chunk.map(() => '?').join(', ');
+    stmts.push(c.env.DB.prepare(`DELETE FROM voter_records WHERE contact_id IN (${placeholders})`).bind(...chunk));
+    stmts.push(c.env.DB.prepare(`DELETE FROM contact_notes WHERE contact_id IN (${placeholders})`).bind(...chunk));
+    stmts.push(c.env.DB.prepare(`DELETE FROM contacts WHERE id IN (${placeholders})`).bind(...chunk));
+  }
+  await c.env.DB.batch(stmts);
   return c.json({ deletedCount: ids.length });
 });
 
