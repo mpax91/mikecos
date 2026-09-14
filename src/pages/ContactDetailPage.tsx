@@ -27,6 +27,13 @@ function formatDate(month: number | null, day: number | null, year: number | nul
   return year ? `${monthName} ${day}, ${year}` : `${monthName} ${day}`;
 }
 
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
 function EditDetailsModal({ contact, onSave, onClose }: { contact: ContactDetail; onSave: (patch: Record<string, unknown>) => void; onClose: () => void }) {
   const emails = JSON.parse(contact.emails || '[]') as string[];
   const phones = JSON.parse(contact.phones || '[]') as string[];
@@ -143,12 +150,15 @@ function NoteRow({ note, onResolve, onDelete }: { note: ContactNote; onResolve: 
   );
 }
 
-/** A contact's detail page — mostly a name plus a running feed of quick,
- * unstructured notes (see migrations/0017_contacts.sql for why notes are
- * their own generic table rather than a Tiptap document). Structured
- * fields (company, emails, birthday, etc.) sit in a compact summary block
- * above the feed and are edited via one modal rather than a dozen inline
- * fields — this page is built around the note feed, not a form. */
+/** A contact's detail page. The structured fields (phone, email, address,
+ * birthday, etc.) read like a normal phone/address-book contact card —
+ * an avatar, then one row per field, each a tap-to-act link (call, email,
+ * map) — same as Google/Apple/Samsung contacts, not squeezed into a
+ * summary line. They're still edited via one modal rather than a dozen
+ * inline fields (see migrations/0017_contacts.sql for the data shape).
+ * Below that card sits the note feed — quick, unstructured jots, kept as
+ * its own clearly-labeled section rather than competing with the card for
+ * attention. */
 export function ContactDetailPage() {
   const { id } = useParams();
   const contactId = id!;
@@ -247,19 +257,63 @@ export function ContactDetailPage() {
         />
       </div>
 
-      <div className="contact-detail__summary">
+      <div className="contact-detail__meta">
         <span className="chip">{circleLabel(contact.circle)}</span>
-        {contact.company && <span>{contact.title ? `${contact.title}, ${contact.company}` : contact.company}</span>}
-        {emails.map((e) => (
-          <span key={e}>{e}</span>
-        ))}
-        {phones.map((p) => (
-          <span key={p}>{p}</span>
-        ))}
-        {contact.address && <span>{contact.address}</span>}
-        {birthday && <span>🎂 {birthday}</span>}
-        {anniversary && <span>💍 {anniversary}</span>}
       </div>
+
+      <div className="contact-detail__card">
+        <div className="contact-detail__avatar">{initials(contact.name)}</div>
+        <div className="contact-detail__fields">
+          {phones.map((p) => (
+            <a key={p} className="contact-detail__field" href={`tel:${p.replace(/[^\d+]/g, '')}`}>
+              <span className="contact-detail__field-icon">📞</span>
+              <span className="contact-detail__field-value">{p}</span>
+            </a>
+          ))}
+          {emails.map((e) => (
+            <a key={e} className="contact-detail__field" href={`mailto:${e}`}>
+              <span className="contact-detail__field-icon">✉️</span>
+              <span className="contact-detail__field-value">{e}</span>
+            </a>
+          ))}
+          {contact.address && (
+            <a
+              className="contact-detail__field"
+              href={`https://maps.google.com/?q=${encodeURIComponent(contact.address)}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <span className="contact-detail__field-icon">📍</span>
+              <span className="contact-detail__field-value">{contact.address}</span>
+            </a>
+          )}
+          {(contact.company || contact.title) && (
+            <div className="contact-detail__field">
+              <span className="contact-detail__field-icon">💼</span>
+              <span className="contact-detail__field-value">
+                {contact.title && contact.company ? `${contact.title}, ${contact.company}` : contact.title || contact.company}
+              </span>
+            </div>
+          )}
+          {birthday && (
+            <div className="contact-detail__field">
+              <span className="contact-detail__field-icon">🎂</span>
+              <span className="contact-detail__field-value">{birthday}</span>
+            </div>
+          )}
+          {anniversary && (
+            <div className="contact-detail__field">
+              <span className="contact-detail__field-icon">💍</span>
+              <span className="contact-detail__field-value">{anniversary}</span>
+            </div>
+          )}
+          {phones.length === 0 && emails.length === 0 && !contact.address && !contact.company && !contact.title && !birthday && !anniversary && (
+            <div className="contact-detail__field contact-detail__field--empty">No contact info yet — click Edit to add some.</div>
+          )}
+        </div>
+      </div>
+
+      <h2 className="contact-detail__section-title">Notes</h2>
 
       <div className="contact-note-composer">
         <input
