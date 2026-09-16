@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
-import type { Contact, ContactCircle, ContactDetail, ContactNote, VoterRecord } from '../api/types';
+import type { Contact, ContactCircle, ContactDetail, ContactNote, VoterHistoryEntry, VoterRecord } from '../api/types';
 import { Modal } from '../components/Modal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { KebabMenu } from '../components/KebabMenu';
@@ -152,6 +152,11 @@ function VoterRecordSection({ records }: { records: VoterRecord[] }) {
 
   return (
     <div className="voter-record-section">
+      {/* Collapsed by default with just the party affiliation visible —
+          Mike's call after comparing this against the Bedford Voter
+          Intelligence app's much richer (but always-expanded) card: this
+          data is useful to have but not something he wants taking up
+          space on every voter-sourced contact by default. */}
       <button
         type="button"
         className="voter-record-section__header"
@@ -167,46 +172,104 @@ function VoterRecordSection({ records }: { records: VoterRecord[] }) {
 
       {!sectionOpen && (
         <p className="contact-detail__section-hint voter-record-section__hint">
-          From the Bedford voter file — click to view registration, household, and voting history.
+          From the Bedford voter file — click to view registration, address, and voting history.
         </p>
       )}
 
       {sectionOpen &&
       records.map((r) => {
-        const household = r.household_members ? (JSON.parse(r.household_members) as string[]) : [];
-        const historyRaw = r.voting_history ? (JSON.parse(r.voting_history) as string) : '';
-        const history = historyRaw
-          ? historyRaw
-              .split(/[;,]/)
-              .map((s) => s.trim())
-              .filter(Boolean)
-          : [];
+        const history = r.voting_history ? (JSON.parse(r.voting_history) as VoterHistoryEntry[]) : [];
+        const voted = history.filter((h) => !h.code.toUpperCase().startsWith('VOTE METHOD'));
         const raw = JSON.parse(r.raw_data) as Record<string, string>;
         const isOpen = openIds.has(r.id);
+        // Raw values already carry their own prefix ("CD-17", not "17") —
+        // don't re-prefix, or it doubles up as "CD-CD-17".
+        const districts = [r.cd, r.sd, r.ad, r.ld].filter(Boolean);
         return (
           <div key={r.id} className="voter-record">
-            <div className="voter-record__row">
-              {r.party && <span className="chip chip--accent">{r.party}</span>}
-              {r.voter_age != null && (
-                <span className="voter-record__field">
-                  <strong>Age</strong> {r.voter_age}
-                </span>
-              )}
+            <div className="voter-record__group">
+              <div className="voter-record__group-title">Profile</div>
+              <div className="voter-record__grid">
+                {r.voter_age != null && (
+                  <div className="voter-record__field">
+                    <span className="voter-record__field-label">Age</span> {r.voter_age}
+                  </div>
+                )}
+                {r.gender && (
+                  <div className="voter-record__field">
+                    <span className="voter-record__field-label">Gender</span> {r.gender}
+                  </div>
+                )}
+                {r.registered_date && (
+                  <div className="voter-record__field">
+                    <span className="voter-record__field-label">Registered</span> {r.registered_date}
+                  </div>
+                )}
+              </div>
             </div>
 
-            {household.length > 0 && (
-              <div className="voter-record__field">
-                <strong>Household</strong> {household.join(', ')}
+            {(r.phone || r.polling_place) && (
+              <div className="voter-record__group">
+                <div className="voter-record__group-title">Contact &amp; Polling</div>
+                {r.phone && (
+                  <div className="voter-record__field">
+                    <span className="voter-record__field-label">Phone</span> {r.phone}
+                  </div>
+                )}
+                {r.polling_place && (
+                  <div className="voter-record__field">
+                    <span className="voter-record__field-label">Polling Place</span> {r.polling_place}
+                  </div>
+                )}
               </div>
             )}
 
-            {history.length > 0 && (
+            {(r.party || r.calculated_party || r.household_party || r.causeway_tag || r.gop_matrix) && (
+              <div className="voter-record__group">
+                <div className="voter-record__group-title">Political Profile</div>
+                <div className="voter-record__grid">
+                  {r.party && (
+                    <div className="voter-record__field">
+                      <span className="voter-record__field-label">Registration</span> {r.party}
+                    </div>
+                  )}
+                  {r.calculated_party && (
+                    <div className="voter-record__field">
+                      <span className="voter-record__field-label">Calculated</span> {r.calculated_party}
+                    </div>
+                  )}
+                </div>
+                {r.household_party && (
+                  <div className="voter-record__field">
+                    <span className="voter-record__field-label">Household Party</span> {r.household_party}
+                  </div>
+                )}
+                {r.causeway_tag && (
+                  <div className="voter-record__field">
+                    <span className="voter-record__field-label">Causeway Tag</span> {r.causeway_tag}
+                  </div>
+                )}
+                {r.gop_matrix && (
+                  <div className="voter-record__field">
+                    <span className="voter-record__field-label">GOP Matrix</span> {r.gop_matrix}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {districts.length > 0 && (
               <div className="voter-record__field">
-                <strong>Voting history</strong>
+                <span className="voter-record__field-label">Districts</span> {districts.join(' · ')}
+              </div>
+            )}
+
+            {voted.length > 0 && (
+              <div className="voter-record__field">
+                <span className="voter-record__field-label">Voting History ({voted.length})</span>
                 <div className="voter-record__history">
-                  {history.map((h) => (
-                    <span key={h} className="chip">
-                      {h}
+                  {voted.map((h) => (
+                    <span key={h.code} className="chip" title={h.value !== h.code ? h.value : undefined}>
+                      {h.code}
                     </span>
                   ))}
                 </div>

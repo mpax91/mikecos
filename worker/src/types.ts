@@ -150,8 +150,21 @@ export interface VoterRecord {
   contact_id: string;
   party: string | null;
   voter_age: number | null;
-  household_members: string | null; // JSON string[]
-  voting_history: string | null; // JSON
+  household_members: string | null; // JSON string[] — unused for now, see 0022_voter_record_fields.sql
+  voting_history: string | null; // JSON — array of { code: string; value: string }
+  gender: string | null;
+  registered_date: string | null;
+  phone: string | null;
+  polling_place: string | null;
+  causeway_tag: string | null;
+  calculated_party: string | null;
+  household_party: string | null;
+  household_code: string | null;
+  cd: string | null;
+  sd: string | null;
+  ad: string | null;
+  ld: string | null;
+  gop_matrix: string | null;
   raw_data: string; // JSON
   import_batch_id: string;
   created_at: string;

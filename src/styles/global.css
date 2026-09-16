@@ -5136,10 +5136,45 @@ a.today-page__important-dates-row:hover .today-page__important-dates-name {
   color: var(--color-ink);
 }
 
-.voter-record__field strong {
+.voter-record__field strong,
+.voter-record__field-label {
   font-weight: var(--weight-medium);
   color: var(--color-muted);
   margin-right: 6px;
+}
+
+/* Grouped sub-sections (Profile, Contact & Polling, Political Profile) —
+   mirrors how the Bedford Voter Intelligence app breaks this same data
+   into labeled clusters instead of one flat list of fields. */
+.voter-record__group {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--color-border);
+}
+
+.voter-record__group:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+.voter-record__group-title {
+  font-size: 11px;
+  font-weight: var(--weight-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-muted);
+  margin-bottom: 6px;
+}
+
+.voter-record__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 4px 16px;
+}
+
+.voter-record__grid .voter-record__field {
+  margin-top: 0;
 }
 
 .voter-record__history {

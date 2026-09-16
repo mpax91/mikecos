@@ -855,6 +855,25 @@ interface ParsedContactRecord {
   voter_age: number | null;
   household_members: string[] | null;
   voting_history: unknown;
+  // Fields added when the Bedford Voter Intelligence app (a separate
+  // Cloudflare app Mike already built against this same county voter file)
+  // turned out to have a much richer, correctly-labeled breakdown of this
+  // same file than this importer's original handful of fields — see
+  // 0022_voter_record_fields.sql for the full reasoning per field. All
+  // null for a non-voter-file import (personal contacts/vCard).
+  gender: string | null;
+  registered_date: string | null;
+  voter_phone: string | null;
+  polling_place: string | null;
+  causeway_tag: string | null;
+  calculated_party: string | null;
+  household_party: string | null;
+  household_code: string | null;
+  cd: string | null;
+  sd: string | null;
+  ad: string | null;
+  ld: string | null;
+  gop_matrix: string | null;
   raw: Record<string, string>;
 }
 
@@ -1053,14 +1072,198 @@ function parseContactsCsv(text: string): ParsedContactRecord[] {
       voter_age: null,
       household_members: null,
       voting_history: null,
+      gender: null,
+      registered_date: null,
+      voter_phone: null,
+      polling_place: null,
+      causeway_tag: null,
+      calculated_party: null,
+      household_party: null,
+      household_code: null,
+      cd: null,
+      sd: null,
+      ad: null,
+      ld: null,
+      gop_matrix: null,
       raw,
     });
   }
   return records;
 }
 
-// Parses a voter-file CSV — same alias-matching approach, tuned to the
-// fields a county voter roll typically has.
+// Identity/geo columns this importer deliberately doesn't promote to a
+// dedicated field — still preserved in raw_data, just excluded from the
+// leftover "everything else is vote history" scan below (by normalized
+// header text) so they don't show up mislabeled as election chips.
+const VOTER_HISTORY_IGNORE_HEADERS = new Set([
+  'id', 'voterid', 'firstname', 'lastname', 'name middle', 'name last/first',
+  'address d/s/t/p', 'full address', 'full name', 'addr num', 'addr str',
+  'addr type', 'addr city', 'addr state', 'addr zip', '0t/w/d', 'town code',
+  'ward code', 'ed code', 'status', 'vsn numeric', 'nysvoterid',
+  'ethnicity 1', 'ethnicity 5', 'town/city name', 'modeledethnicity',
+  'ny gop legislativematrix',
+]);
+
+type VoterFields = Pick<
+  ParsedContactRecord,
+  | 'address'
+  | 'birthday_month'
+  | 'birthday_day'
+  | 'birthday_year'
+  | 'party'
+  | 'voter_age'
+  | 'household_members'
+  | 'voting_history'
+  | 'gender'
+  | 'registered_date'
+  | 'voter_phone'
+  | 'polling_place'
+  | 'causeway_tag'
+  | 'calculated_party'
+  | 'household_party'
+  | 'household_code'
+  | 'cd'
+  | 'sd'
+  | 'ad'
+  | 'ld'
+  | 'gop_matrix'
+>;
+
+// Looks up a value in a raw header->value row by alias, same exact-then-
+// substring matching findColumn does for a CSV header array, just keyed by
+// object key instead of array index — the shared shape underneath both
+// parseVoterCsv (fresh import) and the voter-fields backfill (re-parsing
+// an already-imported row's stored raw_data) below.
+function findRawValue(raw: Record<string, string>, aliases: string[]): string | null {
+  const keys = Object.keys(raw);
+  const normalized = keys.map(normalizeHeader);
+  for (const alias of aliases) {
+    const idx = normalized.indexOf(alias);
+    if (idx !== -1) return raw[keys[idx]]?.trim() || null;
+  }
+  for (const alias of aliases) {
+    const idx = normalized.findIndex((h) => h.includes(alias));
+    if (idx !== -1) return raw[keys[idx]]?.trim() || null;
+  }
+  return null;
+}
+
+// The actual field-mapping logic for Bedford's county voter file — shared
+// by parseVoterCsv (a fresh import) and the voter-fields backfill endpoint
+// (re-parsing an already-imported voter contact's stored raw_data with
+// this same, corrected mapping) so the two can never drift apart. Column
+// names confirmed against a real export, not guessed — see the comment on
+// 0022_voter_record_fields.sql for the full story of why several of these
+// replace what this importer originally, incorrectly matched.
+function extractVoterFields(raw: Record<string, string>): VoterFields {
+  const keys = Object.keys(raw);
+  const normalized = keys.map(normalizeHeader);
+
+  // Prefer the pre-combined, house-number-included address; fall back to
+  // whatever single "address"-ish column exists for a file shaped
+  // differently than this one. (findRawValue's substring fallback used to
+  // land on ADDRESS D/S/T/P first — street name only, no house number —
+  // which is why this used to silently drop it.)
+  const addressLine1 = findRawValue(raw, ['addressline1']);
+  const city = findRawValue(raw, ['city']);
+  const state = findRawValue(raw, ['state']);
+  const zip = findRawValue(raw, ['zipcode']);
+  // Standard US postal format: "Street, City, State Zip" — state and zip
+  // are joined with a space, not a comma, unlike the other parts.
+  const stateZip = [state, zip].filter(Boolean).join(' ');
+  const combinedAddress = [addressLine1, city, stateZip].filter(Boolean).join(', ');
+  const address = addressLine1 && combinedAddress ? combinedAddress : findRawValue(raw, ['full address', 'address', 'residence address', 'street address']);
+
+  const dobRaw = findRawValue(raw, ['birthdate', 'date of birth', 'dob', 'birthday', 'birth date']);
+  const bday = dobRaw ? parseDateParts(dobRaw) : { month: null, day: null, year: null };
+  const ageRaw = findRawValue(raw, ['age']);
+  const ageVal = ageRaw ? parseInt(ageRaw, 10) : NaN;
+  const historyRaw = findRawValue(raw, ['voting history', 'vote history', 'elections voted']);
+
+  // Column names actually consumed above — tracked by re-deriving which
+  // key findRawValue picked for each alias set (rather than a fixed text
+  // list) so this can't drift out of sync with a column matched via the
+  // substring fallback (e.g. "age" lands on "AGE LAST 12/31", not
+  // literally "age" — a plain text exclusion list would miss that and let
+  // it leak through as a duplicate vote-history chip).
+  const consumeKeys = (aliases: string[]) => {
+    for (const alias of aliases) {
+      const idx = normalized.indexOf(alias);
+      if (idx !== -1) return keys[idx];
+    }
+    for (const alias of aliases) {
+      const idx = normalized.findIndex((h) => h.includes(alias));
+      if (idx !== -1) return keys[idx];
+    }
+    return null;
+  };
+  const consumed = new Set(
+    [
+      consumeKeys(['addressline1']), consumeKeys(['city']), consumeKeys(['state']), consumeKeys(['zipcode']),
+      consumeKeys(['full address', 'address', 'residence address', 'street address']),
+      consumeKeys(['birthdate', 'date of birth', 'dob', 'birthday', 'birth date']), consumeKeys(['age']),
+      consumeKeys(['voting history', 'vote history', 'elections voted']),
+      consumeKeys(['party', 'party affiliation', 'party registration']), consumeKeys(['gender']),
+      consumeKeys(['reg dt', 'registered', 'registration date']), consumeKeys(['tel dialer 1', 'phone', 'telephone']),
+      consumeKeys(['polling place']), consumeKeys(['causeway tag']),
+      consumeKeys(['calculatedparty', 'calculated party']), consumeKeys(['householdparty', 'household party']),
+      consumeKeys(['household code']), consumeKeys(['cd']), consumeKeys(['sd']), consumeKeys(['ad']), consumeKeys(['ld']),
+      consumeKeys(['genericmatrix', 'gop matrix']),
+    ].filter((k): k is string => k !== null)
+  );
+
+  // Everything not already promoted to a named field above is treated as
+  // election/vote-history data — this file has dozens of per-election
+  // columns (general, primary, special) rather than one combined "voting
+  // history" column, and new elections just add more columns over time,
+  // so a fixed list here would go stale. Order follows the file's own
+  // column order. Blank values are already excluded (a cell for an
+  // election this person didn't vote in is blank in the source file).
+  const voteHistory: { code: string; value: string }[] = [];
+  keys.forEach((k, i) => {
+    if (consumed.has(k) || VOTER_HISTORY_IGNORE_HEADERS.has(normalized[i])) return;
+    const v = (raw[k] ?? '').trim();
+    if (!v) return;
+    voteHistory.push({ code: k, value: v });
+  });
+
+  return {
+    address,
+    birthday_month: bday.month,
+    birthday_day: bday.day,
+    birthday_year: bday.year,
+    party: findRawValue(raw, ['party', 'party affiliation', 'party registration']),
+    voter_age: Number.isFinite(ageVal) ? ageVal : null,
+    // The real per-row "household" data this file has is a shared
+    // HOUSEHOLD CODE (matched against other rows) and a household-level
+    // party lean — not a list of member names in this cell. Building the
+    // actual cross-referenced member list (name/party/age of everyone
+    // sharing a household code, like the other app shows) is deferred;
+    // household_code is still captured now so that later work doesn't
+    // need a re-import to get it.
+    household_members: null,
+    voting_history: voteHistory.length > 0 ? voteHistory : null,
+    gender: findRawValue(raw, ['gender']),
+    registered_date: findRawValue(raw, ['reg dt', 'registered', 'registration date']),
+    voter_phone: findRawValue(raw, ['tel dialer 1', 'phone', 'telephone']),
+    polling_place: findRawValue(raw, ['polling place']),
+    causeway_tag: findRawValue(raw, ['causeway tag']),
+    calculated_party: findRawValue(raw, ['calculatedparty', 'calculated party']),
+    household_party: findRawValue(raw, ['householdparty', 'household party']),
+    household_code: findRawValue(raw, ['household code']),
+    cd: findRawValue(raw, ['cd']),
+    sd: findRawValue(raw, ['sd']),
+    ad: findRawValue(raw, ['ad']),
+    ld: findRawValue(raw, ['ld']),
+    gop_matrix: findRawValue(raw, ['genericmatrix', 'gop matrix']),
+  };
+}
+
+// Parses a voter-file CSV — same alias-matching approach as the personal-
+// contact importer above, but delegates the actual field mapping to
+// extractVoterFields so a fresh import and the backfill endpoint (which
+// re-parses an already-imported row's stored raw_data) can never drift
+// apart.
 function parseVoterCsv(text: string): ParsedContactRecord[] {
   const rows = parseCsv(text);
   if (rows.length < 2) return [];
@@ -1068,22 +1271,16 @@ function parseVoterCsv(text: string): ParsedContactRecord[] {
   const nameIdx = findColumn(headers, ['name', 'voter name', 'full name']);
   const firstIdx = findColumn(headers, ['first name']);
   const lastIdx = findColumn(headers, ['last name']);
-  const ageIdx = findColumn(headers, ['age']);
-  const dobIdx = findColumn(headers, ['date of birth', 'dob', 'birthday', 'birth date']);
-  const addressIdx = findColumn(headers, ['address', 'residence address', 'street address']);
-  const partyIdx = findColumn(headers, ['party', 'party affiliation', 'party registration']);
-  const familyIdx = findColumn(headers, ['family members', 'household members', 'household']);
-  const historyIdx = findColumn(headers, ['voting history', 'vote history', 'elections voted']);
 
   const records: ParsedContactRecord[] = [];
   for (const row of rows.slice(1)) {
     const get = (idx: number) => (idx >= 0 && idx < row.length ? row[idx].trim() : '');
     const rawName = nameIdx >= 0 ? get(nameIdx) : [get(firstIdx), get(lastIdx)].filter(Boolean).join(' ');
     if (!rawName) continue;
-    const bday = dobIdx >= 0 ? parseDateParts(get(dobIdx)) : { month: null, day: null, year: null };
-    const ageVal = ageIdx >= 0 ? parseInt(get(ageIdx), 10) : NaN;
     const raw: Record<string, string> = {};
     headers.forEach((h, i) => (raw[h] = row[i] ?? ''));
+    const fields = extractVoterFields(raw);
+
     records.push({
       // Display name is cleaned up (no honorific, no middle initial, Title
       // Case instead of the file's ALL CAPS) — see cleanVoterDisplayName's
@@ -1092,17 +1289,10 @@ function parseVoterCsv(text: string): ParsedContactRecord[] {
       name: cleanVoterDisplayName(rawName),
       emails: [],
       phones: [],
-      address: addressIdx >= 0 ? get(addressIdx) || null : null,
       company: null,
       title: null,
       circleHint: null,
-      birthday_month: bday.month,
-      birthday_day: bday.day,
-      birthday_year: bday.year,
-      party: partyIdx >= 0 ? get(partyIdx) || null : null,
-      voter_age: Number.isFinite(ageVal) ? ageVal : null,
-      household_members: familyIdx >= 0 ? splitMulti(get(familyIdx)) : null,
-      voting_history: historyIdx >= 0 ? get(historyIdx) || null : null,
+      ...fields,
       raw,
     });
   }
@@ -1163,6 +1353,19 @@ function parseVCard(text: string): ParsedContactRecord[] {
       voter_age: null,
       household_members: null,
       voting_history: null,
+      gender: null,
+      registered_date: null,
+      voter_phone: null,
+      polling_place: null,
+      causeway_tag: null,
+      calculated_party: null,
+      household_party: null,
+      household_code: null,
+      cd: null,
+      sd: null,
+      ad: null,
+      ld: null,
+      gop_matrix: null,
       raw: { name, org, title, address: address ?? '', emails: emails.join(';'), phones: phones.join(';') },
     });
   }
@@ -1434,25 +1637,7 @@ async function processDecisionChunk(
         }
       }
       if (kind === 'voter_file') {
-        newStmts.push(
-          db
-            .prepare(
-              `INSERT INTO voter_records (id, contact_id, party, voter_age, household_members, voting_history, raw_data, import_batch_id, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-            )
-            .bind(
-              uid(),
-              contactId,
-              r.party,
-              r.voter_age,
-              r.household_members ? JSON.stringify(r.household_members) : null,
-              r.voting_history ? JSON.stringify(r.voting_history) : null,
-              JSON.stringify(r.raw),
-              batchId,
-              ts,
-              ts
-            )
-        );
+        newStmts.push(voterRecordInsertStmt(db, contactId, r, batchId, ts));
       }
     } else {
       // A row that doesn't match anyone becomes its own new contact — for
@@ -1491,31 +1676,53 @@ async function processDecisionChunk(
       );
       newCount++;
       if (kind === 'voter_file') {
-        newStmts.push(
-          db
-            .prepare(
-              `INSERT INTO voter_records (id, contact_id, party, voter_age, household_members, voting_history, raw_data, import_batch_id, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-            )
-            .bind(
-              uid(),
-              contactId,
-              r.party,
-              r.voter_age,
-              r.household_members ? JSON.stringify(r.household_members) : null,
-              r.voting_history ? JSON.stringify(r.voting_history) : null,
-              JSON.stringify(r.raw),
-              batchId,
-              ts,
-              ts
-            )
-        );
+        newStmts.push(voterRecordInsertStmt(db, contactId, r, batchId, ts));
       }
     }
   }
 
   if (newStmts.length > 0) await db.batch(newStmts);
   return { newCount, updatedCount };
+}
+
+// Shared by both the merge and brand-new-contact paths above — a voter-file
+// row always gets its own voter_records row either way, only whether the
+// *contact* itself is new or matched differs.
+function voterRecordInsertStmt(db: D1Database, contactId: string, r: ParsedContactRecord, batchId: string, ts: string): D1PreparedStatement {
+  return db
+    .prepare(
+      `INSERT INTO voter_records
+         (id, contact_id, party, voter_age, household_members, voting_history,
+          gender, registered_date, phone, polling_place, causeway_tag,
+          calculated_party, household_party, household_code, cd, sd, ad, ld, gop_matrix,
+          raw_data, import_batch_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .bind(
+      uid(),
+      contactId,
+      r.party,
+      r.voter_age,
+      r.household_members ? JSON.stringify(r.household_members) : null,
+      r.voting_history ? JSON.stringify(r.voting_history) : null,
+      r.gender,
+      r.registered_date,
+      r.voter_phone,
+      r.polling_place,
+      r.causeway_tag,
+      r.calculated_party,
+      r.household_party,
+      r.household_code,
+      r.cd,
+      r.sd,
+      r.ad,
+      r.ld,
+      r.gop_matrix,
+      JSON.stringify(r.raw),
+      batchId,
+      ts,
+      ts
+    );
 }
 
 // POST /api/contacts/import/commit/start — creates the batch row
@@ -1639,6 +1846,76 @@ app.post('/api/contacts/voter-names/cleanup-chunk', async (c) => {
       stmts.push(c.env.DB.prepare('UPDATE contacts SET name = ?, updated_at = ? WHERE id = ?').bind(cleaned, ts, r.id));
       updated++;
     }
+  }
+  if (stmts.length > 0) await c.env.DB.batch(stmts);
+
+  return c.json({ processed: rows.length, updated, nextOffset: offset + rows.length, done: rows.length < limit });
+});
+
+// POST /api/contacts/voter-fields/backfill-chunk — re-parses every already-
+// imported voter_records row's still-intact raw_data with extractVoterFields
+// (the corrected column mapping — see 0022_voter_record_fields.sql) and
+// fills in the new columns, without requiring Mike to re-import the whole
+// file. Also additively backfills the linked contact's birthday/address if
+// they're still blank, same "only fill in what's missing, never overwrite"
+// rule the rest of this file's merge logic follows. Chunked for the same
+// reason voter-names/cleanup-chunk above is — this can be thousands of
+// rows, and one unbounded request is exactly the pattern that already
+// caused a production failure once (see processDecisionChunk's comment).
+app.post('/api/contacts/voter-fields/backfill-chunk', async (c) => {
+  const body = await c.req.json<{ offset: number; limit: number }>();
+  const offset = body.offset ?? 0;
+  const limit = Math.min(body.limit ?? 200, 500);
+
+  const { results } = await c.env.DB.prepare('SELECT id, contact_id, raw_data FROM voter_records ORDER BY id LIMIT ? OFFSET ?')
+    .bind(limit, offset)
+    .all<{ id: string; contact_id: string; raw_data: string }>();
+  const rows = results ?? [];
+
+  const ts = now();
+  const stmts: D1PreparedStatement[] = [];
+  let updated = 0;
+  for (const r of rows) {
+    let raw: Record<string, string>;
+    try {
+      raw = JSON.parse(r.raw_data) as Record<string, string>;
+    } catch {
+      continue;
+    }
+    const f = extractVoterFields(raw);
+    stmts.push(
+      c.env.DB.prepare(
+        `UPDATE voter_records SET
+           gender = ?, registered_date = ?, phone = ?, polling_place = ?, causeway_tag = ?,
+           calculated_party = ?, household_party = ?, household_code = ?, cd = ?, sd = ?, ad = ?, ld = ?,
+           gop_matrix = ?, voting_history = ?, updated_at = ?
+         WHERE id = ?`
+      ).bind(
+        f.gender, f.registered_date, f.voter_phone, f.polling_place, f.causeway_tag,
+        f.calculated_party, f.household_party, f.household_code, f.cd, f.sd, f.ad, f.ld,
+        f.gop_matrix, f.voting_history ? JSON.stringify(f.voting_history) : null, ts, r.id
+      )
+    );
+
+    const contact = await c.env.DB.prepare('SELECT birthday_month, address FROM contacts WHERE id = ?').bind(r.contact_id).first<{
+      birthday_month: number | null;
+      address: string | null;
+    }>();
+    if (contact) {
+      const contactFields: [string, unknown][] = [];
+      if (!contact.birthday_month && f.birthday_month) {
+        contactFields.push(['birthday_month', f.birthday_month], ['birthday_day', f.birthday_day], ['birthday_year', f.birthday_year]);
+      }
+      if (!contact.address && f.address) contactFields.push(['address', f.address]);
+      if (contactFields.length > 0) {
+        contactFields.push(['updated_at', ts]);
+        const setClause = contactFields.map(([k]) => `${k} = ?`).join(', ');
+        stmts.push(
+          c.env.DB.prepare(`UPDATE contacts SET ${setClause} WHERE id = ?`).bind(...contactFields.map(([, v]) => v), r.contact_id)
+        );
+      }
+    }
+    updated++;
   }
   if (stmts.length > 0) await c.env.DB.batch(stmts);
 

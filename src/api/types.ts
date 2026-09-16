@@ -561,12 +561,37 @@ export interface VoterRecord {
   contact_id: string;
   party: string | null;
   voter_age: number | null;
-  household_members: string | null; // JSON string[]
-  voting_history: string | null; // JSON
+  household_members: string | null; // JSON string[] — unused for now, see 0022_voter_record_fields.sql
+  voting_history: string | null; // JSON — VoterHistoryEntry[]
+  gender: string | null;
+  registered_date: string | null;
+  phone: string | null;
+  polling_place: string | null;
+  causeway_tag: string | null;
+  calculated_party: string | null;
+  household_party: string | null;
+  household_code: string | null;
+  cd: string | null;
+  sd: string | null;
+  ad: string | null;
+  ld: string | null;
+  gop_matrix: string | null;
   raw_data: string; // JSON — the full original row
   import_batch_id: string;
   created_at: string;
   updated_at: string;
+}
+
+/** One entry in VoterRecord.voting_history — an election/participation
+ * column from the voter file that wasn't promoted to its own field
+ * (general/primary/special elections, vote-method notes, turnout-rate
+ * summaries like "3/4 G"). `code` is the source file's own column header,
+ * `value` is usually just that same code repeated (this file marks
+ * participation by populating a cell with its own column name) but can
+ * differ for a few fields like VOTE METHOD columns. */
+export interface VoterHistoryEntry {
+  code: string;
+  value: string;
 }
 
 export interface ContactDetail extends Contact {
