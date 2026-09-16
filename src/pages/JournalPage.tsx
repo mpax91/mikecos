@@ -241,11 +241,24 @@ export function JournalPage() {
             <div className="journal-page__auto-empty">Nothing on the calendar.</div>
           ) : (
             <ul className="journal-page__auto-list">
-              {meetings.map((m) => (
-                <li key={m.id}>
-                  <span className="journal-page__auto-time">{formatMeetingTime(m.start)}</span> {m.title}
-                </li>
-              ))}
+              {meetings.map((m) => {
+                // Same "at a glance, what's done" signal as the Completed
+                // task list right below (✅ prefix) — a meeting counts as
+                // done once its end time has passed, same rule TodayPage
+                // uses for its strikethrough. Journal entries are usually
+                // for a day already over, so this fires for most/all
+                // meetings there; still checked against `now` (not just
+                // "is this day in the past") so today's journal, opened
+                // mid-day, only checks off meetings that have actually
+                // ended.
+                const done = !m.allDay && new Date(m.end).getTime() <= Date.now();
+                return (
+                  <li key={m.id}>
+                    {done && <span aria-hidden="true">✅ </span>}
+                    <span className="journal-page__auto-time">{formatMeetingTime(m.start)}</span> {m.title}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>

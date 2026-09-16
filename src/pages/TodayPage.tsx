@@ -406,7 +406,11 @@ export function TodayPage() {
                 {meetings.map((m) => (
                   <a
                     key={m.id}
-                    className="today-page__meeting-row"
+                    className={
+                      isToday && !m.allDay && new Date(m.end).getTime() <= Date.now()
+                        ? 'today-page__meeting-row today-page__meeting-row--past'
+                        : 'today-page__meeting-row'
+                    }
                     href={m.gcalUrl ?? undefined}
                     target="_blank"
                     rel="noreferrer"

@@ -3310,6 +3310,16 @@ a {
   white-space: nowrap;
 }
 
+/* A timed meeting whose end time has already passed, on the real current
+   day only — same "at a glance, what's left" signal as a struck-through
+   completed task, but time-based rather than a status field since a
+   calendar event has no completion state of its own to flip. */
+.today-page__meeting-row--past .today-page__meeting-time,
+.today-page__meeting-row--past .today-page__meeting-title {
+  text-decoration: line-through;
+  color: var(--color-muted);
+}
+
 /* Important Dates — a placeholder Birthdays & Anniversaries group (no
    CRM/contacts model yet) plus a real, always-populated Holidays group,
    side by side on desktop and stacked on narrower widths so the empty
