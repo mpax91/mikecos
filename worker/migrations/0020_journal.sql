@@ -4,17 +4,22 @@
 -- contact quick-notes, habit values) is computed live at read time from the
 -- tables that already own that data — same "D1 is the source of truth, no
 -- stale caches" rule the rest of this app follows (see design-decisions.md).
--- All brand-new tables here, so plain CREATE TABLE is safe (see
+-- All brand-new tables here, so plain CREATE TABLE IF NOT EXISTS is safe (see
 -- 0011_task_completions.sql's comment for why that's always true for a new
 -- table, and 0005_jots.sql for why recreating an *existing* one on this D1
--- database is never safe without exhaustive proof).
+-- database is never safe without exhaustive proof). IF NOT EXISTS on every
+-- CREATE below so this migration is safely re-runnable: a first deploy
+-- attempt got partway through against production (habits got created) and
+-- failed before being recorded as applied, so the retry collided on
+-- "table already exists" — this makes that retry (and any future one)
+-- a no-op for whatever already landed, rather than a hard failure.
 --
 -- `date` is the local calendar day ('YYYY-MM-DD', America/New_York, same
 -- convention as task_completions.completed_date and due_date) and is the
 -- primary key directly — a journal entry is inherently one-per-day, so
 -- there's no reason to give it a separate uuid and a UNIQUE constraint
 -- instead.
-CREATE TABLE journal_entries (
+CREATE TABLE IF NOT EXISTS journal_entries (
   date TEXT PRIMARY KEY, -- 'YYYY-MM-DD'
   content TEXT, -- Tiptap JSON, same shape as entities.content — freeform, optional
   search_text TEXT, -- plain-text mirror of content, same pattern as entities.search_text
@@ -36,7 +41,7 @@ CREATE TABLE journal_entries (
 -- "today" at push time) — the day this row shows up in the journal for —
 -- not from_due_date or to_due_date, which are kept purely as the "from X to
 -- Y" detail shown on that day's entry.
-CREATE TABLE task_reschedules (
+CREATE TABLE IF NOT EXISTS task_reschedules (
   id TEXT PRIMARY KEY,
   entity_id TEXT NOT NULL,
   title TEXT NOT NULL, -- snapshot at reschedule time, same reasoning as task_completions.title
@@ -46,14 +51,14 @@ CREATE TABLE task_reschedules (
   rescheduled_date TEXT NOT NULL -- 'YYYY-MM-DD', America/New_York — the day this counts toward
 );
 
-CREATE INDEX idx_task_reschedules_date ON task_reschedules(rescheduled_date);
-CREATE INDEX idx_task_reschedules_entity ON task_reschedules(entity_id);
+CREATE INDEX IF NOT EXISTS idx_task_reschedules_date ON task_reschedules(rescheduled_date);
+CREATE INDEX IF NOT EXISTS idx_task_reschedules_entity ON task_reschedules(entity_id);
 
 -- Habits — quantified rather than plain done/not-done per Mike's call: a
 -- habit optionally carries a target + unit ("8 glasses"), so simple
 -- yes/no habits just log 1/0 with no target set, and quantified ones
 -- (water, workouts, whatever comes up) don't need a schema change later.
-CREATE TABLE habits (
+CREATE TABLE IF NOT EXISTS habits (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   unit TEXT, -- e.g. 'glasses', 'minutes' — NULL for a plain done/not-done habit
@@ -68,7 +73,7 @@ CREATE TABLE habits (
 -- second log for the same habit/day should update the existing value, not
 -- create a duplicate — so it's the primary key directly rather than a
 -- separate uuid id plus a UNIQUE constraint.
-CREATE TABLE habit_logs (
+CREATE TABLE IF NOT EXISTS habit_logs (
   habit_id TEXT NOT NULL,
   date TEXT NOT NULL, -- 'YYYY-MM-DD'
   value REAL NOT NULL,
@@ -77,7 +82,7 @@ CREATE TABLE habit_logs (
   PRIMARY KEY (habit_id, date)
 );
 
-CREATE INDEX idx_habit_logs_date ON habit_logs(date);
+CREATE INDEX IF NOT EXISTS idx_habit_logs_date ON habit_logs(date);
 
 -- Health data from Mike's weekly Google Health export upload. Deliberately
 -- minimal for now — `raw_data` holds the full parsed row losslessly, same
@@ -87,7 +92,7 @@ CREATE INDEX idx_habit_logs_date ON habit_logs(date);
 -- whichever fields turn out to matter (steps, sleep, etc.) to real columns
 -- the same way voter_records was always meant to grow dedicated columns
 -- beyond raw_data (see design-decisions.md).
-CREATE TABLE health_logs (
+CREATE TABLE IF NOT EXISTS health_logs (
   date TEXT PRIMARY KEY, -- 'YYYY-MM-DD' — one row per day, later uploads overwrite/fill in earlier ones
   raw_data TEXT NOT NULL, -- JSON — the full parsed row for this day, whatever fields the export has
   import_batch_id TEXT,
