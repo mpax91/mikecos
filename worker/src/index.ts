@@ -2556,17 +2556,24 @@ app.get('/api/today', async (c) => {
   // predates it having one), but the contacts table is small enough that a
   // full scan here is fine — same trade Contacts search already makes
   // elsewhere in this file.
+  //
+  // Deliberately NOT filtering out source = 'voter_file' the way
+  // GET /api/contacts does by default — a voter-roll row with a real DOB is
+  // still a real birthday, and Mike asked for these to be visibly labeled
+  // by source rather than silently dropped. `source` rides along so the
+  // client can show the same 🗳️ marker ContactsListPage already uses for
+  // "this came from the voter roll, not a contact I added myself".
   const [dm, dd] = date.split('-').slice(1).map(Number);
   const { results: birthdayContacts } = await c.env.DB.prepare(
-    `SELECT id, name, birthday_year FROM contacts WHERE birthday_month = ? AND birthday_day = ? ORDER BY name ASC`
+    `SELECT id, name, birthday_year, source FROM contacts WHERE birthday_month = ? AND birthday_day = ? ORDER BY name ASC`
   )
     .bind(dm, dd)
-    .all<{ id: string; name: string; birthday_year: number | null }>();
+    .all<{ id: string; name: string; birthday_year: number | null; source: string }>();
   const { results: anniversaryContacts } = await c.env.DB.prepare(
-    `SELECT id, name, anniversary_year FROM contacts WHERE anniversary_month = ? AND anniversary_day = ? ORDER BY name ASC`
+    `SELECT id, name, anniversary_year, source FROM contacts WHERE anniversary_month = ? AND anniversary_day = ? ORDER BY name ASC`
   )
     .bind(dm, dd)
-    .all<{ id: string; name: string; anniversary_year: number | null }>();
+    .all<{ id: string; name: string; anniversary_year: number | null; source: string }>();
 
   return c.json({
     date,

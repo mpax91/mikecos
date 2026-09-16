@@ -472,7 +472,20 @@ export function TodayPage() {
                         to={`/contacts/${contact.id}`}
                         className="today-page__important-dates-row"
                       >
-                        <span className="today-page__important-dates-name">{contact.name}</span>
+                        <span className="today-page__important-dates-name">
+                          {/* Voter-roll-sourced dates get the same 🗳️ marker
+                              ContactsListPage's "Voter Roll" toggle uses —
+                              these are the only ones NOT filtered to contacts
+                              Mike actually knows, so worth flagging at a
+                              glance rather than showing indistinguishably
+                              from a real contact's date. */}
+                          {contact.source === 'voter_file' && (
+                            <span className="today-page__important-dates-source" title="From the voter roll, not a saved contact">
+                              🗳️{' '}
+                            </span>
+                          )}
+                          {contact.name}
+                        </span>
                         <span className="today-page__important-dates-kind">
                           {kind === 'birthday' ? '🎂 Birthday' : '💍 Anniversary'}
                         </span>

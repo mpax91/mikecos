@@ -113,6 +113,10 @@ export interface ImportantDateContact {
   name: string;
   birthday_year?: number | null;
   anniversary_year?: number | null;
+  /** 'manual' | 'google_import' | 'contact_import' | 'voter_file' — used to
+   * flag voter-roll-sourced dates with the same 🗳️ marker ContactsListPage
+   * uses, rather than showing them indistinguishably from real contacts. */
+  source: string;
 }
 
 /** One stale item surfaced by the Tickler — the entity itself plus which
