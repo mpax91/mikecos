@@ -1872,6 +1872,26 @@ app.post('/api/contacts/voter-fields/backfill-chunk', async (c) => {
     .all<{ id: string; contact_id: string; raw_data: string }>();
   const rows = results ?? [];
 
+  // One batched lookup for every contact this chunk touches, not a
+  // per-row awaited SELECT inside the loop below — the exact sequential-
+  // round-trip pattern that already took down a production request once
+  // on this same voter file (see processDecisionChunk's comment above).
+  // D1/SQLite caps bound parameters per statement, so a 200-item IN clause
+  // in one query errors out ("too many SQL variables") — chunked into
+  // batches of 50, same ID_CHUNK size the import-batch delete endpoint
+  // above already uses for the same reason.
+  const contactIds = [...new Set(rows.map((r) => r.contact_id))];
+  const contactsById = new Map<string, { birthday_month: number | null; address: string | null }>();
+  const CONTACT_ID_CHUNK = 50;
+  for (let i = 0; i < contactIds.length; i += CONTACT_ID_CHUNK) {
+    const idChunk = contactIds.slice(i, i + CONTACT_ID_CHUNK);
+    const placeholders = idChunk.map(() => '?').join(', ');
+    const { results: contactRows } = await c.env.DB.prepare(`SELECT id, birthday_month, address FROM contacts WHERE id IN (${placeholders})`)
+      .bind(...idChunk)
+      .all<{ id: string; birthday_month: number | null; address: string | null }>();
+    for (const cr of contactRows ?? []) contactsById.set(cr.id, cr);
+  }
+
   const ts = now();
   const stmts: D1PreparedStatement[] = [];
   let updated = 0;
@@ -1897,10 +1917,7 @@ app.post('/api/contacts/voter-fields/backfill-chunk', async (c) => {
       )
     );
 
-    const contact = await c.env.DB.prepare('SELECT birthday_month, address FROM contacts WHERE id = ?').bind(r.contact_id).first<{
-      birthday_month: number | null;
-      address: string | null;
-    }>();
+    const contact = contactsById.get(r.contact_id);
     if (contact) {
       const contactFields: [string, unknown][] = [];
       if (!contact.birthday_month && f.birthday_month) {
