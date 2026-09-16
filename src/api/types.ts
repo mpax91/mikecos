@@ -99,6 +99,20 @@ export interface TodayResponse {
   /** The stale-item Tickler ("Worth revisiting") — used to be repeated
    * across every Week column, now shows just once here on the Day view. */
   tickler: TicklerItem[];
+  /** Contacts whose birthday/anniversary falls on this exact date
+   * (month+day match; year is optional and irrelevant to the match). */
+  birthdays: ImportantDateContact[];
+  anniversaries: ImportantDateContact[];
+}
+
+/** A contact surfaced in the Today page's Important Dates panel — just
+ * enough to render and link to the full contact, not the whole Contact
+ * record. */
+export interface ImportantDateContact {
+  id: string;
+  name: string;
+  birthday_year?: number | null;
+  anniversary_year?: number | null;
 }
 
 /** One stale item surfaced by the Tickler — the entity itself plus which

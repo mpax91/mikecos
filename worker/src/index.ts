@@ -2547,7 +2547,35 @@ app.get('/api/today', async (c) => {
   );
   const tickler = await computeTickler(c.env.DB);
 
-  return c.json({ date, overdue, today, tickler });
+  // Birthdays & Anniversaries for the viewed day — month/day match only
+  // (year is optional/nullable and irrelevant to "does this fall on this
+  // day"), per idx_contacts_birthday's own stated purpose (see
+  // 0017_contacts.sql). Today page's "Important Dates" panel had this as a
+  // hardcoded placeholder from before Contacts existed; this is what
+  // actually wires it up. Anniversary has no matching index (this table
+  // predates it having one), but the contacts table is small enough that a
+  // full scan here is fine — same trade Contacts search already makes
+  // elsewhere in this file.
+  const [dm, dd] = date.split('-').slice(1).map(Number);
+  const { results: birthdayContacts } = await c.env.DB.prepare(
+    `SELECT id, name, birthday_year FROM contacts WHERE birthday_month = ? AND birthday_day = ? ORDER BY name ASC`
+  )
+    .bind(dm, dd)
+    .all<{ id: string; name: string; birthday_year: number | null }>();
+  const { results: anniversaryContacts } = await c.env.DB.prepare(
+    `SELECT id, name, anniversary_year FROM contacts WHERE anniversary_month = ? AND anniversary_day = ? ORDER BY name ASC`
+  )
+    .bind(dm, dd)
+    .all<{ id: string; name: string; anniversary_year: number | null }>();
+
+  return c.json({
+    date,
+    overdue,
+    today,
+    tickler,
+    birthdays: birthdayContacts ?? [],
+    anniversaries: anniversaryContacts ?? [],
+  });
 });
 
 // GET /api/week?start=YYYY-MM-DD&today=YYYY-MM-DD — a 7-day docket starting

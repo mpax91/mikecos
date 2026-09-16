@@ -296,6 +296,13 @@ export function TodayPage() {
   const holidays = getHolidays(date);
   const blankCount = Math.max(0, DEFAULT_ROWS + extraRows - dueToday.length);
 
+  // Birthdays and anniversaries for the viewed day, combined into one list
+  // (sorted by name) for the Important Dates panel — see /api/today.
+  const importantDateContacts = [
+    ...(data?.birthdays ?? []).map((contact) => ({ contact, kind: 'birthday' as const })),
+    ...(data?.anniversaries ?? []).map((contact) => ({ contact, kind: 'anniversary' as const })),
+  ].sort((a, b) => a.contact.name.localeCompare(b.contact.name));
+
   return (
     <div>
       <div className="breadcrumb">
@@ -447,14 +454,28 @@ export function TodayPage() {
             <div className="today-page__important-dates card">
               <div className="today-page__important-dates-group">
                 <div className="today-page__important-dates-group-title">Birthdays &amp; Anniversaries</div>
-                {/* Placeholder — no contacts/CRM data model yet. Once one
-                    exists, this surfaces upcoming birthdays and
-                    anniversaries the same way the Holidays group below
-                    surfaces observances, rather than being a separate
-                    build. */}
-                <div className="today-page__important-dates-empty">
-                  No contacts yet — birthdays and anniversaries will show up here once MikeOS has a CRM.
-                </div>
+                {/* Same-day-only match, like the Holidays group below (both
+                    read off the exact viewed date, not a look-ahead
+                    window) — see /api/today's birthdays/anniversaries,
+                    matched by contacts.birthday_month/day (year optional). */}
+                {importantDateContacts.length === 0 ? (
+                  <div className="today-page__important-dates-empty">Nothing today.</div>
+                ) : (
+                  <div className="today-page__important-dates-list">
+                    {importantDateContacts.map(({ contact, kind }) => (
+                      <Link
+                        key={`${kind}-${contact.id}`}
+                        to={`/contacts/${contact.id}`}
+                        className="today-page__important-dates-row"
+                      >
+                        <span className="today-page__important-dates-name">{contact.name}</span>
+                        <span className="today-page__important-dates-kind">
+                          {kind === 'birthday' ? '🎂 Birthday' : '💍 Anniversary'}
+                        </span>
+                      </Link>
+                    ))}
+                  </div>
+                )}
               </div>
               <div className="today-page__important-dates-group">
                 <div className="today-page__important-dates-group-title">Holidays</div>
