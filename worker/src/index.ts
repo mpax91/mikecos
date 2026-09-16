@@ -1134,16 +1134,31 @@ type VoterFields = Pick<
 // object key instead of array index — the shared shape underneath both
 // parseVoterCsv (fresh import) and the voter-fields backfill (re-parsing
 // an already-imported row's stored raw_data) below.
+// Bedford's export escapes date-/leading-zero-sensitive values as Excel
+// "text" formulas (e.g. REG_DT's raw cell is literally "=09/22/1987", not
+// "09/22/1987") so Excel doesn't reformat or truncate them. That leading
+// "=" is a source-file export artifact, not real data — strip it before
+// the value is ever shown or stored as a promoted field.
+function stripCsvFormulaEscape(value: string): string {
+  return value.startsWith('=') ? value.slice(1) : value;
+}
+
 function findRawValue(raw: Record<string, string>, aliases: string[]): string | null {
   const keys = Object.keys(raw);
   const normalized = keys.map(normalizeHeader);
   for (const alias of aliases) {
     const idx = normalized.indexOf(alias);
-    if (idx !== -1) return raw[keys[idx]]?.trim() || null;
+    if (idx !== -1) {
+      const v = raw[keys[idx]]?.trim();
+      return v ? stripCsvFormulaEscape(v) : null;
+    }
   }
   for (const alias of aliases) {
     const idx = normalized.findIndex((h) => h.includes(alias));
-    if (idx !== -1) return raw[keys[idx]]?.trim() || null;
+    if (idx !== -1) {
+      const v = raw[keys[idx]]?.trim();
+      return v ? stripCsvFormulaEscape(v) : null;
+    }
   }
   return null;
 }
@@ -1923,7 +1938,17 @@ app.post('/api/contacts/voter-fields/backfill-chunk', async (c) => {
       if (!contact.birthday_month && f.birthday_month) {
         contactFields.push(['birthday_month', f.birthday_month], ['birthday_day', f.birthday_day], ['birthday_year', f.birthday_year]);
       }
-      if (!contact.address && f.address) contactFields.push(['address', f.address]);
+      // Plain "fill in if blank" isn't enough for address: every voter
+      // contact already has SOME address string (the original importer's
+      // street-name-only "ADDRESS D/S/T/P" value, e.g. "COTTAGE TER"), so
+      // it's never blank — it's just missing the house number that
+      // extractVoterFields' corrected mapping now includes. Overwrite it
+      // specifically when the stored value looks like that old bug (no
+      // leading house number) and the freshly-extracted one has one.
+      const hasHouseNumber = (addr: string | null) => !!addr && /^\d/.test(addr.trim());
+      if (f.address && (!contact.address || (!hasHouseNumber(contact.address) && hasHouseNumber(f.address)))) {
+        contactFields.push(['address', f.address]);
+      }
       if (contactFields.length > 0) {
         contactFields.push(['updated_at', ts]);
         const setClause = contactFields.map(([k]) => `${k} = ?`).join(', ');
