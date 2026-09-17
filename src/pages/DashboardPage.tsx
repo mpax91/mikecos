@@ -195,7 +195,7 @@ function TrendChart({ config, periods }: { config: MetricConfig; periods: Aggreg
           <span className="dashboard-page__trend-stat-value">{config.formatTile(max)}</span>
         </div>
       </div>
-      <div className="dashboard-page__chart-bars dashboard-page__chart-bars--large">
+      <div className={`dashboard-page__chart-bars dashboard-page__chart-bars--large${periods.length > 16 ? ' is-dense' : ''}`}>
         {periods.map((p, i) => {
           const v = values[i];
           const pct = v == null ? 0 : 10 + ((v - min) / range) * 90;
@@ -212,11 +212,56 @@ function TrendChart({ config, periods }: { config: MetricConfig; periods: Aggreg
   );
 }
 
-const ZOOM_OPTIONS: { id: number; label: string }[] = [
-  { id: 8, label: 'Last 8' },
-  { id: 26, label: 'Last 26' },
-  { id: 0, label: 'All' },
-];
+// Zoom presets, scaled to what's actually a natural chunk at each
+// granularity (weeks in 7/14/30, matching how most dashboards frame a
+// trailing window; months in quarters/half-years/years; a handful of
+// quarters or years, since those cover more ground per bar).
+const ZOOM_OPTIONS_BY_GRANULARITY: Record<Granularity, { id: number; label: string }[]> = {
+  week: [
+    { id: 7, label: 'Last 7' },
+    { id: 14, label: 'Last 14' },
+    { id: 30, label: 'Last 30' },
+    { id: 0, label: 'All' },
+  ],
+  month: [
+    { id: 3, label: 'Last 3' },
+    { id: 6, label: 'Last 6' },
+    { id: 12, label: 'Last 12' },
+    { id: 0, label: 'All' },
+  ],
+  quarter: [
+    { id: 4, label: 'Last 4' },
+    { id: 8, label: 'Last 8' },
+    { id: 0, label: 'All' },
+  ],
+  year: [{ id: 0, label: 'All' }],
+};
+
+const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function shortDate(iso: string): string {
+  const d = new Date(`${iso}T00:00:00`);
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function weekdayDate(iso: string): string {
+  const d = new Date(`${iso}T00:00:00`);
+  return `${WEEKDAY_SHORT[d.getDay()]}, ${shortDate(iso)}`;
+}
+
+/** Main + secondary label for the period nav. Weeks get a "Week of Sep 5"
+ * headline (cleaner than a raw ISO date range) plus the exact Sat–Fri span
+ * underneath — Google Health's own reporting week runs Saturday through
+ * Friday for every one of Mike's 16 samples, not the Sunday-start a glance
+ * at the ISO dates suggests, so spelling out the weekdays here answers
+ * "why does this look off by a day or two" instead of leaving it implicit. */
+function periodLabels(period: AggregatedPeriod, granularity: Granularity): { main: string; sub: string | null } {
+  if (granularity === 'week') {
+    return { main: `Week of ${shortDate(period.start)}`, sub: `${weekdayDate(period.start)} – ${weekdayDate(period.end)}` };
+  }
+  const sub = period.weekCount > 0 ? `${period.weeksWithData} of ${period.weekCount} week${period.weekCount === 1 ? '' : 's'} tracked` : null;
+  return { main: period.label, sub };
+}
 
 function FitnessDashboard() {
   const [weeks, setWeeks] = useState<HealthWeeklyReport[] | null>(null);
@@ -224,7 +269,7 @@ function FitnessDashboard() {
   const [granularity, setGranularity] = useState<Granularity>('week');
   const [periodIndex, setPeriodIndex] = useState<number>(-1); // -1 = "not yet set, use latest"
   const [selectedMetric, setSelectedMetric] = useState<MetricKey>('steps');
-  const [zoom, setZoom] = useState<number>(8);
+  const [zoom, setZoom] = useState<number>(14);
 
   useEffect(() => {
     api
@@ -244,6 +289,7 @@ function FitnessDashboard() {
   function changeGranularity(g: Granularity) {
     setGranularity(g);
     setPeriodIndex(-1);
+    setZoom(ZOOM_OPTIONS_BY_GRANULARITY[g][0].id);
   }
 
   const zoomedPeriods = useMemo(() => {
@@ -263,6 +309,8 @@ function FitnessDashboard() {
   }
 
   const metric = METRICS[selectedMetric];
+  const labels = current ? periodLabels(current, granularity) : null;
+  const zoomOptions = ZOOM_OPTIONS_BY_GRANULARITY[granularity];
 
   return (
     <div>
@@ -275,27 +323,24 @@ function FitnessDashboard() {
           ))}
         </div>
         <div className="dashboard-page__period-nav">
-          <button type="button" className="dashboard-page__nav-btn" disabled={activeIndex <= 0} onClick={() => setPeriodIndex(activeIndex - 1)} aria-label="Previous period">
-            ‹
-          </button>
-          <span className="dashboard-page__period-label">
-            {current?.label}
-            {current && current.weekCount > 1 && (
-              <span className="dashboard-page__period-sublabel">
-                {' '}
-                · {current.weeksWithData} of {current.weekCount} week{current.weekCount === 1 ? '' : 's'} tracked
-              </span>
-            )}
-          </span>
-          <button
-            type="button"
-            className="dashboard-page__nav-btn"
-            disabled={activeIndex >= periods.length - 1}
-            onClick={() => setPeriodIndex(activeIndex + 1)}
-            aria-label="Next period"
-          >
-            ›
-          </button>
+          <div className="dashboard-page__period-pill">
+            <button type="button" className="dashboard-page__nav-btn" disabled={activeIndex <= 0} onClick={() => setPeriodIndex(activeIndex - 1)} aria-label="Previous period">
+              ‹
+            </button>
+            <span className="dashboard-page__period-label">
+              <span className="dashboard-page__period-main">{labels?.main}</span>
+              {labels?.sub && <span className="dashboard-page__period-sublabel">{labels.sub}</span>}
+            </span>
+            <button
+              type="button"
+              className="dashboard-page__nav-btn"
+              disabled={activeIndex >= periods.length - 1}
+              onClick={() => setPeriodIndex(activeIndex + 1)}
+              aria-label="Next period"
+            >
+              ›
+            </button>
+          </div>
           {activeIndex < periods.length - 1 && (
             <button type="button" className="chip" onClick={() => setPeriodIndex(-1)}>
               Jump to latest
@@ -378,7 +423,7 @@ function FitnessDashboard() {
             ))}
           </div>
           <div className="dashboard-page__zoom-tabs">
-            {ZOOM_OPTIONS.map((z) => (
+            {zoomOptions.map((z) => (
               <button key={z.id} type="button" className={`chip${zoom === z.id ? ' is-active' : ''}`} onClick={() => setZoom(z.id)}>
                 {z.label}
               </button>
@@ -388,8 +433,8 @@ function FitnessDashboard() {
         <TrendChart config={metric} periods={zoomedPeriods} />
       </div>
 
-      <p className="settings-page__section-hint" style={{ marginTop: 16 }}>
-        Weeks with no bar (or "No data") are weeks the tracker wasn't worn — heart rate, sleep, and active zone
+      <p className="dashboard-page__footnote">
+        Bars with no value (or "No data") are periods the tracker wasn't worn — heart rate, sleep, and active zone
         minutes can't be a real zero for a whole week, so those come through blank rather than as misleading zeros.
         Weight can stay flat for several weeks in a row if there wasn't a new scale reading — Google Health appears
         to carry the last known weight forward rather than leaving it blank, so month/quarter/year views show the

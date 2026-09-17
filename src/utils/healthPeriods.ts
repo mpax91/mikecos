@@ -124,7 +124,10 @@ export function buildPeriods(weeks: HealthWeeklyReport[], granularity: Granulari
   if (granularity === 'week') {
     return [...weeks]
       .sort((a, b) => (a.week_start < b.week_start ? -1 : 1))
-      .map((w) => aggregateBucket(w.week_start, `${w.week_start} – ${w.week_end}`, w.week_start, [w]));
+      .map((w) => {
+        const fmt = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        return aggregateBucket(w.week_start, `${fmt(w.week_start)} – ${fmt(w.week_end)}`, fmt(w.week_start), [w]);
+      });
   }
   const buckets = new Map<string, { label: string; shortLabel: string; weeks: HealthWeeklyReport[] }>();
   for (const w of weeks) {
