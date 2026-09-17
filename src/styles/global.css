@@ -1720,6 +1720,8 @@ a {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  row-gap: 10px;
   margin-bottom: 20px;
 }
 
@@ -6661,8 +6663,16 @@ a.today-page__important-dates-row:hover .today-page__important-dates-name {
 
 /* ---- News: Manage Feeds modal ---- */
 
+/* .modal itself is a fixed 380px (see the Modal component's own rule) —
+   this panel needs more room for the URL/folder inputs and row actions, so
+   widen the modal specifically when it's hosting this content rather than
+   letting the child overflow its 380px parent. */
+.modal:has(.news-feeds-modal) {
+  width: min(560px, 100%);
+}
+
 .news-feeds-modal {
-  width: min(560px, 80vw);
+  width: 100%;
 }
 
 .news-feeds-modal__add {
@@ -6782,5 +6792,92 @@ a.today-page__important-dates-row:hover .today-page__important-dates-name {
 
   .news-story__card {
     width: 100%;
+  }
+}
+
+/* ---- Touch-device fixes ----
+   A pass of general mobile/tablet fit-and-finish: several action buttons
+   across the app only ever appear on `:hover`, which touch input never
+   reliably triggers — they were invisible but still technically clickable
+   (opacity/display doesn't disable pointer-events), a real "why can't I
+   delete this" trap on a phone or tablet. `(hover: none)` targets any
+   device that has no real hover (all touchscreens), regardless of viewport
+   width, so this also covers a touch laptop or a mouse-less tablet in
+   landscape at desktop-sized widths. */
+
+@media (hover: none) {
+  .task-row__drag,
+  .task-row__kebab,
+  .task-panel__remove,
+  .task-panel__edit,
+  .contact-note__delete {
+    opacity: 1;
+  }
+
+  .shelf-tile__close {
+    display: flex;
+  }
+
+  .shelf-tile__kind {
+    display: none;
+  }
+
+  .link-preview-node__remove {
+    display: flex;
+  }
+}
+
+/* Touch targets: Apple/Google both recommend a ~44px minimum hit area.
+   A handful of icon-only controls were sized for a mouse pointer's
+   precision (22px kebab triggers, etc.) — widen their hit area on coarse
+   (touch) pointers without changing their visual/desktop density, using
+   padding rather than the icon's own font-size so the glyph doesn't look
+   oversized. */
+@media (pointer: coarse) {
+  .kebab-menu__trigger {
+    width: 34px;
+    height: 34px;
+  }
+
+  .kebab-menu__item {
+    padding: 11px 12px;
+  }
+
+  .btn--icon {
+    min-width: 34px;
+    min-height: 34px;
+  }
+
+  .news-article-card__actions .btn--icon {
+    min-width: 38px;
+    min-height: 38px;
+  }
+
+  /* iOS Safari zooms the whole page in when a focused input's computed
+     font-size is under 16px — every form field in the app was set well
+     below that (13px is the norm here), so typing a title or a URL would
+     otherwise yank the viewport in on every tap. 16px is the same visual
+     size as the desktop 13-14px controls once mobile's own base scale and
+     viewport width are accounted for, so this isn't a visual regression,
+     just the zoom-safe floor. */
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
+
+/* ---- Tablet range (641px–1024px) ----
+   Below 640px the app switches to the phone layout (off-canvas sidebar,
+   tightened padding — see the existing max-width: 640px rules throughout
+   this file). Above that, up through a little past iPad-portrait width, it
+   was getting the unmodified desktop layout — workable, since the 150px
+   sidebar leaves plenty of room even at 768px, but content padding tuned
+   for a 1400px monitor reads as wasted margin on a tablet. Trim it back a
+   step without collapsing the sidebar (there's room for it) or touching
+   anything already handled by the phone breakpoint above. */
+@media (min-width: 641px) and (max-width: 1024px) {
+  .main__content {
+    padding: 24px 24px;
   }
 }
