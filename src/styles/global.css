@@ -3394,6 +3394,23 @@ a.today-page__important-dates-row:hover .today-page__important-dates-name {
   white-space: nowrap;
 }
 
+.today-page__important-dates-voters {
+  margin-top: 8px;
+}
+
+.today-page__important-dates-voters-toggle {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--color-accent);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.today-page__important-dates-voters .today-page__important-dates-list {
+  margin-top: 8px;
+}
+
 /* A task shown away from its own project (Today) gets a small tag pointing
    back to it — the same visual role as the due-date badge next to it, just
    naming "where" instead of "when". */

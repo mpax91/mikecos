@@ -107,6 +107,12 @@ export function TodayPage() {
   const [deleting, setDeleting] = useState<Entity | null>(null);
   const [weather, setWeather] = useState<WeatherDay | undefined>(undefined);
   const [extraRows, setExtraRows] = useState(0);
+  // Collapsed by default: with the voter roll's birthdays now included,
+  // most of a given day's dates are people Mike doesn't personally know —
+  // 20 names is noise, not a to-do list. Personal contacts (the ones he'd
+  // actually act on — call, text, drop a card) show up front; voter-roll
+  // dates are one click away, not gone.
+  const [voterDatesExpanded, setVoterDatesExpanded] = useState(false);
   const [meetings, setMeetings] = useState<MeetingItem[]>([]);
   const [stats, setStats] = useState<StatsResponse | null>(null);
 
@@ -302,6 +308,12 @@ export function TodayPage() {
     ...(data?.birthdays ?? []).map((contact) => ({ contact, kind: 'birthday' as const })),
     ...(data?.anniversaries ?? []).map((contact) => ({ contact, kind: 'anniversary' as const })),
   ].sort((a, b) => a.contact.name.localeCompare(b.contact.name));
+  // Split so the panel leads with people Mike actually knows — a personal
+  // contact he saved himself — and tucks voter-roll-only matches (which can
+  // be a couple dozen strangers sharing a birthday) behind a fold rather
+  // than burying the actionable names in a long, mostly-unfamiliar list.
+  const personalDateContacts = importantDateContacts.filter((d) => d.contact.source !== 'voter_file');
+  const voterDateContacts = importantDateContacts.filter((d) => d.contact.source === 'voter_file');
 
   return (
     <div>
@@ -462,35 +474,60 @@ export function TodayPage() {
                     read off the exact viewed date, not a look-ahead
                     window) — see /api/today's birthdays/anniversaries,
                     matched by contacts.birthday_month/day (year optional). */}
-                {importantDateContacts.length === 0 ? (
-                  <div className="today-page__important-dates-empty">Nothing today.</div>
+                {personalDateContacts.length === 0 ? (
+                  <div className="today-page__important-dates-empty">
+                    {voterDateContacts.length === 0 ? 'Nothing today.' : 'No personal contacts today.'}
+                  </div>
                 ) : (
                   <div className="today-page__important-dates-list">
-                    {importantDateContacts.map(({ contact, kind }) => (
+                    {personalDateContacts.map(({ contact, kind }) => (
                       <Link
                         key={`${kind}-${contact.id}`}
                         to={`/contacts/${contact.id}`}
                         className="today-page__important-dates-row"
                       >
-                        <span className="today-page__important-dates-name">
-                          {/* Voter-roll-sourced dates get the same 🗳️ marker
-                              ContactsListPage's "Voter Roll" toggle uses —
-                              these are the only ones NOT filtered to contacts
-                              Mike actually knows, so worth flagging at a
-                              glance rather than showing indistinguishably
-                              from a real contact's date. */}
-                          {contact.source === 'voter_file' && (
-                            <span className="today-page__important-dates-source" title="From the voter roll, not a saved contact">
-                              🗳️{' '}
-                            </span>
-                          )}
-                          {contact.name}
-                        </span>
+                        <span className="today-page__important-dates-name">{contact.name}</span>
                         <span className="today-page__important-dates-kind">
                           {kind === 'birthday' ? '🎂 Birthday' : '💍 Anniversary'}
                         </span>
                       </Link>
                     ))}
+                  </div>
+                )}
+                {/* Voter-roll matches are usually people Mike doesn't
+                    personally know — sometimes a couple dozen of them on
+                    one day — so they're collapsed behind a fold instead of
+                    mixed into the actionable list above. */}
+                {voterDateContacts.length > 0 && (
+                  <div className="today-page__important-dates-voters">
+                    <button
+                      type="button"
+                      className="today-page__important-dates-voters-toggle"
+                      onClick={() => setVoterDatesExpanded((v) => !v)}
+                    >
+                      {voterDatesExpanded ? 'Hide' : 'Show'} 🗳️ {voterDateContacts.length} more from the voter roll
+                    </button>
+                    {voterDatesExpanded && (
+                      <div className="today-page__important-dates-list">
+                        {voterDateContacts.map(({ contact, kind }) => (
+                          <Link
+                            key={`${kind}-${contact.id}`}
+                            to={`/contacts/${contact.id}`}
+                            className="today-page__important-dates-row"
+                          >
+                            <span className="today-page__important-dates-name">
+                              <span className="today-page__important-dates-source" title="From the voter roll, not a saved contact">
+                                🗳️{' '}
+                              </span>
+                              {contact.name}
+                            </span>
+                            <span className="today-page__important-dates-kind">
+                              {kind === 'birthday' ? '🎂 Birthday' : '💍 Anniversary'}
+                            </span>
+                          </Link>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
