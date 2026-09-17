@@ -10,15 +10,15 @@
 const MEETING_TZ = 'America/New_York';
 
 /** The default title for a note created from a meeting's note icon:
- * "9/17/26 | 2:00 PM – 2:30 PM | Planning Sync" (all-day events drop the
- * time range). Matches what's shown on the row itself, not the viewer's
- * local time. */
+ * "09/17/2026 | 2:00 PM – 2:30 PM | Planning Sync" (all-day events drop
+ * the time range). Zero-padded MM/DD and a full 4-digit year, matching
+ * what's shown on the row itself, not the viewer's local time. */
 export function buildMeetingNoteTitle(m: { title: string; start: string; end: string; allDay: boolean }): string {
   const dateLabel = new Date(m.start).toLocaleDateString('en-US', {
     timeZone: MEETING_TZ,
-    month: 'numeric',
-    day: 'numeric',
-    year: '2-digit',
+    month: '2-digit',
+    day: '2-digit',
+    year: 'numeric',
   });
   const title = m.title || 'Untitled meeting';
   if (m.allDay) return `${dateLabel} | ${title}`;

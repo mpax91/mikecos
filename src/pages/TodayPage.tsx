@@ -185,7 +185,13 @@ export function TodayPage() {
     if (m.hasNote) {
       const { noteEntityId } = await api.getMeetingNote(m.id);
       if (noteEntityId) {
-        navigate(`/projects/${noteEntityId}`);
+        // Always top-level (created via POST /api/meetings/:id/note, which
+        // never nests it under a project) — /notes/:id is the right route,
+        // not /projects/:id. That generic route works for any entity type,
+        // but its Breadcrumb component always shows a leading "Projects"
+        // crumb, which reads as this note living inside Projects when it
+        // doesn't.
+        navigate(`/notes/${noteEntityId}`);
         return;
       }
       // hasNote was stale (the note was deleted from the Notes page
@@ -196,7 +202,7 @@ export function TodayPage() {
     }
     if (meetingHasEnded(m)) return;
     const { noteEntityId } = await api.createMeetingNote(m.id, buildMeetingNoteTitle(m));
-    navigate(`/projects/${noteEntityId}`);
+    navigate(`/notes/${noteEntityId}`);
     loadMeetings();
   }
 
@@ -480,7 +486,7 @@ export function TodayPage() {
                       <button
                         type="button"
                         className={`today-page__meeting-icon-btn${m.hasNote ? ' today-page__meeting-icon-btn--active' : ''}`}
-                        title={m.hasNote ? 'Open note' : meetingHasEnded(m) ? 'No note for this meeting' : 'Add a note'}
+                        title={m.hasNote ? 'Open note' : meetingHasEnded(m) ? 'No note for this meeting' : 'Create note'}
                         aria-disabled={!m.hasNote && meetingHasEnded(m)}
                         onClick={() => {
                           if (!m.hasNote && meetingHasEnded(m)) return;

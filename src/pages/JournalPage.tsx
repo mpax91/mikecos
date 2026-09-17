@@ -200,7 +200,10 @@ export function JournalPage() {
   async function openMeetingNote(m: MeetingItem) {
     if (!m.hasNote) return;
     const { noteEntityId } = await api.getMeetingNote(m.id);
-    if (noteEntityId) navigate(`/projects/${noteEntityId}`);
+    // Always top-level (see TodayPage's openMeetingNote comment) —
+    // /notes/:id, not /projects/:id, which would show a misleading
+    // "Projects" breadcrumb over a note that isn't actually in Projects.
+    if (noteEntityId) navigate(`/notes/${noteEntityId}`);
     else loadMeetings(); // stale hasNote (note deleted elsewhere) — refresh so the icon updates
   }
 
