@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
 import type { HealthWeeklyReport } from '../api/types';
 import { useReportTabMeta } from '../contexts/TabsContext';
+import { buildPeriods, periodDelta, type AggregatedPeriod, type Granularity } from '../utils/healthPeriods';
 
 type LifeArea = 'fitness' | 'finance' | 'vehicle';
 
@@ -11,43 +12,123 @@ const LIFE_AREAS: { id: LifeArea; label: string; icon: string; available: boolea
   { id: 'vehicle', label: 'Vehicle', icon: '🚗', available: false },
 ];
 
-function formatWeekRange(start: string, end: string): string {
-  const s = new Date(`${start}T00:00:00`);
-  const e = new Date(`${end}T00:00:00`);
-  const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  return `${fmt(s)} – ${fmt(e)}`;
+const GRANULARITIES: { id: Granularity; label: string }[] = [
+  { id: 'week', label: 'Week' },
+  { id: 'month', label: 'Month' },
+  { id: 'quarter', label: 'Quarter' },
+  { id: 'year', label: 'Year' },
+];
+
+type MetricKey = 'steps' | 'miles' | 'calories' | 'azm' | 'sleep' | 'heartRate' | 'weight';
+
+interface MetricConfig {
+  label: string;
+  chartUnit: string; // shown after the number on the trend chart / tooltip
+  deltaUnit: string; // shown after the number in a delta badge
+  decimals: number;
+  invert?: boolean; // true when a decrease is the "good" direction (heart rate, weight)
+  get: (p: AggregatedPeriod) => number | null;
+  formatTile: (v: number) => string;
 }
 
-function shortLabel(weekStart: string): string {
-  const d = new Date(`${weekStart}T00:00:00`);
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
-
-/** Looks back from `weeks[idx]` for the most recent earlier week that has a
- * non-null value for `field`, so a delta skips cleanly over a gap (missing
- * data) instead of comparing against a week that wasn't really tracked —
- * the same problem Google's own "vs last week" text has, which is why
- * deltas are computed here rather than trusted from the source. */
-function deltaFrom<K extends keyof HealthWeeklyReport>(weeks: HealthWeeklyReport[], idx: number, field: K): number | null {
-  const current = weeks[idx][field];
-  if (current == null) return null;
-  for (let i = idx - 1; i >= 0; i--) {
-    const prior = weeks[i][field];
-    if (prior != null) return (current as number) - (prior as number);
-  }
-  return null;
-}
+const METRICS: Record<MetricKey, MetricConfig> = {
+  steps: {
+    label: 'Steps',
+    chartUnit: '',
+    deltaUnit: '',
+    decimals: 0,
+    get: (p) => p.totalSteps,
+    formatTile: (v) => v.toLocaleString(),
+  },
+  miles: {
+    label: 'Miles',
+    chartUnit: ' mi',
+    deltaUnit: ' mi',
+    decimals: 2,
+    get: (p) => p.totalMiles,
+    formatTile: (v) => v.toFixed(2),
+  },
+  calories: {
+    label: 'Calories Burned (avg/day)',
+    chartUnit: '',
+    deltaUnit: '',
+    decimals: 0,
+    get: (p) => p.avgCaloriesBurned,
+    formatTile: (v) => Math.round(v).toLocaleString(),
+  },
+  azm: {
+    label: 'Active Zone Minutes',
+    chartUnit: ' min',
+    deltaUnit: ' min',
+    decimals: 0,
+    get: (p) => p.avgActiveZoneMinutes,
+    formatTile: (v) => String(Math.round(v)),
+  },
+  sleep: {
+    label: 'Restful Sleep',
+    chartUnit: 'h',
+    deltaUnit: ' min',
+    decimals: 1,
+    get: (p) => p.avgRestfulSleepMinutes,
+    formatTile: (v) => `${Math.floor(v / 60)}h ${Math.round(v % 60)}m`,
+  },
+  heartRate: {
+    label: 'Resting Heart Rate',
+    chartUnit: ' bpm',
+    deltaUnit: ' bpm',
+    decimals: 0,
+    invert: true,
+    get: (p) => p.avgRestingHeartRate,
+    formatTile: (v) => `${Math.round(v)} bpm`,
+  },
+  weight: {
+    label: 'Weight',
+    chartUnit: ' lb',
+    deltaUnit: ' lb',
+    decimals: 1,
+    invert: true,
+    get: (p) => p.avgWeightLb,
+    formatTile: (v) => `${v.toFixed(1)} lb`,
+  },
+};
 
 function DeltaBadge({ value, unit = '', invert = false }: { value: number | null; unit?: string; invert?: boolean }) {
-  if (value === null || value === 0) return null;
+  if (value === null || Math.abs(value) < 0.05) return null;
   const good = invert ? value < 0 : value > 0;
   const sign = value > 0 ? '+' : '';
   return (
     <span className={`dashboard-page__tile-delta${good ? ' is-up' : ' is-down'}`}>
       {sign}
-      {typeof value === 'number' && Number.isInteger(value) ? value : value.toFixed(1)}
+      {Number.isInteger(value) ? value : value.toFixed(1)}
       {unit}
     </span>
+  );
+}
+
+/** Tiny inline trend, drawn straight into the tile so a number never sits
+ * alone — the same instinct behind Analytics-style dashboards showing a
+ * sparkline next to every metric. Scaled to its own min/max (not zero),
+ * same reasoning as the big trend chart below. */
+function Sparkline({ values }: { values: (number | null)[] }) {
+  const present = values.filter((v): v is number => v != null);
+  if (present.length < 2) return null;
+  const min = Math.min(...present);
+  const max = Math.max(...present);
+  const range = max - min || 1;
+  const w = 100;
+  const h = 28;
+  const step = w / (values.length - 1);
+  const points: string[] = [];
+  values.forEach((v, i) => {
+    if (v == null) return;
+    const x = i * step;
+    const y = h - ((v - min) / range) * (h - 4) - 2;
+    points.push(`${x},${y}`);
+  });
+  return (
+    <svg className="dashboard-page__sparkline" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none">
+      <polyline points={points.join(' ')} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }
 
@@ -55,52 +136,74 @@ function Tile({
   label,
   value,
   delta,
+  sparkline,
+  active,
+  onClick,
 }: {
   label: string;
   value: string | null;
   delta?: React.ReactNode;
+  sparkline?: React.ReactNode;
+  active?: boolean;
+  onClick?: () => void;
 }) {
+  const Tag = onClick ? 'button' : 'div';
   return (
-    <div className="dashboard-page__tile card">
+    <Tag type={onClick ? 'button' : undefined} className={`dashboard-page__tile card${onClick ? ' is-clickable' : ''}${active ? ' is-active' : ''}`} onClick={onClick}>
       <div className="dashboard-page__tile-label">{label}</div>
       <div className="dashboard-page__tile-value">{value ?? <span className="dashboard-page__tile-nodata">No data</span>}</div>
-      {delta}
-    </div>
+      <div className="dashboard-page__tile-footer">
+        {delta}
+        {sparkline}
+      </div>
+    </Tag>
   );
 }
 
-/** A hand-rolled bar chart (no new charting dependency — same approach as
- * StatsPage's "Last 14 Days" strip) scaled to the visible weeks' own
- * min/max rather than starting at zero, since a metric like weight or
- * resting heart rate is only meaningfully different within a narrow band
- * — a zero-based bar would make every week look identical. */
-function TrendChart({ title, weeks, field, unit, decimals = 0 }: { title: string; weeks: HealthWeeklyReport[]; field: keyof HealthWeeklyReport; unit: string; decimals?: number }) {
-  const values = weeks.map((w) => w[field] as number | null);
+/** The big trend chart for whichever metric is selected — a hand-rolled bar
+ * chart (no new charting dependency, same approach as StatsPage's own
+ * trend strip) scaled to the visible periods' own min/max rather than zero,
+ * since weight/heart-rate only vary within a narrow band. */
+function TrendChart({ config, periods }: { config: MetricConfig; periods: AggregatedPeriod[] }) {
+  const values = periods.map((p) => config.get(p));
   const present = values.filter((v): v is number => v != null);
   if (present.length === 0) {
-    return (
-      <div className="dashboard-page__chart card">
-        <div className="dashboard-page__chart-title">{title}</div>
-        <div className="empty-state">No data yet for this metric.</div>
-      </div>
-    );
+    return <div className="empty-state">No data yet for {config.label.toLowerCase()}.</div>;
   }
   const min = Math.min(...present);
   const max = Math.max(...present);
   const range = max - min || 1;
+  const avg = present.reduce((a, b) => a + b, 0) / present.length;
 
   return (
-    <div className="dashboard-page__chart card">
-      <div className="dashboard-page__chart-title">{title}</div>
-      <div className="dashboard-page__chart-bars">
-        {weeks.map((w, i) => {
+    <div>
+      <div className="dashboard-page__trend-stats">
+        <div>
+          <span className="dashboard-page__trend-stat-label">Latest</span>
+          <span className="dashboard-page__trend-stat-value">{config.formatTile(present[present.length - 1])}</span>
+        </div>
+        <div>
+          <span className="dashboard-page__trend-stat-label">Average</span>
+          <span className="dashboard-page__trend-stat-value">{config.formatTile(avg)}</span>
+        </div>
+        <div>
+          <span className="dashboard-page__trend-stat-label">Low</span>
+          <span className="dashboard-page__trend-stat-value">{config.formatTile(min)}</span>
+        </div>
+        <div>
+          <span className="dashboard-page__trend-stat-label">High</span>
+          <span className="dashboard-page__trend-stat-value">{config.formatTile(max)}</span>
+        </div>
+      </div>
+      <div className="dashboard-page__chart-bars dashboard-page__chart-bars--large">
+        {periods.map((p, i) => {
           const v = values[i];
-          const pct = v == null ? 0 : 12 + ((v - min) / range) * 88; // floor at 12% so a present-but-low value still shows a sliver
+          const pct = v == null ? 0 : 10 + ((v - min) / range) * 90;
           return (
-            <div key={w.week_start} className="dashboard-page__chart-col" title={v == null ? `${shortLabel(w.week_start)}: no data` : `${shortLabel(w.week_start)}: ${v.toFixed(decimals)}${unit}`}>
-              <div className="dashboard-page__chart-count">{v == null ? '' : v.toFixed(decimals)}</div>
+            <div key={p.key} className="dashboard-page__chart-col" title={v == null ? `${p.shortLabel}: no data` : `${p.label}: ${v.toFixed(config.decimals)}${config.chartUnit}`}>
+              <div className="dashboard-page__chart-count">{v == null ? '' : v.toFixed(config.decimals)}</div>
               <div className={`dashboard-page__chart-bar${v == null ? ' is-empty' : ''}`} style={{ height: `${v == null ? 3 : pct}%` }} />
-              <div className="dashboard-page__chart-date">{shortLabel(w.week_start)}</div>
+              <div className="dashboard-page__chart-date">{p.shortLabel}</div>
             </div>
           );
         })}
@@ -109,9 +212,19 @@ function TrendChart({ title, weeks, field, unit, decimals = 0 }: { title: string
   );
 }
 
+const ZOOM_OPTIONS: { id: number; label: string }[] = [
+  { id: 8, label: 'Last 8' },
+  { id: 26, label: 'Last 26' },
+  { id: 0, label: 'All' },
+];
+
 function FitnessDashboard() {
   const [weeks, setWeeks] = useState<HealthWeeklyReport[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [granularity, setGranularity] = useState<Granularity>('week');
+  const [periodIndex, setPeriodIndex] = useState<number>(-1); // -1 = "not yet set, use latest"
+  const [selectedMetric, setSelectedMetric] = useState<MetricKey>('steps');
+  const [zoom, setZoom] = useState<number>(8);
 
   useEffect(() => {
     api
@@ -120,76 +233,167 @@ function FitnessDashboard() {
       .catch((e) => setError(String(e)));
   }, []);
 
-  const recent = useMemo(() => (weeks ? weeks.slice(-14) : []), [weeks]);
-  const current = weeks && weeks.length > 0 ? weeks[weeks.length - 1] : null;
-  const currentIdx = weeks ? weeks.length - 1 : -1;
+  const periods = useMemo(() => (weeks ? buildPeriods(weeks, granularity) : []), [weeks, granularity]);
+
+  // Switching granularity (or loading data for the first time) lands on the
+  // most recent period — periodIndex only tracks an explicit Prev/Next move
+  // away from that.
+  const activeIndex = periodIndex >= 0 && periodIndex < periods.length ? periodIndex : periods.length - 1;
+  const current = periods[activeIndex] ?? null;
+
+  function changeGranularity(g: Granularity) {
+    setGranularity(g);
+    setPeriodIndex(-1);
+  }
+
+  const zoomedPeriods = useMemo(() => {
+    if (zoom === 0 || periods.length <= zoom) return periods;
+    // Zoom is always anchored to the currently-viewed period, not just the
+    // latest — browsing back a few months and zooming should center on
+    // what's being browsed, not snap back to "now".
+    const end = Math.min(periods.length, activeIndex + 1);
+    const start = Math.max(0, end - zoom);
+    return periods.slice(start, end);
+  }, [periods, zoom, activeIndex]);
 
   if (error) return <div className="empty-state">Couldn't load health data: {error}</div>;
   if (!weeks) return <div className="empty-state">Loading…</div>;
   if (weeks.length === 0) {
-    return (
-      <div className="empty-state">
-        No health data yet — upload a Google Health weekly report from Settings → Health Import to get started.
-      </div>
-    );
+    return <div className="empty-state">No health data yet — upload a Google Health weekly report from Settings → Upload to get started.</div>;
   }
+
+  const metric = METRICS[selectedMetric];
 
   return (
     <div>
+      <div className="dashboard-page__controls">
+        <div className="dashboard-page__granularity-tabs">
+          {GRANULARITIES.map((g) => (
+            <button key={g.id} type="button" className={`dashboard-page__tab${granularity === g.id ? ' is-active' : ''}`} onClick={() => changeGranularity(g.id)}>
+              {g.label}
+            </button>
+          ))}
+        </div>
+        <div className="dashboard-page__period-nav">
+          <button type="button" className="dashboard-page__nav-btn" disabled={activeIndex <= 0} onClick={() => setPeriodIndex(activeIndex - 1)} aria-label="Previous period">
+            ‹
+          </button>
+          <span className="dashboard-page__period-label">
+            {current?.label}
+            {current && current.weekCount > 1 && (
+              <span className="dashboard-page__period-sublabel">
+                {' '}
+                · {current.weeksWithData} of {current.weekCount} week{current.weekCount === 1 ? '' : 's'} tracked
+              </span>
+            )}
+          </span>
+          <button
+            type="button"
+            className="dashboard-page__nav-btn"
+            disabled={activeIndex >= periods.length - 1}
+            onClick={() => setPeriodIndex(activeIndex + 1)}
+            aria-label="Next period"
+          >
+            ›
+          </button>
+          {activeIndex < periods.length - 1 && (
+            <button type="button" className="chip" onClick={() => setPeriodIndex(-1)}>
+              Jump to latest
+            </button>
+          )}
+        </div>
+      </div>
+
       {current && (
-        <>
-          <div className="dashboard-page__section-title">Current Week · {formatWeekRange(current.week_start, current.week_end)}</div>
-          <div className="dashboard-page__tiles">
-            <Tile
-              label="Steps"
-              value={current.total_steps != null ? current.total_steps.toLocaleString() : null}
-              delta={<DeltaBadge value={deltaFrom(weeks, currentIdx, 'total_steps')} />}
-            />
-            <Tile
-              label="Best Day"
-              value={current.best_day_steps != null ? `${current.best_day_steps.toLocaleString()}${current.best_day_weekday ? ` (${current.best_day_weekday})` : ''}` : null}
-            />
-            <Tile label="Miles" value={current.total_miles != null ? current.total_miles.toFixed(2) : null} delta={<DeltaBadge value={deltaFrom(weeks, currentIdx, 'total_miles')} unit=" mi" />} />
-            <Tile label="Floors" value={current.total_floors != null ? String(current.total_floors) : null} />
-            <Tile label="Calories Burned" value={current.avg_calories_burned != null ? current.avg_calories_burned.toLocaleString() : null} />
-            <Tile
-              label="Active Zone Minutes"
-              value={current.avg_active_zone_minutes != null ? String(current.avg_active_zone_minutes) : null}
-              delta={<DeltaBadge value={deltaFrom(weeks, currentIdx, 'avg_active_zone_minutes')} unit=" min" />}
-            />
-            <Tile
-              label="Restful Sleep"
-              value={current.avg_restful_sleep_minutes != null ? `${Math.floor(current.avg_restful_sleep_minutes / 60)}h ${current.avg_restful_sleep_minutes % 60}m` : null}
-            />
-            <Tile
-              label="Resting Heart Rate"
-              value={current.avg_resting_heart_rate != null ? `${current.avg_resting_heart_rate} bpm` : null}
-              delta={<DeltaBadge value={deltaFrom(weeks, currentIdx, 'avg_resting_heart_rate')} unit=" bpm" invert />}
-            />
-            <Tile
-              label="Weight"
-              value={current.avg_weight_lb != null ? `${current.avg_weight_lb.toFixed(1)} lb` : null}
-              delta={<DeltaBadge value={deltaFrom(weeks, currentIdx, 'avg_weight_lb')} unit=" lb" invert />}
-            />
-          </div>
-        </>
+        <div className="dashboard-page__tiles">
+          <Tile
+            label="Steps"
+            value={current.totalSteps != null ? current.totalSteps.toLocaleString() : null}
+            delta={<DeltaBadge value={periodDelta(periods, activeIndex, 'totalSteps')} />}
+            sparkline={
+              <Sparkline
+                values={periods.slice(Math.max(0, activeIndex - 7), activeIndex + 1).map((p) => p.totalSteps)}
+              />
+            }
+            active={selectedMetric === 'steps'}
+            onClick={() => setSelectedMetric('steps')}
+          />
+          <Tile label="Best Day" value={current.bestDaySteps != null ? `${current.bestDaySteps.toLocaleString()}${current.bestDayWeekday ? ` (${current.bestDayWeekday})` : ''}` : null} />
+          <Tile
+            label="Miles"
+            value={current.totalMiles != null ? current.totalMiles.toFixed(2) : null}
+            delta={<DeltaBadge value={periodDelta(periods, activeIndex, 'totalMiles')} unit=" mi" />}
+            sparkline={<Sparkline values={periods.slice(Math.max(0, activeIndex - 7), activeIndex + 1).map((p) => p.totalMiles)} />}
+            active={selectedMetric === 'miles'}
+            onClick={() => setSelectedMetric('miles')}
+          />
+          <Tile
+            label="Calories Burned"
+            value={current.avgCaloriesBurned != null ? Math.round(current.avgCaloriesBurned).toLocaleString() : null}
+            sparkline={<Sparkline values={periods.slice(Math.max(0, activeIndex - 7), activeIndex + 1).map((p) => p.avgCaloriesBurned)} />}
+            active={selectedMetric === 'calories'}
+            onClick={() => setSelectedMetric('calories')}
+          />
+          <Tile
+            label="Active Zone Minutes"
+            value={current.avgActiveZoneMinutes != null ? String(Math.round(current.avgActiveZoneMinutes)) : null}
+            delta={<DeltaBadge value={periodDelta(periods, activeIndex, 'avgActiveZoneMinutes')} unit=" min" />}
+            sparkline={<Sparkline values={periods.slice(Math.max(0, activeIndex - 7), activeIndex + 1).map((p) => p.avgActiveZoneMinutes)} />}
+            active={selectedMetric === 'azm'}
+            onClick={() => setSelectedMetric('azm')}
+          />
+          <Tile
+            label="Restful Sleep"
+            value={current.avgRestfulSleepMinutes != null ? `${Math.floor(current.avgRestfulSleepMinutes / 60)}h ${Math.round(current.avgRestfulSleepMinutes % 60)}m` : null}
+            sparkline={<Sparkline values={periods.slice(Math.max(0, activeIndex - 7), activeIndex + 1).map((p) => p.avgRestfulSleepMinutes)} />}
+            active={selectedMetric === 'sleep'}
+            onClick={() => setSelectedMetric('sleep')}
+          />
+          <Tile
+            label="Resting Heart Rate"
+            value={current.avgRestingHeartRate != null ? `${Math.round(current.avgRestingHeartRate)} bpm` : null}
+            delta={<DeltaBadge value={periodDelta(periods, activeIndex, 'avgRestingHeartRate')} unit=" bpm" invert />}
+            sparkline={<Sparkline values={periods.slice(Math.max(0, activeIndex - 7), activeIndex + 1).map((p) => p.avgRestingHeartRate)} />}
+            active={selectedMetric === 'heartRate'}
+            onClick={() => setSelectedMetric('heartRate')}
+          />
+          <Tile
+            label="Weight"
+            value={current.avgWeightLb != null ? `${current.avgWeightLb.toFixed(1)} lb` : null}
+            delta={<DeltaBadge value={periodDelta(periods, activeIndex, 'avgWeightLb')} unit=" lb" invert />}
+            sparkline={<Sparkline values={periods.slice(Math.max(0, activeIndex - 7), activeIndex + 1).map((p) => p.avgWeightLb)} />}
+            active={selectedMetric === 'weight'}
+            onClick={() => setSelectedMetric('weight')}
+          />
+        </div>
       )}
 
-      <div className="dashboard-page__section-title" style={{ marginTop: 28 }}>
-        Trends {recent.length < weeks.length ? `· Last ${recent.length} Weeks` : ''}
-      </div>
-      <div className="dashboard-page__charts">
-        <TrendChart title="Steps / Week" weeks={recent} field="total_steps" unit="" />
-        <TrendChart title="Weight (lb)" weeks={recent} field="avg_weight_lb" unit=" lb" decimals={1} />
-        <TrendChart title="Resting Heart Rate (bpm)" weeks={recent} field="avg_resting_heart_rate" unit=" bpm" />
-        <TrendChart title="Restful Sleep (hrs)" weeks={recent} field="avg_restful_sleep_minutes" unit="h" decimals={1} />
+      <div className="dashboard-page__trend-panel card">
+        <div className="dashboard-page__trend-header">
+          <div className="dashboard-page__metric-tabs">
+            {(Object.keys(METRICS) as MetricKey[]).map((k) => (
+              <button key={k} type="button" className={`dashboard-page__tab dashboard-page__tab--small${selectedMetric === k ? ' is-active' : ''}`} onClick={() => setSelectedMetric(k)}>
+                {METRICS[k].label}
+              </button>
+            ))}
+          </div>
+          <div className="dashboard-page__zoom-tabs">
+            {ZOOM_OPTIONS.map((z) => (
+              <button key={z.id} type="button" className={`chip${zoom === z.id ? ' is-active' : ''}`} onClick={() => setZoom(z.id)}>
+                {z.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <TrendChart config={metric} periods={zoomedPeriods} />
       </div>
 
       <p className="settings-page__section-hint" style={{ marginTop: 16 }}>
         Weeks with no bar (or "No data") are weeks the tracker wasn't worn — heart rate, sleep, and active zone
         minutes can't be a real zero for a whole week, so those come through blank rather than as misleading zeros.
         Weight can stay flat for several weeks in a row if there wasn't a new scale reading — Google Health appears
-        to carry the last known weight forward rather than leaving it blank.
+        to carry the last known weight forward rather than leaving it blank, so month/quarter/year views show the
+        most recent reading in the period rather than averaging in the duplicates.
       </p>
     </div>
   );
@@ -205,11 +409,7 @@ export function DashboardPage() {
         <h1 className="heading-serif" style={{ fontSize: 24, margin: 0 }}>
           Dashboard
         </h1>
-        <select
-          className="dashboard-page__area-select"
-          value={area}
-          onChange={(e) => setArea(e.target.value as LifeArea)}
-        >
+        <select className="dashboard-page__area-select" value={area} onChange={(e) => setArea(e.target.value as LifeArea)}>
           {LIFE_AREAS.map((a) => (
             <option key={a.id} value={a.id} disabled={!a.available}>
               {a.icon} {a.label}
