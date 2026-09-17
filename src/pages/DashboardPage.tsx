@@ -135,6 +135,7 @@ function Sparkline({ values }: { values: (number | null)[] }) {
 function Tile({
   label,
   value,
+  aside,
   delta,
   sparkline,
   active,
@@ -142,6 +143,7 @@ function Tile({
 }: {
   label: string;
   value: string | null;
+  aside?: string | null;
   delta?: React.ReactNode;
   sparkline?: React.ReactNode;
   active?: boolean;
@@ -152,6 +154,7 @@ function Tile({
     <Tag type={onClick ? 'button' : undefined} className={`dashboard-page__tile card${onClick ? ' is-clickable' : ''}${active ? ' is-active' : ''}`} onClick={onClick}>
       <div className="dashboard-page__tile-label">{label}</div>
       <div className="dashboard-page__tile-value">{value ?? <span className="dashboard-page__tile-nodata">No data</span>}</div>
+      {aside && <div className="dashboard-page__tile-aside">{aside}</div>}
       <div className="dashboard-page__tile-footer">
         {delta}
         {sparkline}
@@ -164,7 +167,7 @@ function Tile({
  * chart (no new charting dependency, same approach as StatsPage's own
  * trend strip) scaled to the visible periods' own min/max rather than zero,
  * since weight/heart-rate only vary within a narrow band. */
-function TrendChart({ config, periods }: { config: MetricConfig; periods: AggregatedPeriod[] }) {
+function TrendChart({ config, periods, currentIndex }: { config: MetricConfig; periods: AggregatedPeriod[]; currentIndex: number }) {
   const values = periods.map((p) => config.get(p));
   const present = values.filter((v): v is number => v != null);
   if (present.length === 0) {
@@ -174,13 +177,18 @@ function TrendChart({ config, periods }: { config: MetricConfig; periods: Aggreg
   const max = Math.max(...present);
   const range = max - min || 1;
   const avg = present.reduce((a, b) => a + b, 0) / present.length;
+  const selectedValue = values[currentIndex];
 
   return (
     <div>
+      <div className="dashboard-page__trend-range">
+        {periods[0].shortLabel} – {periods[periods.length - 1].shortLabel}
+        {periods.length > 1 ? ` · ${periods.length} periods` : ''}
+      </div>
       <div className="dashboard-page__trend-stats">
         <div>
-          <span className="dashboard-page__trend-stat-label">Latest</span>
-          <span className="dashboard-page__trend-stat-value">{config.formatTile(present[present.length - 1])}</span>
+          <span className="dashboard-page__trend-stat-label">Selected</span>
+          <span className="dashboard-page__trend-stat-value">{selectedValue != null ? config.formatTile(selectedValue) : '—'}</span>
         </div>
         <div>
           <span className="dashboard-page__trend-stat-label">Average</span>
@@ -200,7 +208,11 @@ function TrendChart({ config, periods }: { config: MetricConfig; periods: Aggreg
           const v = values[i];
           const pct = v == null ? 0 : 10 + ((v - min) / range) * 90;
           return (
-            <div key={p.key} className="dashboard-page__chart-col" title={v == null ? `${p.shortLabel}: no data` : `${p.label}: ${v.toFixed(config.decimals)}${config.chartUnit}`}>
+            <div
+              key={p.key}
+              className={`dashboard-page__chart-col${i === currentIndex ? ' is-current' : ''}`}
+              title={v == null ? `${p.shortLabel}: no data` : `${p.label}: ${v.toFixed(config.decimals)}${config.chartUnit}`}
+            >
               <div className="dashboard-page__chart-count">{v == null ? '' : v.toFixed(config.decimals)}</div>
               <div className={`dashboard-page__chart-bar${v == null ? ' is-empty' : ''}`} style={{ height: `${v == null ? 3 : pct}%` }} />
               <div className="dashboard-page__chart-date">{p.shortLabel}</div>
@@ -292,15 +304,20 @@ function FitnessDashboard() {
     setZoom(ZOOM_OPTIONS_BY_GRANULARITY[g][0].id);
   }
 
+  // The trend chart always mirrors the period pill above it — it ends at
+  // whichever period Prev/Next has selected (never later, even for "All"),
+  // and the zoom picker only controls how far back from there it reaches.
+  // A short zoom near the start of the data legitimately shows fewer bars
+  // than the preset asks for (e.g. "Last 30" on the 4th week ever tracked
+  // can only show 4) — that's correct, not a bug, and the date range below
+  // the picker always states exactly what's on screen.
   const zoomedPeriods = useMemo(() => {
-    if (zoom === 0 || periods.length <= zoom) return periods;
-    // Zoom is always anchored to the currently-viewed period, not just the
-    // latest — browsing back a few months and zooming should center on
-    // what's being browsed, not snap back to "now".
     const end = Math.min(periods.length, activeIndex + 1);
-    const start = Math.max(0, end - zoom);
+    const start = zoom === 0 ? 0 : Math.max(0, end - zoom);
     return periods.slice(start, end);
   }, [periods, zoom, activeIndex]);
+
+  const zoomedActiveIndexInWindow = zoomedPeriods.length - 1; // the pill's period is always the last bar shown
 
   if (error) return <div className="empty-state">Couldn't load health data: {error}</div>;
   if (!weeks) return <div className="empty-state">Loading…</div>;
@@ -354,6 +371,7 @@ function FitnessDashboard() {
           <Tile
             label="Steps"
             value={current.totalSteps != null ? current.totalSteps.toLocaleString() : null}
+            aside={current.bestDaySteps != null ? `best day ${current.bestDaySteps.toLocaleString()}${current.bestDayWeekday ? ` (${current.bestDayWeekday})` : ''}` : null}
             delta={<DeltaBadge value={periodDelta(periods, activeIndex, 'totalSteps')} />}
             sparkline={
               <Sparkline
@@ -363,7 +381,6 @@ function FitnessDashboard() {
             active={selectedMetric === 'steps'}
             onClick={() => setSelectedMetric('steps')}
           />
-          <Tile label="Best Day" value={current.bestDaySteps != null ? `${current.bestDaySteps.toLocaleString()}${current.bestDayWeekday ? ` (${current.bestDayWeekday})` : ''}` : null} />
           <Tile
             label="Miles"
             value={current.totalMiles != null ? current.totalMiles.toFixed(2) : null}
@@ -430,7 +447,7 @@ function FitnessDashboard() {
             ))}
           </div>
         </div>
-        <TrendChart config={metric} periods={zoomedPeriods} />
+        <TrendChart config={metric} periods={zoomedPeriods} currentIndex={zoomedActiveIndexInWindow} />
       </div>
 
       <p className="dashboard-page__footnote">

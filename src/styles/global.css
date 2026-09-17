@@ -6047,15 +6047,13 @@ a.today-page__important-dates-row:hover .today-page__important-dates-name {
 .dashboard-page__tile {
   padding: 12px 14px;
   text-align: left;
-  font-family: inherit;
+  font: inherit;
+  color: inherit;
+  background: var(--color-card-bg);
   border: var(--border-hairline);
   display: flex;
   flex-direction: column;
   gap: 6px;
-}
-
-button.dashboard-page__tile {
-  background: var(--color-surface);
 }
 
 .dashboard-page__tile.is-clickable {
@@ -6087,6 +6085,12 @@ button.dashboard-page__tile {
   font-size: 14px;
   font-weight: 400;
   color: var(--color-muted);
+}
+
+.dashboard-page__tile-aside {
+  font-size: 11px;
+  color: var(--color-muted);
+  margin-top: -4px;
 }
 
 .dashboard-page__tile-footer {
@@ -6133,6 +6137,12 @@ button.dashboard-page__tile {
   flex-wrap: wrap;
   gap: 10px;
   margin-bottom: 14px;
+}
+
+.dashboard-page__trend-range {
+  font-size: 11.5px;
+  color: var(--color-muted);
+  margin-bottom: 10px;
 }
 
 .dashboard-page__trend-stats {
@@ -6199,6 +6209,19 @@ button.dashboard-page__tile {
 
 .dashboard-page__chart-bar.is-empty {
   background: var(--color-border, #ddd);
+}
+
+/* Marks whichever bar corresponds to the period selected in the pill above
+ * — so browsing Prev/Next visibly moves a highlight through this chart
+ * instead of leaving it looking disconnected from the date picker. */
+.dashboard-page__chart-col.is-current .dashboard-page__chart-bar {
+  background: var(--color-accent-secondary);
+}
+
+.dashboard-page__chart-col.is-current .dashboard-page__chart-date,
+.dashboard-page__chart-col.is-current .dashboard-page__chart-count {
+  color: var(--color-accent-secondary);
+  font-weight: 700;
 }
 
 .dashboard-page__chart-date {
