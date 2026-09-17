@@ -6195,8 +6195,12 @@ a.today-page__important-dates-row:hover .today-page__important-dates-name {
   flex-direction: column;
   align-items: center;
   justify-content: flex-end;
-  flex: 0 0 auto;
-  width: 40px;
+  /* Grow to fill the row when there's room (few periods), but never shrink
+   * past a readable width — once the row's natural width exceeds the
+   * container, flex-shrink's floor at min-width is what makes the row
+   * scroll instead of squeezing every bar unreadably thin. */
+  flex: 1 1 40px;
+  min-width: 40px;
   height: 100%;
 }
 
@@ -6264,4 +6268,10 @@ a.today-page__important-dates-row:hover .today-page__important-dates-name {
   font-size: 13px;
   color: var(--color-muted);
   margin: 16px 0 0;
+}
+
+.dashboard-page__tiles-hint {
+  font-size: 11.5px;
+  color: var(--color-muted);
+  margin: 0 0 8px;
 }

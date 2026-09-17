@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api/client';
 import type { HealthWeeklyReport } from '../api/types';
 import { useReportTabMeta } from '../contexts/TabsContext';
-import { buildPeriods, periodDelta, type AggregatedPeriod, type Granularity } from '../utils/healthPeriods';
+import { buildPeriods, periodDeltaWithRef, type AggregatedPeriod, type Granularity } from '../utils/healthPeriods';
 
 type LifeArea = 'fitness' | 'finance' | 'vehicle';
 
@@ -23,10 +23,14 @@ type MetricKey = 'steps' | 'miles' | 'calories' | 'azm' | 'sleep' | 'heartRate' 
 
 interface MetricConfig {
   label: string;
-  chartUnit: string; // shown after the number on the trend chart / tooltip
-  deltaUnit: string; // shown after the number in a delta badge
-  decimals: number;
   invert?: boolean; // true when a decrease is the "good" direction (heart rate, weight)
+  // Floor for the trend chart's min/max scale, in the metric's own units.
+  // Weight and resting heart rate barely move week to week — a real ~3lb
+  // change can span nearly the whole chart height if the scale hugs the
+  // data's actual min/max, making an ordinary fluctuation look like a
+  // cliff. Padding the scale out to at least this wide (centered on the
+  // data) keeps a small real change looking small.
+  minRange?: number;
   get: (p: AggregatedPeriod) => number | null;
   formatTile: (v: number) => string;
 }
@@ -34,70 +38,51 @@ interface MetricConfig {
 const METRICS: Record<MetricKey, MetricConfig> = {
   steps: {
     label: 'Steps',
-    chartUnit: '',
-    deltaUnit: '',
-    decimals: 0,
     get: (p) => p.totalSteps,
     formatTile: (v) => v.toLocaleString(),
   },
   miles: {
     label: 'Miles',
-    chartUnit: ' mi',
-    deltaUnit: ' mi',
-    decimals: 2,
     get: (p) => p.totalMiles,
     formatTile: (v) => v.toFixed(2),
   },
   calories: {
     label: 'Calories Burned (avg/day)',
-    chartUnit: '',
-    deltaUnit: '',
-    decimals: 0,
     get: (p) => p.avgCaloriesBurned,
     formatTile: (v) => Math.round(v).toLocaleString(),
   },
   azm: {
     label: 'Active Zone Minutes',
-    chartUnit: ' min',
-    deltaUnit: ' min',
-    decimals: 0,
     get: (p) => p.avgActiveZoneMinutes,
     formatTile: (v) => String(Math.round(v)),
   },
   sleep: {
-    label: 'Restful Sleep',
-    chartUnit: 'h',
-    deltaUnit: ' min',
-    decimals: 1,
+    label: 'Restful Sleep (avg/night)',
     get: (p) => p.avgRestfulSleepMinutes,
     formatTile: (v) => `${Math.floor(v / 60)}h ${Math.round(v % 60)}m`,
   },
   heartRate: {
     label: 'Resting Heart Rate',
-    chartUnit: ' bpm',
-    deltaUnit: ' bpm',
-    decimals: 0,
     invert: true,
+    minRange: 15,
     get: (p) => p.avgRestingHeartRate,
     formatTile: (v) => `${Math.round(v)} bpm`,
   },
   weight: {
     label: 'Weight',
-    chartUnit: ' lb',
-    deltaUnit: ' lb',
-    decimals: 1,
     invert: true,
+    minRange: 10,
     get: (p) => p.avgWeightLb,
     formatTile: (v) => `${v.toFixed(1)} lb`,
   },
 };
 
-function DeltaBadge({ value, unit = '', invert = false }: { value: number | null; unit?: string; invert?: boolean }) {
+function DeltaBadge({ value, unit = '', invert = false, refLabel }: { value: number | null; unit?: string; invert?: boolean; refLabel?: string }) {
   if (value === null || Math.abs(value) < 0.05) return null;
   const good = invert ? value < 0 : value > 0;
   const sign = value > 0 ? '+' : '';
   return (
-    <span className={`dashboard-page__tile-delta${good ? ' is-up' : ' is-down'}`}>
+    <span className={`dashboard-page__tile-delta${good ? ' is-up' : ' is-down'}`} title={refLabel ? `vs ${refLabel}` : undefined}>
       {sign}
       {Number.isInteger(value) ? value : value.toFixed(1)}
       {unit}
@@ -184,11 +169,19 @@ function TrendChart({ config, periods, currentIndex }: { config: MetricConfig; p
   if (present.length === 0) {
     return <div className="empty-state">No data yet for {config.label.toLowerCase()}.</div>;
   }
-  const min = Math.min(...present);
-  const max = Math.max(...present);
-  const range = max - min || 1;
+  const dataMin = Math.min(...present);
+  const dataMax = Math.max(...present);
   const avg = present.reduce((a, b) => a + b, 0) / present.length;
   const selectedValue = values[currentIndex];
+
+  // Widen the scale symmetrically to at least minRange when the metric
+  // configures one — see MetricConfig's comment on why (weight/heart rate
+  // otherwise turn a couple-pound wobble into what looks like a cliff).
+  const dataRange = dataMax - dataMin;
+  const pad = config.minRange && config.minRange > dataRange ? (config.minRange - dataRange) / 2 : 0;
+  const min = dataMin - pad;
+  const max = dataMax + pad;
+  const range = max - min || 1;
 
   return (
     <div>
@@ -207,11 +200,11 @@ function TrendChart({ config, periods, currentIndex }: { config: MetricConfig; p
         </div>
         <div>
           <span className="dashboard-page__trend-stat-label">Low</span>
-          <span className="dashboard-page__trend-stat-value">{config.formatTile(min)}</span>
+          <span className="dashboard-page__trend-stat-value">{config.formatTile(dataMin)}</span>
         </div>
         <div>
           <span className="dashboard-page__trend-stat-label">High</span>
-          <span className="dashboard-page__trend-stat-value">{config.formatTile(max)}</span>
+          <span className="dashboard-page__trend-stat-value">{config.formatTile(dataMax)}</span>
         </div>
       </div>
       <div className="dashboard-page__chart-scroll">
@@ -224,9 +217,9 @@ function TrendChart({ config, periods, currentIndex }: { config: MetricConfig; p
                 key={p.key}
                 ref={i === currentIndex ? currentBarRef : undefined}
                 className={`dashboard-page__chart-col${i === currentIndex ? ' is-current' : ''}`}
-                title={v == null ? `${p.shortLabel}: no data` : `${p.label}: ${v.toFixed(config.decimals)}${config.chartUnit}`}
+                title={v == null ? `${p.shortLabel}: no data` : `${p.label}: ${config.formatTile(v)}`}
               >
-                <div className="dashboard-page__chart-count">{v == null ? '' : v.toFixed(config.decimals)}</div>
+                <div className="dashboard-page__chart-count">{v == null ? '' : config.formatTile(v)}</div>
                 <div className={`dashboard-page__chart-bar${v == null ? ' is-empty' : ''}`} style={{ height: `${v == null ? 3 : pct}%` }} />
                 <div className="dashboard-page__chart-date">{p.shortLabel}</div>
               </div>
@@ -338,72 +331,92 @@ function FitnessDashboard() {
       </div>
 
       {current && (
-        <div className="dashboard-page__tiles">
-          <Tile
-            label="Steps"
-            value={current.totalSteps != null ? current.totalSteps.toLocaleString() : null}
-            delta={<DeltaBadge value={periodDelta(periods, activeIndex, 'totalSteps')} />}
-            sparkline={
-              <Sparkline
-                values={periods.slice(Math.max(0, activeIndex - 7), activeIndex + 1).map((p) => p.totalSteps)}
-              />
-            }
-            active={selectedMetric === 'steps'}
-            onClick={() => setSelectedMetric('steps')}
-          />
-          <Tile
-            label="Miles"
-            value={current.totalMiles != null ? current.totalMiles.toFixed(2) : null}
-            delta={<DeltaBadge value={periodDelta(periods, activeIndex, 'totalMiles')} unit=" mi" />}
-            sparkline={<Sparkline values={periods.slice(Math.max(0, activeIndex - 7), activeIndex + 1).map((p) => p.totalMiles)} />}
-            active={selectedMetric === 'miles'}
-            onClick={() => setSelectedMetric('miles')}
-          />
-          <Tile
-            label="Calories Burned"
-            value={current.avgCaloriesBurned != null ? Math.round(current.avgCaloriesBurned).toLocaleString() : null}
-            sparkline={<Sparkline values={periods.slice(Math.max(0, activeIndex - 7), activeIndex + 1).map((p) => p.avgCaloriesBurned)} />}
-            active={selectedMetric === 'calories'}
-            onClick={() => setSelectedMetric('calories')}
-          />
-          <Tile
-            label="Active Zone Minutes"
-            value={current.avgActiveZoneMinutes != null ? String(Math.round(current.avgActiveZoneMinutes)) : null}
-            delta={<DeltaBadge value={periodDelta(periods, activeIndex, 'avgActiveZoneMinutes')} unit=" min" />}
-            sparkline={<Sparkline values={periods.slice(Math.max(0, activeIndex - 7), activeIndex + 1).map((p) => p.avgActiveZoneMinutes)} />}
-            active={selectedMetric === 'azm'}
-            onClick={() => setSelectedMetric('azm')}
-          />
-          <Tile
-            label="Restful Sleep"
-            value={current.avgRestfulSleepMinutes != null ? `${Math.floor(current.avgRestfulSleepMinutes / 60)}h ${Math.round(current.avgRestfulSleepMinutes % 60)}m` : null}
-            sparkline={<Sparkline values={periods.slice(Math.max(0, activeIndex - 7), activeIndex + 1).map((p) => p.avgRestfulSleepMinutes)} />}
-            active={selectedMetric === 'sleep'}
-            onClick={() => setSelectedMetric('sleep')}
-          />
-          <Tile
-            label="Resting Heart Rate"
-            value={current.avgRestingHeartRate != null ? `${Math.round(current.avgRestingHeartRate)} bpm` : null}
-            delta={<DeltaBadge value={periodDelta(periods, activeIndex, 'avgRestingHeartRate')} unit=" bpm" invert />}
-            sparkline={<Sparkline values={periods.slice(Math.max(0, activeIndex - 7), activeIndex + 1).map((p) => p.avgRestingHeartRate)} />}
-            active={selectedMetric === 'heartRate'}
-            onClick={() => setSelectedMetric('heartRate')}
-          />
-          <Tile
-            label="Weight"
-            value={current.avgWeightLb != null ? `${current.avgWeightLb.toFixed(1)} lb` : null}
-            delta={<DeltaBadge value={periodDelta(periods, activeIndex, 'avgWeightLb')} unit=" lb" invert />}
-            sparkline={<Sparkline values={periods.slice(Math.max(0, activeIndex - 7), activeIndex + 1).map((p) => p.avgWeightLb)} />}
-            active={selectedMetric === 'weight'}
-            onClick={() => setSelectedMetric('weight')}
-          />
-          <Tile
-            label="Best Day"
-            value={current.bestDaySteps != null ? `${current.bestDaySteps.toLocaleString()}${current.bestDayWeekday ? ` (${current.bestDayWeekday})` : ''}` : null}
-            delta={<DeltaBadge value={periodDelta(periods, activeIndex, 'bestDaySteps')} />}
-            sparkline={<Sparkline values={periods.slice(Math.max(0, activeIndex - 7), activeIndex + 1).map((p) => p.bestDaySteps)} />}
-          />
-        </div>
+        <>
+          <p className="dashboard-page__tiles-hint">
+            Deltas compare to the most recent earlier period with data (hover a delta to see which one). Sparklines
+            show that same tile's own trend over the last 8 periods.
+          </p>
+          <div className="dashboard-page__tiles">
+            <Tile
+              label="Steps"
+              value={current.totalSteps != null ? current.totalSteps.toLocaleString() : null}
+              delta={(() => {
+                const d = periodDeltaWithRef(periods, activeIndex, 'totalSteps');
+                return <DeltaBadge value={d?.value ?? null} refLabel={d?.refLabel} />;
+              })()}
+              sparkline={<Sparkline values={periods.slice(Math.max(0, activeIndex - 7), activeIndex + 1).map((p) => p.totalSteps)} />}
+              active={selectedMetric === 'steps'}
+              onClick={() => setSelectedMetric('steps')}
+            />
+            <Tile
+              label="Miles"
+              value={current.totalMiles != null ? current.totalMiles.toFixed(2) : null}
+              delta={(() => {
+                const d = periodDeltaWithRef(periods, activeIndex, 'totalMiles');
+                return <DeltaBadge value={d?.value ?? null} unit=" mi" refLabel={d?.refLabel} />;
+              })()}
+              sparkline={<Sparkline values={periods.slice(Math.max(0, activeIndex - 7), activeIndex + 1).map((p) => p.totalMiles)} />}
+              active={selectedMetric === 'miles'}
+              onClick={() => setSelectedMetric('miles')}
+            />
+            <Tile
+              label="Calories Burned"
+              value={current.avgCaloriesBurned != null ? Math.round(current.avgCaloriesBurned).toLocaleString() : null}
+              sparkline={<Sparkline values={periods.slice(Math.max(0, activeIndex - 7), activeIndex + 1).map((p) => p.avgCaloriesBurned)} />}
+              active={selectedMetric === 'calories'}
+              onClick={() => setSelectedMetric('calories')}
+            />
+            <Tile
+              label="Active Zone Minutes"
+              value={current.avgActiveZoneMinutes != null ? String(Math.round(current.avgActiveZoneMinutes)) : null}
+              delta={(() => {
+                const d = periodDeltaWithRef(periods, activeIndex, 'avgActiveZoneMinutes');
+                return <DeltaBadge value={d?.value ?? null} unit=" min" refLabel={d?.refLabel} />;
+              })()}
+              sparkline={<Sparkline values={periods.slice(Math.max(0, activeIndex - 7), activeIndex + 1).map((p) => p.avgActiveZoneMinutes)} />}
+              active={selectedMetric === 'azm'}
+              onClick={() => setSelectedMetric('azm')}
+            />
+            <Tile
+              label="Restful Sleep (avg/night)"
+              value={current.avgRestfulSleepMinutes != null ? `${Math.floor(current.avgRestfulSleepMinutes / 60)}h ${Math.round(current.avgRestfulSleepMinutes % 60)}m` : null}
+              sparkline={<Sparkline values={periods.slice(Math.max(0, activeIndex - 7), activeIndex + 1).map((p) => p.avgRestfulSleepMinutes)} />}
+              active={selectedMetric === 'sleep'}
+              onClick={() => setSelectedMetric('sleep')}
+            />
+            <Tile
+              label="Resting Heart Rate"
+              value={current.avgRestingHeartRate != null ? `${Math.round(current.avgRestingHeartRate)} bpm` : null}
+              delta={(() => {
+                const d = periodDeltaWithRef(periods, activeIndex, 'avgRestingHeartRate');
+                return <DeltaBadge value={d?.value ?? null} unit=" bpm" invert refLabel={d?.refLabel} />;
+              })()}
+              sparkline={<Sparkline values={periods.slice(Math.max(0, activeIndex - 7), activeIndex + 1).map((p) => p.avgRestingHeartRate)} />}
+              active={selectedMetric === 'heartRate'}
+              onClick={() => setSelectedMetric('heartRate')}
+            />
+            <Tile
+              label="Weight"
+              value={current.avgWeightLb != null ? `${current.avgWeightLb.toFixed(1)} lb` : null}
+              delta={(() => {
+                const d = periodDeltaWithRef(periods, activeIndex, 'avgWeightLb');
+                return <DeltaBadge value={d?.value ?? null} unit=" lb" invert refLabel={d?.refLabel} />;
+              })()}
+              sparkline={<Sparkline values={periods.slice(Math.max(0, activeIndex - 7), activeIndex + 1).map((p) => p.avgWeightLb)} />}
+              active={selectedMetric === 'weight'}
+              onClick={() => setSelectedMetric('weight')}
+            />
+            <Tile
+              label="Best Day"
+              value={current.bestDaySteps != null ? `${current.bestDaySteps.toLocaleString()}${current.bestDayWeekday ? ` (${current.bestDayWeekday})` : ''}` : null}
+              delta={(() => {
+                const d = periodDeltaWithRef(periods, activeIndex, 'bestDaySteps');
+                return <DeltaBadge value={d?.value ?? null} refLabel={d?.refLabel} />;
+              })()}
+              sparkline={<Sparkline values={periods.slice(Math.max(0, activeIndex - 7), activeIndex + 1).map((p) => p.bestDaySteps)} />}
+            />
+          </div>
+        </>
       )}
 
       <div className="dashboard-page__trend-panel card">

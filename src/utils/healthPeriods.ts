@@ -156,3 +156,22 @@ export function periodDelta<K extends keyof AggregatedPeriod>(periods: Aggregate
   }
   return null;
 }
+
+/** Same lookup as periodDelta, but also names which earlier period it
+ * actually landed on — so a delta badge can say "vs Aug 29" instead of
+ * leaving it to be assumed, which matters specifically because the lookup
+ * skips past no-data gaps rather than always comparing to the immediately
+ * prior period. */
+export function periodDeltaWithRef<K extends keyof AggregatedPeriod>(
+  periods: AggregatedPeriod[],
+  idx: number,
+  field: K,
+): { value: number; refLabel: string } | null {
+  const current = periods[idx][field];
+  if (current == null) return null;
+  for (let i = idx - 1; i >= 0; i--) {
+    const prior = periods[i][field];
+    if (prior != null) return { value: (current as number) - (prior as number), refLabel: periods[i].shortLabel };
+  }
+  return null;
+}
