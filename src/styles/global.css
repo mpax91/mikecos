@@ -6167,10 +6167,20 @@ a.today-page__important-dates-row:hover .today-page__important-dates-name {
   font-variant-numeric: tabular-nums;
 }
 
+/* The trend chart now always shows every period there is (see TrendChart's
+ * doc comment) rather than a fixed-size window, so the bar row scrolls
+ * horizontally once there are more periods than comfortably fit — each
+ * column gets a fixed width instead of flexing to fill, and TrendChart
+ * scrolls the highlighted bar into view whenever the pill above it moves. */
+.dashboard-page__chart-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 2px;
+}
+
 .dashboard-page__chart-bars {
   display: flex;
   align-items: flex-end;
-  justify-content: space-between;
   gap: 3px;
   height: 130px;
 }
@@ -6185,9 +6195,9 @@ a.today-page__important-dates-row:hover .today-page__important-dates-name {
   flex-direction: column;
   align-items: center;
   justify-content: flex-end;
-  flex: 1;
+  flex: 0 0 auto;
+  width: 40px;
   height: 100%;
-  min-width: 0;
 }
 
 .dashboard-page__chart-count {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api/client';
 import type { HealthWeeklyReport } from '../api/types';
 import { useReportTabMeta } from '../contexts/TabsContext';
@@ -168,6 +168,17 @@ function Tile({
  * trend strip) scaled to the visible periods' own min/max rather than zero,
  * since weight/heart-rate only vary within a narrow band. */
 function TrendChart({ config, periods, currentIndex }: { config: MetricConfig; periods: AggregatedPeriod[]; currentIndex: number }) {
+  const currentBarRef = useRef<HTMLDivElement>(null);
+
+  // The chart always shows every period there is — Prev/Next in the pill
+  // above just moves which bar is highlighted (see the component doc
+  // comment on FitnessDashboard). So instead of resizing the window to
+  // keep the pill's period on screen, scroll the highlighted bar into view
+  // whenever it changes.
+  useEffect(() => {
+    currentBarRef.current?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+  }, [currentIndex, periods]);
+
   const values = periods.map((p) => config.get(p));
   const present = values.filter((v): v is number => v != null);
   if (present.length === 0) {
@@ -183,7 +194,7 @@ function TrendChart({ config, periods, currentIndex }: { config: MetricConfig; p
     <div>
       <div className="dashboard-page__trend-range">
         {periods[0].shortLabel} – {periods[periods.length - 1].shortLabel}
-        {periods.length > 1 ? ` · ${periods.length} periods` : ''}
+        {periods.length > 1 ? ` · all ${periods.length} periods` : ''}
       </div>
       <div className="dashboard-page__trend-stats">
         <div>
@@ -203,59 +214,29 @@ function TrendChart({ config, periods, currentIndex }: { config: MetricConfig; p
           <span className="dashboard-page__trend-stat-value">{config.formatTile(max)}</span>
         </div>
       </div>
-      <div className={`dashboard-page__chart-bars dashboard-page__chart-bars--large${periods.length > 16 ? ' is-dense' : ''}`}>
-        {periods.map((p, i) => {
-          const v = values[i];
-          const pct = v == null ? 0 : 10 + ((v - min) / range) * 90;
-          return (
-            <div
-              key={p.key}
-              className={`dashboard-page__chart-col${i === currentIndex ? ' is-current' : ''}`}
-              title={v == null ? `${p.shortLabel}: no data` : `${p.label}: ${v.toFixed(config.decimals)}${config.chartUnit}`}
-            >
-              <div className="dashboard-page__chart-count">{v == null ? '' : v.toFixed(config.decimals)}</div>
-              <div className={`dashboard-page__chart-bar${v == null ? ' is-empty' : ''}`} style={{ height: `${v == null ? 3 : pct}%` }} />
-              <div className="dashboard-page__chart-date">{p.shortLabel}</div>
-            </div>
-          );
-        })}
+      <div className="dashboard-page__chart-scroll">
+        <div className={`dashboard-page__chart-bars dashboard-page__chart-bars--large${periods.length > 16 ? ' is-dense' : ''}`}>
+          {periods.map((p, i) => {
+            const v = values[i];
+            const pct = v == null ? 0 : 10 + ((v - min) / range) * 90;
+            return (
+              <div
+                key={p.key}
+                ref={i === currentIndex ? currentBarRef : undefined}
+                className={`dashboard-page__chart-col${i === currentIndex ? ' is-current' : ''}`}
+                title={v == null ? `${p.shortLabel}: no data` : `${p.label}: ${v.toFixed(config.decimals)}${config.chartUnit}`}
+              >
+                <div className="dashboard-page__chart-count">{v == null ? '' : v.toFixed(config.decimals)}</div>
+                <div className={`dashboard-page__chart-bar${v == null ? ' is-empty' : ''}`} style={{ height: `${v == null ? 3 : pct}%` }} />
+                <div className="dashboard-page__chart-date">{p.shortLabel}</div>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
 }
-
-// Zoom presets — how many periods (bars) the trend chart reaches back from
-// the pill's own period, which is always the first option and therefore
-// the default: the chart lands showing exactly the one period the pill is
-// on, and widens from there only when asked. Weeks are framed in actual
-// calendar days per Mike's own ask (a week already *is* 7 days, so "Last 7
-// Days" is just that one week; "Last 14/30 Days" round to the nearest
-// whole week); month/quarter/year use the equivalent "this period, then a
-// few more, then all of it" shape since a literal day count stops being a
-// natural unit once a bar is a month or more wide.
-const ZOOM_OPTIONS_BY_GRANULARITY: Record<Granularity, { id: number; label: string }[]> = {
-  week: [
-    { id: 1, label: 'Last 7 Days' },
-    { id: 2, label: 'Last 14 Days' },
-    { id: 4, label: 'Last 30 Days' },
-    { id: 0, label: 'All' },
-  ],
-  month: [
-    { id: 1, label: 'This Month' },
-    { id: 3, label: 'Last 3 Months' },
-    { id: 6, label: 'Last 6 Months' },
-    { id: 0, label: 'All' },
-  ],
-  quarter: [
-    { id: 1, label: 'This Quarter' },
-    { id: 4, label: 'Last 4 Quarters' },
-    { id: 0, label: 'All' },
-  ],
-  year: [
-    { id: 1, label: 'This Year' },
-    { id: 0, label: 'All' },
-  ],
-};
 
 const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -289,7 +270,6 @@ function FitnessDashboard() {
   const [granularity, setGranularity] = useState<Granularity>('week');
   const [periodIndex, setPeriodIndex] = useState<number>(-1); // -1 = "not yet set, use latest"
   const [selectedMetric, setSelectedMetric] = useState<MetricKey>('steps');
-  const [zoom, setZoom] = useState<number>(1); // 1 = exactly the pill's own period, matching ZOOM_OPTIONS_BY_GRANULARITY's first entry
 
   useEffect(() => {
     api
@@ -309,23 +289,7 @@ function FitnessDashboard() {
   function changeGranularity(g: Granularity) {
     setGranularity(g);
     setPeriodIndex(-1);
-    setZoom(ZOOM_OPTIONS_BY_GRANULARITY[g][0].id);
   }
-
-  // The trend chart always mirrors the period pill above it — it ends at
-  // whichever period Prev/Next has selected (never later, even for "All"),
-  // and the zoom picker only controls how far back from there it reaches.
-  // A short zoom near the start of the data legitimately shows fewer bars
-  // than the preset asks for (e.g. "Last 30" on the 4th week ever tracked
-  // can only show 4) — that's correct, not a bug, and the date range below
-  // the picker always states exactly what's on screen.
-  const zoomedPeriods = useMemo(() => {
-    const end = Math.min(periods.length, activeIndex + 1);
-    const start = zoom === 0 ? 0 : Math.max(0, end - zoom);
-    return periods.slice(start, end);
-  }, [periods, zoom, activeIndex]);
-
-  const zoomedActiveIndexInWindow = zoomedPeriods.length - 1; // the pill's period is always the last bar shown
 
   if (error) return <div className="empty-state">Couldn't load health data: {error}</div>;
   if (!weeks) return <div className="empty-state">Loading…</div>;
@@ -335,7 +299,6 @@ function FitnessDashboard() {
 
   const metric = METRICS[selectedMetric];
   const labels = current ? periodLabels(current, granularity) : null;
-  const zoomOptions = ZOOM_OPTIONS_BY_GRANULARITY[granularity];
 
   return (
     <div>
@@ -452,15 +415,8 @@ function FitnessDashboard() {
               </button>
             ))}
           </div>
-          <div className="dashboard-page__zoom-tabs">
-            {zoomOptions.map((z) => (
-              <button key={z.id} type="button" className={`chip${zoom === z.id ? ' is-active' : ''}`} onClick={() => setZoom(z.id)}>
-                {z.label}
-              </button>
-            ))}
-          </div>
         </div>
-        <TrendChart config={metric} periods={zoomedPeriods} currentIndex={zoomedActiveIndexInWindow} />
+        <TrendChart config={metric} periods={periods} currentIndex={activeIndex} />
       </div>
 
       <p className="dashboard-page__footnote">
