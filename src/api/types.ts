@@ -797,3 +797,53 @@ export interface JournalDayResponse {
   habits: Habit[];
   health: HealthWeeklyReport | null;
 }
+
+// ---- News (RSS reader) ----
+
+export interface NewsFeed {
+  id: string;
+  url: string;
+  title: string;
+  folder: string | null; // null = "Uncategorized", same convention as unfoldered feeds in Feedly
+  site_url: string | null;
+  favicon_url: string | null;
+  position: number;
+  last_fetch_error: string | null; // set when the most recent fetch failed (bad URL, feed down, etc.) so Settings can flag it
+  created_at: string;
+  updated_at: string;
+  unread_count: number; // computed server-side from the cached article table
+}
+
+/** A fetched-and-cached feed item. Cached (not fetched live per read) so
+ * read/saved state has a stable id to key off of across devices — see
+ * worker/migrations/0026_news.sql's header comment. */
+export interface NewsArticle {
+  id: string;
+  feed_id: string;
+  feed_title: string;
+  feed_folder: string | null;
+  url: string;
+  title: string;
+  description: string | null; // plain text, tags stripped, truncated — for the list-view preview and story-view card
+  image_url: string | null;
+  published_at: string | null; // ISO, null if the feed item had no date
+  fetched_at: string;
+  is_read: boolean;
+  is_saved: boolean;
+}
+
+export interface NewsArticlesResponse {
+  articles: NewsArticle[];
+  stale_feeds: string[]; // feed ids that failed to refresh this call (network error etc.) — surfaced so the UI can say "some feeds didn't update" instead of silently showing old data
+}
+
+export interface NewsSavedArticle {
+  id: string;
+  article_id: string | null;
+  feed_title: string | null;
+  title: string;
+  url: string;
+  image_url: string | null;
+  description: string | null;
+  saved_at: string;
+}

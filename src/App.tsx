@@ -17,6 +17,7 @@ import { ContactsListPage } from './pages/ContactsListPage';
 import { ContactDetailPage } from './pages/ContactDetailPage';
 import { JournalPage } from './pages/JournalPage';
 import { DashboardPage } from './pages/DashboardPage';
+import { NewsPage } from './pages/NewsPage';
 
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -48,6 +49,7 @@ export default function App() {
             <Route path="/journal" element={<JournalPage />} />
             <Route path="/journal/:date" element={<JournalPage />} />
             <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/news" element={<NewsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/today" replace />} />
           </Routes>

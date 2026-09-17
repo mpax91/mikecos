@@ -15,6 +15,9 @@ import type {
   HealthWeeklyReport,
   ImportBatch,
   JournalEntry,
+  NewsArticleRow,
+  NewsFeedRow,
+  NewsSavedRow,
   ShelfItem,
   ShelfItemType,
   TaskReschedule,
@@ -23,6 +26,7 @@ import type {
 import { calendarIdFromIcsUrl, meetingsForDate, meetingsForRange } from './ics';
 import { describeRrule, isValidRrule, nextDueOccurrenceDate, type RecurringTaskDefinition } from './recurring';
 import { HealthParseError, parseHealthWeek } from './health';
+import { FeedParseError, parseFeed } from './news';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -4134,6 +4138,266 @@ app.delete('/api/habits/:id/logs/:date', async (c) => {
   const habitId = c.req.param('id');
   const date = c.req.param('date');
   await c.env.DB.prepare('DELETE FROM journal_habit_logs WHERE habit_id = ? AND date = ?').bind(habitId, date).run();
+  return c.json({ ok: true });
+});
+
+// ---- News (RSS reader) ----
+// See worker/migrations/0026_news.sql for the schema rationale and
+// worker/src/news.ts for the RSS/Atom parser. Modeled on V1 MikeOS's
+// Feedly-style reader (server-cached articles, folder-grouped feeds,
+// swipe-to-mark-read / swipe-to-save) rebuilt against real D1 tables so
+// read/saved state has a stable, cross-device id — V1 kept that state in a
+// generic KV-style store instead.
+
+const NEWS_FEED_TTL_MS = 15 * 60 * 1000; // matches V1's server-side cache window
+
+function newsFeedToApi(row: NewsFeedRow & { unread_count?: number }) {
+  return { ...row, unread_count: row.unread_count ?? 0 };
+}
+
+/** Fetches + parses one feed and upserts its items into news_articles.
+ * Best-effort: on any failure it records the error on the feed row and
+ * rethrows, so callers can decide whether to surface it (a fresh add) or
+ * just note it and keep serving cached articles (a routine background
+ * refresh). Skipped entirely if the feed was refreshed within the last
+ * NEWS_FEED_TTL_MS, same 15-minute window V1 used. */
+async function refreshFeed(env: Env, feed: NewsFeedRow, force = false): Promise<void> {
+  if (!force && feed.last_fetched_at) {
+    const age = Date.now() - new Date(feed.last_fetched_at).getTime();
+    if (age < NEWS_FEED_TTL_MS) return;
+  }
+  const ts = now();
+  try {
+    const res = await fetch(feed.url, { headers: { 'user-agent': 'MikeOS-News/1.0 (+https://mikeos)' } });
+    if (!res.ok) throw new Error(`Feed returned HTTP ${res.status}`);
+    const xml = await res.text();
+    const parsed = await parseFeed(xml);
+
+    for (const item of parsed.items) {
+      const articleId = uid();
+      await env.DB.prepare(
+        `INSERT INTO news_articles (id, feed_id, guid, url, title, description, image_url, published_at, fetched_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (feed_id, guid) DO UPDATE SET
+           url = excluded.url, title = excluded.title, description = excluded.description,
+           image_url = excluded.image_url, published_at = excluded.published_at, fetched_at = excluded.fetched_at`
+      )
+        .bind(articleId, feed.id, item.guid, item.url, item.title, item.description, item.imageUrl, item.publishedAt, ts)
+        .run();
+    }
+
+    // Only overwrite the feed's own title if it's still the placeholder
+    // from when it was added — never clobber a title Mike has since
+    // customized in Settings.
+    const titleUpdate = feed.title === feed.url || feed.title.trim() === '' ? parsed.title : feed.title;
+    await env.DB.prepare(
+      `UPDATE news_feeds SET title = ?, site_url = ?, last_fetched_at = ?, last_fetch_error = NULL, updated_at = ? WHERE id = ?`
+    )
+      .bind(titleUpdate, parsed.siteUrl, ts, ts, feed.id)
+      .run();
+  } catch (err) {
+    const message = err instanceof FeedParseError ? err.message : err instanceof Error ? err.message : 'Fetch failed';
+    await env.DB.prepare(`UPDATE news_feeds SET last_fetch_error = ?, last_fetched_at = ?, updated_at = ? WHERE id = ?`)
+      .bind(message, ts, ts, feed.id)
+      .run();
+    throw err;
+  }
+}
+
+app.get('/api/news/feeds', async (c) => {
+  const { results } = await c.env.DB.prepare(
+    `SELECT f.*, (
+       SELECT COUNT(*) FROM news_articles a
+       WHERE a.feed_id = f.id AND a.id NOT IN (SELECT article_id FROM news_read)
+     ) as unread_count
+     FROM news_feeds f ORDER BY f.folder IS NULL, f.folder ASC, f.position ASC, f.title ASC`
+  ).all<NewsFeedRow & { unread_count: number }>();
+  return c.json((results ?? []).map(newsFeedToApi));
+});
+
+app.post('/api/news/feeds', async (c) => {
+  const body = await c.req.json<{ url?: string; folder?: string | null }>();
+  const url = body.url?.trim();
+  if (!url) return c.json({ error: 'url required' }, 400);
+
+  const id = uid();
+  const ts = now();
+  const feed: NewsFeedRow = {
+    id, url, title: url, folder: body.folder?.trim() || null, site_url: null, favicon_url: null,
+    position: 0, last_fetch_error: null, last_fetched_at: null, created_at: ts, updated_at: ts,
+  };
+  await c.env.DB.prepare(
+    `INSERT INTO news_feeds (id, url, title, folder, site_url, favicon_url, position, last_fetch_error, last_fetched_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  )
+    .bind(feed.id, feed.url, feed.title, feed.folder, feed.site_url, feed.favicon_url, feed.position, feed.last_fetch_error, feed.last_fetched_at, feed.created_at, feed.updated_at)
+    .run();
+
+  // Fetch immediately (forced, ignoring the TTL) so a bad URL is caught
+  // right away rather than silently sitting empty until the next poll.
+  try {
+    await refreshFeed(c.env, feed, true);
+  } catch (err) {
+    // Feed row stays — Mike can fix the URL via Settings rather than
+    // losing the add entirely — but surface the failure on this response.
+    const saved = await c.env.DB.prepare('SELECT * FROM news_feeds WHERE id = ?').bind(id).first<NewsFeedRow>();
+    return c.json({ ...newsFeedToApi({ ...(saved ?? feed), unread_count: 0 }), error: err instanceof Error ? err.message : 'Fetch failed' }, 201);
+  }
+
+  const saved = await c.env.DB.prepare('SELECT * FROM news_feeds WHERE id = ?').bind(id).first<NewsFeedRow>();
+  return c.json(newsFeedToApi({ ...(saved as NewsFeedRow), unread_count: 0 }), 201);
+});
+
+app.patch('/api/news/feeds/:id', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json<{ title?: string; folder?: string | null; position?: number }>();
+  const existing = await c.env.DB.prepare('SELECT id FROM news_feeds WHERE id = ?').bind(id).first();
+  if (!existing) return c.json({ error: 'not found' }, 404);
+
+  const sets: string[] = [];
+  const vals: unknown[] = [];
+  if (body.title !== undefined) { sets.push('title = ?'); vals.push(body.title.trim() || 'Untitled Feed'); }
+  if (body.folder !== undefined) { sets.push('folder = ?'); vals.push(body.folder?.trim() || null); }
+  if (body.position !== undefined) { sets.push('position = ?'); vals.push(body.position); }
+  if (sets.length > 0) {
+    sets.push('updated_at = ?');
+    vals.push(now());
+    await c.env.DB.prepare(`UPDATE news_feeds SET ${sets.join(', ')} WHERE id = ?`).bind(...vals, id).run();
+  }
+  const feed = await c.env.DB.prepare('SELECT * FROM news_feeds WHERE id = ?').bind(id).first<NewsFeedRow>();
+  return c.json(newsFeedToApi({ ...(feed as NewsFeedRow), unread_count: 0 }));
+});
+
+app.delete('/api/news/feeds/:id', async (c) => {
+  const id = c.req.param('id');
+  const existing = await c.env.DB.prepare('SELECT id FROM news_feeds WHERE id = ?').bind(id).first();
+  if (!existing) return c.json({ error: 'not found' }, 404);
+  // Saved articles keep their own title/url/image snapshot, so unlink
+  // rather than delete them when their feed goes away.
+  await c.env.DB.prepare(
+    `UPDATE news_saved SET article_id = NULL WHERE article_id IN (SELECT id FROM news_articles WHERE feed_id = ?)`
+  ).bind(id).run();
+  await c.env.DB.prepare('DELETE FROM news_articles WHERE feed_id = ?').bind(id).run();
+  await c.env.DB.prepare('DELETE FROM news_feeds WHERE id = ?').bind(id).run();
+  return c.json({ ok: true });
+});
+
+app.get('/api/news/articles', async (c) => {
+  const feedId = c.req.query('feed_id');
+  const folder = c.req.query('folder');
+  const unreadOnly = c.req.query('unread_only') === '1';
+
+  let targetFeeds: NewsFeedRow[];
+  if (feedId) {
+    const f = await c.env.DB.prepare('SELECT * FROM news_feeds WHERE id = ?').bind(feedId).first<NewsFeedRow>();
+    targetFeeds = f ? [f] : [];
+  } else if (folder !== undefined) {
+    const { results } = await c.env.DB.prepare('SELECT * FROM news_feeds WHERE folder IS ? OR folder = ?').bind(null, folder).all<NewsFeedRow>();
+    targetFeeds = (results ?? []).filter((f) => (folder === '' ? f.folder === null : f.folder === folder));
+  } else {
+    const { results } = await c.env.DB.prepare('SELECT * FROM news_feeds').all<NewsFeedRow>();
+    targetFeeds = results ?? [];
+  }
+
+  const staleFeeds: string[] = [];
+  await Promise.all(
+    targetFeeds.map(async (f) => {
+      try {
+        await refreshFeed(c.env, f);
+      } catch {
+        staleFeeds.push(f.id);
+      }
+    })
+  );
+
+  if (targetFeeds.length === 0) return c.json({ articles: [], stale_feeds: [] });
+
+  const placeholders = targetFeeds.map(() => '?').join(',');
+  const { results } = await c.env.DB.prepare(
+    `SELECT a.*, f.title as feed_title, f.folder as feed_folder,
+            (r.article_id IS NOT NULL) as is_read, (s.article_id IS NOT NULL) as is_saved
+     FROM news_articles a
+     JOIN news_feeds f ON f.id = a.feed_id
+     LEFT JOIN news_read r ON r.article_id = a.id
+     LEFT JOIN news_saved s ON s.article_id = a.id
+     WHERE a.feed_id IN (${placeholders})
+     ${unreadOnly ? 'AND r.article_id IS NULL' : ''}
+     ORDER BY a.published_at IS NULL, a.published_at DESC, a.fetched_at DESC
+     LIMIT 500`
+  )
+    .bind(...targetFeeds.map((f) => f.id))
+    .all<NewsArticleRow & { feed_title: string; feed_folder: string | null; is_read: number; is_saved: number }>();
+
+  const articles = (results ?? []).map((r) => ({ ...r, is_read: !!r.is_read, is_saved: !!r.is_saved }));
+  return c.json({ articles, stale_feeds: staleFeeds });
+});
+
+app.post('/api/news/articles/:id/read', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json<{ read?: boolean }>();
+  if (body.read === false) {
+    await c.env.DB.prepare('DELETE FROM news_read WHERE article_id = ?').bind(id).run();
+  } else {
+    await c.env.DB.prepare('INSERT OR IGNORE INTO news_read (article_id, read_at) VALUES (?, ?)').bind(id, now()).run();
+  }
+  return c.json({ ok: true });
+});
+
+app.post('/api/news/read-all', async (c) => {
+  const body = await c.req.json<{ feed_id?: string | null; folder?: string | null }>();
+  let feedIds: string[];
+  if (body.feed_id) {
+    feedIds = [body.feed_id];
+  } else if (body.folder !== undefined && body.folder !== null) {
+    const { results } = await c.env.DB.prepare('SELECT id FROM news_feeds WHERE folder = ?').bind(body.folder).all<{ id: string }>();
+    feedIds = (results ?? []).map((r) => r.id);
+  } else {
+    const { results } = await c.env.DB.prepare('SELECT id FROM news_feeds').all<{ id: string }>();
+    feedIds = (results ?? []).map((r) => r.id);
+  }
+  if (feedIds.length === 0) return c.json({ ok: true, marked: 0 });
+
+  const placeholders = feedIds.map(() => '?').join(',');
+  const ts = now();
+  const result = await c.env.DB.prepare(
+    `INSERT OR IGNORE INTO news_read (article_id, read_at)
+     SELECT id, ? FROM news_articles WHERE feed_id IN (${placeholders})`
+  )
+    .bind(ts, ...feedIds)
+    .run();
+  return c.json({ ok: true, marked: result.meta.changes ?? 0 });
+});
+
+app.post('/api/news/articles/:id/save', async (c) => {
+  const id = c.req.param('id');
+  const existing = await c.env.DB.prepare('SELECT * FROM news_saved WHERE article_id = ?').bind(id).first<NewsSavedRow>();
+  if (existing) return c.json(existing);
+
+  const article = await c.env.DB.prepare(
+    `SELECT a.*, f.title as feed_title FROM news_articles a JOIN news_feeds f ON f.id = a.feed_id WHERE a.id = ?`
+  )
+    .bind(id)
+    .first<NewsArticleRow & { feed_title: string }>();
+  if (!article) return c.json({ error: 'article not found' }, 404);
+
+  const savedId = uid();
+  const ts = now();
+  await c.env.DB.prepare(
+    `INSERT INTO news_saved (id, article_id, feed_title, title, url, image_url, description, saved_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  )
+    .bind(savedId, article.id, article.feed_title, article.title, article.url, article.image_url, article.description, ts)
+    .run();
+  const saved = await c.env.DB.prepare('SELECT * FROM news_saved WHERE id = ?').bind(savedId).first<NewsSavedRow>();
+  return c.json(saved, 201);
+});
+
+app.get('/api/news/saved', async (c) => {
+  const { results } = await c.env.DB.prepare('SELECT * FROM news_saved ORDER BY saved_at DESC').all<NewsSavedRow>();
+  return c.json(results ?? []);
+});
+
+app.delete('/api/news/saved/:id', async (c) => {
+  await c.env.DB.prepare('DELETE FROM news_saved WHERE id = ?').bind(c.req.param('id')).run();
   return c.json({ ok: true });
 });
 

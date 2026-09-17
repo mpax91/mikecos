@@ -263,3 +263,45 @@ export interface Env {
   FILES: R2Bucket;
   ALLOWED_ORIGIN: string;
 }
+
+// ---- News (RSS reader) — raw D1 row shapes; see
+// worker/migrations/0026_news.sql for the schema rationale and
+// worker/src/news.ts for the feed parser. Mirrored (API-shaped, with
+// computed fields like unread_count) in src/api/types.ts.
+
+export interface NewsFeedRow {
+  id: string;
+  url: string;
+  title: string;
+  folder: string | null;
+  site_url: string | null;
+  favicon_url: string | null;
+  position: number;
+  last_fetch_error: string | null;
+  last_fetched_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NewsArticleRow {
+  id: string;
+  feed_id: string;
+  guid: string;
+  url: string;
+  title: string;
+  description: string | null;
+  image_url: string | null;
+  published_at: string | null;
+  fetched_at: string;
+}
+
+export interface NewsSavedRow {
+  id: string;
+  article_id: string | null;
+  feed_title: string | null;
+  title: string;
+  url: string;
+  image_url: string | null;
+  description: string | null;
+  saved_at: string;
+}

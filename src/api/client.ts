@@ -1,4 +1,4 @@
-import type { CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactDetail, ContactNote, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitLog, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, MeetingsRangeResponse, MeetingsResponse, MonthResponse, OrphanedImportsResponse, ProjectListItem, RecurringTaskDefinition, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, WeatherResponse, WeekResponse } from './types';
+import type { CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactDetail, ContactNote, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitLog, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsSavedArticle, OrphanedImportsResponse, ProjectListItem, RecurringTaskDefinition, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, WeatherResponse, WeekResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -518,4 +518,45 @@ export const api = {
 
   deleteHabitLog: (habitId: string, date: string) =>
     request<{ ok: true }>(`/api/habits/${habitId}/logs/${date}`, { method: 'DELETE' }),
+
+  // ---- News (RSS reader) ----
+
+  listNewsFeeds: () => request<NewsFeed[]>('/api/news/feeds'),
+
+  addNewsFeed: (url: string, folder?: string | null) =>
+    request<NewsFeed>('/api/news/feeds', { method: 'POST', body: JSON.stringify({ url, folder: folder || null }) }),
+
+  updateNewsFeed: (id: string, patch: Partial<Pick<NewsFeed, 'title' | 'folder' | 'position'>>) =>
+    request<NewsFeed>(`/api/news/feeds/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+
+  deleteNewsFeed: (id: string) => request<{ ok: true }>(`/api/news/feeds/${id}`, { method: 'DELETE' }),
+
+  /** Refreshes (subject to each feed's own 15-min server cache) and returns
+   * articles. Pass feedId for a single feed, folder for everything in a
+   * folder, or neither for "All". unreadOnly narrows to unread articles
+   * only — used by both the list view's "Unread" filter and story mode
+   * (which only ever wants unread articles to flip through). */
+  listNewsArticles: (opts?: { feedId?: string; folder?: string | null; unreadOnly?: boolean }) => {
+    const params = new URLSearchParams();
+    if (opts?.feedId) params.set('feed_id', opts.feedId);
+    if (opts?.folder !== undefined && opts.folder !== null) params.set('folder', opts.folder);
+    if (opts?.unreadOnly) params.set('unread_only', '1');
+    const qs = params.toString();
+    return request<NewsArticlesResponse>(`/api/news/articles${qs ? `?${qs}` : ''}`);
+  },
+
+  markNewsArticleRead: (id: string, read: boolean) =>
+    request<{ ok: true }>(`/api/news/articles/${id}/read`, { method: 'POST', body: JSON.stringify({ read }) }),
+
+  markAllNewsRead: (opts?: { feedId?: string; folder?: string | null }) =>
+    request<{ ok: true; marked: number }>('/api/news/read-all', {
+      method: 'POST',
+      body: JSON.stringify({ feed_id: opts?.feedId ?? null, folder: opts?.folder ?? null }),
+    }),
+
+  saveNewsArticle: (id: string) => request<NewsSavedArticle>(`/api/news/articles/${id}/save`, { method: 'POST' }),
+
+  listNewsSaved: () => request<NewsSavedArticle[]>('/api/news/saved'),
+
+  deleteNewsSaved: (id: string) => request<{ ok: true }>(`/api/news/saved/${id}`, { method: 'DELETE' }),
 };
