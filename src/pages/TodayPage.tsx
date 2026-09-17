@@ -6,9 +6,9 @@ import { TaskRow } from '../components/TaskRow';
 import { TaskDetailModal } from '../components/TaskDetailModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { BlankLine } from '../components/BlankLine';
-import { MeetingNoteModal } from '../components/MeetingNoteModal';
 import { WeatherWidget } from '../components/WeatherWidget';
 import { getHolidays } from '../utils/holidays';
+import { buildMeetingNoteTitle, meetingHasEnded } from '../utils/meetingNotes';
 import { useReportTabMeta } from '../contexts/TabsContext';
 
 /** Default number of rows (real tasks + blank ruled lines combined) shown
@@ -116,7 +116,6 @@ export function TodayPage() {
   const [voterDatesExpanded, setVoterDatesExpanded] = useState(false);
   const [meetings, setMeetings] = useState<MeetingItem[]>([]);
   const [stats, setStats] = useState<StatsResponse | null>(null);
-  const [noteMeeting, setNoteMeeting] = useState<MeetingItem | null>(null);
 
   useReportTabMeta(isToday ? 'Today' : formatHeaderDate(date), 'today');
 
@@ -175,6 +174,31 @@ export function TodayPage() {
   useEffect(() => {
     loadMeetings();
   }, [loadMeetings]);
+
+  // The note icon on a meeting row — opens the real note already linked to
+  // this meeting, or (only for a meeting that hasn't happened yet) creates
+  // one, titled from the meeting itself, and opens that. A meeting that's
+  // already over and has no note just does nothing (see the icon's
+  // aria-disabled state below) — Mike doesn't want a note auto-created for
+  // something that's already passed.
+  async function openMeetingNote(m: MeetingItem) {
+    if (m.hasNote) {
+      const { noteEntityId } = await api.getMeetingNote(m.id);
+      if (noteEntityId) {
+        navigate(`/projects/${noteEntityId}`);
+        return;
+      }
+      // hasNote was stale (the note was deleted from the Notes page
+      // itself, which knows nothing about this linkage) — the worker
+      // already dropped the dangling link; refresh so the icon stops
+      // showing filled, then fall through below.
+      loadMeetings();
+    }
+    if (meetingHasEnded(m)) return;
+    const { noteEntityId } = await api.createMeetingNote(m.id, buildMeetingNoteTitle(m));
+    navigate(`/projects/${noteEntityId}`);
+    loadMeetings();
+  }
 
   function goToDate(next: string) {
     navigate(next === todayLocalISO() ? '/today' : `/today/${next}`);
@@ -309,7 +333,7 @@ export function TodayPage() {
   const completed = data?.completed ?? [];
 
   const holidays = getHolidays(date);
-  const blankCount = Math.max(0, DEFAULT_ROWS + extraRows - dueToday.length);
+  const blankCount = Math.max(0, DEFAULT_ROWS + extraRows - dueToday.length - completed.length);
 
   // Birthdays and anniversaries for the viewed day, combined into one list
   // (sorted by name) for the Important Dates panel — see /api/today.
@@ -456,8 +480,12 @@ export function TodayPage() {
                       <button
                         type="button"
                         className={`today-page__meeting-icon-btn${m.hasNote ? ' today-page__meeting-icon-btn--active' : ''}`}
-                        title={m.hasNote ? 'View/edit note' : 'Add a note'}
-                        onClick={() => setNoteMeeting(m)}
+                        title={m.hasNote ? 'Open note' : meetingHasEnded(m) ? 'No note for this meeting' : 'Add a note'}
+                        aria-disabled={!m.hasNote && meetingHasEnded(m)}
+                        onClick={() => {
+                          if (!m.hasNote && meetingHasEnded(m)) return;
+                          openMeetingNote(m);
+                        }}
                       >
                         📝
                       </button>
@@ -472,6 +500,21 @@ export function TodayPage() {
             {overdue.length > 0 && <div className="today-page__section-title">{isToday ? 'Today' : formatHeaderDate(date)}</div>}
             <div className="today-page__list today-page__list--ruled task-list card">
               {dueToday.map((task) => renderRow(task, true))}
+              {/* What got checked off that day, shown struck through at the
+                  bottom of the same list rather than just vanishing (or
+                  living in a separate section below) — matches how Week
+                  view already shows a day's completions inline in its
+                  column. Read-only row (checked checkbox, no toggle/pin/
+                  delete) since un-completing isn't a thing this list
+                  supports; clicking still opens the same task-detail modal
+                  every other row here does, since a completed task can
+                  still carry a description or attachments worth seeing. */}
+              {completed.map((t) => (
+                <div key={t.id} className="task-row" onClick={() => setTaskStack([t.entity_id])}>
+                  <input type="checkbox" checked readOnly className="task-row__checkbox" onClick={(e) => e.stopPropagation()} />
+                  <span className="task-row__title is-done">{t.title || 'Untitled Task'}</span>
+                </div>
+              ))}
               {Array.from({ length: blankCount }).map((_, i) => (
                 <BlankLine key={i} onSubmit={quickAdd} />
               ))}
@@ -480,27 +523,6 @@ export function TodayPage() {
               + Add another line
             </button>
           </div>
-
-          {/* What got checked off that day — only populated by /api/today
-              for a date strictly in the past (today's own completions just
-              disappear from the list above, with the "N Completed Today"
-              badge as the running count — see that endpoint's comment).
-              Struck through, same convention as a done task everywhere
-              else, and clickable into the same task-detail modal Overdue/
-              Today rows open, since a completed task can still carry a
-              description or attachments worth seeing. */}
-          {completed.length > 0 && (
-            <div className="today-page__section">
-              <div className="today-page__section-title">Completed</div>
-              <div className="today-page__list task-list card">
-                {completed.map((t) => (
-                  <div key={t.id} className="today-page__completed-row" onClick={() => setTaskStack([t.entity_id])}>
-                    <span className="today-page__completed-title">{t.title || 'Untitled'}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
 
           {tickler.length > 0 && (
             <div className="today-page__section">
@@ -554,9 +576,13 @@ export function TodayPage() {
                     <button
                       type="button"
                       className="today-page__important-dates-voters-toggle"
+                      aria-expanded={voterDatesExpanded}
                       onClick={() => setVoterDatesExpanded((v) => !v)}
                     >
-                      {voterDatesExpanded ? 'Hide' : 'Show'} 🗳️ {voterDateContacts.length} more from the voter roll
+                      <span className="today-page__important-dates-voters-toggle__chevron" aria-hidden="true">
+                        ▸
+                      </span>
+                      🗳️ {voterDateContacts.length} more from the voter roll
                     </button>
                     {voterDatesExpanded && (
                       <div className="today-page__important-dates-list">
@@ -627,10 +653,6 @@ export function TodayPage() {
             setDeleting(entityToDelete);
           }}
         />
-      )}
-
-      {noteMeeting && (
-        <MeetingNoteModal meeting={noteMeeting} onClose={() => setNoteMeeting(null)} onSaved={loadMeetings} />
       )}
     </div>
   );

@@ -208,21 +208,6 @@ export interface MeetingItem {
   hasNote: boolean;
 }
 
-/** A quick note stuck to one specific meeting occurrence — see
- * /api/meetings/:meetingId/note and migrations/0023_meeting_notes.sql.
- * One row per meeting (not a feed): opening the note editor for a meeting
- * with no note yet doesn't create anything here until text is actually
- * saved. */
-export interface MeetingNote {
-  id: string;
-  meeting_id: string;
-  meeting_title: string | null;
-  meeting_start: string | null;
-  text: string;
-  created_at: string;
-  updated_at: string;
-}
-
 export interface MeetingsResponse {
   date: string;
   meetings: MeetingItem[];
@@ -708,6 +693,12 @@ export interface JournalNote {
   id: string;
   title: string;
   is_jot: number; // 0 | 1
+  /** Whether this note lives at the top level (Notes section) or nested
+   * inside a project/folder — decides which route actually resolves it:
+   * /notes/:id only ever looks at top-level notes, so a nested note has to
+   * go through /projects/:id instead (that page is generic over entity
+   * type and walks parent_id for the breadcrumb). */
+  is_top_level: number; // 0 | 1
   created_at: string;
 }
 

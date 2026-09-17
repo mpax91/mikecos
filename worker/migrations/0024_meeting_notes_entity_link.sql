@@ -1,0 +1,21 @@
+-- Meeting notes now point at a real note entity (shown in the Notes
+-- section, with its own editor, attachments, etc.) instead of storing raw
+-- text directly in this table — Mike asked for the note icon to open an
+-- actual Note, not a small popup. This table becomes a pure linkage:
+-- meeting_id -> note_entity_id, still one row per meeting/UNIQUE(meeting_id)
+-- for the same "sticks to that meeting" reason 0023 already explains.
+--
+-- The old text/meeting_title/meeting_start columns are left in place
+-- (unused going forward) rather than dropped — nothing reads or writes
+-- them anymore, and leaving them costs nothing, versus a DROP COLUMN that
+-- isn't worth the risk for a table this small and this new.
+--
+-- Deliberately NOT a `REFERENCES entities(id)` foreign key — Mike can
+-- delete a meeting-linked note from the Notes page same as any other
+-- note, and a FK here would make SQLite refuse that delete outright
+-- (FOREIGN KEY constraint failed) instead of just leaving a dangling
+-- link. The app already treats a dangling link as "no note" and cleans
+-- the row up itself the next time it's looked at (see GET
+-- /api/meetings/:meetingId/note and tagHasNote's join in index.ts) — that
+-- self-heal is the actual integrity mechanism here, not a DB constraint.
+ALTER TABLE meeting_notes ADD COLUMN note_entity_id TEXT;

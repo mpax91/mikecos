@@ -5,8 +5,8 @@ import type { Entity, Habit, JournalDayResponse, MeetingItem } from '../api/type
 import { NoteEditor } from '../components/NoteEditor';
 import { TaskDetailModal } from '../components/TaskDetailModal';
 import { ConfirmModal } from '../components/ConfirmModal';
-import { MeetingNoteModal } from '../components/MeetingNoteModal';
 import { useReportTabMeta } from '../contexts/TabsContext';
+import { meetingHasEnded } from '../utils/meetingNotes';
 
 // Same small pure date helpers TodayPage.tsx already has — kept local and
 // duplicated by eye rather than shared, same call TodayPage's own comment
@@ -170,7 +170,6 @@ export function JournalPage() {
   // just sitting there as inert text.
   const [taskStack, setTaskStack] = useState<string[]>([]);
   const [deleting, setDeleting] = useState<Entity | null>(null);
-  const [noteMeeting, setNoteMeeting] = useState<MeetingItem | null>(null);
 
   useReportTabMeta(isToday ? 'Journal' : `Journal — ${formatHeaderDate(date)}`, 'journal');
 
@@ -192,6 +191,18 @@ export function JournalPage() {
   useEffect(() => {
     loadMeetings();
   }, [loadMeetings]);
+
+  // Journal days are (almost always) in the past, so this is stricter than
+  // TodayPage's version: it never creates a note — only opens one that
+  // already exists. Mike specifically didn't want a note auto-created for
+  // a calendar event that's already happened when browsing back through
+  // the Journal.
+  async function openMeetingNote(m: MeetingItem) {
+    if (!m.hasNote) return;
+    const { noteEntityId } = await api.getMeetingNote(m.id);
+    if (noteEntityId) navigate(`/projects/${noteEntityId}`);
+    else loadMeetings(); // stale hasNote (note deleted elsewhere) — refresh so the icon updates
+  }
 
   function openTaskById(id: string) {
     setTaskStack([id]);
@@ -288,7 +299,7 @@ export function JournalPage() {
                 // "is this day in the past") so today's journal, opened
                 // mid-day, only checks off meetings that have actually
                 // ended.
-                const done = !m.allDay && new Date(m.end).getTime() <= Date.now();
+                const done = meetingHasEnded(m);
                 return (
                   <li key={m.id} className="journal-page__auto-meeting-row">
                     <span className="journal-page__auto-meeting-text">
@@ -312,8 +323,9 @@ export function JournalPage() {
                       <button
                         type="button"
                         className={`today-page__meeting-icon-btn${m.hasNote ? ' today-page__meeting-icon-btn--active' : ''}`}
-                        title={m.hasNote ? 'View/edit note' : 'Add a note'}
-                        onClick={() => setNoteMeeting(m)}
+                        title={m.hasNote ? 'Open note' : 'No note for this meeting'}
+                        aria-disabled={!m.hasNote}
+                        onClick={() => openMeetingNote(m)}
                       >
                         📝
                       </button>
@@ -363,7 +375,16 @@ export function JournalPage() {
             <ul className="journal-page__auto-list">
               {data.notes.map((n) => (
                 <li key={n.id}>
-                  <Link to={`/notes/${n.id}`}>{n.is_jot ? '🗒️' : '📝'} {n.title || 'Untitled'}</Link>
+                  {/* /notes/:id only ever resolves a top-level note — one
+                      nested inside a project (like this one apparently
+                      buried in Job Search) has to go through /projects/:id
+                      instead, since that page is generic over entity type
+                      and walks parent_id to build the breadcrumb. Getting
+                      this wrong is exactly the "Doctronic note goes to a
+                      blank Notes page" bug. */}
+                  <Link to={n.is_top_level ? `/notes/${n.id}` : `/projects/${n.id}`}>
+                    {n.is_jot ? '🗒️' : '📝'} {n.title || 'Untitled'}
+                  </Link>
                 </li>
               ))}
             </ul>
@@ -439,10 +460,6 @@ export function JournalPage() {
           onConfirm={() => deleteTask(deleting)}
           onCancel={() => setDeleting(null)}
         />
-      )}
-
-      {noteMeeting && (
-        <MeetingNoteModal meeting={noteMeeting} onClose={() => setNoteMeeting(null)} onSaved={loadMeetings} />
       )}
     </div>
   );

@@ -184,19 +184,10 @@ export interface ContactNote {
   created_at: string;
 }
 
-/** A quick note stuck to one specific calendar-event occurrence — see
- * migrations/0023_meeting_notes.sql for why this is one row per meeting
- * (not a feed like ContactNote) and why meeting_title/meeting_start are
- * snapshotted here rather than looked up live. */
-export interface MeetingNote {
-  id: string;
-  meeting_id: string;
-  meeting_title: string | null;
-  meeting_start: string | null;
-  text: string;
-  created_at: string;
-  updated_at: string;
-}
+// A meeting-notes linkage (meeting_id -> note_entity_id, see
+// migrations/0023_meeting_notes.sql + 0024_meeting_notes_entity_link.sql)
+// is read/written directly via raw D1 rows in index.ts — the note itself is
+// a regular Entity, so there's no separate response type for it here.
 
 export interface JournalEntry {
   date: string; // 'YYYY-MM-DD'

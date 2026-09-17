@@ -1,4 +1,4 @@
-import type { CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactDetail, ContactNote, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitLog, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, MeetingNote, MeetingsRangeResponse, MeetingsResponse, MonthResponse, OrphanedImportsResponse, ProjectListItem, RecurringTaskDefinition, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, WeatherResponse, WeekResponse } from './types';
+import type { CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactDetail, ContactNote, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitLog, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, MeetingsRangeResponse, MeetingsResponse, MonthResponse, OrphanedImportsResponse, ProjectListItem, RecurringTaskDefinition, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, WeatherResponse, WeekResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -313,22 +313,21 @@ export const api = {
   getMeetingsRange: (start: string, end: string) =>
     request<MeetingsRangeResponse>(`/api/meetings/range?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`),
 
-  /** The one sticky note for a meeting occurrence, or `{ note: null }` if
-   * nothing's been written yet — see /api/meetings/:meetingId/note. */
-  getMeetingNote: (meetingId: string) => request<{ note: MeetingNote | null }>(`/api/meetings/${encodeURIComponent(meetingId)}/note`),
+  /** The real note entity linked to a meeting occurrence, or
+   * `{ noteEntityId: null }` if the note icon hasn't been clicked yet —
+   * see /api/meetings/:meetingId/note. */
+  getMeetingNote: (meetingId: string) =>
+    request<{ noteEntityId: string | null }>(`/api/meetings/${encodeURIComponent(meetingId)}/note`),
 
-  /** Upsert-by-meetingId; blank text deletes the note instead of saving an
-   * empty one (see the worker's PUT handler comment). `meetingTitle`/
-   * `meetingStart` are a display-time snapshot, stored alongside so a note
-   * still reads sensibly if the source event is later renamed/moved. */
-  saveMeetingNote: (meetingId: string, text: string, meetingTitle: string, meetingStart: string) =>
-    request<{ note: MeetingNote | null }>(`/api/meetings/${encodeURIComponent(meetingId)}/note`, {
-      method: 'PUT',
-      body: JSON.stringify({ text, meetingTitle, meetingStart }),
+  /** Creates (or, if one already exists, just returns) the real note entity
+   * for this meeting, titled `title` — see the worker's POST handler.
+   * Nothing is created until this is actually called, i.e. until the note
+   * icon is clicked. */
+  createMeetingNote: (meetingId: string, title: string) =>
+    request<{ noteEntityId: string }>(`/api/meetings/${encodeURIComponent(meetingId)}/note`, {
+      method: 'POST',
+      body: JSON.stringify({ title }),
     }),
-
-  deleteMeetingNote: (meetingId: string) =>
-    request<{ ok: true }>(`/api/meetings/${encodeURIComponent(meetingId)}/note`, { method: 'DELETE' }),
 
   /** Completed-task rollups (today/week/month/year + a 14-day trend),
    * anchored on the viewer's own local `date` — see the worker's

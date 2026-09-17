@@ -15,7 +15,6 @@ import type {
   HealthLog,
   ImportBatch,
   JournalEntry,
-  MeetingNote,
   ShelfItem,
   ShelfItemType,
   TaskReschedule,
@@ -2916,15 +2915,12 @@ app.get('/api/today', async (c) => {
 
   // Tasks actually checked off on the viewed day (task_completions'
   // completed_date, not due_date — a task finished a day late should still
-  // show up under the day it was really done). Only for a day strictly
-  // before the viewer's real "today", same restriction and same reasoning
-  // /api/week's own `completed` bucket already uses: today's own list
-  // already has its own completed-task story (the row just disappears,
-  // with the "N Completed Today" badge as the running count), so surfacing
-  // it again here would be noise, not a record. Mike asked specifically to
-  // see this when browsing *previous* days.
+  // show up under the day it was really done). Included for today itself
+  // too now — Mike wants a checked-off task to stay visible (struck
+  // through, at the bottom of the list) rather than just vanish, on any
+  // day, not only past ones.
   let completed: { id: string; entity_id: string; title: string; completed_at: string; completed_date: string }[] = [];
-  if (date < realToday) {
+  if (date <= realToday) {
     const { results: completions } = await c.env.DB.prepare(
       `SELECT * FROM task_completions WHERE completed_date = ? ORDER BY completed_at ASC`
     )
@@ -3170,6 +3166,21 @@ app.get('/api/weather', async (c) => {
 // as a calendar id, or whose fetch fails outright, is just dropped rather
 // than surfaced as an error here — /api/calendars is where a broken feed's
 // actual error message shows up for Mike to see.
+// A short in-isolate cache of each feed's raw ICS text, on top of the
+// `cf: { cacheTtl }` edge cache below — a Cloudflare Workers isolate is
+// commonly reused across many requests in a row (Mike loading Today, then
+// Journal, then Week, all within a few seconds), and each of those was
+// separately paying a real fetch() round trip to Cloudflare's own cache
+// even on a hit, plus every /api/meetings* call re-parses+RRULE-expands
+// the ICS text regardless of the fetch itself. Caching the text here skips
+// that redundant round trip entirely on a warm isolate. Kept well under
+// the edge cache's own 300s TTL so this can never serve something staler
+// than the edge cache would have anyway; cleared automatically on isolate
+// recycle, so there's no explicit invalidation to worry about when Mike
+// edits calendar feeds in Settings — worst case is up to 2 minutes behind.
+const feedTextCache = new Map<string, { ics: string; fetchedAt: number }>();
+const FEED_TEXT_CACHE_TTL_MS = 120_000;
+
 async function fetchFeedSources(db: D1Database): Promise<{ ics: string; calendar: string; calendarId: string }[]> {
   const { results } = await db.prepare(`SELECT * FROM calendar_feeds WHERE active = 1`).all<CalendarFeedRow>();
   return (
@@ -3177,10 +3188,17 @@ async function fetchFeedSources(db: D1Database): Promise<{ ics: string; calendar
       (results ?? []).map(async (feed) => {
         const calendarId = calendarIdFromIcsUrl(feed.url);
         if (!calendarId) return null;
+
+        const cached = feedTextCache.get(feed.url);
+        if (cached && Date.now() - cached.fetchedAt < FEED_TEXT_CACHE_TTL_MS) {
+          return { ics: cached.ics, calendar: feed.id, calendarId };
+        }
+
         try {
           const upstream = await fetch(feed.url, { cf: { cacheTtl: 300, cacheEverything: true } });
           if (!upstream.ok) return null;
           const ics = await upstream.text();
+          feedTextCache.set(feed.url, { ics, fetchedAt: Date.now() });
           return { ics, calendar: feed.id, calendarId };
         } catch {
           return null;
@@ -3219,8 +3237,14 @@ async function tagHasNote<T extends { id: string }>(db: D1Database, meetings: T[
   for (let i = 0; i < ids.length; i += NOTE_ID_CHUNK) {
     const chunk = ids.slice(i, i + NOTE_ID_CHUNK);
     const placeholders = chunk.map(() => '?').join(', ');
+    // Joined against entities so a meeting whose linked note was since
+    // deleted (from the Notes page itself, which knows nothing about this
+    // linkage table) correctly reads back as "no note" instead of a
+    // hasNote flag pointing at a dead id.
     const { results } = await db
-      .prepare(`SELECT meeting_id FROM meeting_notes WHERE meeting_id IN (${placeholders})`)
+      .prepare(
+        `SELECT mn.meeting_id FROM meeting_notes mn JOIN entities e ON e.id = mn.note_entity_id WHERE mn.meeting_id IN (${placeholders})`
+      )
       .bind(...chunk)
       .all<{ meeting_id: string }>();
     for (const r of results ?? []) withNotes.add(r.meeting_id);
@@ -3263,46 +3287,75 @@ app.get('/api/meetings/range', async (c) => {
 // not assigned by us), so it works as a durable key even though the
 // meeting it points at is never itself persisted.
 
+// Returns the real note entity linked to this meeting, if any — self-heals
+// a dangling link (note deleted from the Notes page itself, which knows
+// nothing about meeting_notes) by dropping the stale row rather than
+// reporting a noteEntityId that 404s when opened.
 app.get('/api/meetings/:meetingId/note', async (c) => {
   const meetingId = c.req.param('meetingId');
-  const note = await c.env.DB.prepare('SELECT * FROM meeting_notes WHERE meeting_id = ?').bind(meetingId).first<MeetingNote>();
-  return c.json({ note: note ?? null });
+  const row = await c.env.DB.prepare('SELECT id, note_entity_id FROM meeting_notes WHERE meeting_id = ?')
+    .bind(meetingId)
+    .first<{ id: string; note_entity_id: string | null }>();
+  if (!row?.note_entity_id) return c.json({ noteEntityId: null });
+  const entity = await c.env.DB.prepare('SELECT id FROM entities WHERE id = ?').bind(row.note_entity_id).first<{ id: string }>();
+  if (!entity) {
+    await c.env.DB.prepare('DELETE FROM meeting_notes WHERE id = ?').bind(row.id).run();
+    return c.json({ noteEntityId: null });
+  }
+  return c.json({ noteEntityId: row.note_entity_id });
 });
 
-// PUT (not POST) — upsert by meetingId, since there's only ever one note
-// per meeting. Saving blank text deletes the row instead of leaving an
-// empty one behind: meeting_notes existing for an id IS the "has a note"
-// signal /api/meetings' hasNote flag reads, so an empty row would silently
-// mark a meeting as noted when Mike actually cleared it.
-app.put('/api/meetings/:meetingId/note', async (c) => {
+// POST — creates a real note entity (standalone, top-level, shown in the
+// Notes section) and links it to this meeting, so the note icon opens
+// something Mike can actually write in — attachments, the real editor,
+// findable later from Notes — rather than a small popup. Idempotent: if
+// this meeting already has a linked note, just returns it instead of
+// creating a second one. Nothing is created just from viewing/opening a
+// meeting — only when this endpoint is actually called (the note icon
+// being clicked), matching the "only sticks to the meeting if a note was
+// actually taken" rule 0023 set out, now expressed as "only created if the
+// note icon was clicked" instead of "only saved once text was typed".
+app.post('/api/meetings/:meetingId/note', async (c) => {
   const meetingId = c.req.param('meetingId');
-  const body = await c.req.json<{ text: string; meetingTitle?: string | null; meetingStart?: string | null }>();
-  const text = body.text?.trim() ?? '';
+  const body = await c.req.json<{ title: string }>();
 
-  if (!text) {
-    await c.env.DB.prepare('DELETE FROM meeting_notes WHERE meeting_id = ?').bind(meetingId).run();
-    return c.json({ note: null });
+  const existing = await c.env.DB.prepare('SELECT id, note_entity_id FROM meeting_notes WHERE meeting_id = ?')
+    .bind(meetingId)
+    .first<{ id: string; note_entity_id: string | null }>();
+  if (existing?.note_entity_id) {
+    const entity = await c.env.DB.prepare('SELECT id FROM entities WHERE id = ?').bind(existing.note_entity_id).first<{ id: string }>();
+    if (entity) return c.json({ noteEntityId: existing.note_entity_id });
   }
 
-  const existing = await c.env.DB.prepare('SELECT id, created_at FROM meeting_notes WHERE meeting_id = ?')
-    .bind(meetingId)
-    .first<{ id: string; created_at: string }>();
+  const noteId = uid();
   const ts = now();
+  const title = body.title?.trim() || 'Untitled Note';
+  await c.env.DB.prepare(
+    `INSERT INTO entities (id, type, title, content, parent_id, is_top_level, status, position, last_touched, created_at, updated_at, search_text)
+     VALUES (?, 'note', ?, NULL, NULL, 1, NULL, 0, ?, ?, ?, ?)`
+  )
+    .bind(noteId, title, ts, ts, ts, null)
+    .run();
+
   if (existing) {
-    await c.env.DB.prepare('UPDATE meeting_notes SET text = ?, meeting_title = ?, meeting_start = ?, updated_at = ? WHERE id = ?')
-      .bind(text, body.meetingTitle ?? null, body.meetingStart ?? null, ts, existing.id)
+    await c.env.DB.prepare('UPDATE meeting_notes SET note_entity_id = ?, text = ?, updated_at = ? WHERE id = ?')
+      .bind(noteId, '', ts, existing.id)
       .run();
   } else {
     await c.env.DB.prepare(
-      `INSERT INTO meeting_notes (id, meeting_id, meeting_title, meeting_start, text, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO meeting_notes (id, meeting_id, note_entity_id, text, created_at, updated_at) VALUES (?, ?, ?, '', ?, ?)`
     )
-      .bind(uid(), meetingId, body.meetingTitle ?? null, body.meetingStart ?? null, text, ts, ts)
+      .bind(uid(), meetingId, noteId, ts, ts)
       .run();
   }
-  const note = await c.env.DB.prepare('SELECT * FROM meeting_notes WHERE meeting_id = ?').bind(meetingId).first<MeetingNote>();
-  return c.json({ note });
+  return c.json({ noteEntityId: noteId }, 201);
 });
 
+// Unlinks (does not delete) the note entity — the entity itself is a
+// regular note from here on and stays in Notes; this just removes the
+// meeting -> note association, e.g. if Mike wants to re-link the icon to a
+// different note. Not currently wired to any UI control, kept for
+// completeness/future use.
 app.delete('/api/meetings/:meetingId/note', async (c) => {
   const meetingId = c.req.param('meetingId');
   await c.env.DB.prepare('DELETE FROM meeting_notes WHERE meeting_id = ?').bind(meetingId).run();
@@ -3798,10 +3851,17 @@ app.get('/api/journal/:date', async (c) => {
     .bind(date)
     .all<TaskReschedule>();
 
+  // is_top_level tells the frontend which route resolves a given note
+  // correctly: a nested note (e.g. inside a project) only renders right at
+  // /projects/:id (that page walks parent_id for the breadcrumb + content;
+  // /notes/:id only ever looks at top-level notes) — see JournalPage's
+  // note-link logic.
   const { results: noteRows } = await c.env.DB
-    .prepare(`SELECT id, title, is_jot, created_at FROM entities WHERE type = 'note' AND created_at >= ? AND created_at <= ? ORDER BY created_at ASC`)
+    .prepare(
+      `SELECT id, title, is_jot, is_top_level, created_at FROM entities WHERE type = 'note' AND created_at >= ? AND created_at <= ? ORDER BY created_at ASC`
+    )
     .bind(windowStart, windowEnd)
-    .all<{ id: string; title: string; is_jot: number; created_at: string }>();
+    .all<{ id: string; title: string; is_jot: number; is_top_level: number; created_at: string }>();
   const notes = (noteRows ?? []).filter((n) => localDateString(n.created_at) === date);
 
   const { results: contactNoteRows } = await c.env.DB

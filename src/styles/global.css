@@ -3277,40 +3277,18 @@ a {
   white-space: nowrap;
 }
 
-/* Tasks actually checked off on a past viewed day — see /api/today's
-   `completed` field. Struck through like any other done task, and
-   clickable (opens the same TaskDetailModal Overdue/Today rows do) since
-   a completed task can still carry a description or attachments worth
-   looking at. */
-.today-page__completed-row {
-  padding: 9px 12px;
-  cursor: pointer;
-  border-bottom: 1px solid var(--color-border);
-}
-
-.today-page__completed-row:last-child {
-  border-bottom: none;
-}
-
-.today-page__completed-row:hover {
-  background: rgba(47, 74, 60, 0.06);
-}
-
-.today-page__completed-title {
-  font-size: 13.5px;
-  color: var(--color-muted);
-  text-decoration: line-through;
-}
-
 /* Today's Meetings — real Google Calendar events (GET /api/meetings), a
    plain list of time + title rather than the fuller card TaskRow uses for
    MikeOS tasks, since there's no checkbox/pin/project to show for
    something that isn't a task at all. The row itself is no longer a link —
    a bare click used to open Google Calendar, which buried the more useful
    "take a quick note" action behind an unrelated action and a new tab.
-   Two small icon buttons at the end do each job explicitly instead: a
-   calendar glyph (still a real <a>, so middle-click/cmd-click/right-click
-   all work normally) and a note glyph (opens MeetingNoteModal). */
+   Two small icon buttons, left-aligned right after the title, do each job
+   explicitly instead: a calendar glyph (still a real <a>, so
+   middle-click/cmd-click/right-click all work normally) and a note glyph
+   (opens the real note linked to this meeting, creating one first — titled
+   from the meeting itself — if it doesn't have one yet and hasn't already
+   happened; see src/utils/meetingNotes.ts). */
 .today-page__meetings {
   padding: 4px 12px;
 }
@@ -3340,16 +3318,24 @@ a {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  flex: 1;
+  /* Shrinks (with ellipsis) instead of growing to fill the row — the
+     actions sit right after it now (see .today-page__meeting-actions
+     below), not pinned to the far right, so the title shouldn't claim all
+     the remaining space the way a right-aligned layout needed it to. */
+  flex: 0 1 auto;
   min-width: 0;
+  max-width: 55%;
 }
 
+/* Left-aligned, directly after the title — a right-aligned icon pair (the
+   old `margin-left: auto`) was easy to miss at a glance; putting it right
+   next to what it acts on is more obvious. A spacer after the actions
+   soaks up the row's remaining width so nothing else stretches oddly. */
 .today-page__meeting-actions {
   display: flex;
   align-items: center;
   gap: 2px;
   flex-shrink: 0;
-  margin-left: auto;
 }
 
 .today-page__meeting-icon-btn {
@@ -3474,17 +3460,44 @@ a.today-page__important-dates-row:hover .today-page__important-dates-name {
   margin-top: 8px;
 }
 
+/* Styled as an obvious accordion header (bordered chip, background tint,
+   rotating chevron) rather than a plain inline text link — the old
+   plain-link styling was easy to miss as something clickable at all. */
 .today-page__important-dates-voters-toggle {
-  background: none;
-  border: none;
-  padding: 0;
-  color: var(--color-accent);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  background: var(--color-sidebar);
+  border: var(--border-hairline);
+  border-radius: 8px;
+  padding: 6px 10px;
+  color: var(--color-ink);
   font-size: 12px;
   cursor: pointer;
+  text-align: left;
+}
+
+.today-page__important-dates-voters-toggle:hover {
+  background: rgba(47, 74, 60, 0.08);
+}
+
+.today-page__important-dates-voters-toggle__chevron {
+  display: inline-block;
+  font-size: 10px;
+  color: var(--color-muted);
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+
+.today-page__important-dates-voters-toggle[aria-expanded='true'] .today-page__important-dates-voters-toggle__chevron {
+  transform: rotate(90deg);
 }
 
 .today-page__important-dates-voters .today-page__important-dates-list {
   margin-top: 8px;
+  padding-left: 4px;
+  border-left: 2px solid var(--color-border);
 }
 
 /* A task shown away from its own project (Today) gets a small tag pointing
@@ -4074,6 +4087,24 @@ a.today-page__important-dates-row:hover .today-page__important-dates-name {
 @media (max-width: 900px) {
   .month-page__cell {
     min-height: 84px;
+  }
+}
+
+/* On a real desktop window, the grid's columns already span the full
+   width (repeat(7, 1fr)) but its rows were only ever as tall as their
+   96px floor, leaving a lot of the window's height unused below the
+   calendar. Giving the grid itself more height lets grid-auto-rows: 1fr
+   (already set above) share it out evenly across whatever rows the month
+   needs (5 or 6), so cells actually grow to fill the window instead of
+   sitting short with empty space beneath. 280px is a rough allowance for
+   everything above the grid (page padding, the month header/toolbar, the
+   weekday label row) — not pixel-exact, just enough that this only grows
+   cells, never shrinks them past their own floor. Scoped to the same
+   901px+ desktop breakpoint the rest of this file uses, so mobile/tablet
+   sizing above is untouched. */
+@media (min-width: 901px) {
+  .month-page__grid {
+    min-height: calc(100vh - 280px);
   }
 }
 
@@ -5776,8 +5807,12 @@ a.today-page__important-dates-row:hover .today-page__important-dates-name {
 }
 
 .journal-page__auto-meeting-text {
-  flex: 1;
+  /* Shrinks instead of filling the row — same reasoning as
+     .today-page__meeting-title, so the actions land right after the text
+     instead of pinned to the far right. */
+  flex: 0 1 auto;
   min-width: 0;
+  max-width: 70%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
