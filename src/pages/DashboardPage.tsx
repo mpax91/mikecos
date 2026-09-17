@@ -224,29 +224,37 @@ function TrendChart({ config, periods, currentIndex }: { config: MetricConfig; p
   );
 }
 
-// Zoom presets, scaled to what's actually a natural chunk at each
-// granularity (weeks in 7/14/30, matching how most dashboards frame a
-// trailing window; months in quarters/half-years/years; a handful of
-// quarters or years, since those cover more ground per bar).
+// Zoom presets — how many periods (bars) the trend chart reaches back from
+// the pill's own period, which is always the first option and therefore
+// the default: the chart lands showing exactly the one period the pill is
+// on, and widens from there only when asked. Weeks are framed in actual
+// calendar days per Mike's own ask (a week already *is* 7 days, so "Last 7
+// Days" is just that one week; "Last 14/30 Days" round to the nearest
+// whole week); month/quarter/year use the equivalent "this period, then a
+// few more, then all of it" shape since a literal day count stops being a
+// natural unit once a bar is a month or more wide.
 const ZOOM_OPTIONS_BY_GRANULARITY: Record<Granularity, { id: number; label: string }[]> = {
   week: [
-    { id: 7, label: 'Last 7' },
-    { id: 14, label: 'Last 14' },
-    { id: 30, label: 'Last 30' },
+    { id: 1, label: 'Last 7 Days' },
+    { id: 2, label: 'Last 14 Days' },
+    { id: 4, label: 'Last 30 Days' },
     { id: 0, label: 'All' },
   ],
   month: [
-    { id: 3, label: 'Last 3' },
-    { id: 6, label: 'Last 6' },
-    { id: 12, label: 'Last 12' },
+    { id: 1, label: 'This Month' },
+    { id: 3, label: 'Last 3 Months' },
+    { id: 6, label: 'Last 6 Months' },
     { id: 0, label: 'All' },
   ],
   quarter: [
-    { id: 4, label: 'Last 4' },
-    { id: 8, label: 'Last 8' },
+    { id: 1, label: 'This Quarter' },
+    { id: 4, label: 'Last 4 Quarters' },
     { id: 0, label: 'All' },
   ],
-  year: [{ id: 0, label: 'All' }],
+  year: [
+    { id: 1, label: 'This Year' },
+    { id: 0, label: 'All' },
+  ],
 };
 
 const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -281,7 +289,7 @@ function FitnessDashboard() {
   const [granularity, setGranularity] = useState<Granularity>('week');
   const [periodIndex, setPeriodIndex] = useState<number>(-1); // -1 = "not yet set, use latest"
   const [selectedMetric, setSelectedMetric] = useState<MetricKey>('steps');
-  const [zoom, setZoom] = useState<number>(14);
+  const [zoom, setZoom] = useState<number>(1); // 1 = exactly the pill's own period, matching ZOOM_OPTIONS_BY_GRANULARITY's first entry
 
   useEffect(() => {
     api
@@ -371,7 +379,6 @@ function FitnessDashboard() {
           <Tile
             label="Steps"
             value={current.totalSteps != null ? current.totalSteps.toLocaleString() : null}
-            aside={current.bestDaySteps != null ? `best day ${current.bestDaySteps.toLocaleString()}${current.bestDayWeekday ? ` (${current.bestDayWeekday})` : ''}` : null}
             delta={<DeltaBadge value={periodDelta(periods, activeIndex, 'totalSteps')} />}
             sparkline={
               <Sparkline
@@ -426,6 +433,12 @@ function FitnessDashboard() {
             sparkline={<Sparkline values={periods.slice(Math.max(0, activeIndex - 7), activeIndex + 1).map((p) => p.avgWeightLb)} />}
             active={selectedMetric === 'weight'}
             onClick={() => setSelectedMetric('weight')}
+          />
+          <Tile
+            label="Best Day"
+            value={current.bestDaySteps != null ? `${current.bestDaySteps.toLocaleString()}${current.bestDayWeekday ? ` (${current.bestDayWeekday})` : ''}` : null}
+            delta={<DeltaBadge value={periodDelta(periods, activeIndex, 'bestDaySteps')} />}
+            sparkline={<Sparkline values={periods.slice(Math.max(0, activeIndex - 7), activeIndex + 1).map((p) => p.bestDaySteps)} />}
           />
         </div>
       )}
