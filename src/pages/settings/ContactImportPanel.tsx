@@ -222,17 +222,20 @@ export function ContactImportPanel() {
     setError(null);
     setNameCleanupProgress({ done: 0, total: nameCleanup.totalVoterContacts });
     try {
-      let offset = 0;
+      let cursor: string | null = null;
+      let totalDone = 0;
       let totalUpdated = 0;
       // Loop the chunked endpoint until it says done, same pattern as the
       // chunked import commit — bounded requests instead of one that could
       // run long enough on ~12k rows to hit the same limit that motivated
-      // that fix in the first place.
+      // that fix in the first place. Keyset-paged (cursor is the last row
+      // id seen), not OFFSET — see the endpoint's own comment for why.
       while (true) {
-        const res = await api.cleanupVoterNamesChunk(offset, NAME_CLEANUP_CHUNK_SIZE);
+        const res = await api.cleanupVoterNamesChunk(cursor, NAME_CLEANUP_CHUNK_SIZE);
         totalUpdated += res.updated;
-        offset = res.nextOffset;
-        setNameCleanupProgress({ done: offset, total: nameCleanup.totalVoterContacts });
+        totalDone += res.processed;
+        cursor = res.nextCursor;
+        setNameCleanupProgress({ done: totalDone, total: nameCleanup.totalVoterContacts });
         if (res.done) break;
       }
       setResult(`Cleaned up ${totalUpdated.toLocaleString()} voter-roll name${totalUpdated === 1 ? '' : 's'} — honorifics and middle initials dropped, Title Case applied.`);

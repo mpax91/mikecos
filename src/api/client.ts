@@ -278,10 +278,10 @@ export const api = {
    * in bounded slices the client loops through. */
   previewVoterNameCleanup: () => request<VoterNamesPreviewResponse>('/api/contacts/voter-names/preview'),
 
-  cleanupVoterNamesChunk: (offset: number, limit: number) =>
+  cleanupVoterNamesChunk: (afterId: string | null, limit: number) =>
     request<VoterNamesCleanupChunkResponse>('/api/contacts/voter-names/cleanup-chunk', {
       method: 'POST',
-      body: JSON.stringify({ offset, limit }),
+      body: JSON.stringify({ afterId, limit }),
     }),
 
   // ---- Today (daily planner) ----

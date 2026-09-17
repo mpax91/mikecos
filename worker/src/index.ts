@@ -1840,16 +1840,25 @@ app.get('/api/contacts/voter-names/preview', async (c) => {
 // once — that unbounded-single-request pattern is exactly the production
 // bug the chunked import commit exists to avoid; no reason to reintroduce
 // it here. Ordered by id (stable across calls, unlike ordering by name —
-// which this endpoint is busy changing) so offset-based paging stays
-// consistent as rows are updated mid-scan.
+// which this endpoint is busy changing).
+//
+// Paged by keyset (id > afterId), not OFFSET: D1 bills by rows *read*, and
+// OFFSET makes SQLite walk past every already-seen row on every call — the
+// last chunk of a 12k-row scan re-reads the same ~12k rows just to skip
+// them, so the whole scan costs O(n^2) rows read instead of O(n). That's
+// what actually tripped Cloudflare's free-tier daily row-read cap running
+// the sibling voter-fields backfill below. Keyset pagination reads only
+// the rows in the current page, every time, and is also safe against rows
+// changing mid-scan (which OFFSET isn't).
 app.post('/api/contacts/voter-names/cleanup-chunk', async (c) => {
-  const body = await c.req.json<{ offset: number; limit: number }>();
-  const offset = body.offset ?? 0;
+  const body = await c.req.json<{ afterId?: string | null; limit: number }>();
+  const afterId = body.afterId ?? null;
   const limit = Math.min(body.limit ?? 200, 500);
 
-  const { results } = await c.env.DB.prepare("SELECT id, name FROM contacts WHERE source = 'voter_file' ORDER BY id LIMIT ? OFFSET ?")
-    .bind(limit, offset)
-    .all<{ id: string; name: string }>();
+  const { results } = await (afterId
+    ? c.env.DB.prepare("SELECT id, name FROM contacts WHERE source = 'voter_file' AND id > ? ORDER BY id LIMIT ?").bind(afterId, limit)
+    : c.env.DB.prepare("SELECT id, name FROM contacts WHERE source = 'voter_file' ORDER BY id LIMIT ?").bind(limit)
+  ).all<{ id: string; name: string }>();
   const rows = results ?? [];
 
   const ts = now();
@@ -1864,7 +1873,8 @@ app.post('/api/contacts/voter-names/cleanup-chunk', async (c) => {
   }
   if (stmts.length > 0) await c.env.DB.batch(stmts);
 
-  return c.json({ processed: rows.length, updated, nextOffset: offset + rows.length, done: rows.length < limit });
+  const nextCursor = rows.length > 0 ? rows[rows.length - 1].id : afterId;
+  return c.json({ processed: rows.length, updated, nextCursor, done: rows.length < limit });
 });
 
 // POST /api/contacts/voter-fields/backfill-chunk — re-parses every already-
@@ -1877,14 +1887,22 @@ app.post('/api/contacts/voter-names/cleanup-chunk', async (c) => {
 // reason voter-names/cleanup-chunk above is — this can be thousands of
 // rows, and one unbounded request is exactly the pattern that already
 // caused a production failure once (see processDecisionChunk's comment).
+//
+// Paged by keyset (id > afterId), not OFFSET — see the comment on
+// voter-names/cleanup-chunk above for why: this endpoint's own first
+// production run, paged by OFFSET across ~280 chunk calls over 12,109
+// rows, is what actually tripped Cloudflare's free-tier daily D1 row-read
+// cap (each call re-scanned every row already seen, so total rows read
+// grew roughly with n^2, not n).
 app.post('/api/contacts/voter-fields/backfill-chunk', async (c) => {
-  const body = await c.req.json<{ offset: number; limit: number }>();
-  const offset = body.offset ?? 0;
+  const body = await c.req.json<{ afterId?: string | null; limit: number }>();
+  const afterId = body.afterId ?? null;
   const limit = Math.min(body.limit ?? 200, 500);
 
-  const { results } = await c.env.DB.prepare('SELECT id, contact_id, raw_data FROM voter_records ORDER BY id LIMIT ? OFFSET ?')
-    .bind(limit, offset)
-    .all<{ id: string; contact_id: string; raw_data: string }>();
+  const { results } = await (afterId
+    ? c.env.DB.prepare('SELECT id, contact_id, raw_data FROM voter_records WHERE id > ? ORDER BY id LIMIT ?').bind(afterId, limit)
+    : c.env.DB.prepare('SELECT id, contact_id, raw_data FROM voter_records ORDER BY id LIMIT ?').bind(limit)
+  ).all<{ id: string; contact_id: string; raw_data: string }>();
   const rows = results ?? [];
 
   // One batched lookup for every contact this chunk touches, not a
@@ -1961,7 +1979,8 @@ app.post('/api/contacts/voter-fields/backfill-chunk', async (c) => {
   }
   if (stmts.length > 0) await c.env.DB.batch(stmts);
 
-  return c.json({ processed: rows.length, updated, nextOffset: offset + rows.length, done: rows.length < limit });
+  const nextCursor = rows.length > 0 ? rows[rows.length - 1].id : afterId;
+  return c.json({ processed: rows.length, updated, nextCursor, done: rows.length < limit });
 });
 
 // GET/DELETE /api/contacts/import/orphaned — cleanup for imports that

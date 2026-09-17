@@ -526,11 +526,15 @@ export interface VoterNamesPreviewResponse {
 
 /** POST /api/contacts/voter-names/cleanup-chunk — one bounded slice of the
  * bulk voter-name cleanup; the client loops this (same shape as the
- * chunked import commit) until `done`. */
+ * chunked import commit) until `done`. Paged by keyset (nextCursor is the
+ * last row id processed, fed back as afterId on the next call) rather than
+ * OFFSET — OFFSET makes D1 re-read every already-seen row on each call,
+ * which is what tripped Cloudflare's free-tier daily row-read cap the one
+ * time this ran at full (~12k row) scale. */
 export interface VoterNamesCleanupChunkResponse {
   processed: number;
   updated: number;
-  nextOffset: number;
+  nextCursor: string | null;
   done: boolean;
 }
 
