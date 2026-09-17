@@ -184,6 +184,20 @@ export interface ContactNote {
   created_at: string;
 }
 
+/** A quick note stuck to one specific calendar-event occurrence — see
+ * migrations/0023_meeting_notes.sql for why this is one row per meeting
+ * (not a feed like ContactNote) and why meeting_title/meeting_start are
+ * snapshotted here rather than looked up live. */
+export interface MeetingNote {
+  id: string;
+  meeting_id: string;
+  meeting_title: string | null;
+  meeting_start: string | null;
+  text: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface JournalEntry {
   date: string; // 'YYYY-MM-DD'
   content: string | null; // Tiptap JSON

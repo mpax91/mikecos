@@ -1832,6 +1832,17 @@ a {
   margin-top: 6px;
 }
 
+.meeting-note-modal__textarea {
+  resize: vertical;
+  font-family: inherit;
+  line-height: 1.5;
+}
+
+.meeting-note-modal__delete {
+  margin-right: auto;
+  color: var(--color-danger, #c0392b);
+}
+
 /* ---- Task detail panel (Todoist-style side card) ---- */
 
 .task-panel-backdrop {
@@ -3266,13 +3277,40 @@ a {
   white-space: nowrap;
 }
 
+/* Tasks actually checked off on a past viewed day — see /api/today's
+   `completed` field. Struck through like any other done task, and
+   clickable (opens the same TaskDetailModal Overdue/Today rows do) since
+   a completed task can still carry a description or attachments worth
+   looking at. */
+.today-page__completed-row {
+  padding: 9px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.today-page__completed-row:last-child {
+  border-bottom: none;
+}
+
+.today-page__completed-row:hover {
+  background: rgba(47, 74, 60, 0.06);
+}
+
+.today-page__completed-title {
+  font-size: 13.5px;
+  color: var(--color-muted);
+  text-decoration: line-through;
+}
+
 /* Today's Meetings — real Google Calendar events (GET /api/meetings), a
    plain list of time + title rather than the fuller card TaskRow uses for
    MikeOS tasks, since there's no checkbox/pin/project to show for
-   something that isn't a task at all. Each row is a real link (opens
-   Google Calendar in a new tab) rather than a click handler, so it works
-   like any other link — middle-click/cmd-click to open in the background,
-   right-click for "open in new tab", etc. */
+   something that isn't a task at all. The row itself is no longer a link —
+   a bare click used to open Google Calendar, which buried the more useful
+   "take a quick note" action behind an unrelated action and a new tab.
+   Two small icon buttons at the end do each job explicitly instead: a
+   calendar glyph (still a real <a>, so middle-click/cmd-click/right-click
+   all work normally) and a note glyph (opens MeetingNoteModal). */
 .today-page__meetings {
   padding: 4px 12px;
 }
@@ -3283,16 +3321,10 @@ a {
   gap: 10px;
   padding: 9px 4px;
   border-bottom: 1px solid var(--color-border);
-  text-decoration: none;
-  color: inherit;
 }
 
 .today-page__meeting-row:last-child {
   border-bottom: none;
-}
-
-.today-page__meeting-row:hover {
-  background: rgba(47, 74, 60, 0.06);
 }
 
 .today-page__meeting-time {
@@ -3308,6 +3340,50 @@ a {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.today-page__meeting-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.today-page__meeting-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: none;
+  background: none;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  text-decoration: none;
+  /* The 📝/📅 emoji read as fairly saturated by default — dimming an
+     inactive note icon is what makes "has a note" vs. "no note yet"
+     legible at a glance, same purpose TaskRow's pin glyph serves. */
+  opacity: 0.4;
+}
+
+.today-page__meeting-icon-btn:hover {
+  opacity: 0.8;
+  background: rgba(47, 74, 60, 0.08);
+}
+
+.today-page__meeting-icon-btn--active {
+  opacity: 1;
+}
+
+.today-page__meeting-icon-btn[aria-disabled='true'] {
+  opacity: 0.15;
+  cursor: default;
+  pointer-events: none;
 }
 
 /* A timed meeting whose end time has already passed, on the real current
@@ -4487,6 +4563,14 @@ a.today-page__important-dates-row:hover .today-page__important-dates-name {
   border-bottom: none;
 }
 
+.stats-page__completion-row--clickable {
+  cursor: pointer;
+}
+
+.stats-page__completion-row--clickable:hover {
+  background: rgba(47, 74, 60, 0.06);
+}
+
 .stats-page__completion-title {
   font-size: 13.5px;
   color: var(--color-ink);
@@ -5663,6 +5747,40 @@ a.today-page__important-dates-row:hover .today-page__important-dates-name {
 .journal-page__auto-hint {
   color: var(--color-text-tertiary);
   font-size: 12.5px;
+}
+
+/* Completed/Pushed rows now open the same TaskDetailModal the Today page's
+   task rows do (see openTaskById) — they carry real task ids
+   (TaskCompletionEvent/TaskReschedule's entity_id), so there's no reason a
+   description or attachment on one should only be reachable from Today. */
+.journal-page__auto-clickable {
+  cursor: pointer;
+}
+
+.journal-page__auto-clickable:hover {
+  text-decoration: underline;
+}
+
+/* A meeting row needs the same two icon-buttons (calendar link, note)
+   TodayPage's meeting rows use — reuses .today-page__meeting-actions/
+   -icon-btn directly rather than duplicating them, so the two pages can
+   never visually drift apart. */
+.journal-page__auto-list--meetings {
+  gap: 2px;
+}
+
+.journal-page__auto-meeting-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.journal-page__auto-meeting-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .journal-page__habits {

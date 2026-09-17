@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
-import type { CompletionItem, StatsResponse } from '../api/types';
+import type { CompletionItem, Entity, StatsResponse } from '../api/types';
+import { TaskDetailModal } from '../components/TaskDetailModal';
+import { ConfirmModal } from '../components/ConfirmModal';
 import { useReportTabMeta } from '../contexts/TabsContext';
 
 function todayLocalISO(): string {
@@ -56,6 +58,11 @@ export function StatsPage() {
   const [listLoading, setListLoading] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
   const requestId = useRef(0);
+  // Same taskStack-of-ids pattern TodayPage/JournalPage use to drive
+  // TaskDetailModal — a completion log row already carries the real task's
+  // entity_id (see CompletionItem), it just wasn't wired to anything.
+  const [taskStack, setTaskStack] = useState<string[]>([]);
+  const [deleting, setDeleting] = useState<Entity | null>(null);
 
   useReportTabMeta('Stats', 'stats');
 
@@ -93,6 +100,28 @@ export function StatsPage() {
     const t = window.setTimeout(() => loadCompletions(query), 300);
     return () => window.clearTimeout(t);
   }, [query, loadCompletions]);
+
+  function openTaskById(id: string) {
+    setTaskStack([id]);
+  }
+
+  function closeTaskModal() {
+    setTaskStack([]);
+  }
+
+  function openSubtask(id: string) {
+    setTaskStack((prev) => [...prev, id]);
+  }
+
+  function backTask() {
+    setTaskStack((prev) => prev.slice(0, -1));
+  }
+
+  async function deleteTask(task: Entity) {
+    await api.deleteEntity(task.id);
+    setDeleting(null);
+    loadCompletions(query);
+  }
 
   function loadMore() {
     if (!completions || completions.length === 0) return;
@@ -186,7 +215,11 @@ export function StatsPage() {
               <>
                 <div className="stats-page__completions card">
                   {completions.map((item) => (
-                    <div key={item.id} className="stats-page__completion-row">
+                    <div
+                      key={item.id}
+                      className="stats-page__completion-row stats-page__completion-row--clickable"
+                      onClick={() => openTaskById(item.entity_id)}
+                    >
                       <span className="stats-page__completion-title">{item.title || 'Untitled Task'}</span>
                       <span className="stats-page__completion-date">{formatCompletedAt(item.completed_at)}</span>
                     </div>
@@ -201,6 +234,30 @@ export function StatsPage() {
             )}
           </div>
         </div>
+      )}
+
+      {taskStack.length > 0 && (
+        <TaskDetailModal
+          key={taskStack[taskStack.length - 1]}
+          taskId={taskStack[taskStack.length - 1]}
+          onBack={taskStack.length > 1 ? backTask : undefined}
+          onClose={closeTaskModal}
+          onOpenSubtask={openSubtask}
+          onMutated={() => loadCompletions(query)}
+          onRequestDelete={(entityToDelete) => {
+            setTaskStack([]);
+            setDeleting(entityToDelete);
+          }}
+        />
+      )}
+
+      {deleting && (
+        <ConfirmModal
+          title="Delete task?"
+          body={`"${deleting.title || 'Untitled'}" will be permanently deleted.`}
+          onConfirm={() => deleteTask(deleting)}
+          onCancel={() => setDeleting(null)}
+        />
       )}
     </div>
   );

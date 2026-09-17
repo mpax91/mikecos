@@ -103,6 +103,12 @@ export interface TodayResponse {
    * (month+day match; year is optional and irrelevant to the match). */
   birthdays: ImportantDateContact[];
   anniversaries: ImportantDateContact[];
+  /** Tasks actually checked off on the viewed day (task_completions'
+   * completed_date) — only populated when the viewed date is strictly
+   * before the viewer's real "today" (see the worker's /api/today
+   * comment). Rendered with a strikethrough as a record of what got done
+   * that day, same convention as WeekDay.completed below. */
+  completed: CompletionItem[];
 }
 
 /** A contact surfaced in the Today page's Important Dates panel — just
@@ -195,6 +201,26 @@ export interface MeetingItem {
   allDay: boolean;
   calendar: string;
   gcalUrl: string | null;
+  /** Whether a meeting note already exists for this exact occurrence (see
+   * GET/PUT/DELETE /api/meetings/:meetingId/note) — server computed via a
+   * batched lookup so the note icon can show filled-vs-outline without a
+   * per-meeting fetch. */
+  hasNote: boolean;
+}
+
+/** A quick note stuck to one specific meeting occurrence — see
+ * /api/meetings/:meetingId/note and migrations/0023_meeting_notes.sql.
+ * One row per meeting (not a feed): opening the note editor for a meeting
+ * with no note yet doesn't create anything here until text is actually
+ * saved. */
+export interface MeetingNote {
+  id: string;
+  meeting_id: string;
+  meeting_title: string | null;
+  meeting_start: string | null;
+  text: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface MeetingsResponse {

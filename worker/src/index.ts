@@ -15,6 +15,7 @@ import type {
   HealthLog,
   ImportBatch,
   JournalEntry,
+  MeetingNote,
   ShelfItem,
   ShelfItemType,
   TaskReschedule,
@@ -2913,6 +2914,25 @@ app.get('/api/today', async (c) => {
     .bind(dm, dd)
     .all<{ id: string; name: string; anniversary_year: number | null; source: string }>();
 
+  // Tasks actually checked off on the viewed day (task_completions'
+  // completed_date, not due_date — a task finished a day late should still
+  // show up under the day it was really done). Only for a day strictly
+  // before the viewer's real "today", same restriction and same reasoning
+  // /api/week's own `completed` bucket already uses: today's own list
+  // already has its own completed-task story (the row just disappears,
+  // with the "N Completed Today" badge as the running count), so surfacing
+  // it again here would be noise, not a record. Mike asked specifically to
+  // see this when browsing *previous* days.
+  let completed: { id: string; entity_id: string; title: string; completed_at: string; completed_date: string }[] = [];
+  if (date < realToday) {
+    const { results: completions } = await c.env.DB.prepare(
+      `SELECT * FROM task_completions WHERE completed_date = ? ORDER BY completed_at ASC`
+    )
+      .bind(date)
+      .all<{ id: string; entity_id: string; title: string; completed_at: string; completed_date: string }>();
+    completed = completions ?? [];
+  }
+
   return c.json({
     date,
     overdue,
@@ -2920,6 +2940,7 @@ app.get('/api/today', async (c) => {
     tickler,
     birthdays: birthdayContacts ?? [],
     anniversaries: anniversaryContacts ?? [],
+    completed,
   });
 });
 
@@ -3184,12 +3205,35 @@ async function fetchFeedSources(db: D1Database): Promise<{ ics: string; calendar
 // Feeds come from the calendar_feeds table (see GET/POST/PATCH/DELETE
 // /api/calendars below) — a feed with no rows, or every row inactive, just
 // means no meetings, not an error.
+// Tags each meeting with whether it already has a saved note (see
+// migrations/0023_meeting_notes.sql) — one batched lookup rather than a
+// per-meeting request, same "batch don't loop" rule the rest of this file
+// follows (see the voter-fields backfill endpoint's own comment on why).
+// Chunked at 50 ids per IN clause for the same D1 bound-parameter reason
+// as everywhere else in this file that does this.
+const NOTE_ID_CHUNK = 50;
+async function tagHasNote<T extends { id: string }>(db: D1Database, meetings: T[]): Promise<(T & { hasNote: boolean })[]> {
+  if (meetings.length === 0) return [];
+  const ids = [...new Set(meetings.map((m) => m.id))];
+  const withNotes = new Set<string>();
+  for (let i = 0; i < ids.length; i += NOTE_ID_CHUNK) {
+    const chunk = ids.slice(i, i + NOTE_ID_CHUNK);
+    const placeholders = chunk.map(() => '?').join(', ');
+    const { results } = await db
+      .prepare(`SELECT meeting_id FROM meeting_notes WHERE meeting_id IN (${placeholders})`)
+      .bind(...chunk)
+      .all<{ meeting_id: string }>();
+    for (const r of results ?? []) withNotes.add(r.meeting_id);
+  }
+  return meetings.map((m) => ({ ...m, hasNote: withNotes.has(m.id) }));
+}
+
 app.get('/api/meetings', async (c) => {
   const date = c.req.query('date');
   if (!date) return c.json({ error: 'date query param is required (YYYY-MM-DD)' }, 400);
 
   const sources = await fetchFeedSources(c.env.DB);
-  const meetings = meetingsForDate(sources, date);
+  const meetings = await tagHasNote(c.env.DB, meetingsForDate(sources, date));
   return c.json({ date, meetings });
 });
 
@@ -3205,8 +3249,64 @@ app.get('/api/meetings/range', async (c) => {
   if (!start || !end) return c.json({ error: 'start and end query params are required (YYYY-MM-DD)' }, 400);
 
   const sources = await fetchFeedSources(c.env.DB);
-  const meetings = meetingsForRange(sources, start, end);
+  const meetings = await tagHasNote(c.env.DB, meetingsForRange(sources, start, end));
   return c.json({ start, end, meetings });
+});
+
+// ---- Meeting notes (one quick, sticky note per calendar-event occurrence) ----
+//
+// Meetings themselves are never stored in D1 (see fetchFeedSources/ics.ts —
+// every /api/meetings* request re-parses the live ICS feed), so meetingId
+// here is whatever MeetingItem.id already is: the ICS UID, or
+// "<uid>:<occurrence start ISO>" for one occurrence of a recurring event.
+// That's stable across requests (it's derived from the feed's own data,
+// not assigned by us), so it works as a durable key even though the
+// meeting it points at is never itself persisted.
+
+app.get('/api/meetings/:meetingId/note', async (c) => {
+  const meetingId = c.req.param('meetingId');
+  const note = await c.env.DB.prepare('SELECT * FROM meeting_notes WHERE meeting_id = ?').bind(meetingId).first<MeetingNote>();
+  return c.json({ note: note ?? null });
+});
+
+// PUT (not POST) — upsert by meetingId, since there's only ever one note
+// per meeting. Saving blank text deletes the row instead of leaving an
+// empty one behind: meeting_notes existing for an id IS the "has a note"
+// signal /api/meetings' hasNote flag reads, so an empty row would silently
+// mark a meeting as noted when Mike actually cleared it.
+app.put('/api/meetings/:meetingId/note', async (c) => {
+  const meetingId = c.req.param('meetingId');
+  const body = await c.req.json<{ text: string; meetingTitle?: string | null; meetingStart?: string | null }>();
+  const text = body.text?.trim() ?? '';
+
+  if (!text) {
+    await c.env.DB.prepare('DELETE FROM meeting_notes WHERE meeting_id = ?').bind(meetingId).run();
+    return c.json({ note: null });
+  }
+
+  const existing = await c.env.DB.prepare('SELECT id, created_at FROM meeting_notes WHERE meeting_id = ?')
+    .bind(meetingId)
+    .first<{ id: string; created_at: string }>();
+  const ts = now();
+  if (existing) {
+    await c.env.DB.prepare('UPDATE meeting_notes SET text = ?, meeting_title = ?, meeting_start = ?, updated_at = ? WHERE id = ?')
+      .bind(text, body.meetingTitle ?? null, body.meetingStart ?? null, ts, existing.id)
+      .run();
+  } else {
+    await c.env.DB.prepare(
+      `INSERT INTO meeting_notes (id, meeting_id, meeting_title, meeting_start, text, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`
+    )
+      .bind(uid(), meetingId, body.meetingTitle ?? null, body.meetingStart ?? null, text, ts, ts)
+      .run();
+  }
+  const note = await c.env.DB.prepare('SELECT * FROM meeting_notes WHERE meeting_id = ?').bind(meetingId).first<MeetingNote>();
+  return c.json({ note });
+});
+
+app.delete('/api/meetings/:meetingId/note', async (c) => {
+  const meetingId = c.req.param('meetingId');
+  await c.env.DB.prepare('DELETE FROM meeting_notes WHERE meeting_id = ?').bind(meetingId).run();
+  return c.json({ ok: true });
 });
 
 // ---- Calendar feeds (Settings screen's Calendar Integrations panel) ----

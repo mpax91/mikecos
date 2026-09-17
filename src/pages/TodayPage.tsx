@@ -6,6 +6,7 @@ import { TaskRow } from '../components/TaskRow';
 import { TaskDetailModal } from '../components/TaskDetailModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { BlankLine } from '../components/BlankLine';
+import { MeetingNoteModal } from '../components/MeetingNoteModal';
 import { WeatherWidget } from '../components/WeatherWidget';
 import { getHolidays } from '../utils/holidays';
 import { useReportTabMeta } from '../contexts/TabsContext';
@@ -115,6 +116,7 @@ export function TodayPage() {
   const [voterDatesExpanded, setVoterDatesExpanded] = useState(false);
   const [meetings, setMeetings] = useState<MeetingItem[]>([]);
   const [stats, setStats] = useState<StatsResponse | null>(null);
+  const [noteMeeting, setNoteMeeting] = useState<MeetingItem | null>(null);
 
   useReportTabMeta(isToday ? 'Today' : formatHeaderDate(date), 'today');
 
@@ -160,13 +162,19 @@ export function TodayPage() {
   // Real Google Calendar events, separate from the task data above — a
   // failed/unconfigured fetch just means an empty section rather than
   // blocking the rest of the page (same "nice-to-have overlay" treatment
-  // as weather).
-  useEffect(() => {
+  // as weather). Pulled into its own callback (rather than inline in the
+  // effect) so saving/deleting a meeting note can re-fetch and pick up the
+  // updated hasNote flag without touching anything else on the page.
+  const loadMeetings = useCallback(() => {
     api
       .getMeetings(date)
       .then((res) => setMeetings(res.meetings))
       .catch(() => setMeetings([]));
   }, [date]);
+
+  useEffect(() => {
+    loadMeetings();
+  }, [loadMeetings]);
 
   function goToDate(next: string) {
     navigate(next === todayLocalISO() ? '/today' : `/today/${next}`);
@@ -298,6 +306,7 @@ export function TodayPage() {
   const overdue = data?.overdue ?? [];
   const dueToday = data?.today ?? [];
   const tickler = data?.tickler ?? [];
+  const completed = data?.completed ?? [];
 
   const holidays = getHolidays(date);
   const blankCount = Math.max(0, DEFAULT_ROWS + extraRows - dueToday.length);
@@ -416,23 +425,44 @@ export function TodayPage() {
             ) : (
               <div className="today-page__meetings card">
                 {meetings.map((m) => (
-                  <a
+                  <div
                     key={m.id}
                     className={
-                      isToday && !m.allDay && new Date(m.end).getTime() <= Date.now()
+                      // Was gated on isToday — a past meeting on a past day
+                      // never got the strikethrough. That's whatever day is
+                      // actually on screen ending before "now", same rule
+                      // as before, just no longer restricted to today.
+                      !m.allDay && new Date(m.end).getTime() <= Date.now()
                         ? 'today-page__meeting-row today-page__meeting-row--past'
                         : 'today-page__meeting-row'
                     }
-                    href={m.gcalUrl ?? undefined}
-                    target="_blank"
-                    rel="noreferrer"
-                    onClick={(e) => {
-                      if (!m.gcalUrl) e.preventDefault();
-                    }}
                   >
                     <span className="today-page__meeting-time">{m.allDay ? 'All day' : formatMeetingTime(m.start)}</span>
                     <span className="today-page__meeting-title">{m.title}</span>
-                  </a>
+                    <span className="today-page__meeting-actions">
+                      <a
+                        className="today-page__meeting-icon-btn"
+                        href={m.gcalUrl ?? undefined}
+                        target="_blank"
+                        rel="noreferrer"
+                        title="Open in Google Calendar"
+                        aria-disabled={!m.gcalUrl}
+                        onClick={(e) => {
+                          if (!m.gcalUrl) e.preventDefault();
+                        }}
+                      >
+                        📅
+                      </a>
+                      <button
+                        type="button"
+                        className={`today-page__meeting-icon-btn${m.hasNote ? ' today-page__meeting-icon-btn--active' : ''}`}
+                        title={m.hasNote ? 'View/edit note' : 'Add a note'}
+                        onClick={() => setNoteMeeting(m)}
+                      >
+                        📝
+                      </button>
+                    </span>
+                  </div>
                 ))}
               </div>
             )}
@@ -450,6 +480,27 @@ export function TodayPage() {
               + Add another line
             </button>
           </div>
+
+          {/* What got checked off that day — only populated by /api/today
+              for a date strictly in the past (today's own completions just
+              disappear from the list above, with the "N Completed Today"
+              badge as the running count — see that endpoint's comment).
+              Struck through, same convention as a done task everywhere
+              else, and clickable into the same task-detail modal Overdue/
+              Today rows open, since a completed task can still carry a
+              description or attachments worth seeing. */}
+          {completed.length > 0 && (
+            <div className="today-page__section">
+              <div className="today-page__section-title">Completed</div>
+              <div className="today-page__list task-list card">
+                {completed.map((t) => (
+                  <div key={t.id} className="today-page__completed-row" onClick={() => setTaskStack([t.entity_id])}>
+                    <span className="today-page__completed-title">{t.title || 'Untitled'}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {tickler.length > 0 && (
             <div className="today-page__section">
@@ -576,6 +627,10 @@ export function TodayPage() {
             setDeleting(entityToDelete);
           }}
         />
+      )}
+
+      {noteMeeting && (
+        <MeetingNoteModal meeting={noteMeeting} onClose={() => setNoteMeeting(null)} onSaved={loadMeetings} />
       )}
     </div>
   );

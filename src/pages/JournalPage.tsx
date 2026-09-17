@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
-import type { Habit, JournalDayResponse, MeetingItem } from '../api/types';
+import type { Entity, Habit, JournalDayResponse, MeetingItem } from '../api/types';
 import { NoteEditor } from '../components/NoteEditor';
+import { TaskDetailModal } from '../components/TaskDetailModal';
+import { ConfirmModal } from '../components/ConfirmModal';
+import { MeetingNoteModal } from '../components/MeetingNoteModal';
 import { useReportTabMeta } from '../contexts/TabsContext';
 
 // Same small pure date helpers TodayPage.tsx already has — kept local and
@@ -161,6 +164,13 @@ export function JournalPage() {
   const [data, setData] = useState<JournalDayResponse | null>(null);
   const [meetings, setMeetings] = useState<MeetingItem[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // Same taskStack-of-ids pattern TodayPage uses to drive TaskDetailModal —
+  // a completed or pushed task shown here can still carry a description or
+  // attachments worth seeing, so it opens the identical modal rather than
+  // just sitting there as inert text.
+  const [taskStack, setTaskStack] = useState<string[]>([]);
+  const [deleting, setDeleting] = useState<Entity | null>(null);
+  const [noteMeeting, setNoteMeeting] = useState<MeetingItem | null>(null);
 
   useReportTabMeta(isToday ? 'Journal' : `Journal — ${formatHeaderDate(date)}`, 'journal');
 
@@ -172,12 +182,39 @@ export function JournalPage() {
     load();
   }, [load]);
 
-  useEffect(() => {
+  const loadMeetings = useCallback(() => {
     api
       .getMeetings(date)
       .then((res) => setMeetings(res.meetings))
       .catch(() => setMeetings([]));
   }, [date]);
+
+  useEffect(() => {
+    loadMeetings();
+  }, [loadMeetings]);
+
+  function openTaskById(id: string) {
+    setTaskStack([id]);
+  }
+
+  function closeTaskModal() {
+    setTaskStack([]);
+    load();
+  }
+
+  function openSubtask(id: string) {
+    setTaskStack((prev) => [...prev, id]);
+  }
+
+  function backTask() {
+    setTaskStack((prev) => prev.slice(0, -1));
+  }
+
+  async function deleteTask(task: Entity) {
+    await api.deleteEntity(task.id);
+    setDeleting(null);
+    load();
+  }
 
   function goToDate(next: string) {
     navigate(next === todayLocalISO() ? '/journal' : `/journal/${next}`);
@@ -240,7 +277,7 @@ export function JournalPage() {
           {meetings.length === 0 ? (
             <div className="journal-page__auto-empty">Nothing on the calendar.</div>
           ) : (
-            <ul className="journal-page__auto-list">
+            <ul className="journal-page__auto-list journal-page__auto-list--meetings">
               {meetings.map((m) => {
                 // Same "at a glance, what's done" signal as the Completed
                 // task list right below (✅ prefix) — a meeting counts as
@@ -253,9 +290,34 @@ export function JournalPage() {
                 // ended.
                 const done = !m.allDay && new Date(m.end).getTime() <= Date.now();
                 return (
-                  <li key={m.id}>
-                    {done && <span aria-hidden="true">✅ </span>}
-                    <span className="journal-page__auto-time">{formatMeetingTime(m.start)}</span> {m.title}
+                  <li key={m.id} className="journal-page__auto-meeting-row">
+                    <span className="journal-page__auto-meeting-text">
+                      {done && <span aria-hidden="true">✅ </span>}
+                      <span className="journal-page__auto-time">{formatMeetingTime(m.start)}</span> {m.title}
+                    </span>
+                    <span className="today-page__meeting-actions">
+                      <a
+                        className="today-page__meeting-icon-btn"
+                        href={m.gcalUrl ?? undefined}
+                        target="_blank"
+                        rel="noreferrer"
+                        title="Open in Google Calendar"
+                        aria-disabled={!m.gcalUrl}
+                        onClick={(e) => {
+                          if (!m.gcalUrl) e.preventDefault();
+                        }}
+                      >
+                        📅
+                      </a>
+                      <button
+                        type="button"
+                        className={`today-page__meeting-icon-btn${m.hasNote ? ' today-page__meeting-icon-btn--active' : ''}`}
+                        title={m.hasNote ? 'View/edit note' : 'Add a note'}
+                        onClick={() => setNoteMeeting(m)}
+                      >
+                        📝
+                      </button>
+                    </span>
                   </li>
                 );
               })}
@@ -270,7 +332,9 @@ export function JournalPage() {
           ) : (
             <ul className="journal-page__auto-list">
               {data.tasksCompleted.map((t) => (
-                <li key={t.id}>✅ {t.title}</li>
+                <li key={t.id} className="journal-page__auto-clickable" onClick={() => openTaskById(t.entity_id)}>
+                  ✅ {t.title}
+                </li>
               ))}
             </ul>
           )}
@@ -283,7 +347,7 @@ export function JournalPage() {
           ) : (
             <ul className="journal-page__auto-list">
               {data.tasksPushed.map((t) => (
-                <li key={t.id}>
+                <li key={t.id} className="journal-page__auto-clickable" onClick={() => openTaskById(t.entity_id)}>
                   ↪️ {t.title} <span className="journal-page__auto-hint">({formatDueDate(t.from_due_date)} → {formatDueDate(t.to_due_date)})</span>
                 </li>
               ))}
@@ -352,6 +416,34 @@ export function JournalPage() {
         <div className="journal-page__auto-label">Notes for the day</div>
         {data && <NoteEditor key={date} content={data.entry?.content ?? null} onSave={saveEntry} />}
       </div>
+
+      {taskStack.length > 0 && (
+        <TaskDetailModal
+          key={taskStack[taskStack.length - 1]}
+          taskId={taskStack[taskStack.length - 1]}
+          onBack={taskStack.length > 1 ? backTask : undefined}
+          onClose={closeTaskModal}
+          onOpenSubtask={openSubtask}
+          onMutated={load}
+          onRequestDelete={(entityToDelete) => {
+            setTaskStack([]);
+            setDeleting(entityToDelete);
+          }}
+        />
+      )}
+
+      {deleting && (
+        <ConfirmModal
+          title="Delete task?"
+          body={`"${deleting.title || 'Untitled'}" will be permanently deleted.`}
+          onConfirm={() => deleteTask(deleting)}
+          onCancel={() => setDeleting(null)}
+        />
+      )}
+
+      {noteMeeting && (
+        <MeetingNoteModal meeting={noteMeeting} onClose={() => setNoteMeeting(null)} onSaved={loadMeetings} />
+      )}
     </div>
   );
 }
