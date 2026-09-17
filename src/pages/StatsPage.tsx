@@ -142,9 +142,9 @@ export function StatsPage() {
   const cards: SummaryCardDef[] = stats
     ? [
         { label: 'Today', value: stats.today },
-        { label: 'This week', value: stats.week },
-        { label: 'This month', value: stats.month },
-        { label: 'This year', value: stats.year },
+        { label: 'This Week', value: stats.week },
+        { label: 'This Month', value: stats.month },
+        { label: 'This Year', value: stats.year },
       ]
     : [];
 

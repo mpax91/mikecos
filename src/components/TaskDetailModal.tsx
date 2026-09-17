@@ -253,7 +253,7 @@ export function TaskDetailModal({
         </div>
 
         <div className="task-panel__field">
-          <label className="task-panel__label">Due date</label>
+          <label className="task-panel__label">Due Date</label>
           <div className="task-panel__field-row">
             <input type="date" value={dueDate} onChange={(e) => handleDueDateChange(e.target.value)} />
             {dueDate && (

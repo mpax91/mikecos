@@ -333,7 +333,7 @@ function MergeDuplicateModal({
   }, [query, currentContact.id]);
 
   return (
-    <Modal title={`Merge a duplicate into "${currentContact.name}"`} onClose={onClose}>
+    <Modal title={`Merge a Duplicate into "${currentContact.name}"`} onClose={onClose}>
       {!selected ? (
         <>
           <p className="contact-detail__section-hint" style={{ marginTop: 0 }}>
@@ -510,7 +510,7 @@ export function ContactDetailPage() {
           items={[
             { label: 'Edit', onClick: () => setEditing(true) },
             { label: isPinned ? 'Unpin' : 'Pin to top', onClick: handleTogglePin },
-            { label: 'Merge a duplicate into this contact…', onClick: () => setMerging(true) },
+            { label: 'Merge a Duplicate into This Contact…', onClick: () => setMerging(true) },
             { label: 'Delete', onClick: () => setDeleting(true), danger: true, separatorBefore: true },
           ]}
         />

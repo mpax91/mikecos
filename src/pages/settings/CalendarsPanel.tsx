@@ -172,7 +172,7 @@ export function CalendarsPanel() {
             onChange={(e) => setForm({ ...form, label: e.target.value })}
           />
 
-          <label className="settings-page__field-label">Secret address (iCal URL)</label>
+          <label className="settings-page__field-label">Secret Address (iCal URL)</label>
           <input
             placeholder={form.id ? 'Leave blank to keep the current URL' : 'https://calendar.google.com/calendar/ical/.../basic.ics'}
             value={form.url}

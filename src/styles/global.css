@@ -3466,38 +3466,64 @@ a.today-page__important-dates-row:hover .today-page__important-dates-name {
 .today-page__important-dates-voters-toggle {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   width: 100%;
   background: var(--color-sidebar);
-  border: var(--border-hairline);
-  border-radius: 8px;
-  padding: 6px 10px;
+  border: 1.5px solid var(--color-border);
+  border-radius: 10px;
+  padding: 8px 12px;
   color: var(--color-ink);
-  font-size: 12px;
+  font-size: 12.5px;
+  font-weight: var(--weight-medium);
   cursor: pointer;
   text-align: left;
+  transition: background 0.15s ease, border-color 0.15s ease, border-radius 0.1s ease 0.05s;
 }
 
 .today-page__important-dates-voters-toggle:hover {
   background: rgba(47, 74, 60, 0.08);
+  border-color: var(--color-accent);
 }
 
+/* Expanded state visually merges into the panel of names below it — same
+   accent border color continued straight down, square bottom corners so
+   the toggle and the list it reveals read as one connected accordion
+   piece instead of two unrelated elements stacked on top of each other. */
+.today-page__important-dates-voters-toggle[aria-expanded='true'] {
+  background: rgba(47, 74, 60, 0.08);
+  border-color: var(--color-accent);
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+/* A round chevron "button", not just a bare glyph — reads unambiguously
+   as a disclosure control the way a plain triangle character didn't. */
 .today-page__important-dates-voters-toggle__chevron {
-  display: inline-block;
-  font-size: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: var(--color-card-bg);
   color: var(--color-muted);
-  transition: transform 0.15s ease;
+  font-size: 9px;
   flex-shrink: 0;
+  transition: transform 0.15s ease;
 }
 
 .today-page__important-dates-voters-toggle[aria-expanded='true'] .today-page__important-dates-voters-toggle__chevron {
   transform: rotate(90deg);
+  color: var(--color-accent);
 }
 
 .today-page__important-dates-voters .today-page__important-dates-list {
-  margin-top: 8px;
-  padding-left: 4px;
-  border-left: 2px solid var(--color-border);
+  margin-top: 0;
+  padding: 8px 12px 6px;
+  border: 1.5px solid var(--color-accent);
+  border-top: none;
+  border-radius: 0 0 10px 10px;
+  background: rgba(47, 74, 60, 0.03);
 }
 
 /* A task shown away from its own project (Today) gets a small tag pointing

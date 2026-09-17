@@ -240,7 +240,7 @@ export function RecurringTasksPanel() {
         <Modal title={form.id ? 'Edit Recurring Task' : 'New Recurring Task'} onClose={() => setForm(null)}>
           <input autoFocus placeholder="Title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
 
-          <label className="settings-page__field-label">Starts on</label>
+          <label className="settings-page__field-label">Starts On</label>
           <input type="date" value={form.dtstart} onChange={(e) => setDtstart(e.target.value)} />
 
           <label className="settings-page__field-label">Repeats</label>

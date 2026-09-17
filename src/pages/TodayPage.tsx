@@ -532,7 +532,7 @@ export function TodayPage() {
 
           {tickler.length > 0 && (
             <div className="today-page__section">
-              <div className="today-page__section-title">Worth revisiting</div>
+              <div className="today-page__section-title">Worth Revisiting</div>
               <div className="today-page__tickler card">
                 {tickler.map((t) => (
                   <div key={t.id} className="today-page__tickler-row" onClick={() => openTickler(t)}>
@@ -588,7 +588,7 @@ export function TodayPage() {
                       <span className="today-page__important-dates-voters-toggle__chevron" aria-hidden="true">
                         ▸
                       </span>
-                      🗳️ {voterDateContacts.length} more from the voter roll
+                      🗳️ {voterDateContacts.length} More From GEN6
                     </button>
                     {voterDatesExpanded && (
                       <div className="today-page__important-dates-list">
@@ -599,7 +599,7 @@ export function TodayPage() {
                             className="today-page__important-dates-row"
                           >
                             <span className="today-page__important-dates-name">
-                              <span className="today-page__important-dates-source" title="From the voter roll, not a saved contact">
+                              <span className="today-page__important-dates-source" title="From GEN6, not a saved contact">
                                 🗳️{' '}
                               </span>
                               {contact.name}

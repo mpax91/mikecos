@@ -437,7 +437,7 @@ export function JournalPage() {
       </div>
 
       <div className="journal-page__freeform card">
-        <div className="journal-page__auto-label">Notes for the day</div>
+        <div className="journal-page__auto-label">Notes for the Day</div>
         {data && <NoteEditor key={date} content={data.entry?.content ?? null} onSave={saveEntry} />}
       </div>
 

@@ -16,7 +16,7 @@ export function PlanDateModal({ onPlan, onClose }: { onPlan: (date: string) => v
   const [date, setDate] = useState(tomorrowLocalISO());
 
   return (
-    <Modal title="Plan for a date" onClose={onClose}>
+    <Modal title="Plan for a Date" onClose={onClose}>
       <div className="task-panel__field">
         <input type="date" autoFocus value={date} onChange={(e) => setDate(e.target.value)} />
       </div>

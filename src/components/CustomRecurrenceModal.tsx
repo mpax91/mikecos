@@ -50,9 +50,9 @@ export function CustomRecurrenceModal({
   const canSave = unit !== 'week' || byDay.length > 0;
 
   return (
-    <Modal title="Custom recurrence" onClose={onCancel}>
+    <Modal title="Custom Recurrence" onClose={onCancel}>
       <div className="custom-recurrence__row">
-        <span className="custom-recurrence__label">Repeat every</span>
+        <span className="custom-recurrence__label">Repeat Every</span>
         <input
           type="number"
           min={1}
@@ -71,7 +71,7 @@ export function CustomRecurrenceModal({
 
       {unit === 'week' && (
         <div className="custom-recurrence__section">
-          <div className="custom-recurrence__label">Repeat on</div>
+          <div className="custom-recurrence__label">Repeat On</div>
           <div className="custom-recurrence__weekdays">
             {WEEKDAY_CODES.map((code, i) => (
               <button

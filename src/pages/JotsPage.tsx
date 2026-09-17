@@ -42,8 +42,8 @@ function JotCard({
         <KebabMenu
           items={[
             { label: jot.pinned === 1 ? 'Unpin' : 'Pin', onClick: onTogglePin },
-            { label: 'Plan for a date', onClick: onPlan },
-            { label: 'Turn into Task (choose project)', onClick: () => onConvert('task') },
+            { label: 'Plan for a Date', onClick: onPlan },
+            { label: 'Turn into Task (Choose Project)', onClick: () => onConvert('task') },
             { label: 'Turn into Note', onClick: () => onConvert('note') },
             { label: 'Delete', onClick: onDelete, danger: true, separatorBefore: true },
           ]}
