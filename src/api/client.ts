@@ -1,4 +1,4 @@
-import type { CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactDetail, ContactNote, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitLog, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, MeetingsRangeResponse, MeetingsResponse, MonthResponse, OrphanedImportsResponse, ProjectListItem, RecurringTaskDefinition, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, WeatherResponse, WeekResponse } from './types';
+import type { CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactDetail, ContactNote, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitLog, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, MeetingsRangeResponse, MeetingsResponse, MonthResponse, OrphanedImportsResponse, ProjectListItem, RecurringTaskDefinition, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, WeatherResponse, WeekResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -283,6 +283,30 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ afterId, limit }),
     }),
+
+  // ---- Health dashboard (Google Health weekly-report import) ----
+
+  /** Preview-only — parses `text` (already extracted client-side from the
+   * PDF, see src/utils/pdfText.ts) and returns the structured week without
+   * writing anything, plus whatever's already stored for that week so the
+   * Settings panel can show "this will update Sep 5 - Sep 11" up front. */
+  previewHealthImport: (filename: string, text: string) =>
+    request<HealthParsePreview>('/api/health/parse', {
+      method: 'POST',
+      body: JSON.stringify({ filename, text }),
+    }),
+
+  /** Commits one or more previewed files in a single request — each is
+   * re-parsed and upserted by week_start server-side. */
+  commitHealthImport: (imports: { filename: string; text: string }[]) =>
+    request<HealthImportResponse & { errors: { filename: string; error: string }[] }>('/api/health/import', {
+      method: 'POST',
+      body: JSON.stringify({ imports }),
+    }),
+
+  /** Full history, oldest first — feeds the Health dashboard's trend
+   * charts and current-week tiles. */
+  listHealthWeekly: () => request<HealthWeeklyReport[]>('/api/health/weekly'),
 
   // ---- Today (daily planner) ----
 

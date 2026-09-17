@@ -151,10 +151,11 @@ function AddHabitRow({ onAdd }: { onAdd: (name: string, unit: string, target: st
  * completed/pushed tasks, notes, and contact quick-notes are all pulled
  * live from wherever they already live in MikeOS; the only thing actually
  * stored here is the freeform text at the bottom and each day's habit
- * values. Deliberately NOT in this first pass: health data beyond a raw
- * dump (the Google Health export's real fields aren't known yet — see
- * worker/migrations/0020_journal.sql), and finance/gambling tracking
- * (mentioned for a future pass, not this one). */
+ * values. Health is pulled from health_weekly_reports — whichever
+ * imported week's range contains the viewed day — since Google Health only
+ * ever hands us weekly reports, not daily ones (see
+ * worker/migrations/0025_health_weekly_reports.sql). Finance/gambling
+ * tracking is a future pass, not this one. */
 export function JournalPage() {
   const { date: dateParam } = useParams<{ date: string }>();
   const navigate = useNavigate();
@@ -252,14 +253,6 @@ export function JournalPage() {
   }
 
   const health = data?.health;
-  let healthPreview: Record<string, unknown> | null = null;
-  if (health) {
-    try {
-      healthPreview = JSON.parse(health.raw_data);
-    } catch {
-      healthPreview = null;
-    }
-  }
 
   return (
     <div className="journal-page">
@@ -413,17 +406,23 @@ export function JournalPage() {
           <div className="journal-page__auto-section">
             <div className="journal-page__auto-label">Health</div>
             <div className="journal-page__auto-hint">
-              From your last Google Health upload — may not be from this exact day if the upload lags.
+              Weekly average/total from Google Health for {health.week_start} – {health.week_end} — this is a week's
+              worth of data, not just this day.
             </div>
-            {healthPreview && (
-              <ul className="journal-page__auto-list">
-                {Object.entries(healthPreview).slice(0, 8).map(([k, v]) => (
-                  <li key={k}>
-                    {k}: {String(v)}
-                  </li>
-                ))}
-              </ul>
-            )}
+            <ul className="journal-page__auto-list">
+              {health.total_steps != null && <li>Steps: {health.total_steps.toLocaleString()} total ({health.avg_steps_per_day?.toLocaleString()}/day avg)</li>}
+              {health.avg_resting_heart_rate != null && <li>Resting heart rate: {health.avg_resting_heart_rate} bpm</li>}
+              {health.avg_restful_sleep_minutes != null && (
+                <li>
+                  Restful sleep: {Math.floor(health.avg_restful_sleep_minutes / 60)}h {health.avg_restful_sleep_minutes % 60}m avg
+                </li>
+              )}
+              {health.avg_weight_lb != null && <li>Weight: {health.avg_weight_lb.toFixed(1)} lb</li>}
+              {health.avg_active_zone_minutes != null && <li>Active zone minutes: {health.avg_active_zone_minutes}</li>}
+            </ul>
+            <Link to="/dashboard" className="journal-page__auto-hint">
+              See the full Health dashboard →
+            </Link>
           </div>
         )}
       </div>

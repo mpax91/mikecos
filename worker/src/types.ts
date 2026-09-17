@@ -234,6 +234,30 @@ export interface HealthLog {
   updated_at: string;
 }
 
+// One row per Google Health weekly-report import — see
+// worker/migrations/0025_health_weekly_reports.sql for the full field-by-
+// field rationale (self-computed deltas, per-metric null handling).
+export interface HealthWeeklyReport {
+  week_start: string; // 'YYYY-MM-DD'
+  week_end: string; // 'YYYY-MM-DD'
+  total_steps: number | null;
+  avg_steps_per_day: number | null;
+  best_day_steps: number | null;
+  best_day_weekday: string | null;
+  total_floors: number | null;
+  total_miles: number | null;
+  avg_calories_burned: number | null;
+  avg_active_zone_minutes: number | null;
+  avg_restful_sleep_minutes: number | null;
+  avg_hours_with_250_steps: number | null;
+  avg_resting_heart_rate: number | null;
+  avg_weight_lb: number | null;
+  raw_text: string;
+  import_batch_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Env {
   DB: D1Database;
   FILES: R2Bucket;

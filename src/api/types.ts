@@ -743,6 +743,50 @@ export interface HealthLog {
   updated_at: string;
 }
 
+// One row per Google Health weekly-report import — mirrors
+// worker/src/types.ts's HealthWeeklyReport. See
+// worker/migrations/0025_health_weekly_reports.sql for the field-by-field
+// rationale (self-computed deltas, per-metric null handling for weeks the
+// tracker wasn't worn).
+export interface HealthWeeklyReport {
+  week_start: string; // 'YYYY-MM-DD'
+  week_end: string; // 'YYYY-MM-DD'
+  total_steps: number | null;
+  avg_steps_per_day: number | null;
+  best_day_steps: number | null;
+  best_day_weekday: string | null;
+  total_floors: number | null;
+  total_miles: number | null;
+  avg_calories_burned: number | null;
+  avg_active_zone_minutes: number | null;
+  avg_restful_sleep_minutes: number | null;
+  avg_hours_with_250_steps: number | null;
+  avg_resting_heart_rate: number | null;
+  avg_weight_lb: number | null;
+  raw_text: string;
+  import_batch_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** POST /api/health/parse — preview-only, no DB write. `week` is null when
+ * the text didn't match the Google Health template at all (see
+ * HealthParseError in worker/src/health.ts); `error` then holds the reason
+ * to show the user. `existing` is the already-stored row for that week, if
+ * any — so the Settings panel can show "this will update Sep 5 - Sep 11"
+ * rather than silently overwriting. */
+export interface HealthParsePreview {
+  filename: string;
+  week: Omit<HealthWeeklyReport, 'raw_text' | 'import_batch_id' | 'created_at' | 'updated_at'> | null;
+  error: string | null;
+  existing: HealthWeeklyReport | null;
+}
+
+export interface HealthImportResponse {
+  imported: number;
+  weeks: string[]; // week_start values written, oldest first
+}
+
 export interface JournalDayResponse {
   date: string;
   entry: JournalEntry | null;
@@ -751,5 +795,5 @@ export interface JournalDayResponse {
   notes: JournalNote[];
   contactNotes: JournalContactNote[];
   habits: Habit[];
-  health: HealthLog | null;
+  health: HealthWeeklyReport | null;
 }

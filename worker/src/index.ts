@@ -12,7 +12,7 @@ import type {
   Entity,
   Habit,
   HabitLog,
-  HealthLog,
+  HealthWeeklyReport,
   ImportBatch,
   JournalEntry,
   ShelfItem,
@@ -22,6 +22,7 @@ import type {
 } from './types';
 import { calendarIdFromIcsUrl, meetingsForDate, meetingsForRange } from './ics';
 import { describeRrule, isValidRrule, nextDueOccurrenceDate, type RecurringTaskDefinition } from './recurring';
+import { HealthParseError, parseHealthWeek } from './health';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -3815,6 +3816,135 @@ app.delete('/api/connectors/:id', async (c) => {
 
 // ---- Journal ----
 //
+// ---------------------------------------------------------------------
+// Health dashboard — Google Health weekly-report import. See
+// worker/src/health.ts for the parser itself and
+// worker/migrations/0025_health_weekly_reports.sql for the schema/design
+// rationale (self-computed deltas, per-metric null handling for weeks the
+// tracker wasn't worn, upsert-by-week_start for safe re-uploads).
+// ---------------------------------------------------------------------
+
+function healthRowToPreviewWeek(p: ReturnType<typeof parseHealthWeek>) {
+  return {
+    week_start: p.weekStart,
+    week_end: p.weekEnd,
+    total_steps: p.totalSteps,
+    avg_steps_per_day: p.avgStepsPerDay,
+    best_day_steps: p.bestDaySteps,
+    best_day_weekday: p.bestDayWeekday,
+    total_floors: p.totalFloors,
+    total_miles: p.totalMiles,
+    avg_calories_burned: p.avgCaloriesBurned,
+    avg_active_zone_minutes: p.avgActiveZoneMinutes,
+    avg_restful_sleep_minutes: p.avgRestfulSleepMinutes,
+    avg_hours_with_250_steps: p.avgHoursWith250Steps,
+    avg_resting_heart_rate: p.avgRestingHeartRate,
+    avg_weight_lb: p.avgWeightLb,
+  };
+}
+
+// POST /api/health/parse — preview-only, no DB write. Body: { filename,
+// text } where `text` is the client-extracted PDF text (see
+// src/utils/pdfText.ts — grouped into lines the same way the parser
+// expects, matching pdfplumber's own layout-aware extraction that the
+// parser was validated against). Mirrors the contact-importer's
+// preview-before-commit shape.
+app.post('/api/health/parse', async (c) => {
+  const body = await c.req.json<{ filename: string; text: string }>();
+  if (!body.text) return c.json({ error: 'text required' }, 400);
+  try {
+    const parsed = parseHealthWeek(body.text);
+    const existing = await c.env.DB.prepare('SELECT * FROM health_weekly_reports WHERE week_start = ?')
+      .bind(parsed.weekStart)
+      .first<HealthWeeklyReport>();
+    return c.json({ filename: body.filename, week: healthRowToPreviewWeek(parsed), error: null, existing: existing ?? null });
+  } catch (e) {
+    const message = e instanceof HealthParseError ? e.message : 'Could not parse this file as a Google Health weekly report.';
+    return c.json({ filename: body.filename, week: null, error: message, existing: null });
+  }
+});
+
+// POST /api/health/import — commits one or more previewed weeks. Body:
+// { imports: [{ filename, text }] }. Each is re-parsed server-side (never
+// trusts a client-computed preview for the write) and upserted by
+// week_start, so re-uploading an already-imported week — which Mike does
+// on purpose, since his upload batches overlap — just overwrites that row
+// with the same values rather than duplicating it.
+app.post('/api/health/import', async (c) => {
+  const body = await c.req.json<{ imports: { filename: string; text: string }[] }>();
+  if (!body.imports?.length) return c.json({ error: 'no imports' }, 400);
+
+  const batchId = uid();
+  const ts = now();
+  const weeks: string[] = [];
+  const errors: { filename: string; error: string }[] = [];
+
+  for (const item of body.imports) {
+    try {
+      const p = parseHealthWeek(item.text);
+      await c.env.DB.prepare(
+        `INSERT INTO health_weekly_reports (
+           week_start, week_end, total_steps, avg_steps_per_day, best_day_steps, best_day_weekday,
+           total_floors, total_miles, avg_calories_burned, avg_active_zone_minutes, avg_restful_sleep_minutes,
+           avg_hours_with_250_steps, avg_resting_heart_rate, avg_weight_lb, raw_text, import_batch_id, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (week_start) DO UPDATE SET
+           week_end = excluded.week_end,
+           total_steps = excluded.total_steps,
+           avg_steps_per_day = excluded.avg_steps_per_day,
+           best_day_steps = excluded.best_day_steps,
+           best_day_weekday = excluded.best_day_weekday,
+           total_floors = excluded.total_floors,
+           total_miles = excluded.total_miles,
+           avg_calories_burned = excluded.avg_calories_burned,
+           avg_active_zone_minutes = excluded.avg_active_zone_minutes,
+           avg_restful_sleep_minutes = excluded.avg_restful_sleep_minutes,
+           avg_hours_with_250_steps = excluded.avg_hours_with_250_steps,
+           avg_resting_heart_rate = excluded.avg_resting_heart_rate,
+           avg_weight_lb = excluded.avg_weight_lb,
+           raw_text = excluded.raw_text,
+           import_batch_id = excluded.import_batch_id,
+           updated_at = excluded.updated_at`
+      )
+        .bind(
+          p.weekStart,
+          p.weekEnd,
+          p.totalSteps,
+          p.avgStepsPerDay,
+          p.bestDaySteps,
+          p.bestDayWeekday,
+          p.totalFloors,
+          p.totalMiles,
+          p.avgCaloriesBurned,
+          p.avgActiveZoneMinutes,
+          p.avgRestfulSleepMinutes,
+          p.avgHoursWith250Steps,
+          p.avgRestingHeartRate,
+          p.avgWeightLb,
+          item.text,
+          batchId,
+          ts,
+          ts
+        )
+        .run();
+      weeks.push(p.weekStart);
+    } catch (e) {
+      const message = e instanceof HealthParseError ? e.message : 'Could not parse this file.';
+      errors.push({ filename: item.filename, error: message });
+    }
+  }
+
+  weeks.sort();
+  return c.json({ imported: weeks.length, weeks, errors });
+});
+
+// GET /api/health/weekly — full history, oldest first, for the Health
+// dashboard's trend charts and the Journal's per-day lookup below.
+app.get('/api/health/weekly', async (c) => {
+  const { results } = await c.env.DB.prepare('SELECT * FROM health_weekly_reports ORDER BY week_start ASC').all<HealthWeeklyReport>();
+  return c.json(results ?? []);
+});
+
 // A day's journal entry is mostly computed, not stored: journal_entries
 // only holds the freeform text Mike adds himself (see
 // migrations/0020_journal.sql for the full reasoning). Everything else
@@ -3879,7 +4009,12 @@ app.get('/api/journal/:date', async (c) => {
   const habitLogsByHabit = new Map((habitLogRows ?? []).map((l) => [l.habit_id, l]));
   const habitsWithLogs = (habits ?? []).map((h) => ({ ...h, log: habitLogsByHabit.get(h.id) ?? null }));
 
-  const health = await c.env.DB.prepare('SELECT * FROM journal_health_logs WHERE date = ?').bind(date).first<HealthLog>();
+  // journal_health_logs (per-day) is dead — Google Health only ever hands
+  // us per-week reports (see the 0025 migration), so a viewed day is
+  // matched against the weekly-report row whose range contains it instead.
+  const health = await c.env.DB.prepare('SELECT * FROM health_weekly_reports WHERE week_start <= ? AND week_end >= ?')
+    .bind(date, date)
+    .first<HealthWeeklyReport>();
 
   return c.json({
     date,

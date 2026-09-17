@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ContextMenu, type ContextMenuItem } from '../components/ContextMenu';
 
-export type TabKind = 'today' | 'projects-list' | 'notes-list' | 'jots-list' | 'settings' | 'project' | 'folder' | 'note' | 'stats' | 'boards-list' | 'board' | 'contacts-list' | 'contact' | 'journal';
+export type TabKind = 'today' | 'projects-list' | 'notes-list' | 'jots-list' | 'settings' | 'project' | 'folder' | 'note' | 'stats' | 'boards-list' | 'board' | 'contacts-list' | 'contact' | 'journal' | 'dashboard';
 
 export interface Tab {
   id: string;
@@ -29,6 +29,7 @@ function inferTabMeta(path: string): { kind: TabKind; title: string } {
   if (path === '/boards') return { kind: 'boards-list', title: 'Boards' };
   if (path === '/contacts') return { kind: 'contacts-list', title: 'Contacts' };
   if (path === '/journal' || path.startsWith('/journal/')) return { kind: 'journal', title: 'Journal' };
+  if (path === '/dashboard') return { kind: 'dashboard', title: 'Dashboard' };
   if (path.startsWith('/projects/')) return { kind: 'project', title: 'Project' };
   if (path.startsWith('/notes/')) return { kind: 'note', title: 'Note' };
   if (path.startsWith('/boards/')) return { kind: 'board', title: 'Board' };
@@ -285,5 +286,6 @@ export function tabIcon(kind: TabKind): string {
   if (kind === 'boards-list' || kind === 'board') return '📌';
   if (kind === 'contacts-list' || kind === 'contact') return '👤';
   if (kind === 'journal') return '📔';
+  if (kind === 'dashboard') return '📈';
   return kind === 'notes-list' || kind === 'note' ? '📝' : '📁';
 }

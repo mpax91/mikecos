@@ -3,6 +3,7 @@ import { useReportTabMeta } from '../contexts/TabsContext';
 import { RecurringTasksPanel } from './settings/RecurringTasksPanel';
 import { CalendarsPanel } from './settings/CalendarsPanel';
 import { ContactImportPanel } from './settings/ContactImportPanel';
+import { HealthImportPanel } from './settings/HealthImportPanel';
 
 interface Category {
   id: string;
@@ -18,6 +19,7 @@ const CATEGORIES: Category[] = [
   { id: 'recurring', label: 'Recurring Tasks', icon: '🔁' },
   { id: 'calendars', label: 'Calendar Integrations', icon: '📅' },
   { id: 'contact-import', label: 'Contact Import', icon: '👤' },
+  { id: 'health-import', label: 'Health Import', icon: '🩺' },
 ];
 
 export function SettingsPage() {
@@ -51,6 +53,7 @@ export function SettingsPage() {
           {active === 'recurring' && <RecurringTasksPanel />}
           {active === 'calendars' && <CalendarsPanel />}
           {active === 'contact-import' && <ContactImportPanel />}
+          {active === 'health-import' && <HealthImportPanel />}
         </div>
       </div>
     </div>
