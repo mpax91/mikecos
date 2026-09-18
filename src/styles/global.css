@@ -3112,20 +3112,20 @@ a {
   background: rgba(47, 74, 60, 0.08);
 }
 
+/* Without an explicit border/background this falls back to the browser's
+   own default date-input chrome (a heavier, darker-outlined box than
+   anything else in the app), which is what read as "off" next to the
+   soft hairline borders on .today-page__nav-btn right beside it — give it
+   the same card/hairline treatment so the whole nav row reads as one
+   family of controls. */
 .today-page__date-input {
   font-size: 13px;
   padding: 5px 8px;
+  border: var(--border-hairline);
   border-radius: 8px;
+  background: var(--color-card-bg);
+  color: var(--color-ink);
 }
-
-/* A day viewed from the Week grid should always be one click from getting
-   back to it — this sits above the heading like a breadcrumb rather than
-   living inside the Day/Week toggle, since it's always the same target
-   (the week containing whichever date is being viewed) regardless of how
-   you arrived on this page. Reuses .breadcrumb / .breadcrumb__back /
-   .breadcrumb__link (the same back-button chrome Projects/Notes use)
-   instead of its own plain text link, so all three feel like the same
-   control. */
 
 .today-page__heading {
   font-size: 34px;
@@ -3523,73 +3523,64 @@ a.today-page__important-dates-row:hover .today-page__important-dates-name {
 }
 
 .today-page__important-dates-voters {
-  margin-top: 8px;
+  margin-top: 2px;
 }
 
-/* Styled as an obvious accordion header (bordered chip, background tint,
-   rotating chevron) rather than a plain inline text link — the old
-   plain-link styling was easy to miss as something clickable at all. */
+/* Previously a bordered, background-tinted chip — read as a callout/alert
+   banner rather than "more of the same list," out of step with how muted
+   and quiet everything else on Today is. Restyled to match the plain
+   hairline-divided rows above it (.today-page__important-dates-row):
+   same baseline flex layout and border-bottom, just muted since these are
+   voter-roll matches rather than saved contacts, with a small pill for
+   the count instead of a full-width colored box. */
 .today-page__important-dates-voters-toggle {
   display: flex;
   align-items: center;
   gap: 8px;
   width: 100%;
-  background: var(--color-sidebar);
-  border: 1.5px solid var(--color-border);
-  border-radius: 10px;
-  padding: 8px 12px;
-  color: var(--color-ink);
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--color-border);
+  border-radius: 0;
+  padding: 5px 0;
+  color: var(--color-muted);
   font-size: 12.5px;
-  font-weight: var(--weight-medium);
   cursor: pointer;
   text-align: left;
-  transition: background 0.15s ease, border-color 0.15s ease, border-radius 0.1s ease 0.05s;
 }
 
 .today-page__important-dates-voters-toggle:hover {
-  background: rgba(47, 74, 60, 0.08);
-  border-color: var(--color-accent);
+  color: var(--color-ink);
 }
 
-/* Expanded state visually merges into the panel of names below it — same
-   accent border color continued straight down, square bottom corners so
-   the toggle and the list it reveals read as one connected accordion
-   piece instead of two unrelated elements stacked on top of each other. */
 .today-page__important-dates-voters-toggle[aria-expanded='true'] {
-  background: rgba(47, 74, 60, 0.08);
-  border-color: var(--color-accent);
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
+  border-bottom-color: transparent;
 }
 
-/* A round chevron "button", not just a bare glyph — reads unambiguously
-   as a disclosure control the way a plain triangle character didn't. */
+/* A small rotating caret rather than a round button — the row itself
+   (hover color change, cursor: pointer) already carries the "this is
+   clickable" signal, so the chevron just needs to read as a direction,
+   the same weight as the plain "›" nav glyphs used elsewhere. */
 .today-page__important-dates-voters-toggle__chevron {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 17px;
-  height: 17px;
-  border-radius: 50%;
-  background: var(--color-card-bg);
-  color: var(--color-muted);
-  font-size: 9px;
+  font-size: 10px;
   flex-shrink: 0;
   transition: transform 0.15s ease;
 }
 
 .today-page__important-dates-voters-toggle[aria-expanded='true'] .today-page__important-dates-voters-toggle__chevron {
   transform: rotate(90deg);
-  color: var(--color-accent);
 }
 
+/* Expanded rows sit at the same indentation/weight as the toggle text
+   above them (not boxed off in their own panel) — the same
+   .today-page__important-dates-list/-row styling already used for the
+   personal contacts group, just nested one level under the toggle. */
 .today-page__important-dates-voters .today-page__important-dates-list {
   margin-top: 0;
-  padding: 8px 12px 6px;
-  border: 1.5px solid var(--color-accent);
-  border-top: none;
-  border-radius: 0 0 10px 10px;
-  background: rgba(47, 74, 60, 0.03);
+  padding-left: 4px;
 }
 
 /* A task shown away from its own project (Today) gets a small tag pointing

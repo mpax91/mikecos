@@ -71,11 +71,6 @@ function mondayOf(iso: string): string {
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
 }
 
-function formatShort(iso: string): string {
-  const [y, m, d] = iso.split('-').map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
-
 // Meeting times are shown in Mike's home timezone specifically (rather
 // than the viewing device's own zone) — same as the weather widget's fixed
 // Bedford Hills, NY location, so a meeting at "1pm" reads the same whether
@@ -356,21 +351,6 @@ export function TodayPage() {
 
   return (
     <div>
-      <div className="breadcrumb">
-        <button
-          type="button"
-          className="breadcrumb__back"
-          onClick={() => navigate(weekStart === mondayOf(todayLocalISO()) ? '/today/week' : `/today/week/${weekStart}`)}
-          title="Back to week"
-          aria-label="Back to week"
-        >
-          ‹
-        </button>
-        <Link to={weekStart === mondayOf(todayLocalISO()) ? '/today/week' : `/today/week/${weekStart}`} className="breadcrumb__link">
-          Week of {formatShort(weekStart)} – {formatShort(addDays(weekStart, 6))}
-        </Link>
-      </div>
-
       {/* A 3-column grid rather than the shared .toolbar-row's flex
           space-between — with three unequal-width groups, space-between
           only pushes the outer two to the edges and leaves the middle one
@@ -588,7 +568,7 @@ export function TodayPage() {
                       <span className="today-page__important-dates-voters-toggle__chevron" aria-hidden="true">
                         ▸
                       </span>
-                      🗳️ {voterDateContacts.length} More From GEN6
+                      🗳️ {voterDateContacts.length} more from GEN6
                     </button>
                     {voterDatesExpanded && (
                       <div className="today-page__important-dates-list">
