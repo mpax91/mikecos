@@ -98,12 +98,6 @@ export function TodayPage() {
   const [deleting, setDeleting] = useState<Entity | null>(null);
   const [weather, setWeather] = useState<WeatherDay | undefined>(undefined);
   const [extraRows, setExtraRows] = useState(0);
-  // Collapsed by default: with the voter roll's birthdays now included,
-  // most of a given day's dates are people Mike doesn't personally know —
-  // 20 names is noise, not a to-do list. Personal contacts (the ones he'd
-  // actually act on — call, text, drop a card) show up front; voter-roll
-  // dates are one click away, not gone.
-  const [voterDatesExpanded, setVoterDatesExpanded] = useState(false);
   const [meetings, setMeetings] = useState<MeetingItem[]>([]);
   const [stats, setStats] = useState<StatsResponse | null>(null);
 
@@ -545,42 +539,33 @@ export function TodayPage() {
                 )}
                 {/* Voter-roll matches are usually people Mike doesn't
                     personally know — sometimes a couple dozen of them on
-                    one day — so they're collapsed behind a fold instead of
-                    mixed into the actionable list above. */}
+                    one day. No fold/toggle: a divider marks the split and
+                    everything below it is just listed out, rendered a size
+                    down and muted throughout so the personal list above
+                    still reads as "the important part" even on a
+                    32-name day. */}
                 {voterDateContacts.length > 0 && (
                   <div className="today-page__important-dates-voters">
-                    <button
-                      type="button"
-                      className="today-page__important-dates-voters-toggle"
-                      aria-expanded={voterDatesExpanded}
-                      onClick={() => setVoterDatesExpanded((v) => !v)}
-                    >
-                      <span className="today-page__important-dates-voters-toggle__chevron" aria-hidden="true">
-                        ▸
-                      </span>
-                      🗳️ {voterDateContacts.length} more from GEN6
-                    </button>
-                    {voterDatesExpanded && (
-                      <div className="today-page__important-dates-list">
-                        {voterDateContacts.map(({ contact, kind }) => (
-                          <Link
-                            key={`${kind}-${contact.id}`}
-                            to={`/contacts/${contact.id}`}
-                            className="today-page__important-dates-row"
-                          >
-                            <span className="today-page__important-dates-name">
-                              <span className="today-page__important-dates-source" title="From GEN6, not a saved contact">
-                                🗳️{' '}
-                              </span>
-                              {contact.name}
+                    <hr className="today-page__important-dates-divider" />
+                    <div className="today-page__important-dates-list">
+                      {voterDateContacts.map(({ contact, kind }) => (
+                        <Link
+                          key={`${kind}-${contact.id}`}
+                          to={`/contacts/${contact.id}`}
+                          className="today-page__important-dates-row today-page__important-dates-row--voter"
+                        >
+                          <span className="today-page__important-dates-name">
+                            <span className="today-page__important-dates-source" title="From the voter roll, not a saved contact">
+                              🗳️{' '}
                             </span>
-                            <span className="today-page__important-dates-kind">
-                              {kind === 'birthday' ? '🎂 Birthday' : '💍 Anniversary'}
-                            </span>
-                          </Link>
-                        ))}
-                      </div>
-                    )}
+                            {contact.name}
+                          </span>
+                          <span className="today-page__important-dates-kind">
+                            {kind === 'birthday' ? '🎂' : '💍'}
+                          </span>
+                        </Link>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>

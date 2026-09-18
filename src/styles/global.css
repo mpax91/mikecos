@@ -3505,61 +3505,38 @@ a.today-page__important-dates-row:hover .today-page__important-dates-name {
   margin-top: 2px;
 }
 
-/* Previously a bordered, background-tinted chip — read as a callout/alert
-   banner rather than "more of the same list," out of step with how muted
-   and quiet everything else on Today is. Restyled to match the plain
-   hairline-divided rows above it (.today-page__important-dates-row):
-   same baseline flex layout and border-bottom, just muted since these are
-   voter-roll matches rather than saved contacts, with a small pill for
-   the count instead of a full-width colored box. */
-.today-page__important-dates-voters-toggle {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  background: none;
+/* Previously a collapse/expand toggle — Mike wanted it gone entirely: no
+   fold to click through, just a divider marking the split and the full
+   voter-roll list underneath it, plain and always visible. Noticeably
+   heavier than the hairline row dividers above it (2px, darker/more
+   opaque than --color-border) so it actually reads as "new group starts
+   here" rather than blending in as just another row separator. */
+.today-page__important-dates-divider {
   border: none;
-  border-bottom: 1px solid var(--color-border);
-  border-radius: 0;
-  padding: 5px 0;
+  border-top: 2px solid var(--color-placeholder);
+  margin: 10px 0 6px;
+}
+
+/* Voter-roll rows render a size down and muted throughout (name, icon, and
+   the birthday/anniversary marker all recede together) so a 32-name day
+   still reads as "the personal list above is the important part" instead
+   of visually competing with it — see the JSX comment for why there's no
+   toggle here any more. */
+.today-page__important-dates-row--voter {
+  font-size: 12px;
+  padding: 4px 0;
+}
+
+.today-page__important-dates-row--voter .today-page__important-dates-name {
   color: var(--color-muted);
-  font-size: 12.5px;
-  cursor: pointer;
-  text-align: left;
 }
 
-.today-page__important-dates-voters-toggle:hover {
+.today-page__important-dates-row--voter .today-page__important-dates-kind {
+  font-size: 11px;
+}
+
+a.today-page__important-dates-row--voter:hover .today-page__important-dates-name {
   color: var(--color-ink);
-}
-
-.today-page__important-dates-voters-toggle[aria-expanded='true'] {
-  border-bottom-color: transparent;
-}
-
-/* A small rotating caret rather than a round button — the row itself
-   (hover color change, cursor: pointer) already carries the "this is
-   clickable" signal, so the chevron just needs to read as a direction,
-   the same weight as the plain "›" nav glyphs used elsewhere. */
-.today-page__important-dates-voters-toggle__chevron {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 10px;
-  flex-shrink: 0;
-  transition: transform 0.15s ease;
-}
-
-.today-page__important-dates-voters-toggle[aria-expanded='true'] .today-page__important-dates-voters-toggle__chevron {
-  transform: rotate(90deg);
-}
-
-/* Expanded rows sit at the same indentation/weight as the toggle text
-   above them (not boxed off in their own panel) — the same
-   .today-page__important-dates-list/-row styling already used for the
-   personal contacts group, just nested one level under the toggle. */
-.today-page__important-dates-voters .today-page__important-dates-list {
-  margin-top: 0;
-  padding-left: 4px;
 }
 
 /* A task shown away from its own project (Today) gets a small tag pointing
