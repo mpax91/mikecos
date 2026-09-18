@@ -4442,7 +4442,15 @@ const TOP_NEWS_TTL_MS = 60 * 60 * 1000; // 60 min — doesn't need to be as fres
 const TOP_NEWS_SOURCE_URL = 'https://feeds.npr.org/1001/rss.xml';
 const TOP_NEWS_SOURCE_NAME = 'NPR';
 const TOP_NEWS_STORY_COUNT = 10;
-const TOP_NEWS_CACHE_ROW_ID = 'singleton';
+// Bumped from 'singleton' to force one immediate cache miss on deploy —
+// there's no way to reach production D1 directly from this environment to
+// clear the old row by hand, and the previous row was still holding
+// full-resolution image URLs from before the weserv thumbnail-proxy fix
+// (confirmed live: a 5154x3436 original still being served, well within
+// its 60-minute TTL). Changing the key is the only available way to
+// invalidate it on this deploy; it's fine to leave at 'singleton' again
+// after this ships.
+const TOP_NEWS_CACHE_ROW_ID = 'singleton-v2';
 
 interface TopNewsItem {
   headline: string;
