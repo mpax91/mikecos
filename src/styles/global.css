@@ -3125,6 +3125,25 @@ a {
   border-radius: 8px;
   background: var(--color-card-bg);
   color: var(--color-ink);
+  text-align: center;
+}
+
+/* Reserved-width fade for the "Today" jump control — always in the DOM so
+   the Day/Week/Month + arrows/date group to its left never reflows when it
+   appears; it just fades/widens in place. Sits after the next-day arrow,
+   outside the date-nav trio, as a separate escape-hatch action rather than
+   wedged in the middle of it. */
+.today-page__today-slot {
+  display: inline-flex;
+  width: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: width 180ms ease, opacity 180ms ease;
+}
+
+.today-page__today-slot.is-visible {
+  width: 58px;
+  opacity: 1;
 }
 
 .today-page__heading {
