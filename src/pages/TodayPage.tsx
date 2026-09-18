@@ -436,7 +436,9 @@ export function TodayPage() {
           <div className="today-page__section">
             <div className="today-page__section-title">{isToday ? "Today's Meetings" : 'Meetings'}</div>
             {meetings.length === 0 ? (
-              <div className="empty-state">No meetings {isToday ? 'today' : 'that day'}.</div>
+              <div className="today-page__meetings card">
+                <div className="empty-state">No meetings {isToday ? 'today' : 'that day'}.</div>
+              </div>
             ) : (
               <div className="today-page__meetings card">
                 {meetings.map((m) => (
