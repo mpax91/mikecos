@@ -149,13 +149,13 @@ export function NewsPage() {
           News
         </h1>
         <div className="news-page__view-switch">
-          <button className={`btn btn--sm${view === 'list' ? ' is-active' : ''}`} onClick={() => setView('list')}>
+          <button className={`btn btn--ghost btn--sm${view === 'list' ? ' is-active' : ''}`} onClick={() => setView('list')}>
             Feed
           </button>
-          <button className={`btn btn--sm${view === 'story' ? ' is-active' : ''}`} onClick={() => setView('story')}>
+          <button className={`btn btn--ghost btn--sm${view === 'story' ? ' is-active' : ''}`} onClick={() => setView('story')}>
             Story
           </button>
-          <button className={`btn btn--sm${view === 'saved' ? ' is-active' : ''}`} onClick={() => setView('saved')}>
+          <button className={`btn btn--ghost btn--sm${view === 'saved' ? ' is-active' : ''}`} onClick={() => setView('saved')}>
             Saved{saved.length > 0 ? ` (${saved.length})` : ''}
           </button>
         </div>

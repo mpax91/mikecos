@@ -302,6 +302,14 @@ a {
 .main__content {
   flex: 1;
   overflow-y: auto;
+  /* Safety net: a single un-wrapped row anywhere on a page (a toolbar's
+     worth of buttons, say) can otherwise push this container wider than
+     the viewport, and since only overflow-y was ever constrained the
+     whole page would sidescroll — clipping content at the right edge
+     instead of wrapping it, exactly what the Today page's nav row did on
+     phone widths. This doesn't fix a badly-wrapping row's layout, just
+     stops it from dragging the rest of the page sideways with it. */
+  overflow-x: hidden;
   padding: 32px 40px;
 }
 
@@ -3081,6 +3089,9 @@ a {
 .today-page__nav {
   display: flex;
   align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  row-gap: 6px;
   gap: 6px;
 }
 
@@ -3169,6 +3180,32 @@ a {
   align-items: flex-end;
   gap: 4px;
   text-align: right;
+}
+
+/* Placed after the base rule above (not inside that earlier max-width:
+   860px block) so it actually wins the cascade at this width — two rules
+   of equal specificity resolve by source order regardless of which is
+   inside @media, so a same-specificity override declared earlier in the
+   file, even conditionally, loses to a later unconditional rule. Once the
+   toolbar stacks to one centered column at this width (see
+   .today-page__toolbar's own max-width: 860px rule), the flex-end/right
+   alignment above fights that centering instead of following it.
+   The selector also has to repeat the more specific
+   ".today-page__toolbar > .today-page__header-extra" form, not just
+   ".today-page__header-extra" — the desktop-only "justify-self: end" a
+   few rules up is written with that same child-combinator selector, which
+   outranks the toolbar's own ".today-page__toolbar > *" catch-all
+   (higher specificity beats source order), so only an equally specific
+   selector here can override it. */
+@media (max-width: 860px) {
+  .today-page__header-extra {
+    align-items: center;
+    text-align: center;
+  }
+
+  .today-page__toolbar > .today-page__header-extra {
+    justify-self: center;
+  }
 }
 
 .today-page__holiday-badge {
