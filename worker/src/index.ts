@@ -4418,21 +4418,22 @@ app.delete('/api/news/saved/:id', async (c) => {
 //
 // Deliberately separate from the News feature above: this isn't something
 // Mike subscribes to or manages (no entry in news_feeds, doesn't show in
-// the Feeds modal) — just a small server-cached top-5 the Today page pulls
-// on its own. Sourced from the New York Times' "Top Stories" RSS feed
-// rather than an aggregator like Google News: aggregator feeds' <item>
-// entries are typically just a title + a link/source stub with no real
-// image or summary, which would leave every story's thumbnail/preview
-// blank — the opposite of what was asked for. A single major outlet's own
-// front-page RSS reliably carries a real image and dek per story, and its
-// "top of the homepage" picks are a reasonable proxy for "what's the big
-// story right now" without needing an API key (matching how Weather below
-// already prefers a free, keyless source over one needing a signup).
-// Reuses the exact same parseFeed() as the News feature — nothing about
-// this feed needed new parsing logic.
+// the Feeds modal) — just a small server-cached top-10 the Today page pulls
+// on its own. Sourced from NPR's "Top Stories" RSS feed — not an aggregator
+// like Google News (whose <item> entries are typically just a title + a
+// link/source stub with no real image or summary, leaving every
+// thumbnail/preview blank) and not AP or Reuters (both killed their public
+// RSS feeds years ago; nothing official is left to point at). NPR was
+// picked over BBC/NYT specifically for source diversity from Mike's own
+// RSS subscriptions and bias: free with no paywall (BBC added a US paywall
+// in 2025), "U.S. and world" in scope rather than UK-centric, and rated
+// "center" by AllSides — as close to AP's old reputation as a real, still-
+// working, keyless RSS feed gets. Reuses the exact same parseFeed() as the
+// News feature — nothing about this feed needed new parsing logic.
 const TOP_NEWS_TTL_MS = 60 * 60 * 1000; // 60 min — doesn't need to be as fresh as a personal RSS reader, and this avoids an outbound fetch on every single Today page load
-const TOP_NEWS_SOURCE_URL = 'https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml';
-const TOP_NEWS_SOURCE_NAME = 'The New York Times';
+const TOP_NEWS_SOURCE_URL = 'https://feeds.npr.org/1002/rss.xml';
+const TOP_NEWS_SOURCE_NAME = 'NPR';
+const TOP_NEWS_STORY_COUNT = 10;
 const TOP_NEWS_CACHE_ROW_ID = 'singleton';
 
 interface TopNewsItem {
@@ -4458,7 +4459,7 @@ async function computeTopNews(db: D1Database): Promise<TopNewsItem[]> {
     const res = await fetch(TOP_NEWS_SOURCE_URL, { headers: { 'User-Agent': 'MikeOS/1.0' } });
     if (!res.ok) throw new Error(`fetch failed: ${res.status}`);
     const parsed = await parseFeed(await res.text());
-    items = parsed.items.slice(0, 5).map((item) => ({
+    items = parsed.items.slice(0, TOP_NEWS_STORY_COUNT).map((item) => ({
       headline: item.title,
       url: item.url,
       source: TOP_NEWS_SOURCE_NAME,

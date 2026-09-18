@@ -3561,7 +3561,7 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 
 /* Top Stories rows — Option 1 from the mockup Mike picked: compact, small
    thumbnail, one truncated line of preview, quiet caps source label. Kept
-   tight (10px row gap, 44px thumb) so all 5 stories fit without pushing
+   tight (10px row gap, 44px thumb) so all 10 stories fit without pushing
    the card's height around too much. */
 .today-page__news-list {
   display: flex;
