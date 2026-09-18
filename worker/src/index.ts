@@ -4452,6 +4452,23 @@ interface TopNewsItem {
   imageUrl: string | null;
 }
 
+// NPR's feed images are full article-hero resolution — easily a few
+// hundred KB each — even though this list only ever displays them at
+// 44px. Adding width/height/loading="lazy" to the <img> (an earlier fix)
+// stopped layout shift and deferred off-screen fetches, but every image
+// that scrolls into view still has to download and decode its full-size
+// original, and doing that for one thumbnail after another during a
+// scroll pass is exactly what shows up as "laggy scrolling." Routing
+// through images.weserv.nl (a free, keyless resizing proxy) at cache-
+// write time means the URL we ever hand the browser is already an 88x88
+// (2x for retina) webp — a few KB instead of a few hundred — so this is
+// baked into the cached payload once per refresh, not recomputed per
+// request.
+function toThumbnailUrl(sourceUrl: string): string {
+  const withoutScheme = sourceUrl.replace(/^https?:\/\//, '');
+  return `https://images.weserv.nl/?url=${encodeURIComponent(withoutScheme)}&w=88&h=88&fit=cover&q=75&output=webp`;
+}
+
 async function computeTopNews(db: D1Database): Promise<TopNewsItem[]> {
   const cached = await db
     .prepare('SELECT payload, fetched_at FROM top_news_cache WHERE id = ?')
@@ -4472,7 +4489,7 @@ async function computeTopNews(db: D1Database): Promise<TopNewsItem[]> {
       url: item.url,
       source: TOP_NEWS_SOURCE_NAME,
       preview: item.description,
-      imageUrl: item.imageUrl,
+      imageUrl: item.imageUrl ? toThumbnailUrl(item.imageUrl) : null,
     }));
   } catch {
     // A fetch/parse failure falls back to whatever's still in the cache
