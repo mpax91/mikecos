@@ -3322,46 +3322,6 @@ a {
   color: var(--color-accent);
 }
 
-/* The Day view's "Worth revisiting" tickler — moved here from the Week
-   view (where it used to repeat identically on every column) so it shows
-   just once, for whichever day is actually being looked at. */
-.today-page__tickler {
-  padding: 4px 12px;
-}
-
-.today-page__tickler-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 9px 4px;
-  cursor: pointer;
-  border-bottom: 1px solid var(--color-border);
-}
-
-.today-page__tickler-row:last-child {
-  border-bottom: none;
-}
-
-.today-page__tickler-row:hover {
-  background: rgba(47, 74, 60, 0.06);
-}
-
-.today-page__tickler-title {
-  font-size: 13.5px;
-  color: var(--color-ink);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.today-page__tickler-badge {
-  font-size: 11px;
-  color: var(--color-muted);
-  flex-shrink: 0;
-  white-space: nowrap;
-}
-
 /* Today's Meetings — real Google Calendar events (GET /api/meetings), a
    plain list of time + title rather than the fuller card TaskRow uses for
    MikeOS tasks, since there's no checkbox/pin/project to show for

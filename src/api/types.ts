@@ -96,9 +96,12 @@ export interface TodayResponse {
   date: string;
   overdue: TodayTask[];
   today: TodayTask[];
-  /** The stale-item Tickler ("Worth revisiting") — used to be repeated
-   * across every Week column, now shows just once here on the Day view. */
-  tickler: TicklerItem[];
+  /** The "Worth Revisiting" daily spotlight — one open, unscheduled task
+   * (no due date at all, same backlog as Week view's Unscheduled shelf),
+   * deterministically rotating one-per-calendar-day rather than always the
+   * same item, as a nudge to do it or actually give it a due date. Null
+   * when there's no unscheduled backlog to draw from. */
+  spotlight: TodayTask | null;
   /** Contacts whose birthday/anniversary falls on this exact date
    * (month+day match; year is optional and irrelevant to the match). */
   birthdays: ImportantDateContact[];
@@ -125,15 +128,6 @@ export interface ImportantDateContact {
   source: string;
 }
 
-/** One stale item surfaced by the Tickler — the entity itself plus which
- * bucket it was picked from (jot / note), used to pick the right icon and
- * "why this is here" phrasing. Undated tasks used to have their own
- * staleness bucket here too, but now that the Week view's Unscheduled shelf
- * shows every undated task (not just the single oldest), that entry would
- * just be a duplicate of the shelf's own top row — dropped in favor of it. */
-export interface TicklerItem extends Entity {
-  staleness: 'jot' | 'note';
-}
 
 export interface WeekDay {
   date: string;

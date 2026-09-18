@@ -2817,21 +2817,35 @@ app.get('/api/recurring/preview', async (c) => {
   }
 });
 
-// Shared by /api/today and /api/week: the single stalest un-revisited jot
-// and top-level note, each tagged with which bucket it came from. Not tied
-// to any particular date — it's a "worth revisiting" nudge about whatever
-// has gone longest untouched, so both endpoints compute it the same way.
-async function computeTickler(db: D1Database): Promise<(Entity & { staleness: string })[]> {
-  const [staleJot, staleNote] = await Promise.all([
-    db.prepare(`SELECT * FROM entities WHERE type = 'note' AND is_jot = 1 ORDER BY COALESCE(last_touched, updated_at) ASC LIMIT 1`).first<Entity>(),
-    db
-      .prepare(`SELECT * FROM entities WHERE type = 'note' AND is_jot = 0 AND parent_id IS NULL ORDER BY COALESCE(last_touched, updated_at) ASC LIMIT 1`)
-      .first<Entity>(),
-  ]);
-  return [
-    staleJot ? { ...staleJot, staleness: 'jot' } : null,
-    staleNote ? { ...staleNote, staleness: 'note' } : null,
-  ].filter((x): x is Entity & { staleness: string } => x !== null);
+// Number of whole days since the Unix epoch for a YYYY-MM-DD date — used
+// only as a stable, ever-incrementing rotation index (see computeSpotlight
+// below), not for any calendar-math correctness concern.
+function daysSinceEpoch(iso: string): number {
+  const [y, m, d] = iso.split('-').map(Number);
+  return Math.floor(Date.UTC(y, m - 1, d) / 86_400_000);
+}
+
+// Used by /api/today: the Day view's "Worth Revisiting" nudge. Originally
+// surfaced the stalest untouched note/jot, but Mike found that pointless —
+// the same single item (whichever was already oldest) just sat there
+// forever, since opening a note from here doesn't count as "touching" it.
+// Replaced with something actionable: one open, unscheduled task (no due
+// date at all — the same backlog Week view's "Unscheduled" shelf already
+// lists) per day, so seeing it in the daily planner is a nudge to either
+// do it or actually give it a due date. Deterministic on `date` (not
+// random) so it's stable across reloads/tab-switches within the same day,
+// and rotates through the whole backlog in the shelf's own oldest-first
+// order — one different task highlighted each calendar day — rather than
+// picking the same one repeatedly. Browsing to a different day via the
+// prev/next arrows shows what that day's pick would be, same as Overdue
+// already varies with the viewed date.
+async function computeSpotlight(db: D1Database, date: string): Promise<Entity | null> {
+  const { results } = await db
+    .prepare(`SELECT * FROM entities WHERE type = 'task' AND status = 'open' AND due_date IS NULL ORDER BY COALESCE(last_touched, updated_at) ASC`)
+    .all<Entity>();
+  if (!results || results.length === 0) return null;
+  const index = ((daysSinceEpoch(date) % results.length) + results.length) % results.length;
+  return results[index];
 }
 
 // GET /api/today?date=YYYY-MM-DD&today=YYYY-MM-DD — every open task due on
@@ -2849,9 +2863,8 @@ async function computeTickler(db: D1Database): Promise<(Entity & { staleness: st
 // against real-today instead (nothing is overdue before it actually
 // happens, no matter how far forward you're peeking). `today` is optional
 // and falls back to `date` when omitted, matching the old behavior for any
-// caller that doesn't pass it. Also carries the stale-item Tickler ("Worth
-// revisiting") — this used to live on the Week view but now shows only
-// here, one place instead of repeated across every column.
+// caller that doesn't pass it. Also carries the "Worth Revisiting" daily
+// spotlight — see computeSpotlight.
 app.get('/api/today', async (c) => {
   const date = c.req.query('date');
   if (!date) return c.json({ error: 'date query param is required (YYYY-MM-DD)' }, 400);
@@ -2888,7 +2901,8 @@ app.get('/api/today', async (c) => {
   const today = tagRecurring(withProject.filter((t) => t.due_date === date), recurringIds).sort(
     (a, b) => Number(b.is_recurring) - Number(a.is_recurring)
   );
-  const tickler = await computeTickler(c.env.DB);
+  const spotlightRaw = await computeSpotlight(c.env.DB, date);
+  const spotlight = spotlightRaw ? { ...spotlightRaw, project: await resolveProject(spotlightRaw.parent_id) } : null;
 
   // Birthdays & Anniversaries for the viewed day — month/day match only
   // (year is optional/nullable and irrelevant to "does this fall on this
@@ -2938,7 +2952,7 @@ app.get('/api/today', async (c) => {
     date,
     overdue,
     today,
-    tickler,
+    spotlight,
     birthdays: birthdayContacts ?? [],
     anniversaries: anniversaryContacts ?? [],
     completed,
@@ -2955,9 +2969,8 @@ app.get('/api/today', async (c) => {
 // week at all; looking at a past or future week shows none, same as a
 // paper planner's other weeks never show today's leftovers). `unscheduled`,
 // by contrast, isn't day-relative, so it's always returned regardless of
-// which week is being viewed. The stale-item Tickler ("Worth revisiting")
-// used to live here too but now shows only on the Day view — see
-// computeTickler and /api/today.
+// which week is being viewed. The "Worth Revisiting" daily spotlight shows
+// only on the Day view — see computeSpotlight and /api/today.
 app.get('/api/week', async (c) => {
   const start = c.req.query('start');
   const today = c.req.query('today');
