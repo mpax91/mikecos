@@ -629,7 +629,27 @@ export function TodayPage() {
                           className="today-page__news-row"
                         >
                           {item.imageUrl ? (
-                            <img src={item.imageUrl} alt="" className="today-page__news-thumb" />
+                            // NPR's images come back at full article-hero
+                            // resolution (nothing this small was ever
+                            // requested), so the browser has real decode
+                            // work to do for 10 of them even though they
+                            // only render at 44px — explicit dimensions
+                            // avoid a layout shift while they load,
+                            // loading="lazy" skips fetching the ones below
+                            // the fold until scrolled into view, and
+                            // decoding="async" + a low fetch priority keep
+                            // that decode work off the critical path for
+                            // everything else on the page.
+                            <img
+                              src={item.imageUrl}
+                              alt=""
+                              className="today-page__news-thumb"
+                              width={44}
+                              height={44}
+                              loading="lazy"
+                              decoding="async"
+                              fetchPriority="low"
+                            />
                           ) : (
                             <span className="today-page__news-thumb today-page__news-thumb--placeholder" aria-hidden="true">
                               📰

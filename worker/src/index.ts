@@ -4430,8 +4430,16 @@ app.delete('/api/news/saved/:id', async (c) => {
 // "center" by AllSides — as close to AP's old reputation as a real, still-
 // working, keyless RSS feed gets. Reuses the exact same parseFeed() as the
 // News feature — nothing about this feed needed new parsing logic.
+//
+// Specifically feed id 1001 ("NPR Topics: News" — "breaking stories,
+// national and world news, politics, business, science, technology"), not
+// 1002 ("Top Stories") which turned out to also fold in "music, arts and
+// culture" — that's what put a Ms. Rachel album piece at #2 the first time
+// this shipped. 1001's own sample pull is overwhelmingly hard/breaking
+// news, a much closer match to "the water-cooler stories" than a general
+// homepage-style mix.
 const TOP_NEWS_TTL_MS = 60 * 60 * 1000; // 60 min — doesn't need to be as fresh as a personal RSS reader, and this avoids an outbound fetch on every single Today page load
-const TOP_NEWS_SOURCE_URL = 'https://feeds.npr.org/1002/rss.xml';
+const TOP_NEWS_SOURCE_URL = 'https://feeds.npr.org/1001/rss.xml';
 const TOP_NEWS_SOURCE_NAME = 'NPR';
 const TOP_NEWS_STORY_COUNT = 10;
 const TOP_NEWS_CACHE_ROW_ID = 'singleton';
