@@ -4414,6 +4414,77 @@ app.delete('/api/news/saved/:id', async (c) => {
   return c.json({ ok: true });
 });
 
+// ---- Top Stories (Today page's "biggest headlines right now" block) ----
+//
+// Deliberately separate from the News feature above: this isn't something
+// Mike subscribes to or manages (no entry in news_feeds, doesn't show in
+// the Feeds modal) — just a small server-cached top-5 the Today page pulls
+// on its own. Sourced from the New York Times' "Top Stories" RSS feed
+// rather than an aggregator like Google News: aggregator feeds' <item>
+// entries are typically just a title + a link/source stub with no real
+// image or summary, which would leave every story's thumbnail/preview
+// blank — the opposite of what was asked for. A single major outlet's own
+// front-page RSS reliably carries a real image and dek per story, and its
+// "top of the homepage" picks are a reasonable proxy for "what's the big
+// story right now" without needing an API key (matching how Weather below
+// already prefers a free, keyless source over one needing a signup).
+// Reuses the exact same parseFeed() as the News feature — nothing about
+// this feed needed new parsing logic.
+const TOP_NEWS_TTL_MS = 60 * 60 * 1000; // 60 min — doesn't need to be as fresh as a personal RSS reader, and this avoids an outbound fetch on every single Today page load
+const TOP_NEWS_SOURCE_URL = 'https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml';
+const TOP_NEWS_SOURCE_NAME = 'The New York Times';
+const TOP_NEWS_CACHE_ROW_ID = 'singleton';
+
+interface TopNewsItem {
+  headline: string;
+  url: string;
+  source: string;
+  preview: string | null;
+  imageUrl: string | null;
+}
+
+async function computeTopNews(db: D1Database): Promise<TopNewsItem[]> {
+  const cached = await db
+    .prepare('SELECT payload, fetched_at FROM top_news_cache WHERE id = ?')
+    .bind(TOP_NEWS_CACHE_ROW_ID)
+    .first<{ payload: string; fetched_at: string }>();
+
+  if (cached && Date.now() - new Date(cached.fetched_at).getTime() < TOP_NEWS_TTL_MS) {
+    return JSON.parse(cached.payload) as TopNewsItem[];
+  }
+
+  let items: TopNewsItem[];
+  try {
+    const res = await fetch(TOP_NEWS_SOURCE_URL, { headers: { 'User-Agent': 'MikeOS/1.0' } });
+    if (!res.ok) throw new Error(`fetch failed: ${res.status}`);
+    const parsed = await parseFeed(await res.text());
+    items = parsed.items.slice(0, 5).map((item) => ({
+      headline: item.title,
+      url: item.url,
+      source: TOP_NEWS_SOURCE_NAME,
+      preview: item.description,
+      imageUrl: item.imageUrl,
+    }));
+  } catch {
+    // A fetch/parse failure falls back to whatever's still in the cache
+    // (even if stale) rather than showing nothing, same "degrade gracefully"
+    // instinct as Weather's own try/catch. Only truly empty (never fetched
+    // successfully even once) returns [].
+    return cached ? (JSON.parse(cached.payload) as TopNewsItem[]) : [];
+  }
+
+  await db
+    .prepare('INSERT INTO top_news_cache (id, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT (id) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at')
+    .bind(TOP_NEWS_CACHE_ROW_ID, JSON.stringify(items), now())
+    .run();
+
+  return items;
+}
+
+app.get('/api/top-news', async (c) => {
+  return c.json({ items: await computeTopNews(c.env.DB) });
+});
+
 app.get('/api/health', (c) => c.json({ ok: true, time: now() }));
 
 export default app;

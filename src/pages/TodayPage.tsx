@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
-import type { Entity, MeetingItem, StatsResponse, TodayResponse, TodayTask, WeatherDay } from '../api/types';
+import type { Entity, MeetingItem, StatsResponse, TodayResponse, TodayTask, TopNewsItem, WeatherDay } from '../api/types';
 import { TaskRow } from '../components/TaskRow';
 import { TaskDetailModal } from '../components/TaskDetailModal';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -97,6 +97,7 @@ export function TodayPage() {
   const [taskStack, setTaskStack] = useState<string[]>([]);
   const [deleting, setDeleting] = useState<Entity | null>(null);
   const [weather, setWeather] = useState<WeatherDay | undefined>(undefined);
+  const [topNews, setTopNews] = useState<TopNewsItem[]>([]);
   const [extraRows, setExtraRows] = useState(0);
   const [meetings, setMeetings] = useState<MeetingItem[]>([]);
   const [stats, setStats] = useState<StatsResponse | null>(null);
@@ -141,6 +142,24 @@ export function TodayPage() {
       .then((res) => setWeather(res.days.find((d) => d.date === date)))
       .catch(() => setWeather(undefined));
   }, [date]);
+
+  // Top Stories — real-time ("the biggest headlines right now"), not tied
+  // to whichever date is being viewed, so it only fetches/shows on the
+  // actual current day; browsing to a different day via the prev/next
+  // arrows or date picker would otherwise attach today's news to a date it
+  // has nothing to do with. Server-cached on its own TTL (see
+  // computeTopNews), so this is a cheap call even though it fires on every
+  // mount.
+  useEffect(() => {
+    if (!isToday) {
+      setTopNews([]);
+      return;
+    }
+    api
+      .getTopNews()
+      .then((res) => setTopNews(res.items))
+      .catch(() => setTopNews([]));
+  }, [isToday]);
 
   // Real Google Calendar events, separate from the task data above — a
   // failed/unconfigured fetch just means an empty section rather than
@@ -511,12 +530,33 @@ export function TodayPage() {
           <div className="today-page__section">
             <div className="today-page__section-title">Important Dates</div>
             <div className="today-page__important-dates card">
-              <div className="today-page__important-dates-group">
+              <div className="today-page__important-dates-left">
+                <div className="today-page__important-dates-holidays">
+                  <div className="today-page__important-dates-group-title">Holidays</div>
+                  {/* Scoped to just this one viewed day, same as the header
+                      badge (both read off the same getHolidays(date) list) —
+                      a look-ahead list here would duplicate what the Week
+                      view's per-column holiday line already shows. Moved
+                      above Birthdays & Anniversaries (used to be its own
+                      column on the right) — usually just one line, so
+                      giving it a whole column read as mostly empty space. */}
+                  {holidays.length === 0 ? (
+                    <div className="today-page__important-dates-empty">Nothing today.</div>
+                  ) : (
+                    <div className="today-page__important-dates-list">
+                      {holidays.map((name) => (
+                        <div key={name} className="today-page__important-dates-row">
+                          <span className="today-page__important-dates-name">{name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 <div className="today-page__important-dates-group-title">Birthdays &amp; Anniversaries</div>
-                {/* Same-day-only match, like the Holidays group below (both
-                    read off the exact viewed date, not a look-ahead
-                    window) — see /api/today's birthdays/anniversaries,
-                    matched by contacts.birthday_month/day (year optional). */}
+                {/* Same-day-only match as Holidays above (both read off the
+                    exact viewed date, not a look-ahead window) — see
+                    /api/today's birthdays/anniversaries, matched by
+                    contacts.birthday_month/day (year optional). */}
                 {personalDateContacts.length === 0 ? (
                   <div className="today-page__important-dates-empty">
                     {voterDateContacts.length === 0 ? 'Nothing today.' : 'No personal contacts today.'}
@@ -569,24 +609,43 @@ export function TodayPage() {
                   </div>
                 )}
               </div>
-              <div className="today-page__important-dates-group">
-                <div className="today-page__important-dates-group-title">Holidays</div>
-                {/* Scoped to just this one viewed day, same as the header
-                    badge (both read off the same getHolidays(date) list) —
-                    a look-ahead list here would duplicate what the Week
-                    view's per-column holiday line already shows. */}
-                {holidays.length === 0 ? (
-                  <div className="today-page__important-dates-empty">Nothing today.</div>
-                ) : (
-                  <div className="today-page__important-dates-list">
-                    {holidays.map((name) => (
-                      <div key={name} className="today-page__important-dates-row">
-                        <span className="today-page__important-dates-name">{name}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+              {/* Real-time, not date-scoped — only shown on the actual
+                  current day (see the topNews fetch effect above). The
+                  whole right side of the card, replacing what used to be
+                  the Holidays column. */}
+              {isToday && (
+                <div className="today-page__important-dates-news">
+                  <div className="today-page__important-dates-group-title">Top Stories</div>
+                  {topNews.length === 0 ? (
+                    <div className="today-page__important-dates-empty">Nothing cached yet — check back soon.</div>
+                  ) : (
+                    <div className="today-page__news-list">
+                      {topNews.map((item) => (
+                        <a
+                          key={item.url}
+                          href={item.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="today-page__news-row"
+                        >
+                          {item.imageUrl ? (
+                            <img src={item.imageUrl} alt="" className="today-page__news-thumb" />
+                          ) : (
+                            <span className="today-page__news-thumb today-page__news-thumb--placeholder" aria-hidden="true">
+                              📰
+                            </span>
+                          )}
+                          <span className="today-page__news-text">
+                            <span className="today-page__news-headline">{item.headline}</span>
+                            {item.preview && <span className="today-page__news-preview">{item.preview}</span>}
+                            <span className="today-page__news-source">{item.source}</span>
+                          </span>
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>

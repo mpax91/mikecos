@@ -3444,9 +3444,29 @@ a {
   }
 }
 
-.today-page__important-dates-group {
+/* Left column: Holidays (usually one line) stacked above Birthdays &
+   Anniversaries — narrower than the news column since it's rarely more
+   than a few short rows. Right column (.today-page__important-dates-news)
+   gets the rest of the width for thumbnail + headline + preview + source
+   rows, and only renders on the actual current day. */
+.today-page__important-dates-left {
+  flex: 0 0 34%;
+  min-width: 0;
+}
+
+.today-page__important-dates-news {
   flex: 1;
   min-width: 0;
+}
+
+.today-page__important-dates-holidays {
+  margin-bottom: 16px;
+}
+
+@media (max-width: 720px) {
+  .today-page__important-dates-left {
+    flex: 1;
+  }
 }
 
 .today-page__important-dates-group-title {
@@ -3537,6 +3557,80 @@ a.today-page__important-dates-row:hover .today-page__important-dates-name {
 
 a.today-page__important-dates-row--voter:hover .today-page__important-dates-name {
   color: var(--color-ink);
+}
+
+/* Top Stories rows — Option 1 from the mockup Mike picked: compact, small
+   thumbnail, one truncated line of preview, quiet caps source label. Kept
+   tight (10px row gap, 44px thumb) so all 5 stories fit without pushing
+   the card's height around too much. */
+.today-page__news-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.today-page__news-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  text-decoration: none;
+  color: inherit;
+}
+
+.today-page__news-thumb {
+  width: 44px;
+  height: 44px;
+  border-radius: 6px;
+  flex-shrink: 0;
+  object-fit: cover;
+  background: var(--color-sidebar);
+}
+
+/* Falls back to a plain placeholder tile (no broken-image icon) when a
+   story's source feed didn't have an image for it — see TopNewsItem in
+   src/api/types.ts. */
+.today-page__news-thumb--placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  color: var(--color-placeholder);
+  background: linear-gradient(135deg, var(--color-border), var(--color-sidebar));
+}
+
+.today-page__news-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.today-page__news-headline {
+  font-size: 13px;
+  font-weight: var(--weight-medium);
+  color: var(--color-ink);
+  line-height: 1.3;
+}
+
+.today-page__news-row:hover .today-page__news-headline {
+  text-decoration: underline;
+}
+
+.today-page__news-preview {
+  font-size: 11.5px;
+  color: var(--color-muted);
+  line-height: 1.4;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.today-page__news-source {
+  font-size: 10.5px;
+  color: var(--color-placeholder);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-top: 3px;
 }
 
 /* A task shown away from its own project (Today) gets a small tag pointing

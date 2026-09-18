@@ -114,6 +114,23 @@ export interface TodayResponse {
   completed: CompletionItem[];
 }
 
+/** One headline in the Today page's "Top Stories" block (GET /api/top-news)
+ * — server-cached on a TTL, refreshed independently of whichever date is
+ * being viewed. `preview`/`imageUrl` can be null if the source didn't have
+ * one for that story; the row falls back to a plain placeholder tile and
+ * skips the preview line rather than leaving a broken image. */
+export interface TopNewsItem {
+  headline: string;
+  url: string;
+  source: string;
+  preview: string | null;
+  imageUrl: string | null;
+}
+
+export interface TopNewsResponse {
+  items: TopNewsItem[];
+}
+
 /** A contact surfaced in the Today page's Important Dates panel — just
  * enough to render and link to the full contact, not the whole Contact
  * record. */
