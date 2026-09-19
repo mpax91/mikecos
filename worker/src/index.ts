@@ -4754,4 +4754,19 @@ app.get('/api/top-news', async (c) => {
 
 app.get('/api/health', (c) => c.json({ ok: true, time: now() }));
 
+// TEMPORARY, read-only — checking whether V1 MikeOS's rss_feeds table (a
+// completely different table from this app's own news_feeds, see
+// migrations/0026_news.sql) still has rows sitting in this same shared D1
+// database, so Mike's old RSS subscriptions can be recovered rather than
+// re-entered by hand. Safe: SELECT-only, no writes, nothing else touches
+// this table. To be deleted right after use.
+app.get('/api/debug/v1-rss-feeds', async (c) => {
+  try {
+    const { results } = await c.env.DB.prepare('SELECT * FROM rss_feeds ORDER BY folder, name').all();
+    return c.json({ found: true, count: results?.length ?? 0, feeds: results ?? [] });
+  } catch (e) {
+    return c.json({ found: false, error: e instanceof Error ? e.message : String(e) });
+  }
+});
+
 export default app;
