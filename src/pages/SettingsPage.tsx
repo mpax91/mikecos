@@ -4,6 +4,7 @@ import { RecurringTasksPanel } from './settings/RecurringTasksPanel';
 import { CalendarsPanel } from './settings/CalendarsPanel';
 import { ContactImportPanel } from './settings/ContactImportPanel';
 import { UploadPanel } from './settings/UploadPanel';
+import { QuickLinksPanel } from './settings/QuickLinksPanel';
 
 interface Category {
   id: string;
@@ -24,6 +25,7 @@ const CATEGORIES: Category[] = [
   { id: 'upload', label: 'Upload', icon: '📤' },
   { id: 'recurring', label: 'Recurring Tasks', icon: '🔁' },
   { id: 'calendars', label: 'Calendar Integrations', icon: '📅' },
+  { id: 'links', label: 'Links', icon: '🔗' },
   { id: 'contact-import', label: 'Contact Import', icon: '👤' },
 ];
 
@@ -58,6 +60,7 @@ export function SettingsPage() {
           {active === 'upload' && <UploadPanel />}
           {active === 'recurring' && <RecurringTasksPanel />}
           {active === 'calendars' && <CalendarsPanel />}
+          {active === 'links' && <QuickLinksPanel />}
           {active === 'contact-import' && <ContactImportPanel />}
         </div>
       </div>

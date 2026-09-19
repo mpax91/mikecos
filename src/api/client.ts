@@ -1,4 +1,4 @@
-import type { CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactDetail, ContactNote, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitLog, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsSavedArticle, OrphanedImportsResponse, ProjectListItem, RecurringTaskDefinition, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, WeatherResponse, WeekResponse } from './types';
+import type { CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactDetail, ContactNote, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitLog, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsSavedArticle, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, WeatherResponse, WeekResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -454,6 +454,42 @@ export const api = {
     }),
 
   deleteCalendarFeed: (id: string) => request<{ ok: true }>(`/api/calendars/${id}`, { method: 'DELETE' }),
+
+  // ---- Quick Links (sidebar "Links" page + its Settings management panel) ----
+
+  listQuickLinks: () => request<QuickLinksResponse>('/api/quick-links'),
+
+  createQuickLink: (params: {
+    name: string;
+    url: string;
+    type: 'open' | 'copy';
+    icon?: string | null;
+    thumbnail_key?: string | null;
+    category?: string;
+  }) =>
+    request<QuickLink>('/api/quick-links', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    }),
+
+  updateQuickLink: (
+    id: string,
+    patch: Partial<{
+      name: string;
+      url: string;
+      type: 'open' | 'copy';
+      icon: string | null;
+      thumbnail_key: string | null;
+      category: string;
+      sort_order: number;
+    }>
+  ) =>
+    request<QuickLink>(`/api/quick-links/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }),
+
+  deleteQuickLink: (id: string) => request<{ ok: true }>(`/api/quick-links/${id}`, { method: 'DELETE' }),
 
   // ---- Canvas boards (infinite-canvas pinboard) ----
 

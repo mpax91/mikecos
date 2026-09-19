@@ -4714,6 +4714,330 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   color: var(--color-muted);
 }
 
+/* ---- Links page (sidebar "Links" tray) ---- */
+
+.links-page__subhead {
+  color: var(--color-muted);
+  font-size: 13px;
+  margin: 0 0 26px;
+}
+
+.link-section {
+  margin-bottom: 28px;
+}
+
+.link-section__title {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+  margin-bottom: 10px;
+}
+
+.link-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+@media (max-width: 640px) {
+  .link-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.link-tile {
+  background: var(--color-card-bg);
+  border: var(--border-hairline);
+  border-radius: var(--radius-card);
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 1px 2px rgba(46, 42, 34, 0.06);
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  font-family: inherit;
+  color: inherit;
+}
+
+.link-tile__icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 9px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  background: var(--color-sidebar);
+  overflow: hidden;
+}
+
+.link-tile__icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.link-tile__text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.link-tile__name {
+  font-size: 13.5px;
+  font-weight: var(--weight-medium, 600);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.link-tile__sub {
+  font-size: 11px;
+  color: var(--color-placeholder);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.link-tile--copy {
+  border-style: dashed;
+  border-color: var(--color-accent-secondary);
+  background: #fff9f0;
+}
+
+.link-tile--copy .link-tile__icon {
+  background: rgba(184, 99, 47, 0.14);
+}
+
+.link-tile--copy .link-tile__action {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: var(--weight-medium, 600);
+  color: var(--color-accent-secondary);
+  flex-shrink: 0;
+}
+
+.link-tile--copy.is-copied {
+  border-color: var(--color-accent);
+  background: #f2f7f4;
+}
+
+.link-tile--copy.is-copied .link-tile__action {
+  color: var(--color-accent);
+}
+
+.links-page__toast {
+  position: fixed;
+  bottom: 22px;
+  left: 50%;
+  transform: translateX(-50%) translateY(0);
+  background: var(--color-ink);
+  color: var(--color-accent-text);
+  font-size: 12.5px;
+  padding: 8px 16px;
+  border-radius: 20px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.links-page__toast.is-shown {
+  opacity: 1;
+  transform: translateX(-50%) translateY(-6px);
+}
+
+/* ---- Settings: Links panel (thumbnail upload + manage list) ---- */
+
+.thumb-field {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+
+.thumb-preview {
+  width: 64px;
+  height: 64px;
+  border-radius: 12px;
+  background: var(--color-sidebar);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  flex-shrink: 0;
+  border: var(--border-hairline);
+  overflow: hidden;
+}
+
+.thumb-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.thumb-controls {
+  flex: 1;
+}
+
+.thumb-controls__row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 6px;
+  align-items: center;
+}
+
+.thumb-upload-btn {
+  border: var(--border-hairline);
+  border-radius: 7px;
+  background: var(--color-paper);
+  padding: 7px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--color-ink);
+}
+
+.thumb-clear-btn {
+  border: none;
+  background: none;
+  font-size: 12px;
+  color: var(--color-muted);
+  cursor: pointer;
+  padding: 7px 4px;
+}
+
+.thumb-hint {
+  font-size: 11px;
+  color: var(--color-placeholder);
+}
+
+.type-toggle {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.type-toggle__opt {
+  flex: 1;
+  border: 1.5px solid var(--color-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12.5px;
+  text-align: center;
+  cursor: pointer;
+  color: var(--color-muted);
+}
+
+.type-toggle__opt.is-selected {
+  border-color: var(--color-accent);
+  background: #eaf1ec;
+  color: var(--color-accent);
+  font-weight: var(--weight-medium, 600);
+}
+
+.manage-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.manage-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--color-card-bg);
+  border: var(--border-hairline);
+  border-radius: var(--radius-card);
+  padding: 9px 12px;
+}
+
+.manage-row__move {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.manage-row__move button {
+  width: 20px;
+  height: 16px;
+  border: none;
+  background: transparent;
+  color: var(--color-placeholder);
+  font-size: 9px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0;
+}
+
+.manage-row__move button:hover:not(:disabled) {
+  color: var(--color-ink);
+}
+
+.manage-row__move button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.manage-row__icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  flex-shrink: 0;
+  overflow: hidden;
+  background: var(--color-sidebar);
+}
+
+.manage-row__icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.manage-row__body {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.manage-row__title {
+  font-size: 13px;
+  font-weight: var(--weight-medium, 500);
+}
+
+.manage-row__meta {
+  font-size: 11px;
+  color: var(--color-placeholder);
+  font-weight: 400;
+}
+
+.manage-row__actions {
+  display: flex;
+  gap: 2px;
+}
+
+.manage-row__actions button {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.manage-row__actions button:hover {
+  background: var(--color-sidebar);
+}
+
 /* ---- Stats page ---- */
 
 .stats-page {

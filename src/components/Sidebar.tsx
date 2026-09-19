@@ -21,6 +21,7 @@ const WORKSPACE_ITEMS: NavItemDef[] = [
   { path: '/contacts', label: 'Contacts', kind: 'contacts-list' },
   { path: '/journal', label: 'Journal', kind: 'journal' },
   { path: '/news', label: 'News', kind: 'news' },
+  { path: '/links', label: 'Links', kind: 'links' },
   { path: '/stats', label: 'Stats', kind: 'stats' },
   { path: '/dashboard', label: 'Dashboard', kind: 'dashboard' },
 ];

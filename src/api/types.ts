@@ -290,6 +290,29 @@ export interface CalendarFeedsResponse {
   calendars: CalendarFeedStatus[];
 }
 
+/** One tile on the sidebar "Links" page (see migrations/0028_quick_links.sql)
+ * — a self-service quick jump to something that otherwise gets buried
+ * inside its own app (a Claude Project, a ChatGPT GPT, the Cal.com booking
+ * link). `type: 'copy'` tiles copy `url` to the clipboard on click instead
+ * of opening it. `thumbnailUrl`, when present, is a manually-uploaded
+ * square image (via POST /api/upload) that takes priority over `icon`, a
+ * plain emoji fallback. `category` groups tiles on the Links page, in
+ * `sortOrder` order. */
+export interface QuickLink {
+  id: string;
+  name: string;
+  url: string;
+  type: 'open' | 'copy';
+  icon: string | null;
+  thumbnailUrl: string | null;
+  category: string;
+  sortOrder: number;
+}
+
+export interface QuickLinksResponse {
+  links: QuickLink[];
+}
+
 // ---- Canvas boards (infinite-canvas pinboard) ----
 
 // 'connector' is a freestanding line/arrow object placed via the toolbar

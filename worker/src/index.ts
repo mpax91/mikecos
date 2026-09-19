@@ -3490,6 +3490,109 @@ app.delete('/api/calendars/:id', async (c) => {
   return c.json({ ok: true });
 });
 
+// ---- Quick Links (sidebar "Links" tray, see migrations/0028_quick_links.sql) ----
+
+interface QuickLinkRow {
+  id: string;
+  name: string;
+  url: string;
+  type: 'open' | 'copy';
+  icon: string | null;
+  thumbnail_key: string | null;
+  category: string;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+function quickLinkJson(row: QuickLinkRow) {
+  return {
+    id: row.id,
+    name: row.name,
+    url: row.url,
+    type: row.type,
+    icon: row.icon,
+    thumbnailUrl: row.thumbnail_key ? `/api/files/${row.thumbnail_key}` : null,
+    category: row.category,
+    sortOrder: row.sort_order,
+  };
+}
+
+// GET /api/quick-links — ordered by sort_order, which also determines the
+// category grouping order on the Links page (each category's tiles are
+// wherever its members' sort_order values put them).
+app.get('/api/quick-links', async (c) => {
+  const { results } = await c.env.DB.prepare('SELECT * FROM quick_links ORDER BY sort_order ASC, created_at ASC').all<QuickLinkRow>();
+  return c.json({ links: (results ?? []).map(quickLinkJson) });
+});
+
+app.post('/api/quick-links', async (c) => {
+  const body = await c.req.json<{
+    name: string;
+    url: string;
+    type?: 'open' | 'copy';
+    icon?: string | null;
+    thumbnail_key?: string | null;
+    category?: string;
+  }>();
+  const name = body.name?.trim();
+  const url = body.url?.trim();
+  if (!name) return c.json({ error: 'name is required' }, 400);
+  if (!url) return c.json({ error: 'url is required' }, 400);
+  const type = body.type === 'copy' ? 'copy' : 'open';
+  const category = body.category?.trim() || 'Links';
+
+  const maxPos = await c.env.DB.prepare('SELECT COALESCE(MAX(sort_order), -1) as m FROM quick_links').first<{ m: number }>();
+  const id = uid();
+  const ts = now();
+  await c.env.DB.prepare(
+    `INSERT INTO quick_links (id, name, url, type, icon, thumbnail_key, category, sort_order, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  )
+    .bind(id, name, url, type, body.icon ?? null, body.thumbnail_key ?? null, category, (maxPos?.m ?? -1) + 1, ts, ts)
+    .run();
+
+  const row = await c.env.DB.prepare('SELECT * FROM quick_links WHERE id = ?').bind(id).first<QuickLinkRow>();
+  return c.json(quickLinkJson(row!), 201);
+});
+
+app.patch('/api/quick-links/:id', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json<
+    Partial<{ name: string; url: string; type: 'open' | 'copy'; icon: string | null; thumbnail_key: string | null; category: string; sort_order: number }>
+  >();
+  const existing = await c.env.DB.prepare('SELECT * FROM quick_links WHERE id = ?').bind(id).first<QuickLinkRow>();
+  if (!existing) return c.json({ error: 'not found' }, 404);
+
+  const fields: string[] = [];
+  const values: unknown[] = [];
+  if (body.name !== undefined) { fields.push('name = ?'); values.push(body.name.trim()); }
+  if (body.url !== undefined) { fields.push('url = ?'); values.push(body.url.trim()); }
+  if (body.type !== undefined) { fields.push('type = ?'); values.push(body.type === 'copy' ? 'copy' : 'open'); }
+  if (body.icon !== undefined) { fields.push('icon = ?'); values.push(body.icon); }
+  if (body.thumbnail_key !== undefined) { fields.push('thumbnail_key = ?'); values.push(body.thumbnail_key); }
+  if (body.category !== undefined) { fields.push('category = ?'); values.push(body.category.trim() || 'Links'); }
+  if (body.sort_order !== undefined) { fields.push('sort_order = ?'); values.push(body.sort_order); }
+
+  if (fields.length > 0) {
+    fields.push('updated_at = ?');
+    values.push(now());
+    values.push(id);
+    await c.env.DB.prepare(`UPDATE quick_links SET ${fields.join(', ')} WHERE id = ?`).bind(...values).run();
+  }
+
+  const updated = await c.env.DB.prepare('SELECT * FROM quick_links WHERE id = ?').bind(id).first<QuickLinkRow>();
+  return c.json(quickLinkJson(updated!));
+});
+
+app.delete('/api/quick-links/:id', async (c) => {
+  const id = c.req.param('id');
+  const existing = await c.env.DB.prepare('SELECT id FROM quick_links WHERE id = ?').bind(id).first();
+  if (!existing) return c.json({ error: 'not found' }, 404);
+  await c.env.DB.prepare('DELETE FROM quick_links WHERE id = ?').bind(id).run();
+  return c.json({ ok: true });
+});
+
 // GET /api/stats?date=YYYY-MM-DD — completed-task rollups for the Today
 // widget and the Stats page, all anchored on the caller's local `date`
 // (same convention as /api/today's `date`/`today` params) rather than the
