@@ -1769,6 +1769,10 @@ a {
   border-color: var(--color-accent-secondary);
 }
 
+.project-card.is-archived {
+  opacity: 0.6;
+}
+
 .project-card__title {
   font-size: 15px;
   font-weight: var(--weight-medium);

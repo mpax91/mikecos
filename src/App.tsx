@@ -19,6 +19,8 @@ import { JournalPage } from './pages/JournalPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { NewsPage } from './pages/NewsPage';
 import { LinksPage } from './pages/LinksPage';
+import { ListsPage } from './pages/ListsPage';
+import { ListDetail } from './pages/ListDetail';
 
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -52,6 +54,8 @@ export default function App() {
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/news" element={<NewsPage />} />
             <Route path="/links" element={<LinksPage />} />
+            <Route path="/lists" element={<ListsPage />} />
+            <Route path="/lists/:id" element={<ListDetail />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/today" replace />} />
           </Routes>

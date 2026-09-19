@@ -39,6 +39,10 @@ export interface Entity {
   pinned: number;
   /** A Jot is stored as type='note' with this flag set, not a distinct type. */
   is_jot: number;
+  /** A List is stored as type='project' with this flag set, not a distinct
+   * type (see migrations/0029_lists.sql) — its items are ordinary type='task'
+   * children, same as a project's tasks. */
+  is_list: number;
   /** 'YYYY-MM-DD', tasks only. Powers the Today page's Overdue/Today split. */
   due_date: string | null;
   /** 'HH:MM' 24-hour, tasks only, meaningless without due_date — an
@@ -83,6 +87,14 @@ export interface EntityDetail {
   entity: Entity;
   breadcrumb: Entity[];
   children: Entity[];
+}
+
+/** A List's card on the Lists index page — see migrations/0029_lists.sql.
+ * Deliberately simpler than ProjectListItem (no folder/note/media split,
+ * since a List never has those kinds of children in practice). */
+export interface ListItem extends Entity {
+  open_count: number;
+  done_count: number;
 }
 
 /** A task as returned by GET /api/today — the same Entity, plus its

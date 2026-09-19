@@ -1,4 +1,4 @@
-import type { CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactDetail, ContactNote, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitLog, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsSavedArticle, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, WeatherResponse, WeekResponse } from './types';
+import type { CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactDetail, ContactNote, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitLog, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsSavedArticle, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, WeatherResponse, WeekResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -115,6 +115,32 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ pinned }),
     }),
+
+  // ---- Lists (flat checklists — see migrations/0029_lists.sql) ----
+
+  listLists: () => request<ListItem[]>('/api/lists'),
+
+  createList: (title: string) =>
+    request<Entity>('/api/lists', {
+      method: 'POST',
+      body: JSON.stringify({ title }),
+    }),
+
+  /** Bulk-create list items from pasted/typed lines, one task per non-blank
+   * line, in one round trip. */
+  createListItems: (listId: string, titles: string[]) =>
+    request<{ items: Entity[] }>(`/api/lists/${listId}/items`, {
+      method: 'POST',
+      body: JSON.stringify({ titles }),
+    }),
+
+  /** Unchecks every item without deleting anything — for a list reused
+   * regularly (the same weekly grocery run) rather than rebuilt each time. */
+  resetList: (listId: string) => request<{ ok: true }>(`/api/lists/${listId}/reset`, { method: 'POST' }),
+
+  /** Permanently removes every checked-off item. */
+  clearCompletedListItems: (listId: string) =>
+    request<{ ok: true; deletedCount: number }>(`/api/lists/${listId}/clear-completed`, { method: 'POST' }),
 
   listNotes: () => request<Entity[]>('/api/notes'),
 

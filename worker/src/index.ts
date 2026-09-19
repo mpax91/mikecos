@@ -92,6 +92,61 @@ function sectionCounts(db: D1Database, id: string) {
     }>();
 }
 
+// Direct-child item counts for a List's card on the Lists index page —
+// deliberately simpler than sectionCounts (no folder/note/media split, since
+// a List never has those kinds of children in practice).
+function listItemCounts(db: D1Database, id: string) {
+  return db
+    .prepare(
+      `SELECT
+         SUM(CASE WHEN status != 'done' THEN 1 ELSE 0 END) as open_count,
+         SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) as done_count
+       FROM entities WHERE parent_id = ? AND type = 'task'`
+    )
+    .bind(id)
+    .first<{ open_count: number; done_count: number }>();
+}
+
+// Deletes an entity and every descendant (same recursive-CTE walk as
+// DELETE /api/entities/:id, factored out so "Clear completed" on a List can
+// remove a batch of items — including any of their own R2 attachments —
+// without duplicating this logic).
+async function deleteEntityDeep(db: D1Database, files: R2Bucket, id: string) {
+  const { results: fileRows } = await db
+    .prepare(
+      `WITH RECURSIVE descendants(id) AS (
+         SELECT id FROM entities WHERE id = ?
+         UNION ALL
+         SELECT e.id FROM entities e JOIN descendants d ON e.parent_id = d.id
+       )
+       SELECT content FROM entities WHERE id IN (SELECT id FROM descendants) AND type = 'file'`
+    )
+    .bind(id)
+    .all<{ content: string | null }>();
+  for (const row of fileRows ?? []) {
+    if (!row.content) continue;
+    try {
+      const meta = JSON.parse(row.content) as { r2_key?: string };
+      if (meta.r2_key) await files.delete(meta.r2_key);
+    } catch {
+      // malformed metadata — nothing to clean up
+    }
+  }
+  await db
+    .prepare(
+      `DELETE FROM entities WHERE id IN (
+         WITH RECURSIVE descendants(id) AS (
+           SELECT id FROM entities WHERE id = ?
+           UNION ALL
+           SELECT e.id FROM entities e JOIN descendants d ON e.parent_id = d.id
+         )
+         SELECT id FROM descendants
+       )`
+    )
+    .bind(id)
+    .run();
+}
+
 // Subtasks live one level deeper than the project (task -> subtask), so they
 // aren't covered by sectionCounts' direct-children query above — count open
 // subtasks across every task belonging to this project in one extra query.
@@ -2037,10 +2092,13 @@ app.delete('/api/contacts/import/orphaned', async (c) => {
 
 // ---- Projects (top-level) ----
 
-// GET /api/projects — list all top-level projects with a section breakdown
+// GET /api/projects — list all top-level projects with a section breakdown.
+// Excludes Lists (see migrations/0029_lists.sql) — a List is stored as this
+// same type='project' shape with is_list set, but shown on its own separate
+// Lists page/nav item, not mixed in here.
 app.get('/api/projects', async (c) => {
   const { results } = await c.env.DB.prepare(
-    `SELECT * FROM entities WHERE is_top_level = 1 AND type = 'project' ORDER BY pinned DESC, position ASC, created_at ASC`
+    `SELECT * FROM entities WHERE is_top_level = 1 AND type = 'project' AND is_list = 0 ORDER BY pinned DESC, position ASC, created_at ASC`
   ).all<Entity>();
 
   const withCounts = await Promise.all(
@@ -2081,6 +2139,112 @@ app.post('/api/projects', async (c) => {
     .run();
   const entity = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(id).first<Entity>();
   return c.json(entity, 201);
+});
+
+// ---- Lists (top-level, flat checklists — see migrations/0029_lists.sql) ----
+//
+// A List is the same type='project' shape as a Project (so it gets the same
+// entity machinery — GET/PATCH/DELETE /api/entities/:id, reorder, pin, and
+// every list ITEM is just an ordinary type='task' child, which is what
+// makes the task detail panel's description/due-date/subtasks/attachments
+// apply to list items for free) with is_list set, so it's shown on its own
+// page instead of mixed into Projects.
+
+app.get('/api/lists', async (c) => {
+  const { results } = await c.env.DB.prepare(
+    `SELECT * FROM entities WHERE is_top_level = 1 AND type = 'project' AND is_list = 1 ORDER BY pinned DESC, position ASC, created_at ASC`
+  ).all<Entity>();
+
+  const withCounts = await Promise.all(
+    (results ?? []).map(async (list) => {
+      const counts = await listItemCounts(c.env.DB, list.id);
+      return { ...list, open_count: counts?.open_count ?? 0, done_count: counts?.done_count ?? 0 };
+    })
+  );
+  return c.json(withCounts);
+});
+
+// POST /api/lists — create a new List { title }
+app.post('/api/lists', async (c) => {
+  const body = await c.req.json<{ title: string }>();
+  if (!body.title || !body.title.trim()) {
+    return c.json({ error: 'title is required' }, 400);
+  }
+  const id = uid();
+  const ts = now();
+  await c.env.DB.prepare(
+    `INSERT INTO entities (id, type, title, content, parent_id, is_top_level, status, position, is_list, last_touched, created_at, updated_at)
+     VALUES (?, 'project', ?, NULL, NULL, 1, 'active', 0, 1, ?, ?, ?)`
+  )
+    .bind(id, body.title.trim(), ts, ts, ts)
+    .run();
+  const entity = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(id).first<Entity>();
+  return c.json(entity, 201);
+});
+
+// POST /api/lists/:id/items — bulk-create items from pasted/typed lines
+// { titles: string[] }, one task per non-blank line, in the order given.
+// The dedicated endpoint (rather than looping POST /api/entities client
+// side) keeps a 10-line grocery paste to one round trip and one
+// touchProjectAncestor call instead of ten.
+app.post('/api/lists/:id/items', async (c) => {
+  const id = c.req.param('id');
+  const list = await c.env.DB.prepare("SELECT * FROM entities WHERE id = ? AND is_list = 1").bind(id).first<Entity>();
+  if (!list) return c.json({ error: 'list not found' }, 404);
+
+  const body = await c.req.json<{ titles: string[] }>();
+  const titles = (body.titles ?? []).map((t) => t.trim()).filter(Boolean);
+  if (titles.length === 0) return c.json({ error: 'titles is required' }, 400);
+
+  const maxPos = await c.env.DB.prepare('SELECT COALESCE(MAX(position), -1) as m FROM entities WHERE parent_id = ?').bind(id).first<{ m: number }>();
+  const ts = now();
+  const startPos = (maxPos?.m ?? -1) + 1;
+  const rows = titles.map((title, i) => ({ id: uid(), title, position: startPos + i }));
+  await c.env.DB.batch(
+    rows.map((row) =>
+      c.env.DB.prepare(
+        `INSERT INTO entities (id, type, title, content, parent_id, is_top_level, status, position, last_touched, created_at, updated_at)
+         VALUES (?, 'task', ?, NULL, ?, 0, 'open', ?, ?, ?, ?)`
+      ).bind(row.id, row.title, id, row.position, ts, ts, ts)
+    )
+  );
+  await touchProjectAncestor(c.env.DB, id);
+
+  const { results } = await c.env.DB.prepare('SELECT * FROM entities WHERE id IN (' + rows.map(() => '?').join(',') + ')')
+    .bind(...rows.map((r) => r.id))
+    .all<Entity>();
+  return c.json({ items: results ?? [] }, 201);
+});
+
+// POST /api/lists/:id/reset — uncheck every item (status back to 'open')
+// without deleting anything, for a list you reuse regularly (the same
+// weekly grocery run, say) rather than rebuilding it from scratch.
+app.post('/api/lists/:id/reset', async (c) => {
+  const id = c.req.param('id');
+  const list = await c.env.DB.prepare("SELECT id FROM entities WHERE id = ? AND is_list = 1").bind(id).first();
+  if (!list) return c.json({ error: 'list not found' }, 404);
+  await c.env.DB.prepare("UPDATE entities SET status = 'open', updated_at = ? WHERE parent_id = ? AND type = 'task' AND status = 'done'")
+    .bind(now(), id)
+    .run();
+  await touchProjectAncestor(c.env.DB, id);
+  return c.json({ ok: true });
+});
+
+// POST /api/lists/:id/clear-completed — permanently removes every checked-off
+// item (and any of their own subtasks/attachments) — the other half of the
+// "reset vs. clear" pair Settings-style lists want once a trip/errand is done.
+app.post('/api/lists/:id/clear-completed', async (c) => {
+  const id = c.req.param('id');
+  const list = await c.env.DB.prepare("SELECT id FROM entities WHERE id = ? AND is_list = 1").bind(id).first();
+  if (!list) return c.json({ error: 'list not found' }, 404);
+  const { results: done } = await c.env.DB.prepare("SELECT id FROM entities WHERE parent_id = ? AND type = 'task' AND status = 'done'")
+    .bind(id)
+    .all<{ id: string }>();
+  for (const row of done ?? []) {
+    await deleteEntityDeep(c.env.DB, c.env.FILES, row.id);
+  }
+  await touchProjectAncestor(c.env.DB, id);
+  return c.json({ ok: true, deletedCount: (done ?? []).length });
 });
 
 // ---- Notes (standalone, top-level) ----
@@ -2359,41 +2523,7 @@ app.patch('/api/entities/:id', async (c) => {
 app.delete('/api/entities/:id', async (c) => {
   const id = c.req.param('id');
   const existing = await c.env.DB.prepare('SELECT parent_id FROM entities WHERE id = ?').bind(id).first<{ parent_id: string | null }>();
-
-  // Purge any R2 objects belonging to file entities in this subtree before
-  // the rows disappear, so attachments don't leak storage.
-  const { results: files } = await c.env.DB.prepare(
-    `WITH RECURSIVE descendants(id) AS (
-       SELECT id FROM entities WHERE id = ?
-       UNION ALL
-       SELECT e.id FROM entities e JOIN descendants d ON e.parent_id = d.id
-     )
-     SELECT content FROM entities WHERE id IN (SELECT id FROM descendants) AND type = 'file'`
-  )
-    .bind(id)
-    .all<{ content: string | null }>();
-  for (const row of files ?? []) {
-    if (!row.content) continue;
-    try {
-      const meta = JSON.parse(row.content) as { r2_key?: string };
-      if (meta.r2_key) await c.env.FILES.delete(meta.r2_key);
-    } catch {
-      // malformed metadata — nothing to clean up
-    }
-  }
-
-  await c.env.DB.prepare(
-    `DELETE FROM entities WHERE id IN (
-       WITH RECURSIVE descendants(id) AS (
-         SELECT id FROM entities WHERE id = ?
-         UNION ALL
-         SELECT e.id FROM entities e JOIN descendants d ON e.parent_id = d.id
-       )
-       SELECT id FROM descendants
-     )`
-  )
-    .bind(id)
-    .run();
+  await deleteEntityDeep(c.env.DB, c.env.FILES, id);
   await touchProjectAncestor(c.env.DB, existing?.parent_id ?? null);
   return c.json({ ok: true });
 });
