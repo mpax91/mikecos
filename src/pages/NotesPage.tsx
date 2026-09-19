@@ -7,7 +7,7 @@ import { KebabMenu } from '../components/KebabMenu';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { MoveToProjectModal } from '../components/MoveToProjectModal';
 import { Toast } from '../components/Toast';
-import { useIsMobile } from '../hooks/useIsMobile';
+import { useIsCompact } from '../hooks/useIsMobile';
 import { formatRelativeTime } from '../utils/formatRelativeTime';
 import { extractSnippet } from '../lib/snippet';
 import { useTabs, useReportTabMeta } from '../contexts/TabsContext';
@@ -21,12 +21,15 @@ interface ToastState {
 /** Standalone Notes section — an Apple-Notes-style split view: a sidebar
  * list of every top-level note (not attached to any project), sorted pinned-
  * first then by last-modified, and a detail pane for the note that's open.
- * On phone widths this collapses to a full-width list, then a full-width
- * detail with a back control, instead of the side-by-side split. */
+ * Below useIsCompact's ~900px cutoff (phones and tablet-portrait widths —
+ * wider than the app's usual phone-only breakpoint, since this page's fixed
+ * 320px sidebar leaves the detail pane too cramped on a tablet to keep the
+ * two-pane split there) this collapses to a full-width list, then a
+ * full-width detail with a back control, instead of the side-by-side split. */
 export function NotesPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const isMobile = useIsMobile();
+  const isCompact = useIsCompact();
   const { openTab, showContextMenu } = useTabs();
   const [notes, setNotes] = useState<Entity[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -49,10 +52,10 @@ export function NotesPage() {
   // Notes' own default) when nothing is selected yet; mobile always starts
   // on the list instead, per the list-then-detail pattern.
   useEffect(() => {
-    if (!isMobile && !id && notes && notes.length > 0) {
+    if (!isCompact && !id && notes && notes.length > 0) {
       navigate(`/notes/${notes[0].id}`, { replace: true });
     }
-  }, [isMobile, id, notes, navigate]);
+  }, [isCompact, id, notes, navigate]);
 
   const selected = notes?.find((n) => n.id === id) ?? null;
 
@@ -131,8 +134,8 @@ export function NotesPage() {
   if (error) return <div className="empty-state">Couldn't load notes: {error}</div>;
   if (!notes) return <div className="empty-state">Loading…</div>;
 
-  const showList = !isMobile || !selected;
-  const showDetail = !isMobile || !!selected;
+  const showList = !isCompact || !selected;
+  const showDetail = !isCompact || !!selected;
 
   return (
     <div>
@@ -146,7 +149,7 @@ export function NotesPage() {
           </button>
         </div>
       )}
-      <div className={`notes-page${isMobile ? ' notes-page--mobile' : ''}`}>
+      <div className={`notes-page${isCompact ? ' notes-page--mobile' : ''}`}>
         {showList && (
           <div className="notes-page__sidebar">
             {notes.length === 0 ? (
@@ -205,7 +208,7 @@ export function NotesPage() {
 
         {showDetail && selected && (
           <div className="notes-page__detail">
-            {isMobile && (
+            {isCompact && (
               <div className="breadcrumb notes-page__back-row">
                 <button
                   type="button"

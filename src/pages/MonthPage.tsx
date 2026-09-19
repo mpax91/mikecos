@@ -74,6 +74,30 @@ function formatDayNum(iso: string): number {
   return Number(iso.slice(8, 10));
 }
 
+/** Groups a flat, already-date-sorted UpcomingItem[] into per-date buckets,
+ * preserving order — the Upcoming list's rows share one date header per day
+ * rather than repeating the date on every single row. */
+function groupUpcomingByDate(items: UpcomingItem[]): { date: string; items: UpcomingItem[] }[] {
+  const groups: { date: string; items: UpcomingItem[] }[] = [];
+  for (const item of items) {
+    const last = groups[groups.length - 1];
+    if (last && last.date === item.date) last.items.push(item);
+    else groups.push({ date: item.date, items: [item] });
+  }
+  return groups;
+}
+
+/** "Today" / "Tomorrow" / "Fri, Sep 25" — matches the reference Android
+ * widget's date-first list, with the same today/tomorrow shorthand most
+ * calendar list views use instead of spelling out a date someone would have
+ * to do the arithmetic on themselves. */
+function formatUpcomingDateHeader(date: string, realToday: string): string {
+  if (date === realToday) return 'Today';
+  if (date === addDays(realToday, 1)) return 'Tomorrow';
+  const [y, m, d] = date.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
 const WEEKDAY_LABELS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 
 /** Compact task-count badge for a cell — spells out "N open task(s)" rather
@@ -90,6 +114,23 @@ function MonthTaskBadge({ count }: { count: number }) {
     </div>
   );
 }
+
+/** One line in the Upcoming list below the grid — a task or a meeting,
+ * whichever `item` actually is, both reduced to the same {date, time, label}
+ * shape so they can share one sorted, rendered list (see buildUpcomingItems).
+ * `time` is null for an open task (no time of day) or an all-day meeting —
+ * both render the same as the date-only rows in the reference Android
+ * widget Mike pointed to, sorted after that day's timed entries. */
+interface UpcomingItem {
+  key: string;
+  date: string;
+  time: string | null; // pre-formatted, e.g. "11:00 AM" — null means date-only
+  sortTime: number; // minutes since midnight for same-day ordering; timed entries first
+  label: string;
+  onClick: () => void;
+}
+
+const MAX_UPCOMING_ITEMS = 20;
 
 /** Real Google Calendar events on that day, shown as individual line items
  * (time + title) rather than rolled up into a single count the way tasks
@@ -122,6 +163,37 @@ function MonthMeetingList({ meetings, cellDate, realToday }: { meetings: RangeMe
         );
       })}
       {overflow > 0 && <div className="month-page__meeting-more">+{overflow} more</div>}
+    </div>
+  );
+}
+
+/** The scrollable list below the month grid — every task and meeting from
+ * today forward in this page's visible range, chronological across day
+ * boundaries (unlike the grid above, which only shows what's due to a
+ * specific cell). Mirrors the reference Android widget Mike pointed to:
+ * grouped under a date header, timed entries before date-only ones on the
+ * same day. Rendered on every screen size per Mike's own note ("probably
+ * on desktop too, but for sure on tablet") rather than gated to a
+ * breakpoint — a bird's-eye "what's coming" list is just as useful with
+ * room to spare on a desktop monitor as it is on a tablet. */
+function UpcomingList({ items, realToday }: { items: UpcomingItem[]; realToday: string }) {
+  if (items.length === 0) return null;
+  return (
+    <div className="month-page__upcoming">
+      <div className="month-page__upcoming-title">Upcoming</div>
+      <div className="month-page__upcoming-list">
+        {groupUpcomingByDate(items).map((group) => (
+          <div key={group.date} className="month-page__upcoming-group">
+            <div className="month-page__upcoming-date">{formatUpcomingDateHeader(group.date, realToday)}</div>
+            {group.items.map((item) => (
+              <div key={item.key} className="month-page__upcoming-row" onClick={item.onClick}>
+                {item.time && <span className="month-page__upcoming-time">{item.time}</span>}
+                <span className="month-page__upcoming-label">{item.label}</span>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -197,6 +269,51 @@ export function MonthPage() {
     }
     return map;
   }, [meetingsData]);
+
+  // The Upcoming list below the grid — Mike's reference was an Android
+  // calendar widget that lists what's ahead chronologically regardless of
+  // which day it falls on, rather than requiring a scan across grid cells.
+  // Built from the same data.tasks / meetingsData already fetched for the
+  // grid cells themselves — no separate request. Scoped to this page's own
+  // visible range (gridStart..gridEnd) and only dates from today forward:
+  // on the current month that's "the rest of this month plus a few padding
+  // days into next," and on a future month it naturally becomes "everything
+  // in it" since every date there is still ahead; a fully past month just
+  // renders an empty list; the click-through matches every other item on
+  // this page in opening that day's Day view.
+  const upcomingItems = useMemo<UpcomingItem[]>(() => {
+    const items: UpcomingItem[] = [];
+    if (data) {
+      for (const t of data.tasks) {
+        const date = t.due_date!;
+        if (date < realToday) continue;
+        items.push({
+          key: `task:${t.id}`,
+          date,
+          time: null,
+          sortTime: Infinity, // date-only entries sort after that day's timed meetings
+          label: t.title || 'Untitled Task',
+          onClick: () => openDay(date),
+        });
+      }
+    }
+    if (meetingsData) {
+      for (const m of meetingsData.meetings) {
+        if (m.date < realToday) continue;
+        items.push({
+          key: `meeting:${m.id}`,
+          date: m.date,
+          time: m.allDay ? null : formatMeetingTime(m.start),
+          sortTime: m.allDay ? Infinity : new Date(m.start).getHours() * 60 + new Date(m.start).getMinutes(),
+          label: m.title,
+          onClick: () => openDay(m.date),
+        });
+      }
+    }
+    items.sort((a, b) => (a.date === b.date ? a.sortTime - b.sortTime : a.date < b.date ? -1 : 1));
+    return items.slice(0, MAX_UPCOMING_ITEMS);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, meetingsData, realToday]);
 
   const gridDates = useMemo(() => {
     const dates: string[] = [];
@@ -294,6 +411,7 @@ export function MonthPage() {
               );
             })}
           </div>
+          <UpcomingList items={upcomingItems} realToday={realToday} />
         </div>
       )}
     </div>

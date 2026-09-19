@@ -3987,7 +3987,38 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   opacity: 0.35;
 }
 
-@media (max-width: 900px) {
+/* Below this, the 7 columns can't all fit at their normal desktop width —
+   this used to just fall straight through to the desktop grid (each column
+   up to 190px, so all 7 plus gaps run well past any tablet's width), which
+   read as "the layout is too wide" rather than "this scrolls sideways":
+   nothing hinted that there was more to see, and the columns bled off the
+   right edge with no visual cue. Sizing each column to a fraction of the
+   viewport (with scroll-snap) leaves a deliberate sliver of the next day
+   peeking in on both tablet and phone — the same affordance a horizontally-
+   scrolling carousel usually gives — and WeekPage's own scroll-to-today
+   effect (see its useEffect keyed on data.start) lands the view centered on
+   the right day the moment it loads, rather than always opening on Monday. */
+@media (max-width: 1024px) {
+  .week-page__scroll {
+    scroll-snap-type: x mandatory;
+  }
+
+  .week-page__grid {
+    /* ~2.3 columns visible at once on a tablet — enough of a next-day peek
+       to read as scrollable without a card ever going edge-to-edge. */
+    grid-template-columns: repeat(7, minmax(220px, 42vw));
+  }
+
+  .week-page__col {
+    scroll-snap-align: center;
+  }
+}
+
+/* Phones get a narrower, near-single-column treatment instead — enough of
+   a peek at the following day to still read as scrollable, without
+   splitting the one column that fits into an awkward half-and-half. Placed
+   after the tablet block above so its 78vw wins at these narrower widths. */
+@media (max-width: 640px) {
   .week-page__grid {
     grid-template-columns: repeat(7, minmax(78vw, 1fr));
   }
@@ -4221,6 +4252,83 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   .month-page__cell {
     min-height: 84px;
   }
+}
+
+/* ---- Month view — Upcoming list below the grid ---- */
+/* A chronological "what's coming" list independent of the grid above (see
+   UpcomingList's own comment in MonthPage.tsx for why) — modeled on the
+   Android calendar widget Mike referenced: date headers, timed entries
+   before all-day ones on the same date. Shown on every screen size, same
+   card treatment (hairline border, radius-card) as the rest of the app's
+   list sections rather than anything grid-specific. */
+.month-page__upcoming {
+  margin-top: 20px;
+  border: var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: var(--color-card-bg);
+  padding: 14px 16px;
+}
+
+.month-page__upcoming-title {
+  font-size: 11px;
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+  margin-bottom: 10px;
+}
+
+.month-page__upcoming-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* Caps the list's own height rather than letting 20 items run the page
+     out indefinitely — it scrolls internally once there's more than
+     roughly this many rows' worth. */
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.month-page__upcoming-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.month-page__upcoming-date {
+  font-size: 11.5px;
+  font-weight: var(--weight-medium);
+  color: var(--color-accent);
+  margin-bottom: 2px;
+}
+
+.month-page__upcoming-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 4px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.month-page__upcoming-row:hover {
+  background: var(--color-sidebar);
+}
+
+.month-page__upcoming-time {
+  flex-shrink: 0;
+  font-size: 11.5px;
+  color: var(--color-muted);
+  font-variant-numeric: tabular-nums;
+  min-width: 62px;
+}
+
+.month-page__upcoming-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* On a real desktop window, the grid's columns already span the full

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { DndContext, DragOverlay, PointerSensor, useDraggable, useDroppable, useSensor, useSensors } from '@dnd-kit/core';
 import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core';
@@ -296,8 +296,27 @@ export function WeekPage() {
   const [meetingsData, setMeetingsData] = useState<MeetingsRangeResponse | null>(null);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useReportTabMeta(`Week of ${formatShort(start)}`, 'today');
+
+  // On a screen narrow enough that the 7 columns don't all fit (tablet and
+  // phone — see the .week-page__grid media queries), the grid used to just
+  // open scrolled all the way left to Monday, so if today was Thursday
+  // you'd land on a column that isn't even in view yet, with no visual hint
+  // that there's more to scroll to. Center whichever column is actually
+  // today's the moment this week's data — the one that contains an
+  // .is-today column, if any — finishes rendering. Keyed on data.start
+  // rather than data itself, so this only fires once when a genuinely
+  // different week has loaded, not on every unrelated re-render (a task
+  // toggle, a drag-and-drop reschedule) that leaves the visible week the
+  // same. 'auto' (instant, not smooth) matches how a calendar app opens
+  // already positioned, rather than visibly animating into place.
+  useEffect(() => {
+    if (!data) return;
+    const todayCol = scrollRef.current?.querySelector<HTMLElement>('.week-page__col.is-today');
+    todayCol?.scrollIntoView({ behavior: 'auto', inline: 'center', block: 'nearest' });
+  }, [data?.start]);
 
   const load = useCallback(() => {
     api.getWeek(start, realToday).then(setData).catch((e) => setError(String(e)));
@@ -482,7 +501,7 @@ export function WeekPage() {
           <div className="empty-state">Loading…</div>
         ) : (
           <>
-            <div className="week-page__scroll">
+            <div className="week-page__scroll" ref={scrollRef}>
               <div className="week-page__grid">
                 {data.days.map((day) => (
                   <DayColumn
