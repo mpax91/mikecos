@@ -349,20 +349,21 @@ function ArticleRow({
   // release, rather than nothing but a snap-back after the fact.
   const armed = Math.abs(dragX) >= SWIPE_THRESHOLD;
 
-  // Feedly's cards resist rather than sliding indefinitely once you've
-  // already dragged far enough to fire — pulling further doesn't reveal
-  // more, it just feels like there's real weight to the gesture. Below the
-  // threshold this passes the raw drag through 1:1 (immediate, responsive);
-  // past it, only a damped fraction of the extra distance is added, capped
-  // a little past the threshold itself. Without this, a fast/long swipe
-  // could drag the card clean off the edge of its own colored reveal panel,
-  // exposing raw page background behind it — the other big part of the
-  // "odd" feeling, distinct from the label-timing issue above.
+  // Feedly's own cards track the finger directly — no damping, no fighting
+  // the gesture — right up to a hard stop, rather than getting progressively
+  // "stickier" the further you pull. An earlier version here started
+  // damping the drag right at the fire threshold itself, which (combined
+  // with a real-device-only pointer-tracking bug fixed in useSwipe.ts) is
+  // most of what made this read as sluggish/broken rather than fluid — a
+  // card that's actively fighting your finger the moment it becomes
+  // "armed" reads as stuck, not responsive. This just clamps to a flat max
+  // a bit past the threshold (so a fast/long swipe still can't drag the
+  // card off the edge of its own full-width reveal panel, see
+  // .news-article-row__action below) and otherwise gets completely out of
+  // the way of the raw drag distance.
+  const MAX_DRAG = SWIPE_THRESHOLD * 2;
   function handleDragX(dx: number) {
-    const abs = Math.abs(dx);
-    const sign = Math.sign(dx);
-    const clamped = abs <= SWIPE_THRESHOLD ? dx : sign * (SWIPE_THRESHOLD + (abs - SWIPE_THRESHOLD) * 0.25);
-    setDragX(clamped);
+    setDragX(Math.max(-MAX_DRAG, Math.min(MAX_DRAG, dx)));
   }
 
   // Main-feed gestures, per Mike's spec: swipe left marks read, swipe
