@@ -1,8 +1,12 @@
 import { useRef } from 'react';
 
 // Threshold, in pixels, past which a drag counts as a deliberate swipe
-// rather than an accidental nudge or the start of a scroll/click.
-const SWIPE_THRESHOLD = 60;
+// rather than an accidental nudge or the start of a scroll/click. Exported
+// so a caller that wants to show its own "you've gone far enough to fire
+// this" cue during the drag (see NewsPage's ArticleRow) can key it off the
+// exact same number this hook actually fires at, instead of a second,
+// easy-to-drift-out-of-sync guess at the right pixel value.
+export const SWIPE_THRESHOLD = 60;
 
 interface SwipeOptions {
   onSwipeLeft?: () => void;

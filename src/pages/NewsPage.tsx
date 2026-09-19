@@ -4,7 +4,7 @@ import type { NewsArticle, NewsFeed, NewsSavedArticle } from '../api/types';
 import { useReportTabMeta } from '../contexts/TabsContext';
 import { formatRelativeTime } from '../utils/formatRelativeTime';
 import { NewsFeedsModal } from '../components/NewsFeedsModal';
-import { useSwipe } from '../utils/useSwipe';
+import { useSwipe, SWIPE_THRESHOLD } from '../utils/useSwipe';
 
 type ViewMode = 'list' | 'story' | 'saved';
 type Scope = { type: 'all' } | { type: 'folder'; folder: string | null } | { type: 'feed'; feedId: string };
@@ -335,14 +335,43 @@ function ArticleRow({
 }) {
   const [dragX, setDragX] = useState(0);
   const [settled, setSettled] = useState(false);
+  // Whether the drag has crossed SWIPE_THRESHOLD — i.e. releasing right now
+  // would fire the action. This is the one thing the old version got wrong:
+  // its "Read"/"Save" label popped to full opacity at 20px, a full 40px
+  // before the swipe actually fired at the real 60px threshold, so the row
+  // was already visually "committed" for a third of the drag while release
+  // would still just cancel it — the mismatch between what you saw and what
+  // would happen is most of why this read as clunky. Tying the armed state
+  // to the exact same SWIPE_THRESHOLD useSwipe fires at fixes that, and the
+  // CSS bounce on .is-armed (see .news-article-row__icon) gives a distinct,
+  // deliberate "got it, now I'll fire" pop right at that real commit point —
+  // the same kind of tactile confirmation Feedly's own swipe gives before
+  // release, rather than nothing but a snap-back after the fact.
+  const armed = Math.abs(dragX) >= SWIPE_THRESHOLD;
+
+  // Feedly's cards resist rather than sliding indefinitely once you've
+  // already dragged far enough to fire — pulling further doesn't reveal
+  // more, it just feels like there's real weight to the gesture. Below the
+  // threshold this passes the raw drag through 1:1 (immediate, responsive);
+  // past it, only a damped fraction of the extra distance is added, capped
+  // a little past the threshold itself. Without this, a fast/long swipe
+  // could drag the card clean off the edge of its own colored reveal panel,
+  // exposing raw page background behind it — the other big part of the
+  // "odd" feeling, distinct from the label-timing issue above.
+  function handleDragX(dx: number) {
+    const abs = Math.abs(dx);
+    const sign = Math.sign(dx);
+    const clamped = abs <= SWIPE_THRESHOLD ? dx : sign * (SWIPE_THRESHOLD + (abs - SWIPE_THRESHOLD) * 0.25);
+    setDragX(clamped);
+  }
 
   // Main-feed gestures, per Mike's spec: swipe left marks read, swipe
   // right saves. Drag position tracked live so the row reveals which
-  // action is about to fire (a fading "Read" / "Save" label under it),
-  // then springs back once released — nothing here needs the article to
-  // physically leave the list the way an email client's dismiss does.
+  // action is about to fire, then springs back once released — nothing
+  // here needs the article to physically leave the list the way an email
+  // client's dismiss does (it stays, just dimmed via .is-read).
   const swipeHandlers = useSwipe({
-    onDragX: setDragX,
+    onDragX: handleDragX,
     onSwipeLeft: () => {
       onMarkRead(article.id, true);
       setSettled(true);
@@ -359,21 +388,33 @@ function ArticleRow({
     const t = setTimeout(() => {
       setDragX(0);
       setSettled(false);
-    }, 150);
+    }, 180);
     return () => clearTimeout(t);
   }, [settled]);
 
+  // Both panels' reveal opacity is continuous and near-instant (a fast
+  // ramp over the first 16px of drag, not a hard on/off toggle at some
+  // arbitrary pixel) — the color should already be there confirming which
+  // direction does what almost the moment the drag starts, the same way
+  // Feedly's own swipe backgrounds appear immediately rather than fading in
+  // slowly. What's reserved for the real threshold-crossing moment is the
+  // icon's own bounce (via .is-armed), not the panel's visibility.
+  const readOpacity = Math.min(Math.max(-dragX, 0) / 16, 1);
+  const saveOpacity = Math.min(Math.max(dragX, 0) / 16, 1);
+
   return (
     <div className="news-article-row-wrap">
-      <div className="news-article-row__action news-article-row__action--read" style={{ opacity: dragX < -20 ? 1 : 0 }}>
-        Read
+      <div className="news-article-row__action news-article-row__action--read" style={{ opacity: readOpacity }}>
+        <span className={`news-article-row__icon${dragX < 0 && armed ? ' is-armed' : ''}`}>✓</span>
+        <span className="news-article-row__label">Read</span>
       </div>
-      <div className="news-article-row__action news-article-row__action--save" style={{ opacity: dragX > 20 ? 1 : 0 }}>
-        Save
+      <div className="news-article-row__action news-article-row__action--save" style={{ opacity: saveOpacity }}>
+        <span className={`news-article-row__icon${dragX > 0 && armed ? ' is-armed' : ''}`}>🔖</span>
+        <span className="news-article-row__label">Save</span>
       </div>
       <div
         className={`news-article-card${article.is_read ? ' is-read' : ''}`}
-        style={{ transform: `translateX(${dragX}px)`, transition: settled ? 'transform 150ms ease' : undefined }}
+        style={{ transform: `translateX(${dragX}px)`, transition: settled ? 'transform 180ms ease' : undefined }}
         {...swipeHandlers}
         onClick={() => onOpen(article.url)}
       >

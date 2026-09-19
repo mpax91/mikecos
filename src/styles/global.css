@@ -6647,28 +6647,63 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   border-radius: var(--radius-card);
 }
 
+/* Spans the wrap's FULL width on both sides (not just a chip near one
+   edge, as before) — .news-article-card is stacked on top with its own
+   opaque background, so the only part of a full-width panel that's ever
+   actually visible is the sliver the card has slid off of. This is what
+   stops a fast/long drag from ever revealing raw page background past a
+   too-narrow label: the color is already there for the panel's entire
+   width, however far the resistance in ArticleRow's handleDragX lets the
+   card go. */
 .news-article-row__action {
   position: absolute;
   top: 0;
   bottom: 0;
+  left: 0;
+  right: 0;
   display: flex;
   align-items: center;
-  padding: 0 16px;
-  font-size: 12.5px;
-  font-weight: var(--weight-medium);
-  color: #fff;
-  transition: opacity 150ms ease;
+  padding: 0 18px;
+  transition: opacity 100ms ease;
   pointer-events: none;
 }
 
 .news-article-row__action--read {
-  right: 0;
+  justify-content: flex-end;
   background: var(--color-accent);
 }
 
 .news-article-row__action--save {
-  left: 0;
+  justify-content: flex-start;
   background: var(--color-accent-secondary);
+}
+
+.news-article-row__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+  font-size: 14px;
+  transform: scale(0.85);
+  /* A snappy overshoot easing, not a plain ease — the point is a distinct
+     little "pop" exactly on crossing the real fire threshold (.is-armed),
+     the same kind of tactile confirmation-before-release Feedly's own
+     swipe gives, rather than the row just going straight from "dragging"
+     to "already happened" with nothing in between. */
+  transition: transform 180ms cubic-bezier(0.34, 1.56, 0.64, 1), background 180ms ease;
+}
+
+.news-article-row__icon.is-armed {
+  transform: scale(1.08);
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.news-article-row__label {
+  display: none;
 }
 
 .news-article-card {
@@ -6681,6 +6716,7 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   cursor: pointer;
   touch-action: pan-y;
   position: relative;
+  transition: opacity 200ms ease;
 }
 
 .news-article-card.is-read {
