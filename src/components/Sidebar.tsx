@@ -12,19 +12,59 @@ interface NavItemDef {
   kind: TabKind;
 }
 
-const WORKSPACE_ITEMS: NavItemDef[] = [
-  { path: '/today', label: 'Today', kind: 'today' },
-  { path: '/projects', label: 'Projects', kind: 'projects-list' },
-  { path: '/notes', label: 'Notes', kind: 'notes-list' },
-  { path: '/lists', label: 'Lists', kind: 'lists-list' },
-  { path: '/jots', label: 'Jots', kind: 'jots-list' },
-  { path: '/boards', label: 'Boards', kind: 'boards-list' },
-  { path: '/contacts', label: 'Contacts', kind: 'contacts-list' },
-  { path: '/journal', label: 'Journal', kind: 'journal' },
-  { path: '/news', label: 'News', kind: 'news' },
-  { path: '/links', label: 'Links', kind: 'links' },
-  { path: '/stats', label: 'Stats', kind: 'stats' },
-  { path: '/dashboard', label: 'Dashboard', kind: 'dashboard' },
+interface NavSectionDef {
+  label: string;
+  items: NavItemDef[];
+}
+
+// Grouped by how each item actually gets used day to day, not alphabetically
+// or by when it was added — see the sidebar-reorganization discussion this
+// replaced the old single flat "Workspace" list with:
+//   Now       — checked constantly regardless of what you're working on
+//   Capture   — quick, low-friction writing (Lists included: often as fast
+//               to jot as a note)
+//   Plan      — structured, ongoing work
+//   Reference — lookup data, not something you "do"
+//   Insights  — summaries/analysis of everything else, including Journal
+//               (you revisit entries more than you actively write in it)
+const SIDEBAR_SECTIONS: NavSectionDef[] = [
+  {
+    label: 'Now',
+    items: [
+      { path: '/today', label: 'Today', kind: 'today' },
+      { path: '/news', label: 'News', kind: 'news' },
+    ],
+  },
+  {
+    label: 'Capture',
+    items: [
+      { path: '/jots', label: 'Jots', kind: 'jots-list' },
+      { path: '/notes', label: 'Notes', kind: 'notes-list' },
+      { path: '/lists', label: 'Lists', kind: 'lists-list' },
+    ],
+  },
+  {
+    label: 'Plan',
+    items: [
+      { path: '/projects', label: 'Projects', kind: 'projects-list' },
+      { path: '/boards', label: 'Boards', kind: 'boards-list' },
+    ],
+  },
+  {
+    label: 'Reference',
+    items: [
+      { path: '/links', label: 'Links', kind: 'links' },
+      { path: '/contacts', label: 'Contacts', kind: 'contacts-list' },
+    ],
+  },
+  {
+    label: 'Insights',
+    items: [
+      { path: '/dashboard', label: 'Dashboard', kind: 'dashboard' },
+      { path: '/stats', label: 'Stats', kind: 'stats' },
+      { path: '/journal', label: 'Journal', kind: 'journal' },
+    ],
+  },
 ];
 
 export function Sidebar({ open = false, onClose }: SidebarProps) {
@@ -77,9 +117,13 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
         </div>
         <input className="sidebar__search" placeholder="Search" disabled title="Search — coming later" />
 
-        <div className="sidebar__section">
-          <div className="sidebar__section-label">Workspace</div>
-          <nav className="sidebar__nav">{WORKSPACE_ITEMS.map(renderItem)}</nav>
+        <div className="sidebar__sections">
+          {SIDEBAR_SECTIONS.map((section, i) => (
+            <div className={`sidebar__section${i > 0 ? ' sidebar__section--divider' : ''}`} key={section.label}>
+              <div className="sidebar__section-label">{section.label}</div>
+              <nav className="sidebar__nav">{section.items.map(renderItem)}</nav>
+            </div>
+          ))}
         </div>
 
         <div className="sidebar__spacer" />

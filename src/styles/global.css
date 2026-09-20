@@ -128,10 +128,24 @@ a {
   color: var(--color-accent-text);
 }
 
+.sidebar__sections {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
 .sidebar__section {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+/* A hairline above every section but the first — the visual break between
+   groups (Now / Capture / Plan / Reference / Insights) the flat item list
+   didn't have. */
+.sidebar__section--divider {
+  border-top: var(--border-hairline);
+  padding-top: 14px;
 }
 
 .sidebar__section-label {
