@@ -8,6 +8,16 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      // The default injected register script is a bare
+      // `navigator.serviceWorker.register(...)` with no update-checking or
+      // reload logic at all — "autoUpdate" only actually auto-updates (skip
+      // the new worker straight to active + reload the page) when the app
+      // registers via the `virtual:pwa-register` module itself, which is
+      // what main.tsx now does. Without this, a new service worker sits in
+      // "waiting" until every tab of the app is fully closed (not just
+      // reloaded), which is why a deploy could go out and a hard refresh
+      // still showed the old build.
+      injectRegister: false,
       includeAssets: ['favicon.svg', 'icon-192.png', 'icon-512.png'],
       manifest: {
         name: 'MikeOS',
@@ -25,6 +35,12 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,ico}'],
+        // New worker takes over immediately instead of waiting for every
+        // open tab to close, and stale precache entries from the previous
+        // deploy get swept instead of accumulating in Cache Storage.
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
       },
     }),
   ],
