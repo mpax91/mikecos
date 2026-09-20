@@ -7045,6 +7045,11 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   touch-action: pan-y;
   position: relative;
   transition: opacity 200ms ease;
+  /* Hints the browser to promote this to its own compositor layer ahead of
+     time, so the swipe drag (ArticleRow in NewsPage.tsx writes `transform`
+     directly to this element on every animation frame) composites instead
+     of triggering a full layout/paint on lower-power tablet hardware. */
+  will-change: transform;
 }
 
 .news-article-card.is-read {
