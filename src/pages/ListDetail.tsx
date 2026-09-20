@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import type { Entity, EntityDetail } from '../api/types';
-import { TaskRow } from '../components/TaskRow';
+import { ListItemRow } from '../components/ListItemRow';
 import { NewListItemRow } from '../components/NewListItemRow';
 import { TaskDetailModal } from '../components/TaskDetailModal';
 import { EditableText } from '../components/EditableText';
@@ -11,11 +11,29 @@ import { Toast } from '../components/Toast';
 import { KebabMenu } from '../components/KebabMenu';
 import { useReportTabMeta } from '../contexts/TabsContext';
 
+// How long a checked-off item stays removable via the toast's Undo button
+// before it's actually deleted. Kept well under Toast's own 6s auto-dismiss
+// so the button never outlives what it does.
+const UNDO_WINDOW_MS = 4500;
+
+interface ToastState {
+  message: string;
+  actionLabel?: string;
+  onAction?: () => void;
+}
+
 /** A List's detail view — a flat checklist. Deliberately much simpler than
  * ProjectDetail: no folders/notes/media/pinned sections, just items — but
  * every item is a full task entity underneath (see
  * migrations/0029_lists.sql), so it gets the same detail panel (description,
- * due date, subtasks, attachments) as a project task for free. */
+ * due date, subtasks, attachments) as a project task for free.
+ *
+ * Checking an item off doesn't set status='done' and leave it sitting in a
+ * Completed section the way a project task does — a list gets checked off
+ * and moved on from (groceries, a download queue), so there's nothing to
+ * keep. Checking a box fades the row out and schedules a real delete after
+ * UNDO_WINDOW_MS, with a Toast offering Undo in the meantime; nothing hits
+ * the server until that window closes. */
 export function ListDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -23,9 +41,31 @@ export function ListDetail() {
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<Entity | null>(null);
   const [deletingList, setDeletingList] = useState(false);
-  const [confirmingClear, setConfirmingClear] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<ToastState | null>(null);
   const [taskStack, setTaskStack] = useState<string[]>([]);
+  // Items mid check-off: fading out visually (removingIds) and, once the
+  // fade finishes, hidden from the list entirely (hiddenIds) while their
+  // delete is still pending/undoable.
+  const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
+  const pendingDeletes = useRef<Map<string, number>>(new Map());
+  // Tracks which item id each currently-scheduled toast's Undo button
+  // belongs to, so a later check-off's toast never gets clobbered by an
+  // earlier one's delete-timeout finishing (see checkOffItem).
+  const undoHandlers = useRef<Map<string, () => void>>(new Map());
+
+  // If the user navigates away mid-undo-window, commit any pending
+  // check-offs immediately rather than leaving orphaned timers that would
+  // otherwise fire against a page nobody's looking at.
+  useEffect(() => {
+    return () => {
+      pendingDeletes.current.forEach((timeoutId, entityId) => {
+        window.clearTimeout(timeoutId);
+        api.deleteEntity(entityId).catch(() => {});
+      });
+      pendingDeletes.current.clear();
+    };
+  }, []);
 
   const load = useCallback(() => {
     if (!id) return;
@@ -68,10 +108,57 @@ export function ListDetail() {
       .map((c) => (c.subtasks?.length ? { ...c, subtasks: c.subtasks.filter((s) => s.id !== targetId) } : c));
   }
 
-  async function toggleItem(entity: Entity) {
-    const nextStatus = entity.status === 'done' ? 'open' : 'done';
-    setDetail((prev) => (prev ? { ...prev, children: mapChildrenWithSubtasks(prev.children, entity.id, { status: nextStatus }) } : prev));
-    await api.updateEntity(entity.id, { status: nextStatus });
+  /** Checking an item off: fade it out, hide it once the fade finishes, and
+   * schedule the actual delete for UNDO_WINDOW_MS from now — reversible via
+   * the toast's Undo button (undoCheckOff) up until that timer fires. */
+  function checkOffItem(entity: Entity) {
+    setRemovingIds((prev) => new Set(prev).add(entity.id));
+    window.setTimeout(() => {
+      setRemovingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(entity.id);
+        return next;
+      });
+      setHiddenIds((prev) => new Set(prev).add(entity.id));
+    }, 220);
+
+    const timeoutId = window.setTimeout(async () => {
+      pendingDeletes.current.delete(entity.id);
+      await api.deleteEntity(entity.id);
+      setDetail((prev) => (prev ? { ...prev, children: removeChildEverywhere(prev.children, entity.id) } : prev));
+      setHiddenIds((prev) => {
+        const next = new Set(prev);
+        next.delete(entity.id);
+        return next;
+      });
+      setToast((prev) => (prev?.onAction === undoHandlers.current.get(entity.id) ? null : prev));
+      undoHandlers.current.delete(entity.id);
+    }, UNDO_WINDOW_MS);
+    pendingDeletes.current.set(entity.id, timeoutId);
+
+    const undo = () => undoCheckOff(entity.id);
+    undoHandlers.current.set(entity.id, undo);
+    setToast({ message: `"${entity.title || 'Untitled Item'}" removed.`, actionLabel: 'Undo', onAction: undo });
+  }
+
+  function undoCheckOff(entityId: string) {
+    const timeoutId = pendingDeletes.current.get(entityId);
+    if (timeoutId) {
+      window.clearTimeout(timeoutId);
+      pendingDeletes.current.delete(entityId);
+    }
+    undoHandlers.current.delete(entityId);
+    setRemovingIds((prev) => {
+      const next = new Set(prev);
+      next.delete(entityId);
+      return next;
+    });
+    setHiddenIds((prev) => {
+      const next = new Set(prev);
+      next.delete(entityId);
+      return next;
+    });
+    setToast(null);
   }
 
   async function togglePin(entity: Entity) {
@@ -128,27 +215,12 @@ export function ListDetail() {
     persistReorder(ordered.map((o) => o.id));
   }
 
-  async function handleReset() {
-    if (!id) return;
-    setDetail((prev) => (prev ? { ...prev, children: prev.children.map((c) => (c.type === 'task' ? { ...c, status: 'open' } : c)) } : prev));
-    await api.resetList(id);
-    setToast('All items unchecked.');
-  }
-
-  async function handleClearCompleted() {
-    if (!id) return;
-    setConfirmingClear(false);
-    const res = await api.clearCompletedListItems(id);
-    load();
-    setToast(`Cleared ${res.deletedCount} completed item${res.deletedCount === 1 ? '' : 's'}.`);
-  }
-
   async function handleToggleArchive() {
     if (!detail || !id) return;
     const next = detail.entity.status === 'archived' ? 'active' : 'archived';
     setDetail((prev) => (prev ? { ...prev, entity: { ...prev.entity, status: next } } : prev));
     await api.updateEntity(id, { status: next });
-    setToast(next === 'archived' ? 'List archived.' : 'List unarchived.');
+    setToast({ message: next === 'archived' ? 'List archived.' : 'List unarchived.' });
   }
 
   async function handleDeleteList() {
@@ -159,18 +231,19 @@ export function ListDetail() {
 
   function handleCopyAsText() {
     if (!detail) return;
-    const open = detail.children.filter((c) => c.type === 'task' && c.status !== 'done');
-    const text = [detail.entity.title || 'Untitled List', '', ...open.map((c) => `- ${c.title || 'Untitled'}`)].join('\n');
-    navigator.clipboard.writeText(text).then(() => setToast('List copied to clipboard.'));
+    const text = [detail.entity.title || 'Untitled List', '', ...items.map((c) => `- ${c.title || 'Untitled'}`)].join('\n');
+    navigator.clipboard.writeText(text).then(() => setToast({ message: 'List copied to clipboard.' }));
   }
 
   if (error) return <div className="empty-state">Couldn't load list: {error}</div>;
   if (!detail) return <div className="empty-state">Loading…</div>;
 
   const { entity, children } = detail;
-  const items = children.filter((c) => c.type === 'task');
-  const openItems = items.filter((t) => t.status !== 'done');
-  const doneItems = items.filter((t) => t.status === 'done');
+  // Never done — a checked-off item is deleted (see checkOffItem), not
+  // marked done, but the status filter is kept as a safety net for any
+  // item that predates this behavior. hiddenIds strips whatever's mid
+  // check-off (faded out, delete pending/undoable) from view.
+  const items = children.filter((c) => c.type === 'task' && c.status !== 'done' && !hiddenIds.has(c.id));
   const isArchived = entity.status === 'archived';
 
   return (
@@ -209,33 +282,30 @@ export function ListDetail() {
       </div>
 
       <div className="toolbar-row" style={{ marginBottom: 8 }}>
-        <span className="empty-state" style={{ padding: 0, margin: 0 }}>
-          {openItems.length} open{doneItems.length > 0 ? ` · ${doneItems.length} checked off` : ''}
-        </span>
+        <div />
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <button className="btn btn--ghost" onClick={handleCopyAsText} disabled={openItems.length === 0}>
+          <button className="btn btn--ghost" onClick={handleCopyAsText} disabled={items.length === 0}>
             Copy as Text
           </button>
           <KebabMenu
             items={[
-              { label: 'Reset (uncheck all)', onClick: handleReset, disabled: doneItems.length === 0 },
-              { label: 'Clear completed', onClick: () => setConfirmingClear(true), disabled: doneItems.length === 0 },
-              { label: isArchived ? 'Unarchive' : 'Archive', onClick: handleToggleArchive, separatorBefore: true },
-              { label: 'Delete List', onClick: () => setDeletingList(true), danger: true },
+              { label: isArchived ? 'Unarchive' : 'Archive', onClick: handleToggleArchive },
+              { label: 'Delete List', onClick: () => setDeletingList(true), danger: true, separatorBefore: true },
             ]}
           />
         </div>
       </div>
 
       <div className="task-list">
-        {openItems.length === 0 && doneItems.length === 0 && (
+        {items.length === 0 && (
           <div className="empty-state empty-state--section">Nothing here yet — add your first item below.</div>
         )}
-        {openItems.map((c) => (
-          <TaskRow
+        {items.map((c) => (
+          <ListItemRow
             key={c.id}
             entity={c}
-            onToggle={toggleItem}
+            isRemoving={removingIds.has(c.id)}
+            onCheckOff={checkOffItem}
             onDelete={setDeleting}
             onTogglePin={togglePin}
             onOpen={openItem}
@@ -244,14 +314,6 @@ export function ListDetail() {
           />
         ))}
         <NewListItemRow onCreate={createItem} onCreateMany={createItems} />
-        {doneItems.length > 0 && (
-          <>
-            <div className="task-divider">Completed</div>
-            {doneItems.map((c) => (
-              <TaskRow key={c.id} entity={c} onToggle={toggleItem} onDelete={setDeleting} onTogglePin={togglePin} onOpen={openItem} />
-            ))}
-          </>
-        )}
       </div>
 
       {deleting && (
@@ -260,16 +322,6 @@ export function ListDetail() {
           body={`"${deleting.title || 'Untitled'}" will be permanently deleted.`}
           onConfirm={() => deleteItem(deleting)}
           onCancel={() => setDeleting(null)}
-        />
-      )}
-
-      {confirmingClear && (
-        <ConfirmModal
-          title="Clear completed items?"
-          body={`${doneItems.length} checked-off item${doneItems.length === 1 ? '' : 's'} will be permanently deleted. Open items are untouched.`}
-          confirmLabel="Clear"
-          onConfirm={handleClearCompleted}
-          onCancel={() => setConfirmingClear(false)}
         />
       )}
 
@@ -282,7 +334,9 @@ export function ListDetail() {
         />
       )}
 
-      {toast && <Toast message={toast} onDismiss={() => setToast(null)} />}
+      {toast && (
+        <Toast message={toast.message} actionLabel={toast.actionLabel} onAction={toast.onAction} onDismiss={() => setToast(null)} />
+      )}
 
       {taskStack.length > 0 && (
         <TaskDetailModal

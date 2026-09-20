@@ -134,14 +134,6 @@ export const api = {
       body: JSON.stringify({ titles }),
     }),
 
-  /** Unchecks every item without deleting anything — for a list reused
-   * regularly (the same weekly grocery run) rather than rebuilt each time. */
-  resetList: (listId: string) => request<{ ok: true }>(`/api/lists/${listId}/reset`, { method: 'POST' }),
-
-  /** Permanently removes every checked-off item. */
-  clearCompletedListItems: (listId: string) =>
-    request<{ ok: true; deletedCount: number }>(`/api/lists/${listId}/clear-completed`, { method: 'POST' }),
-
   listNotes: () => request<Entity[]>('/api/notes'),
 
   createNote: (title?: string, content?: string | null) =>

@@ -26,7 +26,7 @@ function parseLinkMeta(entity: Entity): LinkMeta | null {
 /** 'YYYY-MM-DD' -> a short, relative-when-useful label plus a `kind` the
  * caller uses to color it (overdue tasks should stand out, today's tasks
  * a little, anything further out just reads as plain info). */
-function formatDueDate(dueDate: string): { label: string; kind: 'overdue' | 'today' | 'upcoming' } {
+export function formatDueDate(dueDate: string): { label: string; kind: 'overdue' | 'today' | 'upcoming' } {
   const due = new Date(`${dueDate}T00:00:00`);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -45,7 +45,7 @@ function formatDueDate(dueDate: string): { label: string; kind: 'overdue' | 'tod
 }
 
 /** 'HH:MM' 24h -> a short 12-hour clock label ("2:30 PM") for the due badge. */
-function formatDueTime(dueTime: string): string {
+export function formatDueTime(dueTime: string): string {
   const [h, m] = dueTime.split(':').map(Number);
   const period = h < 12 ? 'AM' : 'PM';
   const hour12 = h % 12 === 0 ? 12 : h % 12;
@@ -55,7 +55,7 @@ function formatDueTime(dueTime: string): string {
 /** Small paperclip + count on a task row that has file/link attachments —
  * click it to see (and open) them right from the project view, no need to
  * open the task's own detail panel first. */
-function TaskMediaIndicator({ media }: { media: Entity[] }) {
+export function TaskMediaIndicator({ media }: { media: Entity[] }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 

@@ -70,13 +70,11 @@ export function ListCard({
         </p>
         <div className="project-card__stats">
           {isArchived && <span>Archived</span>}
-          {list.open_count > 0 && (
-            <span title={`${list.open_count} open item${list.open_count === 1 ? '' : 's'}`}>☐ {list.open_count}</span>
+          {list.open_count > 0 ? (
+            <span title={`${list.open_count} item${list.open_count === 1 ? '' : 's'}`}>☐ {list.open_count}</span>
+          ) : (
+            <span>Empty</span>
           )}
-          {list.done_count > 0 && (
-            <span title={`${list.done_count} checked off`}>☑ {list.done_count}</span>
-          )}
-          {list.open_count === 0 && list.done_count === 0 && <span>Empty</span>}
         </div>
       </div>
       <KebabMenu

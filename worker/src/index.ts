@@ -2216,36 +2216,11 @@ app.post('/api/lists/:id/items', async (c) => {
   return c.json({ items: results ?? [] }, 201);
 });
 
-// POST /api/lists/:id/reset — uncheck every item (status back to 'open')
-// without deleting anything, for a list you reuse regularly (the same
-// weekly grocery run, say) rather than rebuilding it from scratch.
-app.post('/api/lists/:id/reset', async (c) => {
-  const id = c.req.param('id');
-  const list = await c.env.DB.prepare("SELECT id FROM entities WHERE id = ? AND is_list = 1").bind(id).first();
-  if (!list) return c.json({ error: 'list not found' }, 404);
-  await c.env.DB.prepare("UPDATE entities SET status = 'open', updated_at = ? WHERE parent_id = ? AND type = 'task' AND status = 'done'")
-    .bind(now(), id)
-    .run();
-  await touchProjectAncestor(c.env.DB, id);
-  return c.json({ ok: true });
-});
-
-// POST /api/lists/:id/clear-completed — permanently removes every checked-off
-// item (and any of their own subtasks/attachments) — the other half of the
-// "reset vs. clear" pair Settings-style lists want once a trip/errand is done.
-app.post('/api/lists/:id/clear-completed', async (c) => {
-  const id = c.req.param('id');
-  const list = await c.env.DB.prepare("SELECT id FROM entities WHERE id = ? AND is_list = 1").bind(id).first();
-  if (!list) return c.json({ error: 'list not found' }, 404);
-  const { results: done } = await c.env.DB.prepare("SELECT id FROM entities WHERE parent_id = ? AND type = 'task' AND status = 'done'")
-    .bind(id)
-    .all<{ id: string }>();
-  for (const row of done ?? []) {
-    await deleteEntityDeep(c.env.DB, c.env.FILES, row.id);
-  }
-  await touchProjectAncestor(c.env.DB, id);
-  return c.json({ ok: true, deletedCount: (done ?? []).length });
-});
+// Note: there's deliberately no reset/clear-completed pair of endpoints
+// here. Checking a list item off deletes it client-side (see
+// ListDetail.tsx's checkOffItem) rather than flipping status='done' and
+// leaving it around — a list gets checked off and moved on from, so
+// there's nothing left to "clear" later.
 
 // ---- Notes (standalone, top-level) ----
 

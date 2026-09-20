@@ -1588,6 +1588,64 @@ a {
   background: var(--color-border);
 }
 
+/* ---- List item row (Lists feature) ----
+   Deliberately its own rules rather than reusing .task-row — a checklist
+   should read lighter than a project's task list: smaller checkbox, a
+   dotted hairline instead of a solid border, tighter padding, no drag
+   handle. See ListItemRow.tsx. */
+
+.list-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  border-bottom: 1px dotted var(--color-border);
+  cursor: pointer;
+  border-radius: 6px;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.list-row:hover {
+  background: rgba(47, 74, 60, 0.04);
+}
+
+.task-list > .list-row:last-child {
+  border-bottom: none;
+}
+
+.list-row.is-removing {
+  opacity: 0;
+  transform: translateX(8px);
+  pointer-events: none;
+}
+
+.list-row__checkbox {
+  accent-color: var(--color-accent);
+  width: 13px;
+  height: 13px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.list-row__title {
+  font-size: 13.5px;
+  color: var(--color-ink);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.list-row__title.is-placeholder {
+  color: var(--color-placeholder);
+}
+
+.list-row:hover .task-row__kebab,
+.list-row .kebab-menu[data-open] {
+  opacity: 1;
+}
+
 /* ---- Kebab menu ---- */
 
 .kebab-menu {
