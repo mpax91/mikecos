@@ -4727,6 +4727,288 @@ app.get('/api/top-news', async (c) => {
   return c.json({ items: await computeTopNews(c.env.DB) });
 });
 
+// ---- Global search (Cmd/Ctrl+K palette) ----
+//
+// Fans out one plain LIKE query per source table rather than one giant
+// UNION across heterogeneous schemas — matches this codebase's existing
+// per-module-route style (see /api/stats/completions above) and stays
+// simple to reason about/extend as new modules show up. Plenty fast at
+// personal-app scale; add FTS5 only if this ever actually gets slow.
+//
+// Every source funnels into one of nine result "groups" — the same set the
+// search palette's filter chips offer (notes/jots/lists/projects/boards/
+// contacts/journal/meeting_notes/links). `entities` alone covers five of
+// them (notes, jots, projects, lists, and list/project tasks) plus file
+// attachments, which are folded into whichever group their parent belongs
+// to rather than getting a chip of their own — a match on a filename reads
+// naturally as "found inside Notes/Projects/etc", not a separate concept.
+const SEARCH_GROUPS = ['notes', 'jots', 'lists', 'projects', 'boards', 'contacts', 'journal', 'meeting_notes', 'links'] as const;
+type SearchGroup = (typeof SEARCH_GROUPS)[number];
+
+interface SearchResult {
+  id: string;
+  kind: string;
+  group: SearchGroup;
+  title: string;
+  snippet: string | null;
+  parentTitle: string | null;
+  path: string;
+  openId: string | null; // set when `path` needs a taskStack opened after navigating (see ListDetail/ProjectDetail's location.state handling)
+  updatedAt: string;
+  score: number;
+}
+
+function matchScore(title: string, body: string | null, q: string): number {
+  const t = title.toLowerCase();
+  const qq = q.toLowerCase();
+  if (t === qq) return 100;
+  if (t.startsWith(qq)) return 80;
+  if (t.includes(qq)) return 60;
+  if (body && body.toLowerCase().includes(qq)) return 30;
+  return 0;
+}
+
+// A short excerpt centered on the match, for body-text hits where the
+// title itself didn't match — lets a result show *why* it's here instead
+// of just that it is. Title-only matches skip this (nothing more useful
+// to show than the title, which is already the result's heading).
+function snippetAround(body: string, q: string, radius = 60): string {
+  const idx = body.toLowerCase().indexOf(q.toLowerCase());
+  if (idx === -1) return body.slice(0, radius * 2).trim();
+  const start = Math.max(0, idx - radius);
+  const end = Math.min(body.length, idx + q.length + radius);
+  return `${start > 0 ? '…' : ''}${body.slice(start, end).trim()}${end < body.length ? '…' : ''}`;
+}
+
+app.get('/api/search', async (c) => {
+  const q = c.req.query('q')?.trim();
+  if (!q) return c.json({ groups: [] });
+
+  const scopeParam = c.req.query('scope')?.trim();
+  const scope = new Set<SearchGroup>(
+    scopeParam ? (scopeParam.split(',').filter((s) => (SEARCH_GROUPS as readonly string[]).includes(s)) as SearchGroup[]) : SEARCH_GROUPS
+  );
+  const includeArchived = c.req.query('archived') === '1';
+  const like = `%${q}%`;
+  const db = c.env.DB;
+  const results: SearchResult[] = [];
+
+  const wantsEntities = scope.has('notes') || scope.has('jots') || scope.has('lists') || scope.has('projects');
+  const wantsBoards = scope.has('boards');
+  const wantsContacts = scope.has('contacts');
+  const wantsJournal = scope.has('journal');
+  const wantsMeetings = scope.has('meeting_notes');
+  const wantsLinks = scope.has('links');
+
+  const [entityRows, boardRows, boardItemRows, contactRows, contactNoteRows, journalRows, meetingRows, linkRows] = await Promise.all([
+    wantsEntities
+      ? db
+          .prepare(
+            `SELECT e.*, p.type as parent_type, p.is_jot as parent_is_jot, p.is_list as parent_is_list, p.title as parent_title
+             FROM entities e LEFT JOIN entities p ON p.id = e.parent_id
+             WHERE e.type IN ('note','task','project','file') AND (e.title LIKE ? OR e.search_text LIKE ?)
+             ORDER BY e.updated_at DESC LIMIT 80`
+          )
+          .bind(like, like)
+          .all<Entity & { parent_type: string | null; parent_is_jot: number | null; parent_is_list: number | null; parent_title: string | null }>()
+      : Promise.resolve({ results: [] as any[] }),
+    wantsBoards
+      ? db.prepare(`SELECT * FROM canvas_boards WHERE title LIKE ? ORDER BY updated_at DESC LIMIT 25`).bind(like).all<{ id: string; title: string; updated_at: string }>()
+      : Promise.resolve({ results: [] as any[] }),
+    wantsBoards
+      ? db
+          .prepare(
+            `SELECT i.id, i.type, i.content, i.board_id, b.title as board_title, b.updated_at
+             FROM canvas_items i JOIN canvas_boards b ON b.id = i.board_id
+             WHERE (i.type IN ('text','note') AND json_extract(i.content, '$.text') LIKE ?)
+                OR (i.type = 'image' AND json_extract(i.content, '$.filename') LIKE ?)
+             ORDER BY b.updated_at DESC LIMIT 25`
+          )
+          .bind(like, like)
+          .all<{ id: string; type: string; content: string; board_id: string; board_title: string; updated_at: string }>()
+      : Promise.resolve({ results: [] as any[] }),
+    wantsContacts
+      ? db
+          .prepare(`SELECT * FROM contacts WHERE name LIKE ? OR company LIKE ? OR title LIKE ? OR address LIKE ? ORDER BY updated_at DESC LIMIT 25`)
+          .bind(like, like, like, like)
+          .all<{ id: string; name: string; company: string | null; title: string | null; updated_at: string }>()
+      : Promise.resolve({ results: [] as any[] }),
+    wantsContacts
+      ? db
+          .prepare(`SELECT n.*, c.name as contact_name FROM contact_notes n JOIN contacts c ON c.id = n.contact_id WHERE n.text LIKE ? ORDER BY n.created_at DESC LIMIT 25`)
+          .bind(like)
+          .all<{ id: string; contact_id: string; text: string; contact_name: string; created_at: string }>()
+      : Promise.resolve({ results: [] as any[] }),
+    wantsJournal
+      ? db.prepare(`SELECT * FROM journal_entries WHERE search_text LIKE ? OR date LIKE ? ORDER BY date DESC LIMIT 25`).bind(like, like).all<{ date: string; content: string; search_text: string | null; updated_at: string }>()
+      : Promise.resolve({ results: [] as any[] }),
+    wantsMeetings
+      ? db.prepare(`SELECT * FROM meeting_notes WHERE text LIKE ? OR meeting_title LIKE ? ORDER BY updated_at DESC LIMIT 25`).bind(like, like).all<{ id: string; meeting_id: string; meeting_title: string | null; text: string; updated_at: string }>()
+      : Promise.resolve({ results: [] as any[] }),
+    wantsLinks
+      ? db.prepare(`SELECT * FROM quick_links WHERE name LIKE ? OR url LIKE ? ORDER BY updated_at DESC LIMIT 25`).bind(like, like).all<{ id: string; name: string; url: string; updated_at: string }>()
+      : Promise.resolve({ results: [] as any[] }),
+  ]);
+
+  // ---- entities: notes / jots / lists / projects / their tasks / files ----
+  for (const e of entityRows.results ?? []) {
+    if (!includeArchived && (e.status === 'done' || e.status === 'archived')) continue;
+
+    let kind: string;
+    let group: SearchGroup;
+    let parentTitle: string | null = null;
+    let path = '/';
+    let openId: string | null = null;
+
+    if (e.type === 'note') {
+      kind = e.is_jot ? 'jot' : 'note';
+      group = e.is_jot ? 'jots' : 'notes';
+      path = e.is_jot ? '/jots' : `/notes/${e.id}`;
+      if (e.is_jot) openId = e.id; // Jots has no per-item route — opened via location.state on /jots instead
+    } else if (e.type === 'project') {
+      kind = e.is_list ? 'list' : 'project';
+      group = e.is_list ? 'lists' : 'projects';
+      path = e.is_list ? `/lists/${e.id}` : `/projects/${e.id}`;
+    } else if (e.type === 'task') {
+      const parentIsList = e.parent_is_list === 1;
+      kind = parentIsList ? 'list_item' : 'task';
+      group = parentIsList ? 'lists' : 'projects';
+      parentTitle = e.parent_title;
+      path = parentIsList ? `/lists/${e.parent_id}` : `/projects/${e.parent_id}`;
+      openId = e.id;
+    } else {
+      // type === 'file' — folds into whichever group its immediate parent
+      // belongs to; a file attached directly to a task (one level deeper)
+      // falls back to Projects rather than chasing a grandparent lookup.
+      kind = 'file';
+      parentTitle = e.parent_title;
+      if (e.parent_type === 'note') {
+        group = e.parent_is_jot ? 'jots' : 'notes';
+        path = e.parent_is_jot ? '/jots' : `/notes/${e.parent_id}`;
+        if (e.parent_is_jot) openId = e.parent_id;
+      } else if (e.parent_type === 'project') {
+        group = e.parent_is_list ? 'lists' : 'projects';
+        path = e.parent_is_list ? `/lists/${e.parent_id}` : `/projects/${e.parent_id}`;
+      } else {
+        group = 'projects';
+        path = e.parent_id ? `/projects/${e.parent_id}` : '/projects';
+      }
+    }
+
+    if (!scope.has(group)) continue;
+    const score = matchScore(e.title ?? '', e.search_text ?? null, q);
+    if (score === 0) continue;
+    const snippet = score < 60 && e.search_text ? snippetAround(e.search_text, q) : null;
+    results.push({ id: e.id, kind, group, title: e.title || (kind === 'file' ? 'Untitled File' : 'Untitled'), snippet, parentTitle, path, openId, updatedAt: e.updated_at, score });
+  }
+
+  // ---- boards ----
+  for (const b of boardRows.results ?? []) {
+    const score = matchScore(b.title ?? '', null, q);
+    if (score === 0) continue;
+    results.push({ id: b.id, kind: 'board', group: 'boards', title: b.title || 'Untitled Board', snippet: null, parentTitle: null, path: `/boards/${b.id}`, openId: null, updatedAt: b.updated_at, score });
+  }
+  for (const item of boardItemRows.results ?? []) {
+    let content: { text?: string; filename?: string } = {};
+    try {
+      content = JSON.parse(item.content);
+    } catch {}
+    const title = content.text || content.filename || 'Untitled Item';
+    const score = matchScore(title, null, q);
+    if (score === 0) continue;
+    results.push({
+      id: item.id,
+      kind: 'board_item',
+      group: 'boards',
+      title: title.length > 80 ? `${title.slice(0, 80)}…` : title,
+      snippet: null,
+      parentTitle: item.board_title,
+      path: `/boards/${item.board_id}`,
+      openId: null,
+      updatedAt: item.updated_at,
+      score,
+    });
+  }
+
+  // ---- contacts ----
+  for (const ct of contactRows.results ?? []) {
+    const body = [ct.company, ct.title].filter(Boolean).join(' ');
+    const score = matchScore(ct.name ?? '', body, q);
+    if (score === 0) continue;
+    results.push({ id: ct.id, kind: 'contact', group: 'contacts', title: ct.name || 'Untitled Contact', snippet: score < 60 ? body || null : null, parentTitle: null, path: `/contacts/${ct.id}`, openId: null, updatedAt: ct.updated_at, score });
+  }
+  for (const n of contactNoteRows.results ?? []) {
+    const score = matchScore('', n.text, q);
+    if (score === 0) continue;
+    results.push({
+      id: n.id,
+      kind: 'contact_note',
+      group: 'contacts',
+      title: n.contact_name || 'Untitled Contact',
+      snippet: snippetAround(n.text, q),
+      parentTitle: null,
+      path: `/contacts/${n.contact_id}`,
+      openId: null,
+      updatedAt: n.created_at,
+      score,
+    });
+  }
+
+  // ---- journal ----
+  for (const j of journalRows.results ?? []) {
+    const title = new Date(`${j.date}T00:00:00`).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    const score = matchScore(title, j.search_text, q);
+    if (score === 0) continue;
+    results.push({
+      id: j.date,
+      kind: 'journal',
+      group: 'journal',
+      title,
+      snippet: score < 60 && j.search_text ? snippetAround(j.search_text, q) : null,
+      parentTitle: null,
+      path: `/journal/${j.date}`,
+      openId: null,
+      updatedAt: j.updated_at,
+      score,
+    });
+  }
+
+  // ---- meeting notes ----
+  for (const m of meetingRows.results ?? []) {
+    const title = m.meeting_title || 'Untitled Meeting';
+    const score = matchScore(title, m.text, q);
+    if (score === 0) continue;
+    results.push({
+      id: m.id,
+      kind: 'meeting_note',
+      group: 'meeting_notes',
+      title,
+      snippet: score < 60 ? snippetAround(m.text, q) : null,
+      parentTitle: null,
+      path: '/today',
+      openId: null,
+      updatedAt: m.updated_at,
+      score,
+    });
+  }
+
+  // ---- quick links (sidebar Links tray) ----
+  for (const l of linkRows.results ?? []) {
+    const score = matchScore(l.name ?? '', l.url, q);
+    if (score === 0) continue;
+    results.push({ id: l.id, kind: 'quick_link', group: 'links', title: l.name || l.url, snippet: score < 60 ? l.url : null, parentTitle: null, path: '/links', openId: null, updatedAt: l.updated_at, score });
+  }
+
+  results.sort((a, b) => b.score - a.score || b.updatedAt.localeCompare(a.updatedAt));
+
+  const groups = SEARCH_GROUPS.filter((g) => scope.has(g)).map((key) => {
+    const groupResults = results.filter((r) => r.group === key);
+    return { key, results: groupResults };
+  });
+
+  return c.json({ groups });
+});
+
 app.get('/api/health', (c) => c.json({ ok: true, time: now() }));
 
 export default app;

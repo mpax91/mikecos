@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import { useTabs, tabIcon, type TabKind } from '../contexts/TabsContext';
+import { OPEN_SEARCH_EVENT } from './SearchPalette';
 
 interface SidebarProps {
   open?: boolean;
@@ -115,7 +116,18 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
             ✕
           </button>
         </div>
-        <input className="sidebar__search" placeholder="Search" disabled title="Search — coming later" />
+        <button
+          type="button"
+          className="sidebar__search"
+          onClick={() => {
+            onClose?.();
+            window.dispatchEvent(new Event(OPEN_SEARCH_EVENT));
+          }}
+          title="Search (⌘K)"
+        >
+          🔍 Search
+          <kbd className="sidebar__search-kbd">⌘K</kbd>
+        </button>
 
         <div className="sidebar__sections">
           {SIDEBAR_SECTIONS.map((section, i) => (

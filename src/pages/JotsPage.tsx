@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import type { Entity } from '../api/types';
 import { NoteEditor } from '../components/NoteEditor';
@@ -66,6 +67,8 @@ function JotCard({
  * see first when you open the section. */
 export function JotsPage() {
   useReportTabMeta('Jots', 'jots-list');
+  const location = useLocation();
+  const navigate = useNavigate();
   const [jots, setJots] = useState<Entity[] | null>(null);
   const [composerOpen, setComposerOpen] = useState(false);
   const [draftId, setDraftId] = useState<string | null>(null);
@@ -86,6 +89,19 @@ export function JotsPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Deep-link from the search palette: jots have no per-item route (see
+  // /api/search's note), so a jot result navigates here and hands the id
+  // through router state instead of a URL param. Consumed once jots have
+  // actually loaded, then cleared (replace, no state) so browser
+  // back/forward doesn't reopen it.
+  useEffect(() => {
+    const openId = (location.state as { openId?: string } | null)?.openId;
+    if (!openId || !jots) return;
+    const found = jots.find((j) => j.id === openId);
+    if (found) setOpenJot(found);
+    navigate('.', { replace: true, state: null });
+  }, [jots, location.state, navigate]);
 
   async function openComposer() {
     setComposerOpen(true);

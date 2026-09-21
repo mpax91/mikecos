@@ -21,12 +21,14 @@ import { NewsPage } from './pages/NewsPage';
 import { LinksPage } from './pages/LinksPage';
 import { ListsPage } from './pages/ListsPage';
 import { ListDetail } from './pages/ListDetail';
+import { SearchPalette } from './components/SearchPalette';
 
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
     <div className="app-shell">
+      <SearchPalette />
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="main">
         <TabBar onMenuClick={() => setSidebarOpen(true)} />

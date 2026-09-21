@@ -61,6 +61,18 @@ export function ProjectDetail() {
     load();
   }, [load]);
 
+  // Deep-link from the search palette: a task result navigates to its
+  // parent project and hands the task id through router state (there's no
+  // per-task route) so it opens straight into the detail panel instead of
+  // leaving you to find it in the list yourself.
+  useEffect(() => {
+    const openId = (location.state as { openId?: string } | null)?.openId;
+    if (!openId) return;
+    setTaskStack([openId]);
+    navigate('.', { replace: true, state: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Keep the active tab's label/icon in sync with whatever this route is
   // actually showing: the note's title as it's typed, or the project/folder's
   // title (distinct icon for a folder vs. its parent project's own tab).

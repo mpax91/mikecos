@@ -893,3 +893,29 @@ export interface NewsSavedArticle {
   description: string | null;
   saved_at: string;
 }
+
+// ---- Global search (Cmd/Ctrl+K palette) ----
+
+export type SearchGroupKey = 'notes' | 'jots' | 'lists' | 'projects' | 'boards' | 'contacts' | 'journal' | 'meeting_notes' | 'links';
+
+export interface SearchResult {
+  id: string;
+  kind: string;
+  group: SearchGroupKey;
+  title: string;
+  snippet: string | null;
+  parentTitle: string | null;
+  path: string;
+  openId: string | null; // pass as router state ({openId}) when navigating to `path` — see /api/search's comment for which pages consume it
+  updatedAt: string;
+  score: number;
+}
+
+export interface SearchGroupResult {
+  key: SearchGroupKey;
+  results: SearchResult[];
+}
+
+export interface SearchResponse {
+  groups: SearchGroupResult[];
+}

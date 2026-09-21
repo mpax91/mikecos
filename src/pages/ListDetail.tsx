@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { api } from '../api/client';
 import type { Entity, EntityDetail } from '../api/types';
 import { ListItemRow } from '../components/ListItemRow';
@@ -37,6 +37,7 @@ interface ToastState {
 export function ListDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const [detail, setDetail] = useState<EntityDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<Entity | null>(null);
@@ -77,6 +78,15 @@ export function ListDetail() {
     setError(null);
     load();
   }, [load]);
+
+  // Deep-link from the search palette — see ProjectDetail's identical effect.
+  useEffect(() => {
+    const openId = (location.state as { openId?: string } | null)?.openId;
+    if (!openId) return;
+    setTaskStack([openId]);
+    navigate('.', { replace: true, state: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useReportTabMeta(detail ? detail.entity.title || 'Untitled List' : undefined, 'list');
 
