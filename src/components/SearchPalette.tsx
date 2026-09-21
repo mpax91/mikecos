@@ -226,14 +226,16 @@ export function SearchPalette() {
               {GROUP_META[key].icon} {GROUP_META[key].label}
             </button>
           ))}
-          <label className="search-palette__archived-toggle">
-            <input type="checkbox" checked={includeArchived} onChange={(e) => setIncludeArchived(e.target.checked)} />
-            Include archived/completed
-          </label>
-          <label className="search-palette__archived-toggle">
-            <input type="checkbox" checked={includeContacts} onChange={(e) => setIncludeContacts(e.target.checked)} />
-            Include Contacts
-          </label>
+          <div className="search-palette__toggles">
+            <label className="search-palette__archived-toggle">
+              <input type="checkbox" checked={includeArchived} onChange={(e) => setIncludeArchived(e.target.checked)} />
+              Archived/completed
+            </label>
+            <label className="search-palette__archived-toggle">
+              <input type="checkbox" checked={includeContacts} onChange={(e) => setIncludeContacts(e.target.checked)} />
+              Contacts
+            </label>
+          </div>
         </div>
 
         <div className="search-palette__results">

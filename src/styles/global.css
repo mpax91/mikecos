@@ -7616,8 +7616,16 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   border-color: var(--color-accent);
 }
 
-.search-palette__archived-toggle {
+.search-palette__toggles {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-left: 10px;
+  border-left: var(--border-hairline);
+}
+
+.search-palette__archived-toggle {
   display: flex;
   align-items: center;
   gap: 4px;
