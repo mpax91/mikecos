@@ -126,7 +126,6 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
           title="Search (⌘K)"
         >
           🔍 Search
-          <kbd className="sidebar__search-kbd">⌘K</kbd>
         </button>
 
         <div className="sidebar__sections">

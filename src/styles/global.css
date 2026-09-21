@@ -102,18 +102,6 @@ a {
   color: var(--color-ink);
 }
 
-.sidebar__search-kbd {
-  margin-left: auto;
-  font-size: 10.5px;
-  font-family: inherit;
-  color: var(--color-placeholder);
-  background: var(--color-sidebar);
-  border: var(--border-hairline);
-  border-radius: 5px;
-  padding: 1px 5px;
-  flex-shrink: 0;
-}
-
 .sidebar__nav {
   display: flex;
   flex-direction: column;

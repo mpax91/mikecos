@@ -23,6 +23,9 @@ const GROUP_META: Record<SearchGroupKey, { label: string; icon: string }> = {
 };
 const GROUP_ORDER: SearchGroupKey[] = ['notes', 'jots', 'lists', 'projects', 'boards', 'contacts', 'journal', 'meeting_notes', 'links'];
 const DEFAULT_VISIBLE_PER_GROUP = 4;
+// See visibleGroups' comment — Contacts is excluded from the default
+// "search everywhere" set and only appears once its chip is tapped on.
+const CONTACTS_OPT_IN_GROUP: SearchGroupKey = 'contacts';
 
 /** Bolds every case-insensitive occurrence of `query` inside `text` —
  * that's the whole point of a snippet (showing *why* something matched),
@@ -130,7 +133,18 @@ export function SearchPalette() {
 
   const visibleGroups = useMemo(() => {
     if (!groups) return [];
-    const filtered = activeChips.size ? groups.filter((g) => activeChips.has(g.key)) : groups;
+    // Contacts is opt-in rather than a narrowing filter like the other
+    // eight chips — there are enough of them that including every contact
+    // hit by default drowns out everything else, so it stays out of
+    // results until its chip is tapped on, independent of whatever the
+    // other chips are narrowed to (tapping it alongside a "Notes" narrow
+    // shows Notes + Contacts, not just Contacts).
+    const contactsOn = activeChips.has(CONTACTS_OPT_IN_GROUP);
+    const narrowing = new Set([...activeChips].filter((k) => k !== CONTACTS_OPT_IN_GROUP));
+    const filtered = groups.filter((g) => {
+      if (g.key === CONTACTS_OPT_IN_GROUP) return contactsOn;
+      return narrowing.size === 0 || narrowing.has(g.key);
+    });
     return GROUP_ORDER.map((key) => filtered.find((g) => g.key === key)).filter((g): g is SearchGroupResult => !!g && g.results.length > 0);
   }, [groups, activeChips]);
 
@@ -208,6 +222,7 @@ export function SearchPalette() {
               type="button"
               className={`search-palette__chip${activeChips.has(key) ? ' is-active' : ''}`}
               onClick={() => toggleChip(key)}
+              title={key === CONTACTS_OPT_IN_GROUP ? 'Off by default — tap to include Contacts' : undefined}
             >
               {GROUP_META[key].icon} {GROUP_META[key].label}
             </button>
