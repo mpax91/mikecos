@@ -7,6 +7,7 @@ import { TaskDetailModal } from '../components/TaskDetailModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { useReportTabMeta } from '../contexts/TabsContext';
 import { meetingHasEnded } from '../utils/meetingNotes';
+import { MOOD_OPTIONS, MOOD_BY_VALUE } from '../utils/mood';
 
 // Same small pure date helpers TodayPage.tsx already has — kept local and
 // duplicated by eye rather than shared, same call TodayPage's own comment
@@ -50,6 +51,8 @@ function formatDueDate(iso: string): string {
   const [y, m, d] = iso.split('-').map(Number);
   return new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
+
+const MOOD_TREND_DAYS = 14;
 
 /** One habit's row: name + target on the left, a debounced number input for
  * today's value on the right. A blank input (vs. 0) means "not logged yet" —
@@ -147,6 +150,34 @@ function AddHabitRow({ onAdd }: { onAdd: (name: string, unit: string, target: st
   );
 }
 
+/** A 14-day strip of small colored dots, one per day ending at `date` —
+ * logged days get their mood's color, unlogged days stay a faint hollow
+ * ring. Purely a glance-at-the-shape-of-things widget: click a dot to jump
+ * the whole page to that day, same as the date-nav arrows above it. */
+function MoodTrendStrip({ date, moods, onJump }: { date: string; moods: Map<string, number>; onJump: (d: string) => void }) {
+  const days: string[] = [];
+  for (let i = MOOD_TREND_DAYS - 1; i >= 0; i--) days.push(addDays(date, -i));
+
+  return (
+    <div className="journal-page__mood-trend" title="Mood, last 14 days">
+      {days.map((d) => {
+        const mood = moods.get(d);
+        const meta = mood != null ? MOOD_BY_VALUE.get(mood) : undefined;
+        return (
+          <button
+            key={d}
+            type="button"
+            className={`journal-page__mood-dot${d === date ? ' journal-page__mood-dot--current' : ''}`}
+            style={meta ? { background: meta.color, borderColor: meta.color } : undefined}
+            title={`${formatDueDate(d)}${meta ? ` — ${meta.label}` : ''}`}
+            onClick={() => onJump(d)}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
 /** The Journal — a day view that mostly writes itself. Calendar events,
  * completed/pushed tasks, notes, and contact quick-notes are all pulled
  * live from wherever they already live in MikeOS; the only thing actually
@@ -171,6 +202,8 @@ export function JournalPage() {
   // just sitting there as inert text.
   const [taskStack, setTaskStack] = useState<string[]>([]);
   const [deleting, setDeleting] = useState<Entity | null>(null);
+  const [moods, setMoods] = useState<Map<string, number>>(new Map());
+  const [savingMood, setSavingMood] = useState(false);
 
   useReportTabMeta(isToday ? 'Journal' : `Journal — ${formatHeaderDate(date)}`, 'journal');
 
@@ -192,6 +225,32 @@ export function JournalPage() {
   useEffect(() => {
     loadMeetings();
   }, [loadMeetings]);
+
+  useEffect(() => {
+    api
+      .getJournalMoods(addDays(date, -(MOOD_TREND_DAYS - 1)), date)
+      .then((res) => setMoods(new Map(res.moods.map((m) => [m.date, m.mood]))))
+      .catch(() => setMoods(new Map()));
+  }, [date]);
+
+  async function setMood(value: number) {
+    // Toggle off by tapping the already-selected mood again — clearing a
+    // mis-tap shouldn't require a separate control.
+    const next = data?.entry?.mood === value ? null : value;
+    setSavingMood(true);
+    try {
+      const entry = await api.updateJournalMood(date, next);
+      setData((prev) => (prev ? { ...prev, entry } : prev));
+      setMoods((prev) => {
+        const nextMap = new Map(prev);
+        if (next == null) nextMap.delete(date);
+        else nextMap.set(date, next);
+        return nextMap;
+      });
+    } finally {
+      setSavingMood(false);
+    }
+  }
 
   // Journal days are (almost always) in the past, so this is stricter than
   // TodayPage's version: it never creates a note — only opens one that
@@ -275,6 +334,27 @@ export function JournalPage() {
           <button type="button" className="today-page__nav-btn" onClick={() => goToDate(addDays(date, 1))} aria-label="Next day" title="Next day">
             ›
           </button>
+        </div>
+      </div>
+
+      <div className="journal-page__mood card">
+        <div className="journal-page__mood-row">
+          <div className="journal-page__mood-picker">
+            {MOOD_OPTIONS.map((m) => (
+              <button
+                key={m.value}
+                type="button"
+                className={`journal-page__mood-btn${data?.entry?.mood === m.value ? ' is-active' : ''}`}
+                style={data?.entry?.mood === m.value ? { borderColor: m.color, background: `${m.color}22` } : undefined}
+                disabled={savingMood}
+                title={m.label}
+                onClick={() => setMood(m.value)}
+              >
+                {m.emoji}
+              </button>
+            ))}
+          </div>
+          <MoodTrendStrip date={date} moods={moods} onJump={goToDate} />
         </div>
       </div>
 

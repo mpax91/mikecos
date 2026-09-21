@@ -6381,8 +6381,71 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 
 .journal-page__auto,
 .journal-page__habits,
-.journal-page__freeform {
+.journal-page__freeform,
+.journal-page__mood {
   padding: 16px 20px;
+}
+
+.journal-page__mood {
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
+.journal-page__mood-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.journal-page__mood-picker {
+  display: flex;
+  gap: 6px;
+}
+
+.journal-page__mood-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: var(--border-hairline);
+  background: transparent;
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.1s ease, background 0.1s ease, border-color 0.1s ease;
+}
+
+.journal-page__mood-btn:hover {
+  transform: scale(1.08);
+  background: rgba(47, 74, 60, 0.06);
+}
+
+.journal-page__mood-btn.is-active {
+  transform: scale(1.1);
+}
+
+.journal-page__mood-trend {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.journal-page__mood-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.5px solid var(--color-border);
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+}
+
+.journal-page__mood-dot--current {
+  box-shadow: 0 0 0 2px var(--color-paper), 0 0 0 3px var(--color-ink);
 }
 
 .journal-page__auto {
@@ -7742,4 +7805,250 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   color: inherit;
   border-radius: 2px;
   padding: 0 1px;
+}
+
+/* ---- Daily Briefing modal ---- */
+
+.today-page__briefing-btn {
+  margin-top: 8px;
+  border: var(--border-hairline);
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 12.5px;
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.today-page__briefing-btn:hover {
+  background: rgba(47, 74, 60, 0.06);
+  color: var(--color-ink);
+}
+
+.briefing-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(46, 42, 34, 0.35);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  z-index: 60;
+  padding: 6vh 20px 20px;
+  box-sizing: border-box;
+}
+
+.briefing-modal {
+  width: 620px;
+  max-width: 100%;
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-paper);
+  border-radius: 14px;
+  border: var(--border-hairline);
+  box-shadow: 0 20px 60px rgba(46, 42, 34, 0.25);
+  overflow: hidden;
+}
+
+.briefing-modal__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 20px 14px;
+  border-bottom: var(--border-hairline);
+  flex-shrink: 0;
+}
+
+.briefing-modal__eyebrow {
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-muted);
+}
+
+.briefing-modal__heading {
+  margin: 2px 0 0;
+  font-size: 22px;
+}
+
+.briefing-modal__date-line {
+  font-size: 12.5px;
+  color: var(--color-muted);
+  margin-top: 2px;
+}
+
+.briefing-modal__close {
+  border: none;
+  background: transparent;
+  font-size: 16px;
+  color: var(--color-muted);
+  cursor: pointer;
+  padding: 4px;
+  line-height: 1;
+}
+
+.briefing-modal__close:hover {
+  color: var(--color-ink);
+}
+
+.briefing-modal__body {
+  overflow-y: auto;
+  padding: 14px 20px 20px;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.briefing-modal__hint {
+  font-size: 12.5px;
+  color: var(--color-muted);
+}
+
+.briefing-modal__section-label {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+  margin-bottom: 8px;
+}
+
+.briefing-modal__meeting {
+  padding: 12px;
+  border: var(--border-hairline);
+  border-radius: 10px;
+  margin-bottom: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.briefing-modal__meeting-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.briefing-modal__meeting-time {
+  font-size: 12px;
+  color: var(--color-muted);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.briefing-modal__meeting-title {
+  font-weight: 600;
+}
+
+.briefing-modal__meeting-line {
+  font-size: 12.5px;
+  color: var(--color-muted);
+}
+
+.briefing-modal__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.briefing-modal__chip {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: var(--border-hairline);
+  color: var(--color-muted);
+}
+
+.briefing-modal__chip--matched {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.briefing-modal__list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.briefing-modal__list--insights {
+  padding-left: 0;
+  list-style: none;
+}
+
+.briefing-modal__related {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.briefing-modal__related-item {
+  font-size: 12px;
+  padding: 3px 9px;
+  border-radius: 8px;
+  border: var(--border-hairline);
+  background: var(--color-sidebar);
+  color: var(--color-ink);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.briefing-modal__related-item:hover {
+  background: rgba(47, 74, 60, 0.08);
+}
+
+.briefing-modal__meeting-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.briefing-modal__retro {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  font-size: 13px;
+}
+
+.briefing-modal__link-btn {
+  border: none;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  color: var(--color-ink);
+  cursor: pointer;
+  text-align: left;
+}
+
+.briefing-modal__link-btn:hover {
+  text-decoration: underline;
+}
+
+.briefing-modal__ask {
+  border-top: var(--border-hairline);
+  padding-top: 14px;
+}
+
+.briefing-modal__ask-form {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.briefing-modal__ask-input {
+  flex: 1;
+  border: var(--border-hairline);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  background: var(--color-sidebar);
+  color: var(--color-ink);
 }

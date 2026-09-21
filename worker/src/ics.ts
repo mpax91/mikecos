@@ -6,6 +6,11 @@ import { RRule, RRuleSet } from 'rrule';
  * to, since "today's meetings" means Mike's local day, not a UTC one. */
 const HOME_TZ = 'America/New_York';
 
+export interface MeetingAttendee {
+  name: string | null;
+  email: string;
+}
+
 export interface ParsedMeeting {
   id: string;
   title: string;
@@ -14,6 +19,24 @@ export interface ParsedMeeting {
   allDay: boolean;
   calendar: string;
   gcalUrl: string | null;
+  /** Who's on the invite, straight from the ICS ATTENDEE lines — Mike
+   * himself is included if he's listed (there's no reliable way to tell
+   * "me" apart from any other attendee at this layer), so callers that
+   * want "everyone but Mike" filter by his own email themselves. Empty
+   * when the feed doesn't expose attendees at all, which is common for a
+   * "busy"-only shared calendar. */
+  attendees: MeetingAttendee[];
+  location: string | null;
+  /** Raw invite description, unescaped but otherwise unprocessed — see
+   * `links` below for the derived, more useful form of this. */
+  description: string | null;
+  /** Every http(s) URL found inside the invite description, de-duplicated
+   * in first-seen order. Google's ICS export essentially never populates
+   * the formal ATTACH property (that needs the real Calendar API + OAuth),
+   * but a Meet link or a pasted Doc/Sheet/Drive URL almost always ends up
+   * in the description text, so this is the practical way to surface
+   * "stuff attached to this invite" without a bigger integration. */
+  links: string[];
 }
 
 // ---- Timezone math ----
@@ -136,6 +159,34 @@ interface VEvent {
   exdates: Date[];
   recurrenceId?: Date;
   status?: string;
+  attendees: MeetingAttendee[];
+  location?: string;
+  description?: string;
+}
+
+/** Pulls the email out of an ATTENDEE/ORGANIZER value, which is always a
+ * "mailto:" URI per RFC5545 — anything else (a rare non-mailto CUTYPE) is
+ * skipped rather than guessed at. */
+function attendeeFromProp(prop: RawProp): MeetingAttendee | null {
+  const match = prop.value.match(/^mailto:(.+)$/i);
+  if (!match) return null;
+  const email = match[1].trim();
+  if (!email) return null;
+  const name = prop.params.CN ? unescapeIcsText(prop.params.CN) : null;
+  return { name, email };
+}
+
+const URL_PATTERN = /https?:\/\/[^\s<>"')\]]+/gi;
+
+/** Every http(s) URL in `text`, de-duplicated in first-seen order — see
+ * ParsedMeeting.links' comment for why this is the practical stand-in for
+ * real calendar attachments. Trailing ICS escaping/punctuation is trimmed
+ * off each match since a URL sitting at the end of a sentence often drags
+ * a stray period or closing paren along with it. */
+function extractLinks(text: string): string[] {
+  const found = text.match(URL_PATTERN) ?? [];
+  const cleaned = found.map((u) => u.replace(/[.,;:]+$/, ''));
+  return [...new Set(cleaned)];
 }
 
 function parseIcsEvents(ics: string): VEvent[] {
@@ -145,7 +196,7 @@ function parseIcsEvents(ics: string): VEvent[] {
 
   for (const line of lines) {
     if (line === 'BEGIN:VEVENT') {
-      cur = { exdates: [] };
+      cur = { exdates: [], attendees: [] };
       continue;
     }
     if (line === 'END:VEVENT') {
@@ -187,6 +238,17 @@ function parseIcsEvents(ics: string): VEvent[] {
         break;
       case 'STATUS':
         cur.status = prop.value;
+        break;
+      case 'ATTENDEE': {
+        const attendee = attendeeFromProp(prop);
+        if (attendee) cur.attendees!.push(attendee);
+        break;
+      }
+      case 'LOCATION':
+        cur.location = unescapeIcsText(prop.value);
+        break;
+      case 'DESCRIPTION':
+        cur.description = unescapeIcsText(prop.value);
         break;
     }
   }
@@ -260,6 +322,10 @@ export function meetingsForRange(sources: FeedSource[], startIso: string, endIso
       allDay: ev.allDay,
       calendar: src.calendar,
       gcalUrl: buildGcalUrl(ev.uid, src.calendarId),
+      attendees: ev.attendees,
+      location: ev.location ?? null,
+      description: ev.description ?? null,
+      links: ev.description ? extractLinks(ev.description) : [],
     });
 
     for (const base of bases) {

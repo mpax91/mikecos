@@ -10,6 +10,7 @@ import { WeatherWidget } from '../components/WeatherWidget';
 import { getHolidays } from '../utils/holidays';
 import { buildMeetingNoteTitle, meetingHasEnded } from '../utils/meetingNotes';
 import { useReportTabMeta } from '../contexts/TabsContext';
+import { OPEN_BRIEFING_EVENT } from '../components/BriefingModal';
 
 /** Default number of rows (real tasks + blank ruled lines combined) shown
  * before Mike has to explicitly ask for more — see the "+ Add another line"
@@ -359,6 +360,15 @@ export function TodayPage() {
         <div>
           <h1 className="today-page__heading heading-serif">{formatDayHeading(date, isToday).heading}</h1>
           <div className="today-page__date-line">{formatDayHeading(date, isToday).dateLine}</div>
+          {isToday && (
+            <button
+              type="button"
+              className="today-page__briefing-btn"
+              onClick={() => window.dispatchEvent(new Event(OPEN_BRIEFING_EVENT))}
+            >
+              🧭 Daily Briefing
+            </button>
+          )}
         </div>
 
         <div className="today-page__nav">

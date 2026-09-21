@@ -1,4 +1,4 @@
-import type { CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactDetail, ContactNote, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitLog, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsSavedArticle, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, WeatherResponse, WeekResponse } from './types';
+import type { BriefingResponse, CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactDetail, ContactNote, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitLog, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsSavedArticle, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, WeatherResponse, WeekResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -142,6 +142,8 @@ export const api = {
     if (includeArchived) params.set('archived', '1');
     return request<SearchResponse>(`/api/search?${params.toString()}`);
   },
+
+  getBriefing: (date: string) => request<BriefingResponse>(`/api/briefing?date=${encodeURIComponent(date)}`),
 
   listNotes: () => request<Entity[]>('/api/notes'),
 
@@ -571,6 +573,12 @@ export const api = {
 
   updateJournalEntry: (date: string, content: string) =>
     request<JournalEntry>(`/api/journal/${date}`, { method: 'PATCH', body: JSON.stringify({ content }) }),
+
+  updateJournalMood: (date: string, mood: number | null) =>
+    request<JournalEntry>(`/api/journal/${date}`, { method: 'PATCH', body: JSON.stringify({ mood }) }),
+
+  getJournalMoods: (start: string, end: string) =>
+    request<{ moods: { date: string; mood: number }[] }>(`/api/journal/moods?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`),
 
   listHabits: (includeArchived = false) => request<Habit[]>(`/api/habits${includeArchived ? '?archived=1' : ''}`),
 

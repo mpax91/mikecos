@@ -22,6 +22,7 @@ import { LinksPage } from './pages/LinksPage';
 import { ListsPage } from './pages/ListsPage';
 import { ListDetail } from './pages/ListDetail';
 import { SearchPalette } from './components/SearchPalette';
+import { BriefingModal } from './components/BriefingModal';
 
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -29,6 +30,7 @@ export default function App() {
   return (
     <div className="app-shell">
       <SearchPalette />
+      <BriefingModal />
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="main">
         <TabBar onMenuClick={() => setSidebarOpen(true)} />

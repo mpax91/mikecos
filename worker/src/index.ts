@@ -4183,6 +4183,25 @@ app.get('/api/health/weekly', async (c) => {
 // already trusts — rather than duplicating timezone math in SQL. Personal
 // data volumes here are small, so the extra rows fetched per call cost
 // nothing.
+// GET /api/journal/moods?start=&end= — just the {date, mood} pairs for a
+// range, for the Journal page's mood trend strip. Deliberately not folded
+// into the day-level GET /api/journal/:date (that's one day; this spans
+// many) or into /api/stats (that endpoint's counts are all derived from
+// task_completions, a different table entirely). Registered before
+// /api/journal/:date below, same convention /api/contacts/duplicates
+// follows ahead of /api/contacts/:id — a literal path segment should
+// always be matched before a param route that could otherwise swallow it.
+app.get('/api/journal/moods', async (c) => {
+  const start = c.req.query('start');
+  const end = c.req.query('end');
+  if (!start || !end) return c.json({ error: 'start and end query params are required (YYYY-MM-DD)' }, 400);
+
+  const { results } = await c.env.DB.prepare('SELECT date, mood FROM journal_entries WHERE date >= ? AND date <= ? AND mood IS NOT NULL ORDER BY date ASC')
+    .bind(start, end)
+    .all<{ date: string; mood: number }>();
+  return c.json({ moods: results ?? [] });
+});
+
 app.get('/api/journal/:date', async (c) => {
   const date = c.req.param('date');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return c.json({ error: 'date must be YYYY-MM-DD' }, 400);
@@ -4253,21 +4272,28 @@ app.get('/api/journal/:date', async (c) => {
   });
 });
 
-// PATCH /api/journal/:date — upserts just the freeform content for the
-// day. Separate from the GET above since this is the only part of a
-// journal entry that's ever actually written directly.
+// PATCH /api/journal/:date — upserts the freeform content and/or the
+// day's mood rating. `content` and `mood` are both optional so the mood
+// picker can save on its own click without also re-sending (and
+// re-touching updated_at unnecessarily around) whatever's in the editor —
+// only the fields actually present in the body are written; an explicit
+// `mood: null` clears a previously-set rating.
 app.patch('/api/journal/:date', async (c) => {
   const date = c.req.param('date');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return c.json({ error: 'date must be YYYY-MM-DD' }, 400);
-  const body = await c.req.json<{ content: string }>();
+  const body = await c.req.json<{ content?: string; mood?: number | null }>();
   const ts = now();
-  const searchText = extractPlainText(body.content);
+
+  const existing = await c.env.DB.prepare('SELECT * FROM journal_entries WHERE date = ?').bind(date).first<JournalEntry>();
+  const content = body.content !== undefined ? body.content : (existing?.content ?? null);
+  const searchText = content !== null ? extractPlainText(content) : null;
+  const mood = body.mood !== undefined ? body.mood : (existing?.mood ?? null);
 
   await c.env.DB.prepare(
-    `INSERT INTO journal_entries (date, content, search_text, created_at, updated_at) VALUES (?, ?, ?, ?, ?)
-     ON CONFLICT(date) DO UPDATE SET content = excluded.content, search_text = excluded.search_text, updated_at = excluded.updated_at`
+    `INSERT INTO journal_entries (date, content, search_text, mood, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(date) DO UPDATE SET content = excluded.content, search_text = excluded.search_text, mood = excluded.mood, updated_at = excluded.updated_at`
   )
-    .bind(date, body.content, searchText, ts, ts)
+    .bind(date, content, searchText, mood, ts, ts)
     .run();
 
   const entry = await c.env.DB.prepare('SELECT * FROM journal_entries WHERE date = ?').bind(date).first<JournalEntry>();
@@ -4780,17 +4806,17 @@ function snippetAround(body: string, q: string, radius = 60): string {
   return `${start > 0 ? '…' : ''}${body.slice(start, end).trim()}${end < body.length ? '…' : ''}`;
 }
 
-app.get('/api/search', async (c) => {
-  const q = c.req.query('q')?.trim();
-  if (!q) return c.json({ groups: [] });
+interface SearchGroupResultRow {
+  key: SearchGroup;
+  results: SearchResult[];
+}
 
-  const scopeParam = c.req.query('scope')?.trim();
-  const scope = new Set<SearchGroup>(
-    scopeParam ? (scopeParam.split(',').filter((s) => (SEARCH_GROUPS as readonly string[]).includes(s)) as SearchGroup[]) : SEARCH_GROUPS
-  );
-  const includeArchived = c.req.query('archived') === '1';
+// The actual work behind GET /api/search, pulled out into its own function
+// so the Daily Briefing's "anything related to this meeting" matching (see
+// computeBriefing below) can call the exact same scored LIKE-matching
+// logic per keyword instead of re-implementing a second search engine.
+async function runSearch(db: D1Database, q: string, scope: Set<SearchGroup>, includeArchived: boolean): Promise<SearchGroupResultRow[]> {
   const like = `%${q}%`;
-  const db = c.env.DB;
   const results: SearchResult[] = [];
 
   const wantsEntities = scope.has('notes') || scope.has('jots') || scope.has('lists') || scope.has('projects');
@@ -5001,12 +5027,283 @@ app.get('/api/search', async (c) => {
 
   results.sort((a, b) => b.score - a.score || b.updatedAt.localeCompare(a.updatedAt));
 
-  const groups = SEARCH_GROUPS.filter((g) => scope.has(g)).map((key) => {
-    const groupResults = results.filter((r) => r.group === key);
-    return { key, results: groupResults };
-  });
+  return SEARCH_GROUPS.filter((g) => scope.has(g)).map((key) => ({ key, results: results.filter((r) => r.group === key) }));
+}
 
+app.get('/api/search', async (c) => {
+  const q = c.req.query('q')?.trim();
+  if (!q) return c.json({ groups: [] });
+
+  const scopeParam = c.req.query('scope')?.trim();
+  const scope = new Set<SearchGroup>(
+    scopeParam ? (scopeParam.split(',').filter((s) => (SEARCH_GROUPS as readonly string[]).includes(s)) as SearchGroup[]) : SEARCH_GROUPS
+  );
+  const includeArchived = c.req.query('archived') === '1';
+
+  const groups = await runSearch(c.env.DB, q, scope, includeArchived);
   return c.json({ groups });
+});
+
+// ---- Daily Briefing (rule-based "chief of staff" — no LLM, just data
+// MikeOS already has, assembled and ranked) ----
+//
+// Everything here is deterministic: today's real meetings (from the ICS
+// feeds), whoever's on each invite matched back to a Contacts record by
+// email, that person's own contact notes, and anything in Notes/Jots/
+// Lists/Projects/Boards/Links/Meeting Notes whose title or body mentions
+// the meeting/attendees — the exact same scored LIKE search the Cmd/Ctrl+K
+// palette uses (see runSearch above), just triggered by the meeting's own
+// keywords instead of something Mike typed. Plus a handful of day-level
+// nudges (overdue tasks, birthdays/anniversaries coming up, projects gone
+// quiet) and a plain-numbers retrospective on the trailing week. No text
+// is ever generated — the frontend supplies the "assistant voice" phrasing
+// around whatever this returns.
+
+interface BriefingRelated {
+  id: string;
+  group: SearchGroup;
+  title: string;
+  path: string;
+  openId: string | null;
+}
+
+interface BriefingMeeting {
+  id: string;
+  title: string;
+  start: string;
+  end: string;
+  allDay: boolean;
+  gcalUrl: string | null;
+  hasNote: boolean;
+  noteEntityId: string | null;
+  location: string | null;
+  links: string[];
+  attendees: { name: string | null; email: string; contactId: string | null; contactName: string | null }[];
+  contactNotes: { contactId: string; contactName: string; text: string; createdAt: string }[];
+  related: BriefingRelated[];
+}
+
+const BRIEFING_RELATED_SCOPE = new Set<SearchGroup>(['notes', 'jots', 'lists', 'projects', 'boards', 'links', 'meeting_notes']);
+const BRIEFING_RELATED_LIMIT = 6;
+const UPCOMING_DATE_WINDOW_DAYS = 7;
+const STALE_PROJECT_DAYS = 14;
+const STALE_PROJECT_LIMIT = 3;
+const RETROSPECTIVE_DAYS = 7;
+
+// Runs one search per keyword (meeting title + attendee names + matched
+// contacts' companies) and merges the results into one deduped, re-sorted
+// list — a meeting is rarely well described by a single term, and this is
+// far cheaper than teaching runSearch itself to OR multiple terms together
+// for what's a secondary use of it.
+async function findRelatedContent(db: D1Database, keywords: string[]): Promise<BriefingRelated[]> {
+  const seen = new Map<string, BriefingRelated & { score: number }>();
+  for (const kw of keywords) {
+    const q = kw.trim();
+    if (q.length < 3) continue; // too short to mean anything as a LIKE term
+    const groups = await runSearch(db, q, BRIEFING_RELATED_SCOPE, false);
+    for (const g of groups) {
+      for (const r of g.results) {
+        const key = `${r.group}:${r.id}`;
+        const existing = seen.get(key);
+        if (!existing || r.score > existing.score) {
+          seen.set(key, { id: r.id, group: r.group, title: r.title, path: r.path, openId: r.openId, score: r.score });
+        }
+      }
+    }
+  }
+  return [...seen.values()]
+    .sort((a, b) => b.score - a.score)
+    .slice(0, BRIEFING_RELATED_LIMIT)
+    .map(({ score: _score, ...rest }) => rest);
+}
+
+async function computeBriefing(db: D1Database, date: string) {
+  const sources = await fetchFeedSources(db);
+  const rawMeetings = await tagHasNote(db, meetingsForDate(sources, date));
+
+  // ---- match every attendee email to a real Contacts record in one pass ----
+  const allEmails = [...new Set(rawMeetings.flatMap((m) => m.attendees.map((a) => a.email.toLowerCase())))];
+  const contactByEmail = new Map<string, { id: string; name: string; company: string | null }>();
+  if (allEmails.length > 0) {
+    const placeholders = allEmails.map(() => '?').join(', ');
+    const { results } = await db
+      .prepare(
+        `SELECT DISTINCT c.id, c.name, c.company, lower(je.value) as matched_email
+         FROM contacts c, json_each(c.emails) je
+         WHERE lower(je.value) IN (${placeholders}) AND c.source != 'voter_file'`
+      )
+      .bind(...allEmails)
+      .all<{ id: string; name: string; company: string | null; matched_email: string }>();
+    for (const r of results ?? []) contactByEmail.set(r.matched_email, { id: r.id, name: r.name, company: r.company });
+  }
+
+  const matchedContactIds = [...new Set([...contactByEmail.values()].map((c) => c.id))];
+  const notesByContact = new Map<string, { contactId: string; contactName: string; text: string; createdAt: string }[]>();
+  if (matchedContactIds.length > 0) {
+    const placeholders = matchedContactIds.map(() => '?').join(', ');
+    const { results } = await db
+      .prepare(
+        `SELECT cn.contact_id, c.name as contact_name, cn.text, cn.created_at
+         FROM contact_notes cn JOIN contacts c ON c.id = cn.contact_id
+         WHERE cn.contact_id IN (${placeholders}) ORDER BY cn.created_at DESC`
+      )
+      .bind(...matchedContactIds)
+      .all<{ contact_id: string; contact_name: string; text: string; created_at: string }>();
+    for (const r of results ?? []) {
+      const list = notesByContact.get(r.contact_id) ?? [];
+      if (list.length < 2) list.push({ contactId: r.contact_id, contactName: r.contact_name, text: r.text, createdAt: r.created_at }); // most recent couple only
+      notesByContact.set(r.contact_id, list);
+    }
+  }
+
+  const meetings: BriefingMeeting[] = await Promise.all(
+    rawMeetings.map(async (m) => {
+      const attendees = m.attendees.map((a) => {
+        const contact = contactByEmail.get(a.email.toLowerCase());
+        return { name: a.name, email: a.email, contactId: contact?.id ?? null, contactName: contact?.name ?? null };
+      });
+      const matchedHere = attendees.filter((a): a is typeof a & { contactId: string } => a.contactId != null);
+      const contactNotes = matchedHere.flatMap((a) => notesByContact.get(a.contactId) ?? []);
+
+      const keywords = [
+        m.title,
+        ...attendees.map((a) => a.contactName ?? a.name).filter((n): n is string => !!n),
+        ...matchedHere.map((a) => contactByEmail.get(a.email.toLowerCase())?.company).filter((c): c is string => !!c),
+      ];
+      const related = await findRelatedContent(db, keywords);
+
+      let noteEntityId: string | null = null;
+      if (m.hasNote) {
+        const row = await db.prepare('SELECT note_entity_id FROM meeting_notes WHERE meeting_id = ?').bind(m.id).first<{ note_entity_id: string | null }>();
+        noteEntityId = row?.note_entity_id ?? null;
+      }
+
+      return {
+        id: m.id,
+        title: m.title,
+        start: m.start,
+        end: m.end,
+        allDay: m.allDay,
+        gcalUrl: m.gcalUrl,
+        hasNote: m.hasNote,
+        noteEntityId,
+        location: m.location,
+        links: m.links,
+        attendees,
+        contactNotes,
+        related,
+      };
+    })
+  );
+
+  // ---- day-level nudges ----
+  const [overdueRow, dueTodayRow, staleProjectsRow] = await Promise.all([
+    db
+      .prepare(`SELECT id, title, due_date FROM entities WHERE type = 'task' AND status NOT IN ('done','archived') AND due_date IS NOT NULL AND due_date < ? ORDER BY due_date ASC LIMIT 5`)
+      .bind(date)
+      .all<{ id: string; title: string; due_date: string }>(),
+    db
+      .prepare(`SELECT id, title FROM entities WHERE type = 'task' AND status NOT IN ('done','archived') AND due_date = ? ORDER BY position ASC LIMIT 8`)
+      .bind(date)
+      .all<{ id: string; title: string }>(),
+    db
+      .prepare(
+        `SELECT id, title, last_touched FROM entities WHERE type = 'project' AND is_list = 0 AND status NOT IN ('done','archived') AND last_touched < ? ORDER BY last_touched ASC LIMIT ?`
+      )
+      .bind(addDaysStr(date, -STALE_PROJECT_DAYS), STALE_PROJECT_LIMIT)
+      .all<{ id: string; title: string; last_touched: string }>(),
+  ]);
+  const [overdueCountRow, dueTodayCountRow] = await Promise.all([
+    db.prepare(`SELECT COUNT(*) as n FROM entities WHERE type = 'task' AND status NOT IN ('done','archived') AND due_date IS NOT NULL AND due_date < ?`).bind(date).first<{ n: number }>(),
+    db.prepare(`SELECT COUNT(*) as n FROM entities WHERE type = 'task' AND status NOT IN ('done','archived') AND due_date = ?`).bind(date).first<{ n: number }>(),
+  ]);
+
+  // Birthdays/anniversaries in the next 7 days (today included) — pulled
+  // as one small full-table scan (same "contacts table is small enough"
+  // trade /api/today already makes for its own same-day version of this)
+  // rather than 7 separate month/day-equality queries, then matched in JS
+  // so a year-end wraparound (Dec 30 looking ahead into Jan) just works.
+  const { results: dateContacts } = await db
+    .prepare(
+      `SELECT id, name, birthday_month, birthday_day, anniversary_month, anniversary_day FROM contacts
+       WHERE source != 'voter_file' AND (birthday_month IS NOT NULL OR anniversary_month IS NOT NULL)`
+    )
+    .all<{ id: string; name: string; birthday_month: number | null; birthday_day: number | null; anniversary_month: number | null; anniversary_day: number | null }>();
+  const [dy, dm, dd] = date.split('-').map(Number);
+  const todayUtc = Date.UTC(dy, dm - 1, dd);
+  function daysUntil(month: number, day: number): number {
+    for (const yr of [dy, dy + 1]) {
+      const target = Date.UTC(yr, month - 1, day);
+      const diff = Math.round((target - todayUtc) / 86400000);
+      if (diff >= 0) return diff;
+    }
+    return 999;
+  }
+  const upcomingDates: { type: 'birthday' | 'anniversary'; contactId: string; name: string; inDays: number }[] = [];
+  for (const c of dateContacts ?? []) {
+    if (c.birthday_month && c.birthday_day) {
+      const inDays = daysUntil(c.birthday_month, c.birthday_day);
+      if (inDays <= UPCOMING_DATE_WINDOW_DAYS) upcomingDates.push({ type: 'birthday', contactId: c.id, name: c.name, inDays });
+    }
+    if (c.anniversary_month && c.anniversary_day) {
+      const inDays = daysUntil(c.anniversary_month, c.anniversary_day);
+      if (inDays <= UPCOMING_DATE_WINDOW_DAYS) upcomingDates.push({ type: 'anniversary', contactId: c.id, name: c.name, inDays });
+    }
+  }
+  upcomingDates.sort((a, b) => a.inDays - b.inDays);
+
+  // ---- retrospective: plain aggregation over the trailing week, no
+  // generated prose — see the section comment above for why journal
+  // content itself is quoted rather than "summarized". ----
+  const weekStart = addDaysStr(date, -(RETROSPECTIVE_DAYS - 1));
+  const prevWeekStart = addDaysStr(date, -(RETROSPECTIVE_DAYS * 2 - 1));
+  const prevWeekEnd = addDaysStr(date, -RETROSPECTIVE_DAYS);
+  const [completedThisWeek, completedPrevWeek, journalRows, topProjectsRows] = await Promise.all([
+    db.prepare(`SELECT COUNT(*) as n FROM task_completions WHERE completed_date >= ? AND completed_date <= ?`).bind(weekStart, date).first<{ n: number }>(),
+    db.prepare(`SELECT COUNT(*) as n FROM task_completions WHERE completed_date >= ? AND completed_date <= ?`).bind(prevWeekStart, prevWeekEnd).first<{ n: number }>(),
+    db
+      .prepare(`SELECT date, mood, content IS NOT NULL AND content != '' as has_content FROM journal_entries WHERE date >= ? AND date <= ? ORDER BY date ASC`)
+      .bind(weekStart, date)
+      .all<{ date: string; mood: number | null; has_content: number }>(),
+    db
+      .prepare(
+        `SELECT p.id, p.title, COUNT(*) as n FROM task_completions tc
+         JOIN entities e ON e.id = tc.entity_id JOIN entities p ON p.id = e.parent_id
+         WHERE tc.completed_date >= ? AND tc.completed_date <= ? GROUP BY p.id ORDER BY n DESC LIMIT 3`
+      )
+      .bind(weekStart, date)
+      .all<{ id: string; title: string; n: number }>(),
+  ]);
+  const moodValues = (journalRows.results ?? []).map((r) => r.mood).filter((m): m is number => m != null);
+  const avgMood = moodValues.length > 0 ? moodValues.reduce((a, b) => a + b, 0) / moodValues.length : null;
+
+  return {
+    date,
+    meetings,
+    insights: {
+      overdueCount: overdueCountRow?.n ?? 0,
+      overdueTasks: overdueRow.results ?? [],
+      dueTodayCount: dueTodayCountRow?.n ?? 0,
+      dueTodayTasks: dueTodayRow.results ?? [],
+      upcomingDates,
+      staleProjects: staleProjectsRow.results ?? [],
+    },
+    retrospective: {
+      weekStart,
+      tasksCompleted: completedThisWeek?.n ?? 0,
+      tasksCompletedPrevWeek: completedPrevWeek?.n ?? 0,
+      journalDays: (journalRows.results ?? []).filter((r) => r.has_content).length,
+      avgMood,
+      moodDays: (journalRows.results ?? []).filter((r) => r.mood != null).map((r) => ({ date: r.date, mood: r.mood as number })),
+      topProjects: topProjectsRows.results ?? [],
+    },
+  };
+}
+
+app.get('/api/briefing', async (c) => {
+  const date = c.req.query('date');
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return c.json({ error: 'date query param is required (YYYY-MM-DD)' }, 400);
+  return c.json(await computeBriefing(c.env.DB, date));
 });
 
 app.get('/api/health', (c) => c.json({ ok: true, time: now() }));

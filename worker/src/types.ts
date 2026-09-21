@@ -194,6 +194,7 @@ export interface JournalEntry {
   date: string; // 'YYYY-MM-DD'
   content: string | null; // Tiptap JSON
   search_text: string | null;
+  mood: number | null; // 1 (rough) – 5 (great); NULL = not logged
   created_at: string;
   updated_at: string;
 }

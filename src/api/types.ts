@@ -216,6 +216,11 @@ export interface MonthResponse {
  * best-effort direct link to the event on calendar.google.com (see the
  * worker's ics.ts for how — it's a reverse-engineered, undocumented format,
  * so treat a dead link as a possible outcome, not a bug). */
+export interface MeetingAttendee {
+  name: string | null;
+  email: string;
+}
+
 export interface MeetingItem {
   id: string;
   title: string;
@@ -229,6 +234,13 @@ export interface MeetingItem {
    * batched lookup so the note icon can show filled-vs-outline without a
    * per-meeting fetch. */
   hasNote: boolean;
+  /** Who's on the invite (from the ICS ATTENDEE lines) — empty when the
+   * source feed doesn't expose attendees. */
+  attendees: MeetingAttendee[];
+  location: string | null;
+  /** Links pulled out of the invite description (Meet link, a pasted Doc
+   * URL, etc.) — see worker/src/ics.ts's ParsedMeeting.links comment. */
+  links: string[];
 }
 
 export interface MeetingsResponse {
@@ -713,6 +725,7 @@ export interface JournalEntry {
   date: string; // 'YYYY-MM-DD'
   content: string | null; // Tiptap JSON
   search_text: string | null;
+  mood: number | null; // 1 (rough) – 5 (great); null = not logged
   created_at: string;
   updated_at: string;
 }
@@ -918,4 +931,82 @@ export interface SearchGroupResult {
 
 export interface SearchResponse {
   groups: SearchGroupResult[];
+}
+
+// ---- Daily Briefing ----
+
+export interface BriefingRelated {
+  id: string;
+  group: SearchGroupKey;
+  title: string;
+  path: string;
+  openId: string | null;
+}
+
+export interface BriefingAttendee {
+  name: string | null;
+  email: string;
+  contactId: string | null;
+  contactName: string | null;
+}
+
+export interface BriefingContactNote {
+  contactId: string;
+  contactName: string;
+  text: string;
+  createdAt: string;
+}
+
+export interface BriefingMeeting {
+  id: string;
+  title: string;
+  start: string;
+  end: string;
+  allDay: boolean;
+  gcalUrl: string | null;
+  hasNote: boolean;
+  noteEntityId: string | null;
+  location: string | null;
+  links: string[];
+  attendees: BriefingAttendee[];
+  contactNotes: BriefingContactNote[];
+  related: BriefingRelated[];
+}
+
+export interface BriefingUpcomingDate {
+  type: 'birthday' | 'anniversary';
+  contactId: string;
+  name: string;
+  inDays: number;
+}
+
+export interface BriefingTaskRef {
+  id: string;
+  title: string;
+}
+
+export interface BriefingInsights {
+  overdueCount: number;
+  overdueTasks: (BriefingTaskRef & { due_date: string })[];
+  dueTodayCount: number;
+  dueTodayTasks: BriefingTaskRef[];
+  upcomingDates: BriefingUpcomingDate[];
+  staleProjects: (BriefingTaskRef & { last_touched: string })[];
+}
+
+export interface BriefingRetrospective {
+  weekStart: string;
+  tasksCompleted: number;
+  tasksCompletedPrevWeek: number;
+  journalDays: number;
+  avgMood: number | null;
+  moodDays: { date: string; mood: number }[];
+  topProjects: { id: string; title: string; n: number }[];
+}
+
+export interface BriefingResponse {
+  date: string;
+  meetings: BriefingMeeting[];
+  insights: BriefingInsights;
+  retrospective: BriefingRetrospective;
 }
