@@ -1828,6 +1828,16 @@ a {
   gap: 12px;
 }
 
+.contact-card__headline {
+  margin: 0 0 4px;
+  font-size: 12.5px;
+  font-style: italic;
+  color: var(--color-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .project-card__stats {
   display: flex;
   flex-wrap: wrap;
@@ -5754,8 +5764,131 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   color: #fff;
 }
 
+.contact-detail__headline {
+  font-size: 14.5px;
+  color: var(--color-muted);
+  margin-top: 4px;
+  font-style: italic;
+}
+
+.contact-detail__local-time {
+  color: var(--color-muted);
+  font-style: normal;
+}
+
+.contact-detail__local-time--late {
+  color: var(--color-accent-secondary);
+}
+
 .contact-detail__meta {
   margin: 10px 0 14px;
+}
+
+.link-btn {
+  border: none;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  color: var(--color-accent);
+  cursor: pointer;
+}
+
+.link-btn:hover {
+  text-decoration: underline;
+}
+
+.connections-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.connection-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: var(--border-hairline);
+  border-radius: 8px;
+  background: var(--color-card-bg);
+}
+
+.connection-row__name {
+  font-weight: 600;
+  color: var(--color-ink);
+}
+
+.connection-row__hint {
+  font-size: 11.5px;
+  color: var(--color-placeholder);
+}
+
+.connection-row__delete {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.connection-row__delete:hover {
+  color: var(--color-ink);
+}
+
+.connections-list__add {
+  margin-bottom: 20px;
+}
+
+.connection-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: var(--border-hairline);
+  border-radius: 10px;
+  margin-bottom: 20px;
+  background: var(--color-card-bg);
+}
+
+.connection-form__name-field {
+  position: relative;
+}
+
+.connection-form__matches {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 5;
+  background: var(--color-paper);
+  border: var(--border-hairline);
+  border-radius: 8px;
+  margin-top: 2px;
+  overflow: hidden;
+  box-shadow: 0 6px 18px rgba(46, 42, 34, 0.15);
+}
+
+.connection-form__match {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
+  border: none;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.connection-form__match:hover {
+  background: rgba(47, 74, 60, 0.06);
+}
+
+.connection-form__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .contact-detail__card {

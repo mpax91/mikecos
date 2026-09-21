@@ -120,6 +120,9 @@ export interface Contact {
   emails: string; // JSON string[]
   phones: string; // JSON string[]
   address: string | null;
+  headline: string | null; // quick one-line context, separate from address/notes — see 0031_contact_headline_city_connections.sql
+  city: string | null; // free-text, for the client-side "what time is it for them" lookup (src/utils/timezones.ts) — no geocoding
+
   birthday_month: number | null;
   birthday_day: number | null;
   birthday_year: number | null;
@@ -183,6 +186,17 @@ export interface ContactNote {
   remind_at: string | null;
   remind_resolved: number; // 0 | 1
   created_at: string;
+}
+
+export interface ContactConnection {
+  id: string;
+  contact_id: string;
+  related_contact_id: string | null;
+  related_name: string;
+  label: string;
+  source: string; // 'manual' | 'import'
+  created_at: string;
+  updated_at: string;
 }
 
 // A meeting-notes linkage (meeting_id -> note_entity_id, see

@@ -477,6 +477,8 @@ export interface Contact {
   emails: string; // JSON string[]
   phones: string; // JSON string[]
   address: string | null;
+  headline: string | null; // one-line quick context, shown right under the name
+  city: string | null; // free text — feeds the local-time display, see utils/timezones.ts
   birthday_month: number | null;
   birthday_day: number | null;
   birthday_year: number | null;
@@ -488,6 +490,22 @@ export interface Contact {
   import_batch_id: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface ContactConnection {
+  id: string;
+  contact_id: string;
+  related_contact_id: string | null;
+  related_name: string;
+  label: string;
+  source: string; // 'manual' | 'import'
+  created_at: string;
+  updated_at: string;
+}
+
+export interface HouseholdMember {
+  contactId: string;
+  name: string;
 }
 
 // ---- Contact / voter-file import ----
@@ -512,6 +530,7 @@ export interface ParsedContactRecord {
   voter_age: number | null;
   household_members: string[] | null;
   voting_history: unknown;
+  relations: { label: string; name: string }[]; // Google Contacts "Relation N" columns, personal-contact imports only
   raw: Record<string, string>;
 }
 
@@ -670,6 +689,8 @@ export interface VoterHistoryEntry {
 export interface ContactDetail extends Contact {
   notes: ContactNote[];
   voterRecords: VoterRecord[];
+  connections: (ContactConnection & { direction: 'from' | 'to' })[];
+  householdMembers: HouseholdMember[];
 }
 
 /** Manual dedup — for the pairs the import matcher's automatic name/

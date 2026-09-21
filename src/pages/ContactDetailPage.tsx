@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
-import type { Contact, ContactCircle, ContactDetail, ContactNote, VoterHistoryEntry, VoterRecord } from '../api/types';
+import type { Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, HouseholdMember, VoterHistoryEntry, VoterRecord } from '../api/types';
 import { Modal } from '../components/Modal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { KebabMenu } from '../components/KebabMenu';
 import { formatRelativeTime } from '../utils/formatRelativeTime';
 import { useReportTabMeta } from '../contexts/TabsContext';
+import { timezoneForCity, localTimeInZone, isUnsociableHour } from '../utils/timezones';
 
 const CIRCLES: { value: ContactCircle; label: string }[] = [
   { value: 'family', label: 'Family' },
@@ -39,11 +40,13 @@ function EditDetailsModal({ contact, onSave, onClose }: { contact: ContactDetail
   const phones = JSON.parse(contact.phones || '[]') as string[];
   const [name, setName] = useState(contact.name);
   const [circle, setCircle] = useState<ContactCircle>(contact.circle);
+  const [headline, setHeadline] = useState(contact.headline ?? '');
   const [company, setCompany] = useState(contact.company ?? '');
   const [title, setTitle] = useState(contact.title ?? '');
   const [emailsText, setEmailsText] = useState(emails.join(', '));
   const [phonesText, setPhonesText] = useState(phones.join(', '));
   const [address, setAddress] = useState(contact.address ?? '');
+  const [city, setCity] = useState(contact.city ?? '');
   const [bMonth, setBMonth] = useState(contact.birthday_month?.toString() ?? '');
   const [bDay, setBDay] = useState(contact.birthday_day?.toString() ?? '');
   const [bYear, setBYear] = useState(contact.birthday_year?.toString() ?? '');
@@ -61,6 +64,7 @@ function EditDetailsModal({ contact, onSave, onClose }: { contact: ContactDetail
     onSave({
       name: name.trim(),
       circle,
+      headline: headline.trim() || null,
       company: company.trim() || null,
       title: title.trim() || null,
       emails: emailsText
@@ -72,6 +76,7 @@ function EditDetailsModal({ contact, onSave, onClose }: { contact: ContactDetail
         .map((s) => s.trim())
         .filter(Boolean),
       address: address.trim() || null,
+      city: city.trim() || null,
       birthday_month: num(bMonth),
       birthday_day: num(bDay),
       birthday_year: num(bYear),
@@ -93,11 +98,17 @@ function EditDetailsModal({ contact, onSave, onClose }: { contact: ContactDetail
             </option>
           ))}
         </select>
+        <input
+          placeholder="Headline — a quick line of context (e.g. “met at Sarah's wedding, into woodworking”)"
+          value={headline}
+          onChange={(e) => setHeadline(e.target.value)}
+        />
         <input placeholder="Company" value={company} onChange={(e) => setCompany(e.target.value)} />
         <input placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
         <input placeholder="Emails (comma separated)" value={emailsText} onChange={(e) => setEmailsText(e.target.value)} />
         <input placeholder="Phones (comma separated)" value={phonesText} onChange={(e) => setPhonesText(e.target.value)} />
         <input placeholder="Address" value={address} onChange={(e) => setAddress(e.target.value)} />
+        <input placeholder="City (e.g. “Denver, CO”) — for their local time" value={city} onChange={(e) => setCity(e.target.value)} />
 
         <label className="contact-edit-form__label">Birthday</label>
         <div className="contact-edit-form__date-row">
@@ -299,6 +310,136 @@ function VoterRecordSection({ records }: { records: VoterRecord[] }) {
   );
 }
 
+/** Who this person is connected to — manual entries and anything pulled in
+ * from a Google Contacts "Relation" column on import (both live in
+ * contact_connections, see 0031_contact_headline_city_connections.sql),
+ * plus household members computed live from the voter file's shared
+ * household code. Inspired by "Thanks Bud"'s Orbit view, kept much
+ * simpler: a flat list rather than a graph, since that's what actually
+ * answers "who's connected to who" for a name Mike's about to run into. */
+function ConnectionsSection({
+  contact,
+  onAdd,
+  onDelete,
+}: {
+  contact: ContactDetail;
+  onAdd: (label: string, relatedContactId: string | null, relatedName: string) => void;
+  onDelete: (connectionId: string) => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [label, setLabel] = useState('');
+  const [nameQuery, setNameQuery] = useState('');
+  const [matches, setMatches] = useState<Contact[]>([]);
+  const [picked, setPicked] = useState<Contact | null>(null);
+
+  useEffect(() => {
+    if (picked || !nameQuery.trim()) {
+      setMatches([]);
+      return;
+    }
+    const handle = setTimeout(() => {
+      api.listContacts({ q: nameQuery }).then((r) => setMatches(r.filter((c) => c.id !== contact.id).slice(0, 6)));
+    }, 200);
+    return () => clearTimeout(handle);
+  }, [nameQuery, picked, contact.id]);
+
+  function commit() {
+    const relatedName = picked?.name ?? nameQuery.trim();
+    if (!label.trim() || !relatedName) return;
+    onAdd(label.trim(), picked?.id ?? null, relatedName);
+    setLabel('');
+    setNameQuery('');
+    setPicked(null);
+    setAdding(false);
+  }
+
+  if (contact.connections.length === 0 && contact.householdMembers.length === 0 && !adding) {
+    return (
+      <>
+        <h2 className="contact-detail__section-title">Connections</h2>
+        <div className="empty-state empty-state--section">
+          Nobody linked yet.{' '}
+          <button type="button" className="link-btn" onClick={() => setAdding(true)}>
+            Add a connection
+          </button>
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <h2 className="contact-detail__section-title">Connections</h2>
+      <div className="connections-list">
+        {contact.householdMembers.map((m: HouseholdMember) => (
+          <div key={`household-${m.contactId}`} className="connection-row">
+            <span className="chip chip--accent">Household</span>
+            <Link to={`/contacts/${m.contactId}`} className="connection-row__name">
+              {m.name}
+            </Link>
+            <span className="connection-row__hint">from the voter file</span>
+          </div>
+        ))}
+        {contact.connections.map((conn: ContactConnection & { direction: 'from' | 'to' }) => (
+          <div key={conn.id} className="connection-row">
+            <span className="chip">{conn.label}</span>
+            {conn.related_contact_id ? (
+              <Link to={`/contacts/${conn.related_contact_id}`} className="connection-row__name">
+                {conn.related_name}
+              </Link>
+            ) : (
+              <span className="connection-row__name">{conn.related_name}</span>
+            )}
+            {conn.source === 'import' && <span className="connection-row__hint">from import</span>}
+            {conn.direction === 'from' && (
+              <button type="button" className="connection-row__delete" title="Remove connection" onClick={() => onDelete(conn.id)}>
+                ✕
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {!adding ? (
+        <button type="button" className="link-btn connections-list__add" onClick={() => setAdding(true)}>
+          + Add a connection
+        </button>
+      ) : (
+        <div className="connection-form">
+          <input placeholder="Relationship (e.g. Spouse, Kid, Coworker)" value={label} onChange={(e) => setLabel(e.target.value)} />
+          <div className="connection-form__name-field">
+            <input
+              placeholder="Their name"
+              value={picked ? picked.name : nameQuery}
+              onChange={(e) => {
+                setPicked(null);
+                setNameQuery(e.target.value);
+              }}
+            />
+            {matches.length > 0 && (
+              <div className="connection-form__matches">
+                {matches.map((m) => (
+                  <button key={m.id} type="button" className="connection-form__match" onClick={() => setPicked(m)}>
+                    {m.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="connection-form__actions">
+            <button type="button" className="btn btn--ghost" onClick={() => setAdding(false)}>
+              Cancel
+            </button>
+            <button type="button" className="btn" onClick={commit} disabled={!label.trim() || !(picked?.name ?? nameQuery.trim())}>
+              Add
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 /** Manual duplicate cleanup — for the pairs the import matcher's automatic
  * name/nickname rules still can't catch (a misspelling, a nickname it
  * doesn't know). Search picks the OTHER contact; that one gets folded into
@@ -477,6 +618,16 @@ export function ContactDetailPage() {
     await api.deleteContactNote(contactId, note.id);
   }
 
+  async function handleAddConnection(label: string, relatedContactId: string | null, relatedName: string) {
+    const conn = await api.addContactConnection(contactId, { relatedContactId, relatedName, label });
+    setContact((prev) => (prev ? { ...prev, connections: [...prev.connections, { ...conn, direction: 'from' }] } : prev));
+  }
+
+  async function handleDeleteConnection(connectionId: string) {
+    setContact((prev) => (prev ? { ...prev, connections: prev.connections.filter((c) => c.id !== connectionId) } : prev));
+    await api.deleteContactConnection(contactId, connectionId);
+  }
+
   if (error) return <div className="empty-state">Couldn't load this contact: {error}</div>;
   if (!contact) return <div className="empty-state">Loading…</div>;
 
@@ -485,6 +636,7 @@ export function ContactDetailPage() {
   const birthday = formatDate(contact.birthday_month, contact.birthday_day, contact.birthday_year);
   const anniversary = formatDate(contact.anniversary_month, contact.anniversary_day, contact.anniversary_year);
   const isPinned = contact.pinned === 1;
+  const tz = timezoneForCity(contact.city);
 
   return (
     <div className="contact-detail">
@@ -515,6 +667,8 @@ export function ContactDetailPage() {
           ]}
         />
       </div>
+
+      {contact.headline && <div className="contact-detail__headline">{contact.headline}</div>}
 
       <div className="contact-detail__meta">
         <span className="chip">{circleLabel(contact.circle)}</span>
@@ -569,6 +723,20 @@ export function ContactDetailPage() {
               </span>
             </div>
           )}
+          {contact.city && (
+            <div className="contact-detail__field">
+              <span className="contact-detail__field-icon">🌆</span>
+              <span className="contact-detail__field-value">
+                {contact.city}
+                {tz && (
+                  <span className={`contact-detail__local-time${isUnsociableHour(tz) ? ' contact-detail__local-time--late' : ''}`}>
+                    {' '}
+                    · {localTimeInZone(tz)} their time
+                  </span>
+                )}
+              </span>
+            </div>
+          )}
           {(contact.company || contact.title) && (
             <div className="contact-detail__field">
               <span className="contact-detail__field-icon">💼</span>
@@ -589,13 +757,15 @@ export function ContactDetailPage() {
               <span className="contact-detail__field-value">{anniversary}</span>
             </div>
           )}
-          {phones.length === 0 && emails.length === 0 && !contact.address && !contact.company && !contact.title && !birthday && !anniversary && (
+          {phones.length === 0 && emails.length === 0 && !contact.address && !contact.city && !contact.company && !contact.title && !birthday && !anniversary && (
             <div className="contact-detail__field contact-detail__field--empty">No contact info yet — click Edit to add some.</div>
           )}
         </div>
       </div>
 
       <VoterRecordSection records={contact.voterRecords} />
+
+      <ConnectionsSection contact={contact} onAdd={handleAddConnection} onDelete={handleDeleteConnection} />
 
       <h2 className="contact-detail__section-title">Notes</h2>
 

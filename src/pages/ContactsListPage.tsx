@@ -55,6 +55,7 @@ function ContactCard({
         <p className="project-card__title">
           <span className="project-card__title-text">{contact.name}</span>
         </p>
+        {contact.headline && <p className="contact-card__headline">{contact.headline}</p>}
         <div className="project-card__stats">
           <span>{circleLabel(contact.circle)}</span>
           {contact.company && <span>{contact.company}</span>}

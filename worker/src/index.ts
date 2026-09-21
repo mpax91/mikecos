@@ -7,6 +7,7 @@ import type {
   CanvasItemType,
   Contact,
   ContactCircle,
+  ContactConnection,
   ContactNote,
   Env,
   Entity,
@@ -589,6 +590,64 @@ app.post('/api/shelf/:id/graduate', async (c) => {
 
 // ---- Contacts (personal CRM) ----
 
+// A close-spelling-forgiving name matcher — inspired by "Thanks Bud"
+// (heythanksbud.com), whose search explicitly handles typos on a name you
+// half-remember. Plain LIKE only catches a query that's an exact substring;
+// this adds a Levenshtein-distance fallback so "Kathrine" still finds
+// "Katherine". Deliberately scoped to Contacts only (here and in
+// runSearch's contacts group below) — a fuzzy pass over note/task body text
+// would mostly just add noise, but a half-remembered name is exactly what
+// this feature is for.
+function normalizeForFuzzy(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+function levenshtein(a: string, b: string): number {
+  if (a === b) return 0;
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) {
+      cur.push(a[i - 1] === b[j - 1] ? prev[j - 1] : 1 + Math.min(prev[j - 1], prev[j], cur[j - 1]));
+    }
+    prev = cur;
+  }
+  return prev[b.length];
+}
+
+// 100 = exact, 80 = starts-with, 60 = substring — same scale matchScore
+// uses elsewhere — then a fuzzy tier for anything within edit-distance of
+// the whole name or of one of its individual words (so "Jon Smith" still
+// fuzzy-matches a query of just "Smyth"). Threshold scales with query
+// length: a 1-character typo in a long name is meaningful, the same
+// distance on a 3-letter query is basically a different word.
+function fuzzyNameScore(name: string, q: string): number {
+  const n = normalizeForFuzzy(name);
+  const query = normalizeForFuzzy(q);
+  if (!query || !n) return 0;
+  if (n === query) return 100;
+  if (n.startsWith(query)) return 80;
+  if (n.includes(query)) return 60;
+
+  const threshold = query.length <= 4 ? 1 : query.length <= 7 ? 2 : 3;
+  const whole = levenshtein(n, query);
+  if (whole <= threshold) return Math.max(20, 45 - whole * 8);
+  for (const word of name.split(/\s+/)) {
+    const w = normalizeForFuzzy(word);
+    if (!w) continue;
+    const dist = levenshtein(w, query);
+    const wordThreshold = query.length <= 4 ? 1 : 2;
+    if (dist <= wordThreshold) return Math.max(15, 40 - dist * 8);
+  }
+  return 0;
+}
+
+function textIncludes(text: string | null, q: string): boolean {
+  return !!text && text.toLowerCase().includes(q.toLowerCase());
+}
+
 const CIRCLES: ContactCircle[] = ['family', 'friends', 'neighbors', 'community', 'professional', 'other'];
 
 // GET /api/contacts — pinned first, then alphabetical (this is a lookup
@@ -619,10 +678,6 @@ app.get('/api/contacts', async (c) => {
   if (!includeVoters) {
     sql += " AND source != 'voter_file'";
   }
-  if (q) {
-    sql += ' AND (name LIKE ? OR id IN (SELECT contact_id FROM contact_notes WHERE text LIKE ?))';
-    binds.push(`%${q}%`, `%${q}%`);
-  }
   if (circle && CIRCLES.includes(circle as ContactCircle)) {
     sql += ' AND circle = ?';
     binds.push(circle);
@@ -639,7 +694,29 @@ app.get('/api/contacts', async (c) => {
   sql += ' ORDER BY pinned DESC, name COLLATE NOCASE ASC';
 
   const { results } = await c.env.DB.prepare(sql).bind(...binds).all<Contact>();
-  return c.json(results ?? []);
+  let contacts = results ?? [];
+
+  // `q` is scored rather than filtered by SQL — fuzzyNameScore's typo
+  // tolerance can't be expressed as a LIKE, so name/headline/company
+  // matching (plus a note-text hit) all happen here in JS instead. Fine
+  // at this app's contacts-table scale (same trade already made for
+  // birthday/anniversary matching above).
+  if (q) {
+    const { results: noteHits } = await c.env.DB.prepare('SELECT DISTINCT contact_id FROM contact_notes WHERE text LIKE ?').bind(`%${q}%`).all<{ contact_id: string }>();
+    const noteHitIds = new Set((noteHits ?? []).map((n) => n.contact_id));
+    contacts = contacts
+      .map((ct) => {
+        const nameScore = fuzzyNameScore(ct.name, q);
+        const fieldScore = textIncludes(ct.headline, q) || textIncludes(ct.company, q) || textIncludes(ct.title, q) ? 40 : 0;
+        const noteScore = noteHitIds.has(ct.id) ? 25 : 0;
+        return { ct, score: Math.max(nameScore, fieldScore, noteScore) };
+      })
+      .filter((x) => x.score > 0)
+      .sort((a, b) => b.score - a.score || Number(b.ct.pinned) - Number(a.ct.pinned) || a.ct.name.localeCompare(b.ct.name))
+      .map((x) => x.ct);
+  }
+
+  return c.json(contacts);
 });
 
 app.post('/api/contacts', async (c) => {
@@ -650,11 +727,11 @@ app.post('/api/contacts', async (c) => {
   const circle = CIRCLES.includes(body.circle as ContactCircle) ? body.circle : 'other';
   await c.env.DB.prepare(
     `INSERT INTO contacts
-       (id, name, company, title, circle, emails, phones, address,
+       (id, name, company, title, circle, emails, phones, address, headline, city,
         birthday_month, birthday_day, birthday_year,
         anniversary_month, anniversary_day, anniversary_year,
         pinned, source, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'manual', ?, ?)`
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'manual', ?, ?)`
   )
     .bind(
       id,
@@ -665,6 +742,8 @@ app.post('/api/contacts', async (c) => {
       JSON.stringify(body.emails ?? []),
       JSON.stringify(body.phones ?? []),
       body.address ?? null,
+      body.headline ?? null,
+      body.city ?? null,
       body.birthday_month ?? null,
       body.birthday_day ?? null,
       body.birthday_year ?? null,
@@ -744,7 +823,76 @@ app.get('/api/contacts/:id', async (c) => {
   const { results: voterRecords } = await c.env.DB.prepare('SELECT * FROM voter_records WHERE contact_id = ? ORDER BY created_at DESC')
     .bind(id)
     .all<VoterRecord>();
-  return c.json({ ...contact, notes: notes ?? [], voterRecords: voterRecords ?? [] });
+
+  // Connections show on both people's cards from one entry — a row
+  // created as A -> B ("A's Spouse is B") is fetched here whether we're
+  // looking at A (direction 'from') or B (direction 'to'). The label
+  // reads the same either way (a real "reverse label" like Spouse->Spouse
+  // or Kid->Parent would need its own mapping, which felt like more
+  // machinery than this needs — the connected person's name makes the
+  // direction obvious in context).
+  const [{ results: connFrom }, { results: connTo }] = await Promise.all([
+    c.env.DB.prepare('SELECT * FROM contact_connections WHERE contact_id = ? ORDER BY created_at ASC').bind(id).all<ContactConnection>(),
+    c.env.DB.prepare('SELECT * FROM contact_connections WHERE related_contact_id = ? ORDER BY created_at ASC').bind(id).all<ContactConnection>(),
+  ]);
+  const connections = [
+    ...(connFrom ?? []).map((row) => ({ ...row, direction: 'from' as const })),
+    ...(connTo ?? []).map((row) => ({ ...row, direction: 'to' as const })),
+  ];
+
+  // Household members, computed live from the voter file rather than
+  // stored — see 0031_contact_headline_city_connections.sql and
+  // 0018_contact_import.sql's household_code comment. Anyone sharing this
+  // contact's household_code(s), across any of their voter_records rows,
+  // excluding this contact itself.
+  const householdCodes = [...new Set((voterRecords ?? []).map((v) => v.household_code).filter((code): code is string => !!code))];
+  let householdMembers: { contactId: string; name: string }[] = [];
+  if (householdCodes.length > 0) {
+    const placeholders = householdCodes.map(() => '?').join(', ');
+    const { results: memberRows } = await c.env.DB.prepare(
+      `SELECT DISTINCT c.id, c.name FROM voter_records vr JOIN contacts c ON c.id = vr.contact_id
+       WHERE vr.household_code IN (${placeholders}) AND vr.contact_id != ?`
+    )
+      .bind(...householdCodes, id)
+      .all<{ id: string; name: string }>();
+    householdMembers = (memberRows ?? []).map((m) => ({ contactId: m.id, name: m.name }));
+  }
+
+  return c.json({ ...contact, notes: notes ?? [], voterRecords: voterRecords ?? [], connections, householdMembers });
+});
+
+// POST /api/contacts/:id/connections — a manual connection to another
+// contact (by id) or just a name (relatedContactId omitted) for someone
+// who isn't a saved contact yet — same "a name is enough" latitude Thanks
+// Bud's own connections have, since requiring a full contact record first
+// would make this useless for "my neighbor's dog-walker, Pat" type notes.
+app.post('/api/contacts/:id/connections', async (c) => {
+  const contactId = c.req.param('id');
+  const body = await c.req.json<{ relatedContactId?: string | null; relatedName?: string; label: string }>();
+  if (!body.label?.trim()) return c.json({ error: 'label required' }, 400);
+
+  let relatedName = body.relatedName?.trim() ?? '';
+  if (body.relatedContactId) {
+    const related = await c.env.DB.prepare('SELECT name FROM contacts WHERE id = ?').bind(body.relatedContactId).first<{ name: string }>();
+    if (!related) return c.json({ error: 'related contact not found' }, 404);
+    relatedName = related.name;
+  }
+  if (!relatedName) return c.json({ error: 'relatedContactId or relatedName required' }, 400);
+
+  const id = uid();
+  const ts = now();
+  await c.env.DB.prepare(
+    `INSERT INTO contact_connections (id, contact_id, related_contact_id, related_name, label, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'manual', ?, ?)`
+  )
+    .bind(id, contactId, body.relatedContactId ?? null, relatedName, body.label.trim(), ts, ts)
+    .run();
+  const connection = await c.env.DB.prepare('SELECT * FROM contact_connections WHERE id = ?').bind(id).first<ContactConnection>();
+  return c.json(connection, 201);
+});
+
+app.delete('/api/contacts/:id/connections/:connectionId', async (c) => {
+  await c.env.DB.prepare('DELETE FROM contact_connections WHERE id = ? AND contact_id = ?').bind(c.req.param('connectionId'), c.req.param('id')).run();
+  return c.json({ ok: true });
 });
 
 app.patch('/api/contacts/:id', async (c) => {
@@ -762,6 +910,8 @@ app.patch('/api/contacts/:id', async (c) => {
     'company',
     'title',
     'address',
+    'headline',
+    'city',
     'birthday_month',
     'birthday_day',
     'birthday_year',
@@ -915,6 +1065,12 @@ interface ParsedContactRecord {
   voter_age: number | null;
   household_members: string[] | null;
   voting_history: unknown;
+  // Google Contacts' "Relation 1..N - Label/Value" columns — personal
+  // contact imports only, always [] for a voter-file row (that format has
+  // no such concept). Threaded through to processDecisionChunk, which
+  // turns each one into a contact_connections row, matched to an existing
+  // contact by name when possible (see resolveRelatedContactId).
+  relations: { label: string; name: string }[];
   // Fields added when the Bedford Voter Intelligence app (a separate
   // Cloudflare app Mike already built against this same county voter file)
   // turned out to have a much richer, correctly-labeled breakdown of this
@@ -1107,6 +1263,18 @@ function parseContactsCsv(text: string): ParsedContactRecord[] {
   const addressIdx = findColumn(headers, ['address 1 formatted', 'address', 'street address']);
   const birthdayIdx = findColumn(headers, ['birthday']);
   const labelsIdx = findColumn(headers, ['labels', 'group membership', 'category', 'categories']);
+  // Google Contacts' export numbers relation columns 1..N as separate
+  // "Relation N - Label"/"Relation N - Value" pairs (occasionally "Type"
+  // instead of "Label" in older exports) — scanned up to a generous cap
+  // rather than a fixed count, since how many a contact has varies and an
+  // unused slot's columns are just blank.
+  const RELATION_SLOTS = 15;
+  const relationIdxPairs: [number, number][] = [];
+  for (let i = 1; i <= RELATION_SLOTS; i++) {
+    const labelIdx = findColumn(headers, [`relation ${i} label`, `relation ${i} type`]);
+    const valueIdx = findColumn(headers, [`relation ${i} value`]);
+    if (labelIdx >= 0 && valueIdx >= 0) relationIdxPairs.push([labelIdx, valueIdx]);
+  }
 
   const records: ParsedContactRecord[] = [];
   for (const row of rows.slice(1)) {
@@ -1117,6 +1285,9 @@ function parseContactsCsv(text: string): ParsedContactRecord[] {
     const bday = birthdayIdx >= 0 ? parseDateParts(get(birthdayIdx)) : { month: null, day: null, year: null };
     const raw: Record<string, string> = {};
     headers.forEach((h, i) => (raw[h] = row[i] ?? ''));
+    const relations = relationIdxPairs
+      .map(([labelIdx, valueIdx]) => ({ label: get(labelIdx) || 'Related', name: get(valueIdx) }))
+      .filter((r) => r.name);
     records.push({
       name,
       emails: emailIdx >= 0 ? splitMulti(get(emailIdx)) : [],
@@ -1132,6 +1303,7 @@ function parseContactsCsv(text: string): ParsedContactRecord[] {
       voter_age: null,
       household_members: null,
       voting_history: null,
+      relations,
       gender: null,
       registered_date: null,
       voter_phone: null,
@@ -1367,6 +1539,7 @@ function parseVoterCsv(text: string): ParsedContactRecord[] {
       company: null,
       title: null,
       circleHint: null,
+      relations: [],
       ...fields,
       raw,
     });
@@ -1428,6 +1601,7 @@ function parseVCard(text: string): ParsedContactRecord[] {
       voter_age: null,
       household_members: null,
       voting_history: null,
+      relations: [],
       gender: null,
       registered_date: null,
       voter_phone: null,
@@ -1677,11 +1851,41 @@ async function processDecisionChunk(
   let updatedCount = 0;
   const newStmts: D1PreparedStatement[] = [];
 
+  // A name->id lookup for resolving Google Contacts "Relation" values back
+  // to an existing contact — built once per chunk (not once per relation)
+  // since the contacts table is small enough to just scan (same trade the
+  // rest of this file already makes for contacts-scale data). Only sees
+  // contacts that existed before this chunk started, so two people who
+  // reference each other and both arrive in the very same import don't
+  // resolve to one another — an acceptable gap given how rarely that
+  // exact case comes up, versus the common case of linking a new import
+  // row to someone already in MikeOS.
+  const nameToContactId = new Map<string, string>();
+  if (decisions.some((d) => d.record.relations.length > 0)) {
+    const { results: existingContacts } = await db.prepare('SELECT id, name FROM contacts').all<{ id: string; name: string }>();
+    for (const ec of existingContacts ?? []) {
+      const key = nameMatchKey(ec.name);
+      if (key) nameToContactId.set(key, ec.id);
+    }
+  }
+
+  function queueRelationStmts(contactId: string, relations: { label: string; name: string }[]) {
+    for (const rel of relations) {
+      const relatedId = nameToContactId.get(nameMatchKey(rel.name)) ?? null;
+      newStmts.push(
+        db
+          .prepare('INSERT INTO contact_connections (id, contact_id, related_contact_id, related_name, label, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+          .bind(uid(), contactId, relatedId, rel.name, rel.label, 'import', ts, ts)
+      );
+    }
+  }
+
   for (const decision of decisions) {
     const r = decision.record;
 
     if (decision.action === 'merge' && decision.contactId) {
       const contactId = decision.contactId;
+      if (r.relations.length > 0) queueRelationStmts(contactId, r.relations);
       const existing = await db.prepare('SELECT * FROM contacts WHERE id = ?').bind(contactId).first<Contact>();
       if (existing) {
         const fields: [string, unknown][] = [];
@@ -1753,6 +1957,7 @@ async function processDecisionChunk(
       if (kind === 'voter_file') {
         newStmts.push(voterRecordInsertStmt(db, contactId, r, batchId, ts));
       }
+      if (r.relations.length > 0) queueRelationStmts(contactId, r.relations);
     }
   }
 
@@ -4853,11 +5058,12 @@ async function runSearch(db: D1Database, q: string, scope: Set<SearchGroup>, inc
           .bind(like, like)
           .all<{ id: string; type: string; content: string; board_id: string; board_title: string; updated_at: string }>()
       : Promise.resolve({ results: [] as any[] }),
+    // Fetched in full (personal contacts only, not the voter roll — same
+    // default GET /api/contacts itself uses) rather than LIKE-filtered:
+    // fuzzyNameScore's typo tolerance can't be expressed in SQL, so scoring
+    // happens in JS below. Fine at this app's contacts-table scale.
     wantsContacts
-      ? db
-          .prepare(`SELECT * FROM contacts WHERE name LIKE ? OR company LIKE ? OR title LIKE ? OR address LIKE ? ORDER BY updated_at DESC LIMIT 25`)
-          .bind(like, like, like, like)
-          .all<{ id: string; name: string; company: string | null; title: string | null; updated_at: string }>()
+      ? db.prepare(`SELECT * FROM contacts WHERE source != 'voter_file' LIMIT 500`).all<{ id: string; name: string; company: string | null; title: string | null; headline: string | null; updated_at: string }>()
       : Promise.resolve({ results: [] as any[] }),
     wantsContacts
       ? db
@@ -4956,10 +5162,10 @@ async function runSearch(db: D1Database, q: string, scope: Set<SearchGroup>, inc
     });
   }
 
-  // ---- contacts ----
+  // ---- contacts (fuzzy-matched — see fuzzyNameScore's comment) ----
   for (const ct of contactRows.results ?? []) {
-    const body = [ct.company, ct.title].filter(Boolean).join(' ');
-    const score = matchScore(ct.name ?? '', body, q);
+    const body = [ct.headline, ct.company, ct.title].filter(Boolean).join(' · ');
+    const score = Math.max(fuzzyNameScore(ct.name ?? '', q), textIncludes(ct.company, q) || textIncludes(ct.title, q) || textIncludes(ct.headline, q) ? 40 : 0);
     if (score === 0) continue;
     results.push({ id: ct.id, kind: 'contact', group: 'contacts', title: ct.name || 'Untitled Contact', snippet: score < 60 ? body || null : null, parentTitle: null, path: `/contacts/${ct.id}`, openId: null, updatedAt: ct.updated_at, score });
   }
