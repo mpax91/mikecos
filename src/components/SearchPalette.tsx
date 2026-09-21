@@ -21,11 +21,12 @@ const GROUP_META: Record<SearchGroupKey, { label: string; icon: string }> = {
   meeting_notes: { label: 'Meeting Notes', icon: '🗓️' },
   links: { label: 'Links', icon: '🔗' },
 };
+// Render order for results (includes Contacts); CHIP_GROUPS is the
+// narrowing chip row and deliberately leaves Contacts out — see
+// visibleGroups' comment for why it's a separate on/off checkbox instead.
 const GROUP_ORDER: SearchGroupKey[] = ['notes', 'jots', 'lists', 'projects', 'boards', 'contacts', 'journal', 'meeting_notes', 'links'];
+const CHIP_GROUPS: SearchGroupKey[] = ['notes', 'jots', 'lists', 'projects', 'boards', 'journal', 'meeting_notes', 'links'];
 const DEFAULT_VISIBLE_PER_GROUP = 4;
-// See visibleGroups' comment — Contacts is excluded from the default
-// "search everywhere" set and only appears once its chip is tapped on.
-const CONTACTS_OPT_IN_GROUP: SearchGroupKey = 'contacts';
 
 /** Bolds every case-insensitive occurrence of `query` inside `text` —
  * that's the whole point of a snippet (showing *why* something matched),
@@ -62,6 +63,7 @@ export function SearchPalette() {
   const [activeChips, setActiveChips] = useState<Set<SearchGroupKey>>(new Set());
   const [expanded, setExpanded] = useState<Set<SearchGroupKey>>(new Set());
   const [includeArchived, setIncludeArchived] = useState(false);
+  const [includeContacts, setIncludeContacts] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<number | null>(null);
@@ -133,20 +135,18 @@ export function SearchPalette() {
 
   const visibleGroups = useMemo(() => {
     if (!groups) return [];
-    // Contacts is opt-in rather than a narrowing filter like the other
-    // eight chips — there are enough of them that including every contact
-    // hit by default drowns out everything else, so it stays out of
-    // results until its chip is tapped on, independent of whatever the
-    // other chips are narrowed to (tapping it alongside a "Notes" narrow
-    // shows Notes + Contacts, not just Contacts).
-    const contactsOn = activeChips.has(CONTACTS_OPT_IN_GROUP);
-    const narrowing = new Set([...activeChips].filter((k) => k !== CONTACTS_OPT_IN_GROUP));
+    // Contacts is a separate on/off checkbox, not part of the chip
+    // narrowing — there are enough contacts that including every hit by
+    // default drowns out everything else, so it's off unless the checkbox
+    // is checked. The other eight chips stay pure, uniform AND-narrowing:
+    // no chips active shows everything (except Contacts); one or more
+    // active narrows to just that selection.
     const filtered = groups.filter((g) => {
-      if (g.key === CONTACTS_OPT_IN_GROUP) return contactsOn;
-      return narrowing.size === 0 || narrowing.has(g.key);
+      if (g.key === 'contacts') return includeContacts;
+      return activeChips.size === 0 || activeChips.has(g.key);
     });
     return GROUP_ORDER.map((key) => filtered.find((g) => g.key === key)).filter((g): g is SearchGroupResult => !!g && g.results.length > 0);
-  }, [groups, activeChips]);
+  }, [groups, activeChips, includeContacts]);
 
   const flatRows: FlatRow[] = useMemo(() => {
     const rows: FlatRow[] = [];
@@ -216,13 +216,12 @@ export function SearchPalette() {
         </div>
 
         <div className="search-palette__chips">
-          {GROUP_ORDER.map((key) => (
+          {CHIP_GROUPS.map((key) => (
             <button
               key={key}
               type="button"
               className={`search-palette__chip${activeChips.has(key) ? ' is-active' : ''}`}
               onClick={() => toggleChip(key)}
-              title={key === CONTACTS_OPT_IN_GROUP ? 'Off by default — tap to include Contacts' : undefined}
             >
               {GROUP_META[key].icon} {GROUP_META[key].label}
             </button>
@@ -230,6 +229,10 @@ export function SearchPalette() {
           <label className="search-palette__archived-toggle">
             <input type="checkbox" checked={includeArchived} onChange={(e) => setIncludeArchived(e.target.checked)} />
             Include archived/completed
+          </label>
+          <label className="search-palette__archived-toggle">
+            <input type="checkbox" checked={includeContacts} onChange={(e) => setIncludeContacts(e.target.checked)} />
+            Include Contacts
           </label>
         </div>
 
