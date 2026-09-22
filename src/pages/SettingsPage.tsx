@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useReportTabMeta } from '../contexts/TabsContext';
 import { RecurringTasksPanel } from './settings/RecurringTasksPanel';
 import { CalendarsPanel } from './settings/CalendarsPanel';
@@ -6,6 +7,7 @@ import { ContactImportPanel } from './settings/ContactImportPanel';
 import { UploadPanel } from './settings/UploadPanel';
 import { QuickLinksPanel } from './settings/QuickLinksPanel';
 import { SecurityPanel } from './settings/SecurityPanel';
+import { NewsFeedsPanel } from './settings/NewsFeedsPanel';
 
 interface Category {
   id: string;
@@ -27,13 +29,21 @@ const CATEGORIES: Category[] = [
   { id: 'recurring', label: 'Recurring Tasks', icon: '🔁' },
   { id: 'calendars', label: 'Calendar Integrations', icon: '📅' },
   { id: 'links', label: 'Links', icon: '🔗' },
+  { id: 'news-feeds', label: 'News Feeds', icon: '📰' },
   { id: 'contact-import', label: 'Contact Import', icon: '👤' },
   { id: 'security', label: 'Security', icon: '🔒' },
 ];
 
 export function SettingsPage() {
   useReportTabMeta('Settings', 'settings');
-  const [active, setActive] = useState<string>(CATEGORIES[0].id);
+  // Supports deep-linking straight to a category — e.g. News' gear icon
+  // links to `/settings?cat=news-feeds` rather than making Mike hunt for
+  // it in the sidebar. Falls back to the default first category for a
+  // missing/unknown id, same as landing on Settings normally.
+  const [searchParams] = useSearchParams();
+  const requestedCat = searchParams.get('cat');
+  const initialCat = CATEGORIES.some((c) => c.id === requestedCat) ? requestedCat! : CATEGORIES[0].id;
+  const [active, setActive] = useState<string>(initialCat);
 
   return (
     <div>
@@ -63,6 +73,7 @@ export function SettingsPage() {
           {active === 'recurring' && <RecurringTasksPanel />}
           {active === 'calendars' && <CalendarsPanel />}
           {active === 'links' && <QuickLinksPanel />}
+          {active === 'news-feeds' && <NewsFeedsPanel />}
           {active === 'contact-import' && <ContactImportPanel />}
           {active === 'security' && <SecurityPanel />}
         </div>

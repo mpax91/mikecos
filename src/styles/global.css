@@ -1816,6 +1816,15 @@ a {
   justify-content: space-between;
   flex-wrap: wrap;
   row-gap: 10px;
+  /* Without this, two adjacent children with nothing between them (a
+     heading immediately followed by a button group, say) sit flush
+     against each other — space-between only spaces the OUTERMOST
+     children apart, not every pair, so a heading and its neighboring
+     control group could end up touching (News page's "News" heading
+     against its Feed/Story/Saved switch was the case that surfaced
+     this). A minimum column gap fixes any toolbar-row built this way,
+     not just News. */
+  column-gap: 16px;
   margin-bottom: 20px;
 }
 
@@ -7940,6 +7949,28 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 
 .news-page__toolbar-spacer {
   flex: 1;
+}
+
+/* Deep-links to Settings' News Feeds panel — same footprint as the
+   Feed/Story/Saved buttons beside it (see .news-page__view-switch) so it
+   reads as one toolbar, not an odd icon bolted on. */
+.news-page__settings-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: var(--border-hairline);
+  background: var(--color-card-bg);
+  font-size: 14px;
+  line-height: 1;
+  text-decoration: none;
+  flex-shrink: 0;
+}
+
+.news-page__settings-link:hover {
+  background: rgba(47, 74, 60, 0.08);
 }
 
 .news-page__stale-note {

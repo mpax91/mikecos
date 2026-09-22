@@ -1,23 +1,18 @@
-import { useState } from 'react';
-import { api } from '../api/client';
-import type { NewsFeed } from '../api/types';
-import { Modal } from './Modal';
-import { ConfirmModal } from './ConfirmModal';
+import { useEffect, useState } from 'react';
+import { api } from '../../api/client';
+import type { NewsFeed } from '../../api/types';
+import { ConfirmModal } from '../../components/ConfirmModal';
 
-/** Feed management — add/edit/remove feeds and their folder, the "proper
- * settings screen" Mike asked for. Lives as a modal launched from the News
- * page itself (Feedly does the same) rather than the global Settings
- * page — feed management is specific enough to News that burying it a
- * navigation level away didn't seem worth it. */
-export function NewsFeedsModal({
-  feeds,
-  onClose,
-  onChanged,
-}: {
-  feeds: NewsFeed[];
-  onClose: () => void;
-  onChanged: () => void;
-}) {
+/** News Feeds — add/edit/remove RSS feeds and their folder. Used to live as
+ * a "Manage Feeds" modal launched from the News page itself; moved here
+ * because it's only going to get more to manage (folders, sources) and a
+ * popup felt like the wrong home for that — News itself just keeps a gear
+ * icon that deep-links to this panel (see NewsPage.tsx's link to
+ * `/settings?cat=news-feeds` and SettingsPage's `?cat=` handling). */
+export function NewsFeedsPanel() {
+  const [feeds, setFeeds] = useState<NewsFeed[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
   const [url, setUrl] = useState('');
   const [folder, setFolder] = useState('');
   const [adding, setAdding] = useState(false);
@@ -25,7 +20,21 @@ export function NewsFeedsModal({
   const [editing, setEditing] = useState<Record<string, { title: string; folder: string }>>({});
   const [confirmDelete, setConfirmDelete] = useState<NewsFeed | null>(null);
 
-  const existingFolders = [...new Set(feeds.map((f) => f.folder).filter((f): f is string => !!f))].sort();
+  function load() {
+    api
+      .listNewsFeeds()
+      .then((list) => {
+        setFeeds(list);
+        setError(null);
+      })
+      .catch((e) => setError(String(e)));
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const existingFolders = [...new Set((feeds ?? []).map((f) => f.folder).filter((f): f is string => !!f))].sort();
 
   async function addFeed() {
     const trimmed = url.trim();
@@ -40,7 +49,7 @@ export function NewsFeedsModal({
         setUrl('');
         setFolder('');
       }
-      onChanged();
+      load();
     } catch (err) {
       setAddError(err instanceof Error ? err.message : 'Could not add that feed.');
     } finally {
@@ -61,17 +70,28 @@ export function NewsFeedsModal({
       delete next[feed.id];
       return next;
     });
-    onChanged();
+    load();
   }
 
   async function deleteFeed(feed: NewsFeed) {
     await api.deleteNewsFeed(feed.id);
     setConfirmDelete(null);
-    onChanged();
+    load();
   }
 
+  if (error) return <div className="empty-state">Couldn't load feeds: {error}</div>;
+  if (!feeds) return <div className="empty-state">Loading…</div>;
+
   return (
-    <Modal title="Manage Feeds" onClose={onClose}>
+    <div className="settings-page__section">
+      <div className="toolbar-row">
+        <h2 className="settings-page__section-title">News Feeds</h2>
+      </div>
+      <p className="settings-page__section-hint">
+        Add, rename, re-folder, or remove the RSS feeds that populate the News page. Folders group feeds in News'
+        sidebar — type an existing one or a new name.
+      </p>
+
       <div className="news-feeds-modal">
         <div className="news-feeds-modal__add">
           <input
@@ -123,7 +143,16 @@ export function NewsFeedsModal({
                     <button className="btn btn--sm" onClick={() => saveEdit(f)}>
                       Save
                     </button>
-                    <button className="btn btn--sm btn--ghost" onClick={() => setEditing((e) => { const n = { ...e }; delete n[f.id]; return n; })}>
+                    <button
+                      className="btn btn--sm btn--ghost"
+                      onClick={() =>
+                        setEditing((e) => {
+                          const n = { ...e };
+                          delete n[f.id];
+                          return n;
+                        })
+                      }
+                    >
                       Cancel
                     </button>
                   </>
@@ -161,6 +190,6 @@ export function NewsFeedsModal({
           onCancel={() => setConfirmDelete(null)}
         />
       )}
-    </Modal>
+    </div>
   );
 }

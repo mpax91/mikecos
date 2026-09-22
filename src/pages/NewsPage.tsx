@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import type { NewsArticle, NewsFeed, NewsSavedArticle } from '../api/types';
 import { useReportTabMeta } from '../contexts/TabsContext';
 import { formatRelativeTime } from '../utils/formatRelativeTime';
-import { NewsFeedsModal } from '../components/NewsFeedsModal';
 import { useSwipe, SWIPE_THRESHOLD } from '../utils/useSwipe';
 
 type ViewMode = 'list' | 'story' | 'saved';
@@ -68,7 +68,6 @@ export function NewsPage() {
   const [loading, setLoading] = useState(false);
   const [staleFeedIds, setStaleFeedIds] = useState<string[]>([]);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [manageFeedsOpen, setManageFeedsOpen] = useState(false);
 
   const loadFeeds = useCallback(async () => {
     const list = await api.listNewsFeeds();
@@ -160,9 +159,12 @@ export function NewsPage() {
           </button>
         </div>
         <div className="news-page__toolbar-spacer" />
-        <button className="btn btn--sm btn--ghost" onClick={() => setManageFeedsOpen(true)}>
-          Manage Feeds
-        </button>
+        {/* Feed management now lives in Settings (see NewsFeedsPanel) —
+            this is just a deep-link over, not a popup, since it's only
+            going to get more to manage (folders, sources) as it grows. */}
+        <Link to="/settings?cat=news-feeds" className="news-page__settings-link" title="Manage News Feeds" aria-label="Manage News Feeds">
+          ⚙️
+        </Link>
       </div>
 
       {staleFeedIds.length > 0 && (
@@ -212,14 +214,6 @@ export function NewsPage() {
           )}
         </div>
       )}
-
-      {manageFeedsOpen && (
-        <NewsFeedsModal
-          feeds={feeds}
-          onClose={() => setManageFeedsOpen(false)}
-          onChanged={loadFeeds}
-        />
-      )}
     </div>
   );
 }
@@ -266,7 +260,11 @@ function FolderNav({ feeds, scope, onSelect }: { feeds: NewsFeed[]; scope: Scope
           </div>
         );
       })}
-      {feeds.length === 0 && <p className="news-page__empty-hint">No feeds yet — add one from Manage Feeds.</p>}
+      {feeds.length === 0 && (
+        <p className="news-page__empty-hint">
+          No feeds yet — add one from <Link to="/settings?cat=news-feeds">News Feeds settings</Link>.
+        </p>
+      )}
     </>
   );
 }
