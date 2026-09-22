@@ -348,6 +348,13 @@ a {
     transform: translateX(-100%);
     transition: transform 0.2s ease-out;
     box-shadow: 4px 0 16px rgba(46, 42, 34, 0.18);
+    /* Fixed-height + fixed positioning means the sidebar's own content
+       (Now/Capture/Plan/Reference/Insights + Settings) can exceed the
+       screen height on a phone — without this, anything past the fold
+       (Settings, at the very bottom) was simply unreachable, since
+       there was no way to scroll down to it. */
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   .sidebar.is-open {
