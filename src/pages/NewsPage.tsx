@@ -64,7 +64,15 @@ export function NewsPage() {
   const [saved, setSaved] = useState<NewsSavedArticle[]>([]);
   const [scope, setScope] = useState<Scope>({ type: 'all' });
   const [view, setView] = useState<ViewMode>('list');
-  const [unreadOnly, setUnreadOnly] = useState(true);
+  // The main feed is always unread-only now — marking something read
+  // removes it from view immediately rather than leaving it dimmed in
+  // place (see markRead below). "Recently Read" is the fail-safe for
+  // that: check it to see the last 25 articles marked read instead of
+  // the normal feed, so an accidental swipe/tap is easy to find and flip
+  // back with the same ○/● toggle. Only meaningful in the Feed tab —
+  // Story mode always wants unread articles to flip through regardless
+  // of this (see loadArticles' effectiveRecentlyRead below).
+  const [recentlyRead, setRecentlyRead] = useState(false);
   const [loading, setLoading] = useState(false);
   const [staleFeedIds, setStaleFeedIds] = useState<string[]>([]);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -77,19 +85,23 @@ export function NewsPage() {
   const loadArticles = useCallback(async () => {
     setLoading(true);
     try {
+      // Story mode ignores the Feed tab's "Recently Read" toggle — it
+      // always wants unread articles to flip through, never the last-25
+      // fail-safe list.
+      const effectiveRecentlyRead = view === 'list' && recentlyRead;
       const opts =
         scope.type === 'feed'
-          ? { feedId: scope.feedId, unreadOnly }
+          ? { feedId: scope.feedId, unreadOnly: true, recentlyRead: effectiveRecentlyRead }
           : scope.type === 'folder'
-            ? { folder: scope.folder ?? '', unreadOnly }
-            : { unreadOnly };
+            ? { folder: scope.folder ?? '', unreadOnly: true, recentlyRead: effectiveRecentlyRead }
+            : { unreadOnly: true, recentlyRead: effectiveRecentlyRead };
       const res = await api.listNewsArticles(opts);
       setArticles(res.articles);
       setStaleFeedIds(res.stale_feeds);
     } finally {
       setLoading(false);
     }
-  }, [scope, unreadOnly]);
+  }, [scope, view, recentlyRead]);
 
   const loadSaved = useCallback(async () => {
     setSaved(await api.listNewsSaved());
@@ -107,7 +119,15 @@ export function NewsPage() {
   const totalUnread = useMemo(() => feeds.reduce((sum, f) => sum + f.unread_count, 0), [feeds]);
 
   async function markRead(articleId: string, read: boolean) {
-    setArticles((prev) => prev.map((a) => (a.id === articleId ? { ...a, is_read: read } : a)));
+    // The normal feed only ever shows unread articles, and the Recently
+    // Read fail-safe only ever shows read ones — so whichever way an
+    // article's read state just changed, if it no longer belongs in the
+    // list it's currently shown in, it's removed immediately rather than
+    // updated in place and left dangling.
+    const shouldRemove = recentlyRead ? !read : read;
+    setArticles((prev) =>
+      shouldRemove ? prev.filter((a) => a.id !== articleId) : prev.map((a) => (a.id === articleId ? { ...a, is_read: read } : a))
+    );
     await api.markNewsArticleRead(articleId, read);
     loadFeeds(); // refresh unread badges
   }
@@ -196,8 +216,8 @@ export function NewsPage() {
             <ListView
               articles={articles}
               loading={loading}
-              unreadOnly={unreadOnly}
-              onUnreadOnlyChange={setUnreadOnly}
+              recentlyRead={recentlyRead}
+              onRecentlyReadChange={setRecentlyRead}
               onMarkAllRead={markAllRead}
               onOpen={openExternally}
               onMarkRead={markRead}
@@ -278,8 +298,8 @@ function ArticleImage({ src, alt }: { src: string | null; alt: string }) {
 function ListView({
   articles,
   loading,
-  unreadOnly,
-  onUnreadOnlyChange,
+  recentlyRead,
+  onRecentlyReadChange,
   onMarkAllRead,
   onOpen,
   onMarkRead,
@@ -287,8 +307,8 @@ function ListView({
 }: {
   articles: NewsArticle[];
   loading: boolean;
-  unreadOnly: boolean;
-  onUnreadOnlyChange: (v: boolean) => void;
+  recentlyRead: boolean;
+  onRecentlyReadChange: (v: boolean) => void;
   onMarkAllRead: () => void;
   onOpen: (url: string) => void;
   onMarkRead: (id: string, read: boolean) => void;
@@ -297,22 +317,28 @@ function ListView({
   return (
     <div className="news-page__list">
       <div className="news-page__list-toolbar">
-        <label className="news-page__unread-toggle">
-          <input type="checkbox" checked={unreadOnly} onChange={(e) => onUnreadOnlyChange(e.target.checked)} />
-          Unread only
+        <label className="news-page__unread-toggle" title="The last 25 articles you've marked read — a fail-safe for an accidental swipe or tap, since read articles now vanish from the feed instantly">
+          <input type="checkbox" checked={recentlyRead} onChange={(e) => onRecentlyReadChange(e.target.checked)} />
+          Recently Read
         </label>
-        <button className="btn btn--sm btn--ghost" onClick={onMarkAllRead}>
-          Mark all read
-        </button>
+        {/* Doesn't apply to the Recently Read fail-safe view — there's
+            nothing left to mark read there. */}
+        {!recentlyRead && (
+          <button className="btn btn--sm btn--ghost" onClick={onMarkAllRead}>
+            Mark all read
+          </button>
+        )}
       </div>
       {loading && articles.length === 0 ? (
         <p className="news-page__empty-hint">Loading&hellip;</p>
       ) : articles.length === 0 ? (
-        <p className="news-page__empty-hint">{unreadOnly ? "You're all caught up." : 'No articles here yet.'}</p>
+        <p className="news-page__empty-hint">
+          {recentlyRead ? "You haven't marked anything read yet." : "You're all caught up."}
+        </p>
       ) : (
         <div className="news-article-list">
           {articles.map((a) => (
-            <ArticleRow key={a.id} article={a} onOpen={onOpen} onMarkRead={onMarkRead} onSave={onSave} />
+            <ArticleRow key={a.id} article={a} dimIfRead={!recentlyRead} onOpen={onOpen} onMarkRead={onMarkRead} onSave={onSave} />
           ))}
         </div>
       )}
@@ -322,11 +348,17 @@ function ListView({
 
 function ArticleRow({
   article,
+  dimIfRead = true,
   onOpen,
   onMarkRead,
   onSave,
 }: {
   article: NewsArticle;
+  /** false in the Recently Read view, where every row is read by
+   * definition — the dimmed/.is-read treatment exists to distinguish read
+   * from unread when they're mixed together, which doesn't apply there
+   * and would just make the whole fail-safe list harder to read. */
+  dimIfRead?: boolean;
   onOpen: (url: string) => void;
   onMarkRead: (id: string, read: boolean) => void;
   onSave: (article: NewsArticle) => void;
@@ -425,9 +457,11 @@ function ArticleRow({
 
   // Main-feed gestures, per Mike's spec: swipe left marks read, swipe
   // right saves. Drag position tracked live so the row reveals which
-  // action is about to fire, then springs back once released — nothing
-  // here needs the article to physically leave the list the way an email
-  // client's dismiss does (it stays, just dimmed via .is-read).
+  // action is about to fire, then springs back once released; the row
+  // itself is removed from the list right after (see markRead in
+  // NewsPage — the normal feed is unread-only, so a just-read article no
+  // longer belongs in it), driven by React state rather than this
+  // gesture code, same as any other list mutation.
   const swipeHandlers = useSwipe({
     onDragX: handleDragX,
     onSwipeLeft: () => {
@@ -453,7 +487,7 @@ function ArticleRow({
       </div>
       <div
         ref={cardRef}
-        className={`news-article-card${article.is_read ? ' is-read' : ''}`}
+        className={`news-article-card${article.is_read && dimIfRead ? ' is-read' : ''}`}
         {...swipeHandlers}
         onClick={() => onOpen(article.url)}
       >

@@ -4754,6 +4754,13 @@ app.get('/api/news/articles', async (c) => {
   const feedId = c.req.query('feed_id');
   const folder = c.req.query('folder');
   const unreadOnly = c.req.query('unread_only') === '1';
+  // "Recently Read" — the last 25 articles Mike marked read (within the
+  // current scope), newest-read first, as a fail-safe for undoing an
+  // accidental swipe/tap: articles now vanish from the normal (unread)
+  // view the instant they're marked read, so this is where to go find
+  // one and flip it back with the same ○/● toggle. Mutually exclusive
+  // with unreadOnly — the UI only ever sends one or the other.
+  const recentlyRead = c.req.query('recently_read') === '1';
 
   let targetFeeds: NewsFeedRow[];
   if (feedId) {
@@ -4767,6 +4774,32 @@ app.get('/api/news/articles', async (c) => {
     targetFeeds = results ?? [];
   }
 
+  if (targetFeeds.length === 0) return c.json({ articles: [], stale_feeds: [] });
+
+  // Recently-read doesn't need a feed refresh first — refreshing only
+  // pulls in new articles, it can't change anything about articles
+  // already marked read — so this path skips straight to the query,
+  // rather than waiting on N feed fetches for a list that wouldn't
+  // change from them anyway.
+  if (recentlyRead) {
+    const placeholders = targetFeeds.map(() => '?').join(',');
+    const { results } = await c.env.DB.prepare(
+      `SELECT a.*, f.title as feed_title, f.folder as feed_folder,
+              1 as is_read, (s.article_id IS NOT NULL) as is_saved
+       FROM news_articles a
+       JOIN news_feeds f ON f.id = a.feed_id
+       JOIN news_read r ON r.article_id = a.id
+       LEFT JOIN news_saved s ON s.article_id = a.id
+       WHERE a.feed_id IN (${placeholders})
+       ORDER BY r.read_at DESC
+       LIMIT 25`
+    )
+      .bind(...targetFeeds.map((f) => f.id))
+      .all<NewsArticleRow & { feed_title: string; feed_folder: string | null; is_read: number; is_saved: number }>();
+    const articles = (results ?? []).map((r) => ({ ...r, is_read: true, is_saved: !!r.is_saved }));
+    return c.json({ articles, stale_feeds: [] });
+  }
+
   const staleFeeds: string[] = [];
   await Promise.all(
     targetFeeds.map(async (f) => {
@@ -4777,8 +4810,6 @@ app.get('/api/news/articles', async (c) => {
       }
     })
   );
-
-  if (targetFeeds.length === 0) return c.json({ articles: [], stale_feeds: [] });
 
   const placeholders = targetFeeds.map(() => '?').join(',');
   const { results } = await c.env.DB.prepare(

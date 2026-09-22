@@ -630,12 +630,17 @@ export const api = {
    * articles. Pass feedId for a single feed, folder for everything in a
    * folder, or neither for "All". unreadOnly narrows to unread articles
    * only — used by both the list view's "Unread" filter and story mode
-   * (which only ever wants unread articles to flip through). */
-  listNewsArticles: (opts?: { feedId?: string; folder?: string | null; unreadOnly?: boolean }) => {
+   * (which only ever wants unread articles to flip through). recentlyRead
+   * is the "fail-safe" view instead: the last 25 articles marked read
+   * (within scope), newest-read first — mutually exclusive with
+   * unreadOnly, and skips the feed refresh (read state can't change from
+   * one) so it comes back faster. */
+  listNewsArticles: (opts?: { feedId?: string; folder?: string | null; unreadOnly?: boolean; recentlyRead?: boolean }) => {
     const params = new URLSearchParams();
     if (opts?.feedId) params.set('feed_id', opts.feedId);
     if (opts?.folder !== undefined && opts.folder !== null) params.set('folder', opts.folder);
-    if (opts?.unreadOnly) params.set('unread_only', '1');
+    if (opts?.recentlyRead) params.set('recently_read', '1');
+    else if (opts?.unreadOnly) params.set('unread_only', '1');
     const qs = params.toString();
     return request<NewsArticlesResponse>(`/api/news/articles${qs ? `?${qs}` : ''}`);
   },
