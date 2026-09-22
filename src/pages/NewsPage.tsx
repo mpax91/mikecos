@@ -338,7 +338,7 @@ function ListView({
       ) : (
         <div className="news-article-list">
           {articles.map((a) => (
-            <ArticleRow key={a.id} article={a} dimIfRead={!recentlyRead} onOpen={onOpen} onMarkRead={onMarkRead} onSave={onSave} />
+            <ArticleRow key={a.id} article={a} recentlyRead={recentlyRead} onOpen={onOpen} onMarkRead={onMarkRead} onSave={onSave} />
           ))}
         </div>
       )}
@@ -348,17 +348,18 @@ function ListView({
 
 function ArticleRow({
   article,
-  dimIfRead = true,
+  recentlyRead = false,
   onOpen,
   onMarkRead,
   onSave,
 }: {
   article: NewsArticle;
-  /** false in the Recently Read view, where every row is read by
-   * definition — the dimmed/.is-read treatment exists to distinguish read
-   * from unread when they're mixed together, which doesn't apply there
-   * and would just make the whole fail-safe list harder to read. */
-  dimIfRead?: boolean;
+  /** True in the Recently Read fail-safe view, where every row is read by
+   * definition (so it stays dimmed same as anywhere else — see .is-read
+   * below) but the swipe/tap action means the opposite of what it means
+   * in the normal feed: putting it BACK to unread rather than marking it
+   * read, since it's already read. */
+  recentlyRead?: boolean;
   onOpen: (url: string) => void;
   onMarkRead: (id: string, read: boolean) => void;
   onSave: (article: NewsArticle) => void;
@@ -448,26 +449,66 @@ function ArticleRow({
     applyDrag(0, true);
   }
 
+  // The commit timer for a read/unread action — see commitReadAction
+  // below. Tracked so a row that gets unmounted mid-exit (e.g. Mike
+  // switches feeds while the animation is still playing) doesn't fire a
+  // stale mark-read/unread call afterward.
+  const exitTimeoutRef = useRef<number | null>(null);
+
   useEffect(
     () => () => {
       if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+      if (exitTimeoutRef.current != null) window.clearTimeout(exitTimeoutRef.current);
     },
     []
   );
 
-  // Main-feed gestures, per Mike's spec: swipe left marks read, swipe
+  // Slides the card the rest of the way off (continuing whatever drag was
+  // already in progress, or starting fresh from a button tap) and fades
+  // it out, holding the reveal panel at full opacity throughout — unlike
+  // springBack, which fades the panel back down WITH the card as if the
+  // gesture had been cancelled. This is deliberately its own motion
+  // rather than the row just vanishing the instant the action commits:
+  // the swipe/tap should read as something visibly happening, not a
+  // silent state flip.
+  function exitCard() {
+    if (rafRef.current != null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+    const card = cardRef.current;
+    if (card) {
+      card.style.transition = 'opacity 220ms ease, transform 220ms ease';
+      card.style.transform = `translateX(${-(MAX_DRAG + 80)}px)`;
+      card.style.opacity = '0';
+    }
+    if (readPanelRef.current) readPanelRef.current.style.opacity = '1';
+  }
+
+  // Every read-state change fired from this row — swipe or the ○/● tap —
+  // ends up removing it from whichever list it's currently shown in: the
+  // normal feed only ever holds unread articles, Recently Read only ever
+  // holds read ones, so flipping either one always means "this no longer
+  // belongs here" (see NewsPage's markRead). So rather than calling
+  // onMarkRead immediately and letting the row disappear the instant
+  // React re-renders, this plays the exit animation first and only
+  // updates the actual list state once it's visually gone.
+  function commitReadAction(read: boolean) {
+    exitCard();
+    exitTimeoutRef.current = window.setTimeout(() => {
+      exitTimeoutRef.current = null;
+      onMarkRead(article.id, read);
+    }, 220);
+  }
+
+  // Main-feed gestures, per Mike's spec: swipe left marks read (or, in
+  // Recently Read, marks unread — the fail-safe's whole purpose), swipe
   // right saves. Drag position tracked live so the row reveals which
-  // action is about to fire, then springs back once released; the row
-  // itself is removed from the list right after (see markRead in
-  // NewsPage — the normal feed is unread-only, so a just-read article no
-  // longer belongs in it), driven by React state rather than this
-  // gesture code, same as any other list mutation.
+  // action is about to fire; releasing past the threshold commits it via
+  // commitReadAction above rather than springing back.
   const swipeHandlers = useSwipe({
     onDragX: handleDragX,
-    onSwipeLeft: () => {
-      onMarkRead(article.id, true);
-      springBack();
-    },
+    onSwipeLeft: () => commitReadAction(!recentlyRead),
     onSwipeRight: () => {
       onSave(article);
       springBack();
@@ -478,8 +519,8 @@ function ArticleRow({
   return (
     <div className="news-article-row-wrap">
       <div ref={readPanelRef} className="news-article-row__action news-article-row__action--read" style={{ opacity: 0 }}>
-        <span ref={readIconRef} className="news-article-row__icon">✓</span>
-        <span className="news-article-row__label">Read</span>
+        <span ref={readIconRef} className="news-article-row__icon">{recentlyRead ? '↺' : '✓'}</span>
+        <span className="news-article-row__label">{recentlyRead ? 'Unread' : 'Read'}</span>
       </div>
       <div ref={savePanelRef} className="news-article-row__action news-article-row__action--save" style={{ opacity: 0 }}>
         <span ref={saveIconRef} className="news-article-row__icon">🔖</span>
@@ -487,7 +528,7 @@ function ArticleRow({
       </div>
       <div
         ref={cardRef}
-        className={`news-article-card${article.is_read && dimIfRead ? ' is-read' : ''}`}
+        className={`news-article-card${article.is_read ? ' is-read' : ''}`}
         {...swipeHandlers}
         onClick={() => onOpen(article.url)}
       >
@@ -507,7 +548,7 @@ function ArticleRow({
             title={article.is_read ? 'Mark unread' : 'Mark read'}
             onClick={(e) => {
               e.stopPropagation();
-              onMarkRead(article.id, !article.is_read);
+              commitReadAction(!article.is_read);
             }}
           >
             {article.is_read ? '○' : '●'}
