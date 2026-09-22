@@ -8300,19 +8300,26 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   background: linear-gradient(to top, rgba(0, 0, 0, 0.75) 0%, rgba(0, 0, 0, 0.05) 45%, transparent 70%);
 }
 
-.news-story__meta {
+/* Meta + title stack from the bottom as one flex column instead of each
+   sitting at its own fixed `bottom` offset — with fixed offsets, a
+   longer (multi-line) headline grows upward into the source-name line
+   above it instead of pushing it further up. */
+.news-story__info {
   position: absolute;
   left: 18px;
-  bottom: 66px;
+  right: 18px;
+  bottom: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.news-story__meta {
   font-size: 12px;
   color: rgba(255, 255, 255, 0.75);
 }
 
 .news-story__title {
-  position: absolute;
-  left: 18px;
-  right: 18px;
-  bottom: 22px;
   color: #fff;
   font-size: 19px;
   font-weight: var(--weight-medium);
@@ -8490,6 +8497,15 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 
   .news-story__card {
     width: 100%;
+    /* Base rule sizes the card from width via aspect-ratio (9/15), which
+       is fine for the desktop's letterboxed 420px card but, stretched to
+       a full phone width, makes the card far taller than the viewport —
+       pushing the title/controls/hint below the fold and clipping the
+       headline against the bottom nav bar. Capping height keeps the card
+       (and everything below it) on-screen; aspect-ratio just goes along
+       for the ride and the image's own object-fit: cover reframes it. */
+    max-height: 60vh;
+    max-height: 60dvh;
   }
 }
 

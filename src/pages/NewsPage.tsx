@@ -682,8 +682,10 @@ function StoryView({
       >
         <ArticleImage src={current.image_url} alt="" />
         <div className="news-story__scrim" />
-        <div className="news-story__meta">{current.feed_title}</div>
-        <div className="news-story__title">{current.title}</div>
+        <div className="news-story__info">
+          <div className="news-story__meta">{current.feed_title}</div>
+          <div className="news-story__title">{current.title}</div>
+        </div>
         {flash && <div className={`news-story__flash news-story__flash--${flash}`}>{flash === 'read' ? '✓ Read' : '★ Saved'}</div>}
       </div>
       <div className="news-story__controls">
