@@ -30,6 +30,7 @@ import { describeRrule, isValidRrule, nextDueOccurrenceDate, type RecurringTaskD
 import { HealthParseError, parseHealthWeek } from './health';
 import { FeedParseError, parseFeed } from './news';
 import { authGate, authRouter, resolveOrigin } from './auth';
+import { vaultRouter } from './vault';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -49,6 +50,7 @@ app.use('*', async (c, next) => {
 // reachable without it.
 app.route('/api/auth', authRouter);
 app.use('/api/*', authGate);
+app.route('/api/vault', vaultRouter);
 
 // Hono's default unhandled-error response is a bare "Internal Server Error"
 // with no body — fine for not leaking internals to an outside caller, but

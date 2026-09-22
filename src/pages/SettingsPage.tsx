@@ -6,6 +6,7 @@ import { ContactImportPanel } from './settings/ContactImportPanel';
 import { UploadPanel } from './settings/UploadPanel';
 import { QuickLinksPanel } from './settings/QuickLinksPanel';
 import { SecurityPanel } from './settings/SecurityPanel';
+import { VaultFieldsPanel } from './settings/VaultFieldsPanel';
 
 interface Category {
   id: string;
@@ -28,6 +29,7 @@ const CATEGORIES: Category[] = [
   { id: 'calendars', label: 'Calendar Integrations', icon: '📅' },
   { id: 'links', label: 'Links', icon: '🔗' },
   { id: 'contact-import', label: 'Contact Import', icon: '👤' },
+  { id: 'vault-fields', label: 'Vault Fields', icon: '🗄️' },
   { id: 'security', label: 'Security', icon: '🔒' },
 ];
 
@@ -64,6 +66,7 @@ export function SettingsPage() {
           {active === 'calendars' && <CalendarsPanel />}
           {active === 'links' && <QuickLinksPanel />}
           {active === 'contact-import' && <ContactImportPanel />}
+          {active === 'vault-fields' && <VaultFieldsPanel />}
           {active === 'security' && <SecurityPanel />}
         </div>
       </div>

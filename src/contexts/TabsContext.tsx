@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ContextMenu, type ContextMenuItem } from '../components/ContextMenu';
 
-export type TabKind = 'today' | 'projects-list' | 'notes-list' | 'jots-list' | 'settings' | 'project' | 'folder' | 'note' | 'stats' | 'boards-list' | 'board' | 'contacts-list' | 'contact' | 'journal' | 'dashboard' | 'news' | 'links' | 'lists-list' | 'list';
+export type TabKind = 'today' | 'projects-list' | 'notes-list' | 'jots-list' | 'settings' | 'project' | 'folder' | 'note' | 'stats' | 'boards-list' | 'board' | 'contacts-list' | 'contact' | 'journal' | 'dashboard' | 'news' | 'links' | 'lists-list' | 'list' | 'vault-list' | 'vault';
 
 export interface Tab {
   id: string;
@@ -294,5 +294,6 @@ export function tabIcon(kind: TabKind): string {
   if (kind === 'news') return '📰';
   if (kind === 'links') return '🔗';
   if (kind === 'lists-list' || kind === 'list') return '☑️';
+  if (kind === 'vault-list' || kind === 'vault') return '🗄️';
   return kind === 'notes-list' || kind === 'note' ? '📝' : '📁';
 }

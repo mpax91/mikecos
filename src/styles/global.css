@@ -7525,6 +7525,330 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   gap: 10px;
 }
 
+/* ---- Settings sub-tabs (Vault Fields, and future multi-section panels) ---- */
+
+.settings-subtext {
+  font-size: 13px;
+  color: var(--color-muted);
+  max-width: 560px;
+  line-height: 1.5;
+  margin: 0 0 16px;
+}
+
+.settings-subtabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: var(--border-hairline);
+  margin-bottom: 16px;
+}
+
+.settings-subtab {
+  background: none;
+  border: none;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: var(--weight-medium);
+  color: var(--color-muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.settings-subtab:hover {
+  color: var(--color-ink);
+}
+
+.settings-subtab.is-active {
+  color: var(--color-accent);
+  border-bottom-color: var(--color-accent);
+}
+
+/* ---- Vault (Settings management + entry detail) ---- */
+
+.vault-settings__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 18px;
+  max-width: 640px;
+}
+
+.vault-settings__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-card);
+  border: var(--border-hairline);
+  background: var(--color-card-bg);
+  font-size: 13.5px;
+}
+
+.vault-settings__row-meta {
+  flex: 1;
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.vault-settings__form,
+.vault-settings__form-row {
+  max-width: 480px;
+  display: flex;
+  gap: 8px;
+}
+
+.vault-settings__form {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.vault-settings__form-row {
+  align-items: center;
+}
+
+.vault-settings__form-row .lock-screen__input {
+  padding: 8px 10px;
+  font-size: 13px;
+  letter-spacing: normal;
+}
+
+.vault-settings__form .lock-screen__input {
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 13px;
+  letter-spacing: normal;
+}
+
+.vault-settings__checklist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  padding: 4px 0;
+}
+
+.vault-settings__checklist-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+/* Entry detail — grouped fields */
+
+.vault-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 16px 0 24px;
+}
+
+.vault-group-card {
+  border: var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: var(--color-card-bg);
+  padding: 14px 16px;
+}
+
+.vault-group-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--font-serif);
+  font-size: 14.5px;
+  color: var(--color-ink);
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: var(--border-hairline);
+}
+
+.vault-add-group-btn {
+  align-self: flex-start;
+  background: none;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-card);
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+
+.vault-add-group-btn:hover {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.vault-field-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 7px 0;
+}
+
+.vault-field-row + .vault-field-row {
+  border-top: 1px dashed var(--color-border);
+}
+
+.vault-field-row__label {
+  flex: 0 0 130px;
+  font-size: 11.5px;
+  font-weight: var(--weight-medium);
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding-top: 3px;
+}
+
+.vault-field-row__value-wrap {
+  flex: 1;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.vault-field-row__value {
+  flex: 1;
+  font-size: 13.5px;
+  color: var(--color-ink);
+  cursor: text;
+  padding: 2px 4px;
+  border-radius: 4px;
+  min-height: 20px;
+  word-break: break-word;
+}
+
+.vault-field-row__value:hover {
+  background: var(--color-sidebar);
+}
+
+.vault-field-row__placeholder {
+  color: var(--color-placeholder);
+}
+
+.vault-field-row__input {
+  flex: 1;
+  font-size: 13.5px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--color-accent);
+  background: var(--color-paper);
+  font-family: inherit;
+}
+
+.vault-field-row__input--textarea {
+  resize: vertical;
+  min-height: 60px;
+}
+
+.vault-field-row__list {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.vault-field-row__list li {
+  font-size: 13.5px;
+}
+
+/* Link-type field values read like real links (host + trimmed path,
+   accent color) rather than Evernote's flat gray cell text. */
+.vault-field-row__link {
+  display: flex;
+  flex-direction: column;
+}
+
+.vault-field-row__link-name {
+  color: var(--color-link-accent);
+  font-weight: var(--weight-medium);
+}
+
+.vault-field-row__link-sub {
+  font-size: 11.5px;
+  color: var(--color-muted);
+}
+
+.vault-field-row__icons {
+  display: flex;
+  gap: 2px;
+  flex: 0 0 auto;
+  padding-top: 2px;
+}
+
+.vault-field-row__icon-btn {
+  background: none;
+  border: none;
+  padding: 4px;
+  border-radius: 5px;
+  color: var(--color-muted);
+  cursor: pointer;
+  display: flex;
+}
+
+.vault-field-row__icon-btn:hover {
+  background: var(--color-sidebar);
+  color: var(--color-accent);
+}
+
+.vault-field-row__icon-btn.is-copied {
+  color: var(--color-accent);
+}
+
+/* New entry / add group pickers */
+
+.vault-new-entry__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 360px;
+}
+
+.vault-new-entry__option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: var(--radius-card);
+  border: var(--border-hairline);
+  background: var(--color-card-bg);
+  cursor: pointer;
+}
+
+.vault-new-entry__option:hover {
+  border-color: var(--color-accent);
+  background: var(--color-sidebar);
+}
+
+.vault-new-entry__option-icon {
+  font-size: 18px;
+}
+
+.vault-new-entry__option-title {
+  font-size: 13.5px;
+  font-weight: var(--weight-medium);
+}
+
+.vault-new-entry__option-sub {
+  font-size: 11.5px;
+  color: var(--color-muted);
+}
+
+@media (max-width: 640px) {
+  .vault-field-row {
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .vault-field-row__label {
+    flex: none;
+    padding-top: 0;
+  }
+
+  .vault-field-row__value {
+    font-size: 15px;
+    padding: 4px;
+  }
+}
+
 /* ---- News (RSS reader) ---- */
 
 .news-page__view-switch {

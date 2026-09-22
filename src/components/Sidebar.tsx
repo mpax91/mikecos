@@ -54,6 +54,7 @@ const SIDEBAR_SECTIONS: NavSectionDef[] = [
   {
     label: 'Reference',
     items: [
+      { path: '/vault', label: 'Vault', kind: 'vault-list' },
       { path: '/links', label: 'Links', kind: 'links' },
       { path: '/contacts', label: 'Contacts', kind: 'contacts-list' },
     ],

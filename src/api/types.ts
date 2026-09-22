@@ -1,4 +1,4 @@
-export type EntityType = 'project' | 'folder' | 'note' | 'task' | 'file' | 'link';
+export type EntityType = 'project' | 'folder' | 'note' | 'task' | 'file' | 'link' | 'vault_entry';
 
 export interface FileMeta {
   r2_key: string;
@@ -1069,4 +1069,81 @@ export interface AuthCredentialSummary {
   device_label: string;
   created_at: string;
   last_used_at: string | null;
+}
+
+// ---- Vault (0034_vault.sql) ----
+
+export type VaultFieldType = 'text' | 'number' | 'date' | 'currency' | 'url' | 'contact' | 'duration' | 'list';
+
+export const VAULT_FIELD_TYPES: { value: VaultFieldType; label: string }[] = [
+  { value: 'text', label: 'Text' },
+  { value: 'number', label: 'Number' },
+  { value: 'date', label: 'Date' },
+  { value: 'currency', label: 'Currency' },
+  { value: 'url', label: 'Link' },
+  { value: 'contact', label: 'Contact' },
+  { value: 'duration', label: 'Duration' },
+  { value: 'list', label: 'List (multi-line)' },
+];
+
+export interface VaultFieldDef {
+  id: string;
+  name: string;
+  field_type: VaultFieldType;
+  created_at: string;
+}
+
+export interface VaultGroupField {
+  id: string;
+  group_id: string;
+  field_def_id: string;
+  position: number;
+  field_name: string;
+  field_type: VaultFieldType;
+}
+
+export interface VaultFieldGroup {
+  id: string;
+  name: string;
+  created_at: string;
+  fields: VaultGroupField[];
+}
+
+export interface VaultTemplate {
+  id: string;
+  name: string;
+  starter_content: string | null;
+  created_at: string;
+  groups: VaultFieldGroup[];
+}
+
+export interface VaultCategory {
+  id: string;
+  name: string;
+  icon: string;
+  trigger_field_def_id: string;
+  created_at: string;
+}
+
+export interface VaultFieldValue {
+  id: string;
+  entry_group_id: string;
+  field_def_id: string;
+  value: string | null;
+  position: number;
+}
+
+export interface VaultEntryGroup {
+  id: string;
+  entry_id: string;
+  group_id: string;
+  label: string | null;
+  position: number;
+  created_at: string;
+  group: VaultFieldGroup | null;
+  values: VaultFieldValue[];
+}
+
+export interface VaultEntryDetail extends Entity {
+  groups: VaultEntryGroup[];
 }

@@ -1,4 +1,4 @@
-export type EntityType = 'project' | 'folder' | 'note' | 'task' | 'file' | 'link';
+export type EntityType = 'project' | 'folder' | 'note' | 'task' | 'file' | 'link' | 'vault_entry';
 export type TaskStatus = 'open' | 'done';
 export type ProjectStatus = 'active' | 'archived';
 
@@ -374,4 +374,67 @@ export interface AuthCredentialSummary {
   device_label: string;
   created_at: string;
   last_used_at: string | null;
+}
+
+// ---- Vault (0034_vault.sql) ----
+
+export type VaultFieldType = 'text' | 'number' | 'date' | 'currency' | 'url' | 'contact' | 'duration' | 'list';
+
+export interface VaultFieldDefRow {
+  id: string;
+  name: string;
+  field_type: VaultFieldType;
+  created_at: string;
+}
+
+export interface VaultFieldGroupRow {
+  id: string;
+  name: string;
+  created_at: string;
+}
+
+export interface VaultGroupFieldRow {
+  id: string;
+  group_id: string;
+  field_def_id: string;
+  position: number;
+}
+
+export interface VaultTemplateRow {
+  id: string;
+  name: string;
+  starter_content: string | null;
+  created_at: string;
+}
+
+export interface VaultTemplateGroupRow {
+  id: string;
+  template_id: string;
+  group_id: string;
+  position: number;
+}
+
+export interface VaultEntryGroupRow {
+  id: string;
+  entry_id: string;
+  group_id: string;
+  label: string | null;
+  position: number;
+  created_at: string;
+}
+
+export interface VaultFieldValueRow {
+  id: string;
+  entry_group_id: string;
+  field_def_id: string;
+  value: string | null;
+  position: number;
+}
+
+export interface VaultCategoryRow {
+  id: string;
+  name: string;
+  icon: string;
+  trigger_field_def_id: string;
+  created_at: string;
 }
