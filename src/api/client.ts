@@ -1,5 +1,5 @@
 import type { AuthenticationResponseJSON, PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON, RegistrationResponseJSON } from '@simplewebauthn/browser';
-import type { AuthCredentialSummary, AuthStatus, Bet, VaultCategory, VaultEntryDetail, VaultFieldDef, VaultFieldGroup, VaultTemplate, BriefingResponse, CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitLog, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsSavedArticle, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, WeatherResponse, WeekResponse } from './types';
+import type { AuthCredentialSummary, AuthStatus, Bet, VaultEntryDetail, VaultFact, BriefingResponse, CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitLog, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsSavedArticle, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, WeatherResponse, WeekResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -701,13 +701,14 @@ export const api = {
 
   logout: () => request<{ ok: true }>('/api/auth/logout', { method: 'POST' }),
 
-  // ---- Vault (0034_vault.sql) ----
+  // ---- Vault (0034_vault.sql, superseded by 0036_vault_facts.sql for the
+  // structured-fields part — see that migration and api/types.ts) ----
 
   listVaultEntries: () => request<Entity[]>('/api/vault/entries'),
 
   getVaultEntry: (id: string) => request<VaultEntryDetail>(`/api/vault/entries/${id}`),
 
-  createVaultEntry: (params: { title?: string; template_id?: string }) =>
+  createVaultEntry: (params: { title?: string } = {}) =>
     request<Entity>('/api/vault/entries', { method: 'POST', body: JSON.stringify(params) }),
 
   updateVaultEntry: (id: string, patch: { title?: string; content?: string | null; pinned?: boolean }) =>
@@ -715,53 +716,11 @@ export const api = {
 
   deleteVaultEntry: (id: string) => request<{ ok: true }>(`/api/vault/entries/${id}`, { method: 'DELETE' }),
 
-  addVaultEntryGroup: (entryId: string, groupId: string, label?: string | null) =>
-    request<{ ok: true; entry_group_id: string }>(`/api/vault/entries/${entryId}/groups`, {
-      method: 'POST',
-      body: JSON.stringify({ group_id: groupId, label }),
-    }),
+  addVaultFact: (entryId: string, label: string, value: string | null) =>
+    request<VaultFact>(`/api/vault/entries/${entryId}/facts`, { method: 'POST', body: JSON.stringify({ label, value }) }),
 
-  renameVaultEntryGroup: (entryGroupId: string, label: string | null) =>
-    request<{ ok: true }>(`/api/vault/entry-groups/${entryGroupId}`, { method: 'PATCH', body: JSON.stringify({ label }) }),
+  updateVaultFact: (id: string, patch: { label?: string; value?: string | null }) =>
+    request<VaultFact>(`/api/vault/facts/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
 
-  deleteVaultEntryGroup: (entryGroupId: string) => request<{ ok: true }>(`/api/vault/entry-groups/${entryGroupId}`, { method: 'DELETE' }),
-
-  saveVaultFieldValues: (entryGroupId: string, values: { field_def_id: string; value: string | null }[]) =>
-    request<{ ok: true }>(`/api/vault/entry-groups/${entryGroupId}/values`, { method: 'PUT', body: JSON.stringify({ values }) }),
-
-  listVaultFieldDefs: () => request<VaultFieldDef[]>('/api/vault/field-defs'),
-
-  createVaultFieldDef: (name: string, field_type: string) =>
-    request<VaultFieldDef>('/api/vault/field-defs', { method: 'POST', body: JSON.stringify({ name, field_type }) }),
-
-  updateVaultFieldDef: (id: string, name: string) => request<VaultFieldDef>(`/api/vault/field-defs/${id}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
-
-  deleteVaultFieldDef: (id: string) => request<{ ok: true }>(`/api/vault/field-defs/${id}`, { method: 'DELETE' }),
-
-  listVaultGroups: () => request<VaultFieldGroup[]>('/api/vault/groups'),
-
-  createVaultGroup: (name: string, field_def_ids: string[]) =>
-    request<VaultFieldGroup>('/api/vault/groups', { method: 'POST', body: JSON.stringify({ name, field_def_ids }) }),
-
-  updateVaultGroup: (id: string, patch: { name?: string; field_def_ids?: string[] }) =>
-    request<VaultFieldGroup>(`/api/vault/groups/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
-
-  deleteVaultGroup: (id: string) => request<{ ok: true }>(`/api/vault/groups/${id}`, { method: 'DELETE' }),
-
-  listVaultTemplates: () => request<VaultTemplate[]>('/api/vault/templates'),
-
-  createVaultTemplate: (params: { name: string; starter_content?: string | null; group_ids?: string[] }) =>
-    request<VaultTemplate>('/api/vault/templates', { method: 'POST', body: JSON.stringify(params) }),
-
-  updateVaultTemplate: (id: string, patch: { name?: string; starter_content?: string | null; group_ids?: string[] }) =>
-    request<VaultTemplate>(`/api/vault/templates/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
-
-  deleteVaultTemplate: (id: string) => request<{ ok: true }>(`/api/vault/templates/${id}`, { method: 'DELETE' }),
-
-  listVaultCategories: () => request<VaultCategory[]>('/api/vault/categories'),
-
-  createVaultCategory: (name: string, icon: string, trigger_field_def_id: string) =>
-    request<VaultCategory>('/api/vault/categories', { method: 'POST', body: JSON.stringify({ name, icon, trigger_field_def_id }) }),
-
-  deleteVaultCategory: (id: string) => request<{ ok: true }>(`/api/vault/categories/${id}`, { method: 'DELETE' }),
+  deleteVaultFact: (id: string) => request<{ ok: true }>(`/api/vault/facts/${id}`, { method: 'DELETE' }),
 };

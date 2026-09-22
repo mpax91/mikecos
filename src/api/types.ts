@@ -1144,6 +1144,19 @@ export interface VaultEntryGroup {
   values: VaultFieldValue[];
 }
 
+// ---- Vault v2 (0036_vault_facts.sql) — a flat, inline quick-facts list
+// per entry, replacing the field/group/template registry above (which is
+// left in place server-side, unused, rather than migrated).
+
+export interface VaultFact {
+  id: string;
+  entry_id: string;
+  label: string;
+  value: string | null;
+  position: number;
+  created_at: string;
+}
+
 export interface VaultEntryDetail extends Entity {
-  groups: VaultEntryGroup[];
+  facts: VaultFact[];
 }

@@ -1,77 +1,32 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
-import type { Entity, VaultEntryDetail, VaultFieldGroup, VaultTemplate } from '../api/types';
-import { NoteEditor } from '../components/NoteEditor';
+import type { Entity, VaultEntryDetail, VaultFact } from '../api/types';
 import { EntityCard } from '../components/EntityCard';
-import { NewFileTile } from '../components/NewItemTiles';
+import { TaskRow } from '../components/TaskRow';
+import { NewTaskRow } from '../components/NewTaskRow';
+import { TaskDetailModal } from '../components/TaskDetailModal';
+import { NewNoteTile, NewFileTile } from '../components/NewItemTiles';
 import { Section } from '../components/Section';
-import { VaultFieldRow } from '../components/VaultFieldRow';
+import { VaultFactsTable } from '../components/VaultFactsTable';
+import { VaultLinkRow } from '../components/VaultLinkRow';
+import { VaultNoteModal } from '../components/VaultNoteModal';
 import { KebabMenu } from '../components/KebabMenu';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { LinkModal } from '../components/LinkModal';
-import { Modal } from '../components/Modal';
 import { useIsCompact } from '../hooks/useIsMobile';
 import { formatRelativeTime } from '../utils/formatRelativeTime';
 import { useTabs, useReportTabMeta } from '../contexts/TabsContext';
 
 const noop = () => {};
+const isFileOrNote = (c: Entity) => c.type === 'file' || c.type === 'note';
 
-function NewEntryModal({ templates, onCreate, onClose }: { templates: VaultTemplate[]; onCreate: (templateId?: string) => void; onClose: () => void }) {
-  return (
-    <Modal title="New Vault Entry" onClose={onClose}>
-      <div className="vault-new-entry__list">
-        <button className="vault-new-entry__option" onClick={() => onCreate()}>
-          <span className="vault-new-entry__option-icon">📄</span>
-          <span>
-            <div className="vault-new-entry__option-title">Blank entry</div>
-            <div className="vault-new-entry__option-sub">Start empty, add fields as you go</div>
-          </span>
-        </button>
-        {templates.map((t) => (
-          <button key={t.id} className="vault-new-entry__option" onClick={() => onCreate(t.id)}>
-            <span className="vault-new-entry__option-icon">📋</span>
-            <span>
-              <div className="vault-new-entry__option-title">{t.name}</div>
-              <div className="vault-new-entry__option-sub">{t.groups.length ? t.groups.map((g) => g.name).join(', ') : 'No preset fields'}</div>
-            </span>
-          </button>
-        ))}
-      </div>
-    </Modal>
-  );
-}
-
-function AddGroupModal({ groups, onAdd, onClose }: { groups: VaultFieldGroup[]; onAdd: (groupId: string) => void; onClose: () => void }) {
-  return (
-    <Modal title="Add a field group" onClose={onClose}>
-      {groups.length === 0 ? (
-        <div className="empty-state empty-state--section">
-          No field groups yet — create one in Settings → Vault Fields first.
-        </div>
-      ) : (
-        <div className="vault-new-entry__list">
-          {groups.map((g) => (
-            <button key={g.id} className="vault-new-entry__option" onClick={() => onAdd(g.id)}>
-              <span className="vault-new-entry__option-icon">🗂️</span>
-              <span>
-                <div className="vault-new-entry__option-title">{g.name}</div>
-                <div className="vault-new-entry__option-sub">{g.fields.map((f) => f.field_name).join(', ') || 'No fields'}</div>
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
-    </Modal>
-  );
-}
-
-/** Vault — the Evernote-replacement filing cabinet: structured, form-driven
- * entries (grouped fields with copy/open icons, a freeform note body, and a
- * Media section for attachments) rather than freeform notes with tags.
- * Same split-view pattern as Notes (list + detail on desktop, list-then-
- * detail on mobile), since mobile here is mainly for *reading* an entry
- * back and desktop for building/editing one. */
+/** Vault — the Evernote-replacement filing cabinet. An entry is a lightweight
+ * quick-facts table (label/value, added inline — no field/group/template
+ * setup) plus the same Notes/Links/Tasks/Pinned children Projects already
+ * use, reframed as reference rather than active work: no status lifecycle,
+ * no folder nesting. A "Folder" from v1 is gone — Google Drive is the real
+ * file repository, so a folder's job is now just a styled Link to it. */
 export function VaultPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -81,14 +36,12 @@ export function VaultPage() {
   const [entries, setEntries] = useState<Entity[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<VaultEntryDetail | null>(null);
-  const [media, setMedia] = useState<Entity[]>([]);
+  const [children, setChildren] = useState<Entity[]>([]);
   const [entryTitle, setEntryTitle] = useState('');
-  const [templates, setTemplates] = useState<VaultTemplate[]>([]);
-  const [groups, setGroups] = useState<VaultFieldGroup[]>([]);
-  const [creating, setCreating] = useState(false);
-  const [addingGroup, setAddingGroup] = useState(false);
   const [addingLink, setAddingLink] = useState(false);
   const [deleting, setDeleting] = useState<Entity | null>(null);
+  const [openNote, setOpenNote] = useState<Entity | null>(null);
+  const [taskStack, setTaskStack] = useState<string[]>([]);
 
   const load = useCallback(() => {
     api.listVaultEntries().then(setEntries).catch((e) => setError(String(e)));
@@ -96,13 +49,11 @@ export function VaultPage() {
 
   useEffect(() => {
     load();
-    api.listVaultTemplates().then(setTemplates).catch(() => {});
-    api.listVaultGroups().then(setGroups).catch(() => {});
   }, [load]);
 
   const loadDetail = useCallback((entryId: string) => {
     api.getVaultEntry(entryId).then(setDetail).catch((e) => setError(String(e)));
-    api.getEntity(entryId).then((d) => setMedia(d.children.filter((c) => c.type === 'file' || c.type === 'link'))).catch(() => setMedia([]));
+    api.getEntity(entryId).then((d) => setChildren(d.children)).catch(() => setChildren([]));
   }, []);
 
   useEffect(() => {
@@ -116,9 +67,8 @@ export function VaultPage() {
 
   useReportTabMeta(detail ? entryTitle || 'Untitled Entry' : 'Vault', detail ? 'vault' : 'vault-list');
 
-  async function handleCreate(templateId?: string) {
-    const entry = await api.createVaultEntry({ template_id: templateId });
-    setCreating(false);
+  async function handleCreate() {
+    const entry = await api.createVaultEntry();
     load();
     navigate(`/vault/${entry.id}`);
   }
@@ -128,11 +78,6 @@ export function VaultPage() {
     setEntryTitle(value);
     setEntries((prev) => (prev ? prev.map((e) => (e.id === detail.id ? { ...e, title: value } : e)) : prev));
     api.updateVaultEntry(detail.id, { title: value });
-  }
-
-  function handleContentSave(json: string) {
-    if (!detail) return;
-    api.updateVaultEntry(detail.id, { content: json });
   }
 
   async function togglePin(entry: Entity) {
@@ -149,26 +94,31 @@ export function VaultPage() {
     navigate('/vault');
   }
 
-  async function handleAddGroup(groupId: string) {
+  // ---- Quick facts ----
+
+  async function addFact(label: string, value: string) {
     if (!detail) return;
-    await api.addVaultEntryGroup(detail.id, groupId);
-    setAddingGroup(false);
-    loadDetail(detail.id);
+    const fact = await api.addVaultFact(detail.id, label, value || null);
+    setDetail((prev) => (prev ? { ...prev, facts: [...prev.facts, fact] } : prev));
   }
 
-  async function handleRemoveGroup(entryGroupId: string) {
-    if (!detail) return;
-    await api.deleteVaultEntryGroup(entryGroupId);
-    loadDetail(detail.id);
+  async function updateFact(fact: VaultFact, patch: { label?: string; value?: string }) {
+    const updated = await api.updateVaultFact(fact.id, { label: patch.label, value: patch.value ?? undefined });
+    setDetail((prev) => (prev ? { ...prev, facts: prev.facts.map((f) => (f.id === fact.id ? updated : f)) } : prev));
   }
 
-  async function handleFieldSave(entryGroupId: string, fieldDefId: string, value: string | null) {
+  async function deleteFact(fact: VaultFact) {
+    setDetail((prev) => (prev ? { ...prev, facts: prev.facts.filter((f) => f.id !== fact.id) } : prev));
+    await api.deleteVaultFact(fact.id);
+  }
+
+  // ---- Children: Notes (incl. uploaded files), Links, Tasks, Pinned ----
+
+  async function createNote() {
     if (!detail) return;
-    // Bulk endpoint expects the whole group's values — but it upserts by
-    // field_def_id, so a single-field array is enough; it won't touch
-    // sibling fields in the same group.
-    await api.saveVaultFieldValues(entryGroupId, [{ field_def_id: fieldDefId, value }]);
+    const note = await api.createEntity({ type: 'note', parent_id: detail.id });
     loadDetail(detail.id);
+    setOpenNote(note);
   }
 
   async function uploadFile(file: File) {
@@ -184,14 +134,38 @@ export function VaultPage() {
     loadDetail(detail.id);
   }
 
-  async function deleteMedia(entity: Entity) {
-    await api.deleteEntity(entity.id);
-    if (detail) loadDetail(detail.id);
+  async function createTask(title: string) {
+    if (!detail) return;
+    await api.createEntity({ type: 'task', parent_id: detail.id, title });
+    loadDetail(detail.id);
   }
 
-  async function toggleMediaPin(entity: Entity) {
-    await api.setPinned(entity.id, entity.pinned !== 1);
-    if (detail) loadDetail(detail.id);
+  async function toggleTask(entity: Entity) {
+    const nextStatus = entity.status === 'done' ? 'open' : 'done';
+    setChildren((prev) => prev.map((c) => (c.id === entity.id ? { ...c, status: nextStatus } : c)));
+    await api.updateEntity(entity.id, { status: nextStatus });
+  }
+
+  async function togglePinChild(entity: Entity) {
+    const next = entity.pinned === 1 ? 0 : 1;
+    setChildren((prev) => prev.map((c) => (c.id === entity.id ? { ...c, pinned: next } : c)));
+    await api.setPinned(entity.id, next === 1);
+  }
+
+  async function deleteChild(entity: Entity) {
+    setChildren((prev) => prev.filter((c) => c.id !== entity.id));
+    await api.deleteEntity(entity.id);
+    setDeleting(null);
+    if (openNote?.id === entity.id) setOpenNote(null);
+  }
+
+  function saveNoteTitle(noteId: string, title: string) {
+    setChildren((prev) => prev.map((c) => (c.id === noteId ? { ...c, title } : c)));
+    api.updateEntity(noteId, { title });
+  }
+
+  function saveNoteContent(noteId: string, json: string) {
+    api.updateEntity(noteId, { content: json });
   }
 
   if (error) return <div className="empty-state">Couldn't load Vault: {error}</div>;
@@ -200,6 +174,13 @@ export function VaultPage() {
   const showList = !isCompact || !id;
   const showDetail = !isCompact || !!id;
 
+  const notes = children.filter(isFileOrNote);
+  const links = children.filter((c) => c.type === 'link');
+  const tasks = children.filter((c) => c.type === 'task');
+  const openTasks = tasks.filter((t) => t.status !== 'done');
+  const doneTasks = tasks.filter((t) => t.status === 'done');
+  const pinned = children.filter((c) => c.pinned === 1);
+
   return (
     <div>
       {showList && (
@@ -207,7 +188,7 @@ export function VaultPage() {
           <h1 className="heading-serif" style={{ fontSize: 24, margin: 0 }}>
             Vault
           </h1>
-          <button className="btn" onClick={() => setCreating(true)}>
+          <button className="btn" onClick={handleCreate}>
             + New Entry
           </button>
         </div>
@@ -286,42 +267,81 @@ export function VaultPage() {
               />
             </div>
 
-            <div className="vault-groups">
-              {detail.groups.map((eg) => (
-                <div key={eg.id} className="vault-group-card">
-                  <div className="vault-group-card__header">
-                    <span>{eg.label || eg.group?.name || 'Group'}</span>
-                    <KebabMenu items={[{ label: 'Remove group', onClick: () => handleRemoveGroup(eg.id), danger: true }]} />
-                  </div>
-                  {(eg.group?.fields ?? []).map((f) => {
-                    const fv = eg.values.find((v) => v.field_def_id === f.field_def_id);
-                    return (
-                      <VaultFieldRow
-                        key={f.field_def_id}
-                        label={f.field_name}
-                        type={f.field_type}
-                        value={fv?.value ?? null}
-                        onSave={(v) => handleFieldSave(eg.id, f.field_def_id, v)}
-                      />
-                    );
-                  })}
-                </div>
-              ))}
-              <button type="button" className="vault-add-group-btn" onClick={() => setAddingGroup(true)}>
-                + Add field group
-              </button>
-            </div>
-
-            <Section title="Notes" defaultExpanded={!isCompact}>
-              <NoteEditor key={detail.id} content={detail.content} onSave={handleContentSave} />
+            <Section title="Quick facts" defaultExpanded={true}>
+              <VaultFactsTable facts={detail.facts} onAdd={addFact} onUpdate={updateFact} onDelete={deleteFact} />
             </Section>
 
-            <Section title="Media" count={media.length} defaultExpanded={!isCompact}>
+            {pinned.length > 0 && (
+              <Section title="Pinned" count={pinned.length} defaultExpanded={true}>
+                <div className="entity-card-grid">
+                  {pinned.map((c) =>
+                    c.type === 'link' ? (
+                      <VaultLinkRow key={c.id} entity={c} onDelete={setDeleting} onTogglePin={togglePinChild} />
+                    ) : c.type === 'task' ? (
+                      <TaskRow key={c.id} entity={c} onToggle={toggleTask} onDelete={setDeleting} onTogglePin={togglePinChild} onOpen={(e) => setTaskStack([e.id])} />
+                    ) : (
+                      <EntityCard
+                        key={c.id}
+                        entity={c}
+                        onDelete={setDeleting}
+                        onTogglePin={togglePinChild}
+                        onRename={noop}
+                        onPromote={noop}
+                        onDemote={noop}
+                        onOpenNote={setOpenNote}
+                        compact
+                      />
+                    )
+                  )}
+                </div>
+              </Section>
+            )}
+
+            <Section title="Notes" count={notes.length} defaultExpanded={!isCompact}>
               <div className="entity-card-grid">
-                {media.map((m) => (
-                  <EntityCard key={m.id} entity={m} onDelete={deleteMedia} onTogglePin={toggleMediaPin} onRename={noop} onPromote={noop} onDemote={noop} />
+                {notes.map((c) => (
+                  <EntityCard
+                    key={c.id}
+                    entity={c}
+                    onDelete={setDeleting}
+                    onTogglePin={togglePinChild}
+                    onRename={noop}
+                    onPromote={noop}
+                    onDemote={noop}
+                    onOpenNote={setOpenNote}
+                    compact={isCompact}
+                  />
                 ))}
+                <NewNoteTile onCreate={createNote} compact={isCompact} />
                 <NewFileTile onUploadFile={uploadFile} onAddLink={() => setAddingLink(true)} />
+              </div>
+            </Section>
+
+            <Section title="Links" count={links.length} defaultExpanded={!isCompact}>
+              <div className="vault-link-list">
+                {links.map((c) => (
+                  <VaultLinkRow key={c.id} entity={c} onDelete={setDeleting} onTogglePin={togglePinChild} />
+                ))}
+                <button type="button" className="vault-link-row vault-link-row--ghost" onClick={() => setAddingLink(true)}>
+                  ＋ add a link
+                </button>
+              </div>
+            </Section>
+
+            <Section title="Tasks" count={openTasks.length} defaultExpanded={true}>
+              <div className="task-list">
+                {openTasks.map((c) => (
+                  <TaskRow key={c.id} entity={c} onToggle={toggleTask} onDelete={setDeleting} onTogglePin={togglePinChild} onOpen={(e) => setTaskStack([e.id])} />
+                ))}
+                <NewTaskRow onCreate={createTask} />
+                {doneTasks.length > 0 && (
+                  <>
+                    <div className="task-divider">Completed</div>
+                    {doneTasks.map((c) => (
+                      <TaskRow key={c.id} entity={c} onToggle={toggleTask} onDelete={setDeleting} onTogglePin={togglePinChild} onOpen={(e) => setTaskStack([e.id])} />
+                    ))}
+                  </>
+                )}
               </div>
             </Section>
           </div>
@@ -334,16 +354,42 @@ export function VaultPage() {
         )}
       </div>
 
-      {creating && <NewEntryModal templates={templates} onCreate={handleCreate} onClose={() => setCreating(false)} />}
-      {addingGroup && <AddGroupModal groups={groups} onAdd={handleAddGroup} onClose={() => setAddingGroup(false)} />}
       {addingLink && <LinkModal onSave={addLink} onClose={() => setAddingLink(false)} />}
+
+      {openNote && (
+        <VaultNoteModal
+          note={openNote}
+          onSaveTitle={(title) => saveNoteTitle(openNote.id, title)}
+          onSaveContent={(json) => saveNoteContent(openNote.id, json)}
+          onClose={() => setOpenNote(null)}
+        />
+      )}
 
       {deleting && (
         <ConfirmModal
-          title="Delete this entry?"
-          body={`"${deleting.title || 'Untitled'}" will be permanently deleted, including its attachments.`}
-          onConfirm={() => deleteEntry(deleting)}
+          title={`Delete ${deleting.type === 'vault_entry' ? 'this entry' : deleting.type}?`}
+          body={
+            deleting.type === 'vault_entry'
+              ? `"${deleting.title || 'Untitled'}" will be permanently deleted, including its facts and attachments.`
+              : `"${deleting.title || 'Untitled'}" will be permanently deleted.`
+          }
+          onConfirm={() => (deleting.type === 'vault_entry' ? deleteEntry(deleting) : deleteChild(deleting))}
           onCancel={() => setDeleting(null)}
+        />
+      )}
+
+      {taskStack.length > 0 && detail && (
+        <TaskDetailModal
+          key={taskStack[taskStack.length - 1]}
+          taskId={taskStack[taskStack.length - 1]}
+          onBack={taskStack.length > 1 ? () => setTaskStack((prev) => prev.slice(0, -1)) : undefined}
+          onClose={() => setTaskStack([])}
+          onOpenSubtask={(taskId) => setTaskStack((prev) => [...prev, taskId])}
+          onMutated={() => loadDetail(detail.id)}
+          onRequestDelete={(entityToDelete) => {
+            setTaskStack([]);
+            setDeleting(entityToDelete);
+          }}
         />
       )}
     </div>

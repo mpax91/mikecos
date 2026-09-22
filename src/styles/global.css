@@ -8940,3 +8940,298 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   background: var(--color-sidebar);
   color: var(--color-ink);
 }
+
+/* ---- Vault v2: quick facts table, link rows, note modal ---- */
+
+.vault-facts {
+  border: var(--border-hairline);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+  background: var(--color-card-bg, #fff);
+  margin-bottom: 6px;
+}
+
+.vault-facts--empty {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px 14px;
+  cursor: pointer;
+  color: var(--color-placeholder);
+}
+
+.vault-facts--empty:hover {
+  background: var(--color-sidebar);
+}
+
+.vault-facts__add-label {
+  font-size: 13px;
+  color: var(--color-accent);
+  font-weight: var(--weight-medium);
+}
+
+.vault-facts__add-hint {
+  font-size: 11.5px;
+}
+
+.vault-facts__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-bottom: var(--border-hairline);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.vault-facts__row:last-of-type {
+  border-bottom: none;
+}
+
+.vault-facts__row:hover {
+  background: var(--color-sidebar);
+}
+
+.vault-facts__label {
+  color: var(--color-muted);
+  width: 110px;
+  flex-shrink: 0;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vault-facts__value {
+  flex: 1;
+  font-weight: var(--weight-medium);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vault-facts__value--empty {
+  color: var(--color-placeholder);
+  font-weight: var(--weight-regular);
+}
+
+.vault-facts__copy {
+  border: none;
+  background: transparent;
+  color: var(--color-placeholder);
+  font-size: 13px;
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.vault-facts__copy:hover {
+  background: var(--color-border);
+  color: var(--color-ink);
+}
+
+.vault-facts__row--editing,
+.vault-facts__row--new {
+  cursor: default;
+}
+
+.vault-facts__input {
+  border: var(--border-hairline);
+  border-radius: 6px;
+  background: #fff;
+  font-family: inherit;
+  font-size: 13px;
+  padding: 5px 8px;
+}
+
+.vault-facts__input--label {
+  width: 110px;
+  flex-shrink: 0;
+}
+
+.vault-facts__input--value {
+  flex: 1;
+}
+
+.vault-facts__delete {
+  border: none;
+  background: transparent;
+  color: var(--color-placeholder);
+  cursor: pointer;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.vault-facts__delete:hover {
+  color: var(--color-accent-secondary);
+}
+
+.vault-facts__add {
+  padding: 9px 12px;
+  font-size: 12.5px;
+  color: var(--color-accent);
+  cursor: pointer;
+}
+
+.vault-facts__add:hover {
+  background: var(--color-sidebar);
+}
+
+/* Links section — domain-styled rows, standing in for v1's Folders */
+
+.vault-link-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.vault-link-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--color-card-bg, #fff);
+  border: var(--border-hairline);
+  border-radius: var(--radius-card);
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.vault-link-row:hover {
+  background: var(--color-sidebar);
+}
+
+.vault-link-row.is-pinned {
+  border-color: var(--color-accent-secondary);
+}
+
+.vault-link-row--ghost {
+  border-style: dashed;
+  color: var(--color-placeholder);
+  justify-content: flex-start;
+}
+
+.vault-link-row--ghost:hover {
+  color: var(--color-accent);
+}
+
+.vault-link-row__icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #fff;
+}
+
+.vault-link-row__icon--drive {
+  background: #fff;
+  border: var(--border-hairline);
+}
+
+.vault-link-row__icon--ai {
+  background: #10A37F;
+}
+
+.vault-link-row__icon--generic {
+  background: var(--color-muted);
+}
+
+.vault-link-row__body {
+  min-width: 0;
+  flex: 1;
+}
+
+.vault-link-row__title {
+  font-size: 13px;
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vault-link-row__url {
+  font-size: 11.5px;
+  color: var(--color-accent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vault-link-row__open {
+  color: var(--color-placeholder);
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+/* Note modal — a note opened from inside a Vault entry, in place rather
+   than navigating away (Vault entries don't nest, so there's no page for
+   a child note to live at). */
+
+.vault-note-modal {
+  width: 640px;
+  max-width: 100%;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+
+.modal__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 20px;
+  border-bottom: var(--border-hairline);
+  flex-shrink: 0;
+}
+
+.vault-note-modal__title {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-family: var(--font-serif);
+  font-size: 19px;
+  padding: 0;
+  margin: 0;
+}
+
+.vault-note-modal__title:focus {
+  outline: none;
+}
+
+.modal__close {
+  border: none;
+  background: transparent;
+  color: var(--color-muted);
+  font-size: 15px;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.modal__close:hover {
+  background: var(--color-sidebar);
+  color: var(--color-ink);
+}
+
+.vault-note-modal__body {
+  padding: 16px 20px 20px;
+  overflow-y: auto;
+}
+
+@media (max-width: 640px) {
+  .vault-facts__label {
+    width: 88px;
+  }
+}

@@ -136,6 +136,7 @@ export function EntityCard({
   onPromote,
   onDemote,
   onMoveToNotes,
+  onOpenNote,
   compact = false,
 }: {
   entity: Entity;
@@ -149,6 +150,12 @@ export function EntityCard({
    * only when the caller passes it (project view wires it in; other places
    * that reuse EntityCard for files/links simply omit it). */
   onMoveToNotes?: (entity: Entity) => void;
+  /** Override for opening a note: when passed, a note click calls this
+   * instead of navigating to /projects/:id — used where the note is a
+   * child of something other than a Project (e.g. a Vault entry), which
+   * has nowhere for a dedicated note route to go. Files/links are
+   * unaffected; they already open directly rather than navigating. */
+  onOpenNote?: (entity: Entity) => void;
   /** Pinned mixes notes with files/links/folders/tasks in one row — a note's
    * usual big square would force every shorter card in that row to stretch
    * to match it. `compact` renders the note at the same rectangle size as a
@@ -202,6 +209,8 @@ export function EntityCard({
       }
     } else if (isLink && linkMeta) {
       window.open(normalizeUrl(linkMeta.url), '_blank', 'noopener,noreferrer');
+    } else if (onOpenNote) {
+      onOpenNote(entity);
     } else {
       navigate(`/projects/${entity.id}`);
     }

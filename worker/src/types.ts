@@ -438,3 +438,16 @@ export interface VaultCategoryRow {
   trigger_field_def_id: string;
   created_at: string;
 }
+
+// ---- Vault v2 (0036_vault_facts.sql) — see that migration for why this
+// replaces the field-def/group/template registry above (left in place,
+// unused, rather than dropped).
+
+export interface VaultFactRow {
+  id: string;
+  entry_id: string;
+  label: string;
+  value: string | null;
+  position: number;
+  created_at: string;
+}
