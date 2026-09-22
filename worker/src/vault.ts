@@ -188,3 +188,53 @@ vaultRouter.delete('/facts/:id', async (c) => {
   if (existing) await reindexEntry(c, existing.entry_id);
   return c.json({ ok: true });
 });
+
+// ---- Rollup — group every quick fact across all entries by its label, so
+// e.g. every "Account #" fact shows up together regardless of which entry
+// it's filed on. Grouping is case/whitespace-insensitive (so "VIN" and
+// "vin " land together) but not fuzzy — "Account #" and "Acct #" stay
+// separate groups. Display label is whichever exact casing was used most
+// often within the group. ----
+
+vaultRouter.get('/facts/rollup', async (c) => {
+  const rows = await db(c)
+    .prepare(
+      `SELECT vf.id as fact_id, vf.label, vf.value, vf.entry_id, e.title as entry_title, e.pinned as entry_pinned
+       FROM vault_facts vf
+       JOIN entities e ON e.id = vf.entry_id AND e.type = 'vault_entry'
+       ORDER BY vf.label COLLATE NOCASE, e.title COLLATE NOCASE`
+    )
+    .all<{ fact_id: string; label: string; value: string | null; entry_id: string; entry_title: string; entry_pinned: number }>();
+
+  type Group = {
+    key: string;
+    labelCounts: Map<string, number>;
+    items: { fact_id: string; label: string; value: string | null; entry_id: string; entry_title: string }[];
+  };
+  const groups = new Map<string, Group>();
+
+  for (const r of rows.results ?? []) {
+    const key = r.label.trim().toLowerCase();
+    if (!key) continue;
+    let g = groups.get(key);
+    if (!g) {
+      g = { key, labelCounts: new Map(), items: [] };
+      groups.set(key, g);
+    }
+    g.labelCounts.set(r.label, (g.labelCounts.get(r.label) ?? 0) + 1);
+    g.items.push({ fact_id: r.fact_id, label: r.label, value: r.value, entry_id: r.entry_id, entry_title: r.entry_title || 'Untitled Entry' });
+  }
+
+  const result = Array.from(groups.values())
+    .map((g) => {
+      const displayLabel = Array.from(g.labelCounts.entries()).sort((a, b) => b[1] - a[1])[0][0];
+      return {
+        label: displayLabel,
+        count: g.items.length,
+        entries: g.items.map((i) => ({ factId: i.fact_id, entryId: i.entry_id, entryTitle: i.entry_title, value: i.value })),
+      };
+    })
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+
+  return c.json(result);
+});

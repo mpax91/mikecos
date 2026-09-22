@@ -20,6 +20,7 @@ import { DashboardPage } from './pages/DashboardPage';
 import { NewsPage } from './pages/NewsPage';
 import { LinksPage } from './pages/LinksPage';
 import { VaultPage } from './pages/VaultPage';
+import { VaultRollupsPage } from './pages/VaultRollupsPage';
 import { ListsPage } from './pages/ListsPage';
 import { ListDetail } from './pages/ListDetail';
 import { SearchPalette } from './components/SearchPalette';
@@ -71,6 +72,7 @@ export default function App() {
             <Route path="/news" element={<NewsPage />} />
             <Route path="/links" element={<LinksPage />} />
             <Route path="/vault" element={<VaultPage />} />
+            <Route path="/vault/rollups" element={<VaultRollupsPage />} />
             <Route path="/vault/:id" element={<VaultPage />} />
             <Route path="/lists" element={<ListsPage />} />
             <Route path="/lists/:id" element={<ListDetail />} />

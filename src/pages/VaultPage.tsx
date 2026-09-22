@@ -203,9 +203,14 @@ export function VaultPage() {
           <h1 className="heading-serif" style={{ fontSize: 24, margin: 0 }}>
             Vault
           </h1>
-          <button className="btn" onClick={handleCreate}>
-            + New Entry
-          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Link to="/vault/rollups" className="btn btn--ghost">
+              Rollups
+            </Link>
+            <button className="btn" onClick={handleCreate}>
+              + New Entry
+            </button>
+          </div>
         </div>
       )}
       <div className={`notes-page${isCompact ? ' notes-page--mobile' : ''}`}>

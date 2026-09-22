@@ -9263,3 +9263,107 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   opacity: 0.25;
   cursor: default;
 }
+
+/* ---- Vault rollups: every Quick Fact across the Vault, grouped by label ---- */
+
+.vault-rollup-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.vault-rollup-card {
+  border: var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: var(--color-card-bg, #fff);
+  overflow: hidden;
+}
+
+.vault-rollup-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: var(--border-hairline);
+  background: var(--color-sidebar);
+}
+
+.vault-rollup-card__label {
+  font-size: 12px;
+  font-weight: var(--weight-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vault-rollup-card__count {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: var(--weight-medium);
+  color: var(--color-muted);
+  background: var(--color-border);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.vault-rollup-card__rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.vault-rollup-card__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: var(--border-hairline);
+  font-size: 13px;
+}
+
+.vault-rollup-card__row:last-child {
+  border-bottom: none;
+}
+
+.vault-rollup-card__entry {
+  width: 40%;
+  flex-shrink: 0;
+  color: var(--color-accent);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vault-rollup-card__entry:hover {
+  text-decoration: underline;
+}
+
+.vault-rollup-card__value {
+  flex: 1;
+  font-weight: var(--weight-medium);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vault-rollup-show-all {
+  display: block;
+  margin: 16px auto 0;
+  border: none;
+  background: transparent;
+  color: var(--color-accent);
+  font-size: 12.5px;
+  cursor: pointer;
+  padding: 6px 10px;
+}
+
+.vault-rollup-show-all:hover {
+  text-decoration: underline;
+}

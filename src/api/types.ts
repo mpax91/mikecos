@@ -1160,3 +1160,16 @@ export interface VaultFact {
 export interface VaultEntryDetail extends Entity {
   facts: VaultFact[];
 }
+
+export interface VaultRollupEntry {
+  factId: string;
+  entryId: string;
+  entryTitle: string;
+  value: string | null;
+}
+
+export interface VaultRollupGroup {
+  label: string;
+  count: number;
+  entries: VaultRollupEntry[];
+}
