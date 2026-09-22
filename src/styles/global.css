@@ -7378,6 +7378,146 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   color: #c0392b;
 }
 
+/* ---- App lock screen + Settings > Security ---- */
+
+.btn--link {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 12.5px;
+  color: var(--color-accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.lock-screen {
+  height: 100vh;
+  width: 100vw;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-paper);
+  padding: 24px;
+}
+
+.lock-screen__card {
+  width: 100%;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.lock-screen__title {
+  font-family: var(--font-serif);
+  font-size: 24px;
+  margin: 0;
+  text-align: center;
+}
+
+.lock-screen__body {
+  font-size: 13.5px;
+  color: var(--color-muted);
+  text-align: center;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.lock-screen__input {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: var(--radius-card);
+  border: var(--border-hairline);
+  background: var(--color-card-bg);
+  font-size: 15px;
+  text-align: center;
+  letter-spacing: 0.05em;
+}
+
+.lock-screen__option {
+  width: 100%;
+  justify-content: center;
+}
+
+.lock-screen__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.lock-screen__actions .btn {
+  flex: 1;
+  justify-content: center;
+}
+
+.lock-screen__switch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.lock-screen__error {
+  font-size: 12.5px;
+  color: #c0392b;
+  text-align: center;
+}
+
+.lock-screen__backup-code {
+  font-family: var(--font-sans);
+  font-size: 20px;
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.08em;
+  text-align: center;
+  padding: 16px;
+  border-radius: var(--radius-card);
+  background: var(--color-sidebar);
+  border: var(--border-hairline);
+  user-select: all;
+}
+
+.security-panel__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.security-panel__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-radius: var(--radius-card);
+  border: var(--border-hairline);
+  background: var(--color-card-bg);
+}
+
+.security-panel__row-label {
+  font-size: 13.5px;
+  font-weight: var(--weight-medium);
+}
+
+.security-panel__row-meta {
+  font-size: 12px;
+  color: var(--color-muted);
+  margin-top: 2px;
+}
+
+.security-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.security-panel__form {
+  margin-top: 16px;
+  max-width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 /* ---- News (RSS reader) ---- */
 
 .news-page__view-switch {

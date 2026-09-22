@@ -12,4 +12,8 @@ binding = "FILES"
 bucket_name = "mikeos-files"
 
 [vars]
-ALLOWED_ORIGIN = "*"
+# Comma-separated exact origins the frontend is served from. Required (not
+# "*") because cookie-based sessions need CORS to echo back one specific
+# origin with credentials — see worker/src/auth.ts's resolveOrigin(). Add a
+# custom domain here too if one gets set up later.
+ALLOWED_ORIGINS = "https://mikeos.pages.dev,http://localhost:5173"

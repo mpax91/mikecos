@@ -23,9 +23,20 @@ import { ListsPage } from './pages/ListsPage';
 import { ListDetail } from './pages/ListDetail';
 import { SearchPalette } from './components/SearchPalette';
 import { BriefingModal } from './components/BriefingModal';
+import { LockScreen } from './components/LockScreen';
+import { useAuth } from './contexts/AuthContext';
 
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { phase } = useAuth();
+
+  // Nothing behind the lock screen ever mounts — no sidebar, no routes, no
+  // data fetches — until there's a valid session (or, on very first run,
+  // until a login method has been set up at all). "Locked" and "setup" are
+  // deliberately kept as separate states in AuthContext but share the same
+  // full-screen treatment here.
+  if (phase === 'loading') return null;
+  if (phase === 'setup' || phase === 'locked') return <LockScreen phase={phase} />;
 
   return (
     <div className="app-shell">

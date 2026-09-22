@@ -5,6 +5,7 @@ import { registerSW } from 'virtual:pwa-register'
 import './styles/global.css'
 import App from './App.tsx'
 import { TabsProvider } from './contexts/TabsContext'
+import { AuthProvider } from './contexts/AuthContext'
 
 // `immediate: true` checks for a new service worker as soon as the app
 // loads (not just on the next visit); combined with registerType:
@@ -16,9 +17,11 @@ registerSW({ immediate: true })
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
-      <TabsProvider>
-        <App />
-      </TabsProvider>
+      <AuthProvider>
+        <TabsProvider>
+          <App />
+        </TabsProvider>
+      </AuthProvider>
     </BrowserRouter>
   </StrictMode>,
 )

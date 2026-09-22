@@ -277,7 +277,11 @@ export interface HealthWeeklyReport {
 export interface Env {
   DB: D1Database;
   FILES: R2Bucket;
-  ALLOWED_ORIGIN: string;
+  // Comma-separated exact origins (e.g. "https://mikeos.pages.dev,http://localhost:5173").
+  // Replaces the old wildcard ALLOWED_ORIGIN: cookie-based auth requires
+  // CORS to echo back one specific origin with credentials enabled, which
+  // isn't possible with "*" — see worker/src/auth.ts's resolveOrigin().
+  ALLOWED_ORIGINS: string;
 }
 
 // ---- News (RSS reader) — raw D1 row shapes; see
@@ -340,4 +344,34 @@ export interface Bet {
   notes: string | null;
   created_at: string;
   updated_at: string;
+}
+
+// ---- App-wide authentication (0033_auth.sql) ----
+
+export type AuthCredentialType = 'webauthn' | 'pin';
+
+export interface AuthCredentialRow {
+  id: string;
+  type: AuthCredentialType;
+  device_label: string;
+  webauthn_credential_id: string | null;
+  webauthn_public_key: string | null;
+  webauthn_counter: number | null;
+  webauthn_transports: string | null;
+  pin_hash: string | null;
+  pin_salt: string | null;
+  pin_fail_count: number;
+  pin_locked_until: string | null;
+  created_at: string;
+  last_used_at: string | null;
+}
+
+// Safe-to-return-to-the-frontend shape — never includes pin_hash/pin_salt
+// or the raw webauthn public key/credential id.
+export interface AuthCredentialSummary {
+  id: string;
+  type: AuthCredentialType;
+  device_label: string;
+  created_at: string;
+  last_used_at: string | null;
 }

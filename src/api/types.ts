@@ -1051,3 +1051,22 @@ export interface Bet {
   created_at: string;
   updated_at: string;
 }
+
+// ---- App-wide authentication (0033_auth.sql) ----
+
+export type AuthCredentialType = 'webauthn' | 'pin';
+
+export interface AuthStatus {
+  has_credentials: boolean;
+  has_webauthn: boolean;
+  has_pin: boolean;
+  authenticated: boolean;
+}
+
+export interface AuthCredentialSummary {
+  id: string;
+  type: AuthCredentialType;
+  device_label: string;
+  created_at: string;
+  last_used_at: string | null;
+}

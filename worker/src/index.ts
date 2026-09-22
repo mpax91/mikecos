@@ -29,13 +29,26 @@ import { calendarIdFromIcsUrl, meetingsForDate, meetingsForRange } from './ics';
 import { describeRrule, isValidRrule, nextDueOccurrenceDate, type RecurringTaskDefinition } from './recurring';
 import { HealthParseError, parseHealthWeek } from './health';
 import { FeedParseError, parseFeed } from './news';
+import { authGate, authRouter, resolveOrigin } from './auth';
 
 const app = new Hono<{ Bindings: Env }>();
 
+// Cookie-based sessions require CORS to echo back one specific,
+// allowlisted origin with credentials enabled — a wildcard "*" origin
+// can't carry credentials per the CORS spec, so every request's Origin
+// header is checked against ALLOWED_ORIGINS (see auth.ts's resolveOrigin)
+// rather than using Hono's static-origin shorthand.
 app.use('*', async (c, next) => {
-  const corsMiddleware = cors({ origin: c.env.ALLOWED_ORIGIN ?? '*' });
+  const corsMiddleware = cors({ origin: (origin) => (origin && resolveOrigin(c) === origin ? origin : undefined), credentials: true });
   return corsMiddleware(c, next);
 });
+
+// Every /api/* route requires a valid session except /api/auth/* itself
+// (login/registration/status obviously can't require already being
+// logged in). Mounted before any other route so nothing downstream is
+// reachable without it.
+app.route('/api/auth', authRouter);
+app.use('/api/*', authGate);
 
 // Hono's default unhandled-error response is a bare "Internal Server Error"
 // with no body — fine for not leaking internals to an outside caller, but

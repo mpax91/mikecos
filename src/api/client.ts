@@ -1,15 +1,27 @@
-import type { Bet, BriefingResponse, CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitLog, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsSavedArticle, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, WeatherResponse, WeekResponse } from './types';
+import type { AuthenticationResponseJSON, PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON, RegistrationResponseJSON } from '@simplewebauthn/browser';
+import type { AuthCredentialSummary, AuthStatus, Bet, BriefingResponse, CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitLog, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsSavedArticle, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, WeatherResponse, WeekResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
+
+// Fired whenever any API call comes back 401 — a session that expired (or
+// was revoked from another device) mid-use, not just the initial locked
+// state. AuthContext listens for this to drop back to the lock screen
+// immediately instead of leaving the app showing stale data next to
+// requests that are silently failing.
+export const UNAUTHORIZED_EVENT = 'mikeos:unauthorized';
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
+    credentials: 'include', // send/receive the mikeos_session cookie cross-origin (Pages <-> Workers)
     headers: {
       'content-type': 'application/json',
       ...(options?.headers ?? {}),
     },
   });
+  if (res.status === 401 && !path.startsWith('/api/auth/')) {
+    window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+  }
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     throw new Error(`API ${res.status}: ${text || res.statusText}`);
@@ -66,7 +78,7 @@ export const api = {
     const form = new FormData();
     form.append('file', file);
     if (parent_id) form.append('parent_id', parent_id);
-    const res = await fetch(`${API_BASE}/api/upload`, { method: 'POST', body: form });
+    const res = await fetch(`${API_BASE}/api/upload`, { method: 'POST', body: form, credentials: 'include' });
     if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
     return res.json();
   },
@@ -76,7 +88,7 @@ export const api = {
   uploadInline: async (file: File): Promise<{ url: string; filename: string; mime_type: string; size: number; r2_key: string }> => {
     const form = new FormData();
     form.append('file', file);
-    const res = await fetch(`${API_BASE}/api/upload`, { method: 'POST', body: form });
+    const res = await fetch(`${API_BASE}/api/upload`, { method: 'POST', body: form, credentials: 'include' });
     if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
     const data = await res.json();
     // The worker returns a path relative to itself (e.g. "/api/files/xyz");
@@ -653,4 +665,39 @@ export const api = {
   updateBet: (id: string, params: Partial<Bet>) => request<Bet>(`/api/bets/${id}`, { method: 'PATCH', body: JSON.stringify(params) }),
 
   deleteBet: (id: string) => request<{ ok: true }>(`/api/bets/${id}`, { method: 'DELETE' }),
+
+  // ---- Auth (app-wide lock screen — 0033_auth.sql) ----
+
+  authStatus: () => request<AuthStatus>('/api/auth/status'),
+
+  webauthnRegisterOptions: (device_label: string) =>
+    request<{ options: PublicKeyCredentialCreationOptionsJSON }>('/api/auth/webauthn/register/options', {
+      method: 'POST',
+      body: JSON.stringify({ device_label }),
+    }),
+
+  webauthnRegisterVerify: (device_label: string, challenge: string, response: RegistrationResponseJSON) =>
+    request<{ ok: true; backup_code: string | null }>('/api/auth/webauthn/register/verify', {
+      method: 'POST',
+      body: JSON.stringify({ device_label, challenge, response }),
+    }),
+
+  webauthnLoginOptions: () => request<{ options: PublicKeyCredentialRequestOptionsJSON }>('/api/auth/webauthn/login/options', { method: 'POST' }),
+
+  webauthnLoginVerify: (challenge: string, response: AuthenticationResponseJSON) =>
+    request<{ ok: true }>('/api/auth/webauthn/login/verify', { method: 'POST', body: JSON.stringify({ challenge, response }) }),
+
+  pinSetup: (pin: string) => request<{ ok: true; backup_code: string | null }>('/api/auth/pin/setup', { method: 'POST', body: JSON.stringify({ pin }) }),
+
+  pinLogin: (pin: string) => request<{ ok: true }>('/api/auth/pin/login', { method: 'POST', body: JSON.stringify({ pin }) }),
+
+  redeemBackupCode: (code: string) => request<{ ok: true; backup_code: string }>('/api/auth/backup-code/redeem', { method: 'POST', body: JSON.stringify({ code }) }),
+
+  regenerateBackupCode: () => request<{ backup_code: string }>('/api/auth/backup-code/regenerate', { method: 'POST' }),
+
+  listAuthCredentials: () => request<AuthCredentialSummary[]>('/api/auth/credentials'),
+
+  deleteAuthCredential: (id: string) => request<{ ok: true }>(`/api/auth/credentials/${id}`, { method: 'DELETE' }),
+
+  logout: () => request<{ ok: true }>('/api/auth/logout', { method: 'POST' }),
 };
