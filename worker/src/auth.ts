@@ -51,7 +51,11 @@ function timingSafeEqual(a: string, b: string): boolean {
 async function hashPin(pin: string, saltBytes?: Uint8Array): Promise<{ hash: string; salt: string }> {
   const salt = saltBytes ?? crypto.getRandomValues(new Uint8Array(16));
   const keyMaterial = await crypto.subtle.importKey('raw', new TextEncoder().encode(pin), 'PBKDF2', false, ['deriveBits']);
-  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations: 150000, hash: 'SHA-256' }, keyMaterial, 256);
+  // 100,000 is the ceiling Cloudflare Workers' WebCrypto implementation
+  // enforces for PBKDF2 — anything higher throws at deriveBits() time
+  // rather than silently clamping, which is what "PBKDF2 failed:
+  // iteration counts above 100000 are not supported" was.
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' }, keyMaterial, 256);
   return { hash: bytesToBase64(new Uint8Array(bits)), salt: bytesToBase64(salt) };
 }
 async function verifyPin(pin: string, hash: string, salt: string): Promise<boolean> {
