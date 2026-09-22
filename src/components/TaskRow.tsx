@@ -26,34 +26,23 @@ function parseLinkMeta(entity: Entity): LinkMeta | null {
 
 /** 'YYYY-MM-DD' -> a short, relative-when-useful label plus a `kind` the
  * caller uses to color it (overdue tasks should stand out, today's tasks
- * a little, anything further out just reads as plain info). Also returns
- * the raw day offset, which the mobile-compact badge (see TaskRow's
- * `isMobile` branch below) turns into "0D" / "6D" / "-2D" instead of
- * spelling out "Today" / "Jan 5" — same information, a fraction of the
- * width. */
-export function formatDueDate(dueDate: string): { label: string; kind: 'overdue' | 'today' | 'upcoming'; diffDays: number } {
+ * a little, anything further out just reads as plain info). */
+export function formatDueDate(dueDate: string): { label: string; kind: 'overdue' | 'today' | 'upcoming' } {
   const due = new Date(`${dueDate}T00:00:00`);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const diffDays = Math.round((due.getTime() - today.getTime()) / 86400000);
 
-  if (diffDays === 0) return { label: 'Today', kind: 'today', diffDays };
-  if (diffDays === 1) return { label: 'Tomorrow', kind: 'upcoming', diffDays };
-  if (diffDays === -1) return { label: 'Yesterday', kind: 'overdue', diffDays };
+  if (diffDays === 0) return { label: 'Today', kind: 'today' };
+  if (diffDays === 1) return { label: 'Tomorrow', kind: 'upcoming' };
+  if (diffDays === -1) return { label: 'Yesterday', kind: 'overdue' };
 
   const label = due.toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
     year: due.getFullYear() !== today.getFullYear() ? 'numeric' : undefined,
   });
-  return { label, kind: diffDays < 0 ? 'overdue' : 'upcoming', diffDays };
-}
-
-/** The mobile-compact form of a due date: "0D" for today, "6D"/"14D" for
- * n days out, "-2D" for n days overdue — same info as the spelled-out
- * label, a fraction of the width. */
-export function compactDueLabel(diffDays: number): string {
-  return `${diffDays}D`;
+  return { label, kind: diffDays < 0 ? 'overdue' : 'upcoming' };
 }
 
 /** 'HH:MM' 24h -> a short 12-hour clock label ("2:30 PM") for the due badge. */
@@ -183,11 +172,9 @@ export function TaskRow({
           >
             {/* Emoji dropped on mobile — the pill's own color already says
                 "this is a due date", so the icon was just taking up width
-                that's scarcer there than the label itself. The label itself
-                also compacts to "0D"/"6D"/"-2D" on mobile instead of
-                "Today"/"Jan 5"/"Yesterday". */}
+                that's scarcer there than the label itself. */}
             {!isMobile && '📅 '}
-            {isMobile ? compactDueLabel(due.diffDays) : due.label}
+            {due.label}
             {entity.due_time && ` · ${formatDueTime(entity.due_time)}`}
           </span>
         )}

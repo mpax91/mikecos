@@ -1,6 +1,6 @@
 import type { Entity } from '../api/types';
 import { KebabMenu } from './KebabMenu';
-import { TaskMediaIndicator, formatDueDate, formatDueTime, compactDueLabel } from './TaskRow';
+import { TaskMediaIndicator, formatDueDate, formatDueTime } from './TaskRow';
 import { useIsMobile } from '../hooks/useIsMobile';
 
 /** A List item's row — deliberately its own component rather than a reuse of
@@ -59,7 +59,7 @@ export function ListItemRow({
       {due && (
         <span className={`task-row__due task-row__due--${due.kind}`} title={dueDate ?? undefined}>
           {!isMobile && '📅 '}
-          {isMobile ? compactDueLabel(due.diffDays) : due.label}
+          {due.label}
           {entity.due_time && ` · ${formatDueTime(entity.due_time)}`}
         </span>
       )}

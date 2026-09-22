@@ -3341,9 +3341,14 @@ a {
     font-size: 18px;
   }
 
+  /* Matches the 38px arrow buttons on either side of it — at the old
+     smaller size it read as an undersized, awkward middle child between
+     two bigger thumb targets. */
   .today-page__date-input {
-    font-size: 12px;
-    padding: 5px 4px;
+    height: 38px;
+    box-sizing: border-box;
+    font-size: 13.5px;
+    padding: 0 8px;
   }
 
   .today-page__nav {
