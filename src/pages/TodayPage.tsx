@@ -383,28 +383,35 @@ export function TodayPage() {
               Month
             </button>
           </div>
-          <button type="button" className="today-page__nav-btn" onClick={() => goToDate(addDays(date, -1))} aria-label="Previous day" title="Previous day">
-            ‹
-          </button>
-          <input
-            type="date"
-            className="today-page__date-input"
-            value={date}
-            onChange={(e) => e.target.value && goToDate(e.target.value)}
-          />
-          <button type="button" className="today-page__nav-btn" onClick={() => goToDate(addDays(date, 1))} aria-label="Next day" title="Next day">
-            ›
-          </button>
-          {/* Reserved-width slot (see .today-page__today-slot) rather than a
-             conditionally-mounted element — so the date-nav trio to its left
-             never reflows when this appears/disappears; it just fades in in
-             place, sitting outside the Day/Week/Month + arrows/date group as
-             a separate "jump back" action rather than wedged inside it. */}
-          <span className={`today-page__today-slot${!isToday ? ' is-visible' : ''}`}>
-            <button type="button" className="btn btn--ghost btn--sm" onClick={() => goToDate(todayLocalISO())}>
-              Today
+          {/* Grouped so the arrows/date/Today-jump never split across lines
+             on their own — .today-page__nav still wraps as a whole between
+             this group and the Day/Week/Month toggle, but the prev-arrow /
+             date-input / next-arrow always stay on one line together (a
+             lone wrapped "›" read as broken on narrow phones). */}
+          <div className="today-page__date-nav">
+            <button type="button" className="today-page__nav-btn" onClick={() => goToDate(addDays(date, -1))} aria-label="Previous day" title="Previous day">
+              ‹
             </button>
-          </span>
+            <input
+              type="date"
+              className="today-page__date-input"
+              value={date}
+              onChange={(e) => e.target.value && goToDate(e.target.value)}
+            />
+            <button type="button" className="today-page__nav-btn" onClick={() => goToDate(addDays(date, 1))} aria-label="Next day" title="Next day">
+              ›
+            </button>
+            {/* Reserved-width slot (see .today-page__today-slot) rather than a
+               conditionally-mounted element — so the date-nav trio to its left
+               never reflows when this appears/disappears; it just fades in in
+               place, sitting outside the Day/Week/Month + arrows/date group as
+               a separate "jump back" action rather than wedged inside it. */}
+            <span className={`today-page__today-slot${!isToday ? ' is-visible' : ''}`}>
+              <button type="button" className="btn btn--ghost btn--sm" onClick={() => goToDate(todayLocalISO())}>
+                Today
+              </button>
+            </span>
+          </div>
         </div>
 
         <div className="today-page__header-extra">
