@@ -1031,3 +1031,23 @@ export interface BriefingResponse {
   insights: BriefingInsights;
   retrospective: BriefingRetrospective;
 }
+
+// ---- Bets (sports betting dashboard, 0032_bets.sql) ----
+
+export type BetResult = 'win' | 'loss' | 'push' | 'void';
+
+export interface Bet {
+  id: string;
+  date: string; // 'YYYY-MM-DD'
+  sport: string;
+  sportsbook: string;
+  bet_type: string;
+  pick: string | null;
+  odds: number; // American odds
+  wager: number;
+  result: BetResult;
+  manual_profit: number | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}

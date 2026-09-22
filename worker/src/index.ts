@@ -5,6 +5,7 @@ import type {
   CanvasConnector,
   CanvasItem,
   CanvasItemType,
+  Bet,
   Contact,
   ContactCircle,
   ContactConnection,
@@ -5510,6 +5511,80 @@ app.get('/api/briefing', async (c) => {
   const date = c.req.query('date');
   if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return c.json({ error: 'date query param is required (YYYY-MM-DD)' }, 400);
   return c.json(await computeBriefing(c.env.DB, date));
+});
+
+// ---- Bets (sports betting dashboard, 0032_bets.sql) ----
+//
+// Deliberately thin: this Worker stores the raw inputs (odds/wager/result)
+// and does basically no computation server-side — profit, win rate, ROI,
+// breakdowns by sport/book/type, and the period rollups for the dashboard
+// are all derived client-side (see src/utils/bets.ts), same "D1 holds the
+// facts, the UI derives the view" split as the rest of this app (Contacts'
+// household connections, the Journal's pulled-in data). At personal-bet-log
+// scale there's no reason to duplicate that math on the server.
+const BET_RESULTS = ['win', 'loss', 'push', 'void'];
+
+app.get('/api/bets', async (c) => {
+  const { results } = await c.env.DB.prepare('SELECT * FROM bets ORDER BY date DESC, created_at DESC').all<Bet>();
+  return c.json(results ?? []);
+});
+
+app.post('/api/bets', async (c) => {
+  const body = await c.req.json<Partial<Bet>>();
+  if (!body.date || !/^\d{4}-\d{2}-\d{2}$/.test(body.date)) return c.json({ error: 'date (YYYY-MM-DD) is required' }, 400);
+  if (!body.sport?.trim()) return c.json({ error: 'sport is required' }, 400);
+  if (!body.sportsbook?.trim()) return c.json({ error: 'sportsbook is required' }, 400);
+  if (!body.bet_type?.trim()) return c.json({ error: 'bet_type is required' }, 400);
+  if (typeof body.odds !== 'number' || !Number.isFinite(body.odds) || body.odds === 0) return c.json({ error: 'odds must be a non-zero number (American odds, e.g. -110 or 150)' }, 400);
+  if (typeof body.wager !== 'number' || !Number.isFinite(body.wager) || body.wager <= 0) return c.json({ error: 'wager must be a positive number' }, 400);
+  if (!body.result || !BET_RESULTS.includes(body.result)) return c.json({ error: `result must be one of ${BET_RESULTS.join(', ')}` }, 400);
+
+  const id = uid();
+  const ts = now();
+  await c.env.DB.prepare(
+    `INSERT INTO bets (id, date, sport, sportsbook, bet_type, pick, odds, wager, result, manual_profit, notes, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  )
+    .bind(id, body.date, body.sport.trim(), body.sportsbook.trim(), body.bet_type.trim(), body.pick?.trim() || null, body.odds, body.wager, body.result, body.manual_profit ?? null, body.notes?.trim() || null, ts, ts)
+    .run();
+  const bet = await c.env.DB.prepare('SELECT * FROM bets WHERE id = ?').bind(id).first<Bet>();
+  return c.json(bet, 201);
+});
+
+app.patch('/api/bets/:id', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json<Partial<Bet>>();
+  const existing = await c.env.DB.prepare('SELECT id FROM bets WHERE id = ?').bind(id).first();
+  if (!existing) return c.json({ error: 'not found' }, 404);
+
+  if (body.result !== undefined && !BET_RESULTS.includes(body.result)) return c.json({ error: `result must be one of ${BET_RESULTS.join(', ')}` }, 400);
+  if (body.odds !== undefined && (typeof body.odds !== 'number' || !Number.isFinite(body.odds) || body.odds === 0)) return c.json({ error: 'odds must be a non-zero number' }, 400);
+  if (body.wager !== undefined && (typeof body.wager !== 'number' || !Number.isFinite(body.wager) || body.wager <= 0)) return c.json({ error: 'wager must be a positive number' }, 400);
+
+  const fields: [string, unknown][] = [];
+  const simple: (keyof Bet)[] = ['date', 'sport', 'sportsbook', 'bet_type', 'odds', 'wager', 'result'];
+  for (const key of simple) {
+    if (key in body) fields.push([key, (body as Record<string, unknown>)[key]]);
+  }
+  if ('pick' in body) fields.push(['pick', body.pick?.trim() || null]);
+  if ('notes' in body) fields.push(['notes', body.notes?.trim() || null]);
+  if ('manual_profit' in body) fields.push(['manual_profit', body.manual_profit ?? null]);
+
+  if (fields.length > 0) {
+    fields.push(['updated_at', now()]);
+    const setClause = fields.map(([k]) => `${k} = ?`).join(', ');
+    await c.env.DB.prepare(`UPDATE bets SET ${setClause} WHERE id = ?`)
+      .bind(...fields.map(([, v]) => v), id)
+      .run();
+  }
+  const bet = await c.env.DB.prepare('SELECT * FROM bets WHERE id = ?').bind(id).first<Bet>();
+  return c.json(bet);
+});
+
+app.delete('/api/bets/:id', async (c) => {
+  const id = c.req.param('id');
+  await c.env.DB.prepare('DELETE FROM bets WHERE id = ?').bind(id).run();
+  return c.json({ ok: true });
 });
 
 app.get('/api/health', (c) => c.json({ ok: true, time: now() }));

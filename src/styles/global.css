@@ -7094,6 +7094,290 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   margin: 0 0 8px;
 }
 
+/* ---- Betting dashboard (Dashboard page's "Betting" life area) ---- */
+
+.bets__result-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.bets__result-badge--win {
+  background: rgba(46, 139, 87, 0.14);
+  color: #2e8b57;
+}
+
+.bets__result-badge--loss {
+  background: rgba(192, 57, 43, 0.12);
+  color: #c0392b;
+}
+
+.bets__result-badge--push,
+.bets__result-badge--void {
+  background: rgba(120, 120, 120, 0.14);
+  color: var(--color-muted);
+}
+
+.bets-net-tag {
+  display: inline-block;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.bets-net-tag.is-up {
+  color: #2e8b57;
+}
+
+.bets-net-tag.is-down {
+  color: #c0392b;
+}
+
+/* Zero-anchored bidirectional bar chart — see NetProfitChart's comment for
+   why this can't reuse the Fitness TrendChart's min/max-scaled bars. */
+.bets-chart {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  height: 200px;
+  min-width: 100%;
+}
+
+.bets-chart.is-dense {
+  gap: 3px;
+}
+
+.bets-chart__col {
+  display: flex;
+  flex-direction: column;
+  flex: 1 0 30px;
+  min-width: 30px;
+}
+
+.bets-chart__amount {
+  font-size: 10.5px;
+  color: var(--color-muted);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  height: 14px;
+}
+
+.bets-chart__top {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.bets-chart__bottom {
+  flex: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.bets-chart__zero {
+  height: 1px;
+  background: var(--color-muted);
+  opacity: 0.35;
+  flex-shrink: 0;
+}
+
+.bets-chart__bar {
+  width: 60%;
+  min-height: 2px;
+  border-radius: 3px 3px 0 0;
+  transition: opacity 0.15s;
+}
+
+.bets-chart__bar--pos {
+  background: #2e8b57;
+}
+
+.bets-chart__bar--neg {
+  background: #c0392b;
+  border-radius: 0 0 3px 3px;
+}
+
+.bets-chart__col:not(.is-current) .bets-chart__bar {
+  opacity: 0.55;
+}
+
+.bets-chart__label {
+  font-size: 10px;
+  color: var(--color-muted);
+  text-align: center;
+  margin-top: 4px;
+  white-space: nowrap;
+}
+
+.bets-chart__col.is-current .bets-chart__label {
+  color: var(--color-ink);
+  font-weight: 600;
+}
+
+.bets-breakdowns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.bets-breakdown {
+  padding: 14px 16px;
+}
+
+.bets-breakdown__title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.bets-breakdown__row {
+  display: grid;
+  grid-template-columns: 1.4fr 0.6fr 0.9fr 0.9fr 0.8fr;
+  gap: 6px;
+  padding: 6px 0;
+  border-bottom: var(--border-hairline);
+  font-size: 12.5px;
+  align-items: center;
+}
+
+.bets-breakdown__row:last-child {
+  border-bottom: none;
+}
+
+.bets-breakdown__row--head {
+  color: var(--color-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.bets-breakdown__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bets-breakdown__net.is-up {
+  color: #2e8b57;
+}
+
+.bets-breakdown__net.is-down {
+  color: #c0392b;
+}
+
+.bets-log {
+  margin-top: 16px;
+  padding: 6px 16px;
+}
+
+.bets-log__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: var(--border-hairline);
+}
+
+.bets-log__row:last-child {
+  border-bottom: none;
+}
+
+.bets-log__main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.bets-log__date {
+  font-size: 10.5px;
+  color: var(--color-muted);
+}
+
+.bets-log__pick {
+  font-size: 13.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bets-log__meta {
+  font-size: 11.5px;
+  color: var(--color-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bets-log__profit {
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.bets-log__profit.is-up {
+  color: #2e8b57;
+}
+
+.bets-log__profit.is-down {
+  color: #c0392b;
+}
+
+.bets-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.bets-form__row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.bets-form__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12.5px;
+  color: var(--color-muted);
+}
+
+.bets-form__field input,
+.bets-form__field select,
+.bets-form__field textarea {
+  font-size: 14px;
+  color: var(--color-ink);
+}
+
+.bets-form__preview {
+  font-size: 13.5px;
+  font-weight: 600;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(120, 120, 120, 0.08);
+}
+
+.bets-form__preview.is-up {
+  color: #2e8b57;
+}
+
+.bets-form__preview.is-down {
+  color: #c0392b;
+}
+
+.bets-form__error {
+  font-size: 12.5px;
+  color: #c0392b;
+}
+
 /* ---- News (RSS reader) ---- */
 
 .news-page__view-switch {
