@@ -1909,24 +1909,27 @@ a {
   font-weight: var(--weight-medium);
 }
 
-/* Phone widths: the due-date and last-modified badges on a task row are
-   dropped entirely (not just shrunk) — on a narrow screen they were still
-   crowding out the title, which is the one thing actually worth reading
-   at a glance. The recurring badge is kept (still icon-only, see
-   TaskRow.tsx's useIsMobile branch) since it's a status marker, not
-   timestamp noise — ".task-row__recurring-badge" also carries
-   ".last-modified-badge" for its shared pill styling, so it needs an
-   explicit :not() to survive this. ".task-row__due" is only ever used by
-   TaskRow and ListItemRow (both task-ish rows), so it's safe to hide
-   unscoped; ".last-modified-badge" is shared much more widely (project
-   cards, notes list, entity cards), so that one stays scoped to
-   ".task-row" specifically. */
+/* Phone widths: the due-date, project-tag, and last-modified badges on a
+   task row are dropped entirely (not just shrunk) — on a narrow screen
+   they were still crowding out the title, which is the one thing actually
+   worth reading at a glance (this is what puts a 📁 tag next to a task
+   shown away from its project — Today's Overdue/Due Today/Worth
+   Revisiting rows — so those benefit here too). The recurring badge is
+   kept (still icon-only, see TaskRow.tsx's useIsMobile branch) since it's
+   a status marker, not timestamp noise — ".task-row__recurring-badge"
+   also carries ".last-modified-badge" for its shared pill styling, so it
+   needs an explicit :not() to survive this. ".task-row__due" and
+   ".task-row__project-tag" are only ever used by task-ish rows, so they're
+   safe to hide unscoped; ".last-modified-badge" is shared much more
+   widely (project cards, notes list, entity cards), so that one stays
+   scoped to ".task-row" specifically. */
 @media (max-width: 640px) {
   .task-row {
     gap: 6px;
   }
 
-  .task-row__due {
+  .task-row__due,
+  .task-row__project-tag {
     display: none;
   }
 
