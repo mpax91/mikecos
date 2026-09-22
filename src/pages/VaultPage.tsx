@@ -14,6 +14,7 @@ import { VaultNoteModal } from '../components/VaultNoteModal';
 import { KebabMenu } from '../components/KebabMenu';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { LinkModal } from '../components/LinkModal';
+import { RenameModal } from '../components/RenameModal';
 import { useIsCompact } from '../hooks/useIsMobile';
 import { formatRelativeTime } from '../utils/formatRelativeTime';
 import { useTabs, useReportTabMeta } from '../contexts/TabsContext';
@@ -40,6 +41,7 @@ export function VaultPage() {
   const [entryTitle, setEntryTitle] = useState('');
   const [addingLink, setAddingLink] = useState(false);
   const [deleting, setDeleting] = useState<Entity | null>(null);
+  const [renaming, setRenaming] = useState<Entity | null>(null);
   const [openNote, setOpenNote] = useState<Entity | null>(null);
   const [taskStack, setTaskStack] = useState<string[]>([]);
 
@@ -112,6 +114,13 @@ export function VaultPage() {
     await api.deleteVaultFact(fact.id);
   }
 
+  async function reorderFacts(orderedIds: string[]) {
+    if (!detail) return;
+    const byId = new Map(detail.facts.map((f) => [f.id, f]));
+    setDetail((prev) => (prev ? { ...prev, facts: orderedIds.map((fid) => byId.get(fid)!).filter(Boolean) } : prev));
+    await api.reorderVaultFacts(detail.id, orderedIds);
+  }
+
   // ---- Children: Notes (incl. uploaded files), Links, Tasks, Pinned ----
 
   async function createNote() {
@@ -157,6 +166,12 @@ export function VaultPage() {
     await api.deleteEntity(entity.id);
     setDeleting(null);
     if (openNote?.id === entity.id) setOpenNote(null);
+  }
+
+  async function renameChild(entity: Entity, newTitle: string) {
+    setChildren((prev) => prev.map((c) => (c.id === entity.id ? { ...c, title: newTitle } : c)));
+    setRenaming(null);
+    await api.updateEntity(entity.id, { title: newTitle });
   }
 
   function saveNoteTitle(noteId: string, title: string) {
@@ -268,7 +283,7 @@ export function VaultPage() {
             </div>
 
             <Section title="Quick facts" defaultExpanded={true}>
-              <VaultFactsTable facts={detail.facts} onAdd={addFact} onUpdate={updateFact} onDelete={deleteFact} />
+              <VaultFactsTable facts={detail.facts} onAdd={addFact} onUpdate={updateFact} onDelete={deleteFact} onReorder={reorderFacts} />
             </Section>
 
             {pinned.length > 0 && (
@@ -285,7 +300,7 @@ export function VaultPage() {
                         entity={c}
                         onDelete={setDeleting}
                         onTogglePin={togglePinChild}
-                        onRename={noop}
+                        onRename={setRenaming}
                         onPromote={noop}
                         onDemote={noop}
                         onOpenNote={setOpenNote}
@@ -305,7 +320,7 @@ export function VaultPage() {
                     entity={c}
                     onDelete={setDeleting}
                     onTogglePin={togglePinChild}
-                    onRename={noop}
+                    onRename={setRenaming}
                     onPromote={noop}
                     onDemote={noop}
                     onOpenNote={setOpenNote}
@@ -355,6 +370,15 @@ export function VaultPage() {
       </div>
 
       {addingLink && <LinkModal onSave={addLink} onClose={() => setAddingLink(false)} />}
+
+      {renaming && (
+        <RenameModal
+          initialValue={renaming.title}
+          label={renaming.type === 'file' ? 'File Name' : 'Name'}
+          onSave={(v) => renameChild(renaming, v)}
+          onClose={() => setRenaming(null)}
+        />
+      )}
 
       {openNote && (
         <VaultNoteModal

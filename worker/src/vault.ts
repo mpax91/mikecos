@@ -141,6 +141,19 @@ vaultRouter.post('/entries/:id/facts', async (c) => {
   return c.json(row, 201);
 });
 
+// Reorder — same "send the whole ordered id list, position = index" shape
+// as POST /api/entities/reorder, scoped to one entry's facts.
+vaultRouter.post('/entries/:id/facts/reorder', async (c) => {
+  const entryId = c.req.param('id');
+  const body = await c.req.json<{ ordered_ids?: string[] }>();
+  if (!body.ordered_ids?.length) return c.json({ error: 'ordered_ids required' }, 400);
+  const stmts = body.ordered_ids.map((factId, index) =>
+    db(c).prepare('UPDATE vault_facts SET position = ? WHERE id = ? AND entry_id = ?').bind(index, factId, entryId)
+  );
+  await db(c).batch(stmts);
+  return c.json({ ok: true });
+});
+
 vaultRouter.patch('/facts/:id', async (c) => {
   const id = c.req.param('id');
   const body = await c.req.json<{ label?: string; value?: string | null }>();

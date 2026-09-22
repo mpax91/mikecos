@@ -4,19 +4,21 @@ import type { VaultFact } from '../api/types';
 /** Quick facts — a plain label/value table on the entry itself. Deliberately
  * not the old field/group/template system: no type to pick, no reusable
  * definition to create first, just "add a fact" with two text boxes. Rows
- * are added/edited/deleted inline; there's no drag-reorder in this first
- * pass (new rows land at the end) — a fine trade for how rarely a handful
- * of quick facts on one entry need reordering. */
+ * are added/edited/deleted inline, and can be promoted/demoted (swap with
+ * the neighbor above/below) — no drag-and-drop, but enough to put the most
+ * important fact first. */
 export function VaultFactsTable({
   facts,
   onAdd,
   onUpdate,
   onDelete,
+  onReorder,
 }: {
   facts: VaultFact[];
   onAdd: (label: string, value: string) => void;
   onUpdate: (fact: VaultFact, patch: { label?: string; value?: string }) => void;
   onDelete: (fact: VaultFact) => void;
+  onReorder: (orderedIds: string[]) => void;
   }) {
   const [adding, setAdding] = useState(false);
   const [newLabel, setNewLabel] = useState('');
@@ -43,6 +45,15 @@ export function VaultFactsTable({
     });
   }
 
+  function move(fact: VaultFact, direction: -1 | 1) {
+    const idx = facts.findIndex((f) => f.id === fact.id);
+    const swapWith = idx + direction;
+    if (idx === -1 || swapWith < 0 || swapWith >= facts.length) return;
+    const ordered = facts.map((f) => f.id);
+    [ordered[idx], ordered[swapWith]] = [ordered[swapWith], ordered[idx]];
+    onReorder(ordered);
+  }
+
   if (facts.length === 0 && !adding) {
     return (
       <div className="vault-facts vault-facts--empty" onClick={() => setAdding(true)}>
@@ -54,8 +65,17 @@ export function VaultFactsTable({
 
   return (
     <div className="vault-facts">
-      {facts.map((f) => (
-        <FactRow key={f.id} fact={f} copied={copiedId === f.id} onCopy={() => copy(f)} onUpdate={onUpdate} onDelete={onDelete} />
+      {facts.map((f, i) => (
+        <FactRow
+          key={f.id}
+          fact={f}
+          copied={copiedId === f.id}
+          onCopy={() => copy(f)}
+          onUpdate={onUpdate}
+          onDelete={onDelete}
+          onMoveUp={i > 0 ? () => move(f, -1) : undefined}
+          onMoveDown={i < facts.length - 1 ? () => move(f, 1) : undefined}
+        />
       ))}
       {adding ? (
         <div className="vault-facts__row vault-facts__row--new">
@@ -97,12 +117,16 @@ function FactRow({
   onCopy,
   onUpdate,
   onDelete,
+  onMoveUp,
+  onMoveDown,
 }: {
   fact: VaultFact;
   copied: boolean;
   onCopy: () => void;
   onUpdate: (fact: VaultFact, patch: { label?: string; value?: string }) => void;
   onDelete: (fact: VaultFact) => void;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [label, setLabel] = useState(fact.label);
@@ -157,6 +181,14 @@ function FactRow({
           {copied ? '✓' : '⧉'}
         </button>
       )}
+      <div className="vault-facts__move" onClick={(e) => e.stopPropagation()}>
+        <button type="button" disabled={!onMoveUp} onClick={onMoveUp} title="Move up">
+          ▲
+        </button>
+        <button type="button" disabled={!onMoveDown} onClick={onMoveDown} title="Move down">
+          ▼
+        </button>
+      </div>
     </div>
   );
 }

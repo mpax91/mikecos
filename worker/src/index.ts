@@ -5053,7 +5053,7 @@ async function runSearch(db: D1Database, q: string, scope: Set<SearchGroup>, inc
           .prepare(
             `SELECT e.*, p.type as parent_type, p.is_jot as parent_is_jot, p.is_list as parent_is_list, p.title as parent_title
              FROM entities e LEFT JOIN entities p ON p.id = e.parent_id
-             WHERE e.type IN ('note','task','project','file') AND (e.title LIKE ? OR e.search_text LIKE ?)
+             WHERE e.type IN ('note','task','project','file','vault_entry') AND (e.title LIKE ? OR e.search_text LIKE ?)
              ORDER BY e.updated_at DESC LIMIT 80`
           )
           .bind(like, like)
@@ -5108,10 +5108,22 @@ async function runSearch(db: D1Database, q: string, scope: Set<SearchGroup>, inc
     let path = '/';
     let openId: string | null = null;
 
-    if (e.type === 'note') {
+    // A Vault entry has no per-child route (its notes open in a modal, not
+    // a page) — the closest real destination for anything filed under one
+    // is the entry itself, so every branch below routes a vault_entry
+    // parent (or the entry's own row) to /vault/:id instead of falling
+    // through to a /projects/:id that doesn't exist for that id.
+    const parentIsVaultEntry = e.parent_type === 'vault_entry';
+
+    if (e.type === 'vault_entry') {
+      kind = 'vault_entry';
+      group = 'projects';
+      path = `/vault/${e.id}`;
+    } else if (e.type === 'note') {
       kind = e.is_jot ? 'jot' : 'note';
-      group = e.is_jot ? 'jots' : 'notes';
-      path = e.is_jot ? '/jots' : `/notes/${e.id}`;
+      group = e.is_jot ? 'jots' : parentIsVaultEntry ? 'projects' : 'notes';
+      parentTitle = parentIsVaultEntry ? e.parent_title : parentTitle;
+      path = e.is_jot ? '/jots' : parentIsVaultEntry ? `/vault/${e.parent_id}` : `/notes/${e.id}`;
       if (e.is_jot) openId = e.id; // Jots has no per-item route — opened via location.state on /jots instead
     } else if (e.type === 'project') {
       kind = e.is_list ? 'list' : 'project';
@@ -5122,8 +5134,8 @@ async function runSearch(db: D1Database, q: string, scope: Set<SearchGroup>, inc
       kind = parentIsList ? 'list_item' : 'task';
       group = parentIsList ? 'lists' : 'projects';
       parentTitle = e.parent_title;
-      path = parentIsList ? `/lists/${e.parent_id}` : `/projects/${e.parent_id}`;
-      openId = e.id;
+      path = parentIsList ? `/lists/${e.parent_id}` : parentIsVaultEntry ? `/vault/${e.parent_id}` : `/projects/${e.parent_id}`;
+      openId = parentIsVaultEntry ? null : e.id; // Vault has no task-detail deep-link (yet) — land on the entry itself
     } else {
       // type === 'file' — folds into whichever group its immediate parent
       // belongs to; a file attached directly to a task (one level deeper)
@@ -5137,6 +5149,9 @@ async function runSearch(db: D1Database, q: string, scope: Set<SearchGroup>, inc
       } else if (e.parent_type === 'project') {
         group = e.parent_is_list ? 'lists' : 'projects';
         path = e.parent_is_list ? `/lists/${e.parent_id}` : `/projects/${e.parent_id}`;
+      } else if (parentIsVaultEntry) {
+        group = 'projects';
+        path = `/vault/${e.parent_id}`;
       } else {
         group = 'projects';
         path = e.parent_id ? `/projects/${e.parent_id}` : '/projects';

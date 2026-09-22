@@ -723,4 +723,7 @@ export const api = {
     request<VaultFact>(`/api/vault/facts/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
 
   deleteVaultFact: (id: string) => request<{ ok: true }>(`/api/vault/facts/${id}`, { method: 'DELETE' }),
+
+  reorderVaultFacts: (entryId: string, ordered_ids: string[]) =>
+    request<{ ok: true }>(`/api/vault/entries/${entryId}/facts/reorder`, { method: 'POST', body: JSON.stringify({ ordered_ids }) }),
 };

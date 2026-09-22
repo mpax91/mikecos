@@ -9235,3 +9235,31 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
     width: 88px;
   }
 }
+
+.vault-facts__move {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  margin-left: 2px;
+}
+
+.vault-facts__move button {
+  border: none;
+  background: transparent;
+  color: var(--color-placeholder);
+  cursor: pointer;
+  font-size: 8px;
+  line-height: 1;
+  padding: 1px 3px;
+  border-radius: 3px;
+}
+
+.vault-facts__move button:hover:not(:disabled) {
+  background: var(--color-border);
+  color: var(--color-ink);
+}
+
+.vault-facts__move button:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
