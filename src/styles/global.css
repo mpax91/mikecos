@@ -1909,23 +1909,33 @@ a {
   font-weight: var(--weight-medium);
 }
 
-/* Phone widths: every badge on a task row (due date, last-modified/
-   recurring, kebab) gets tighter so the title — the thing actually worth
-   reading — keeps more of the row instead of being squeezed to a sliver
-   by full-size pills. Text content itself (📅 icon, "Recurring" vs 🔁) is
-   handled in TaskRow.tsx via useIsMobile, not here — this is sizing only. */
+/* Phone widths: the due-date and last-modified badges on a task row are
+   dropped entirely (not just shrunk) — on a narrow screen they were still
+   crowding out the title, which is the one thing actually worth reading
+   at a glance. The recurring badge is kept (still icon-only, see
+   TaskRow.tsx's useIsMobile branch) since it's a status marker, not
+   timestamp noise — ".task-row__recurring-badge" also carries
+   ".last-modified-badge" for its shared pill styling, so it needs an
+   explicit :not() to survive this. ".task-row__due" is only ever used by
+   TaskRow and ListItemRow (both task-ish rows), so it's safe to hide
+   unscoped; ".last-modified-badge" is shared much more widely (project
+   cards, notes list, entity cards), so that one stays scoped to
+   ".task-row" specifically. */
 @media (max-width: 640px) {
   .task-row {
     gap: 6px;
   }
 
-  .task-row__due,
-  .last-modified-badge {
-    font-size: 10px;
-    padding: 1px 6px;
+  .task-row__due {
+    display: none;
+  }
+
+  .task-row .last-modified-badge:not(.task-row__recurring-badge) {
+    display: none;
   }
 
   .task-row__recurring-badge {
+    font-size: 10px;
     padding: 1px 5px;
   }
 }

@@ -1,7 +1,6 @@
 import type { Entity } from '../api/types';
 import { KebabMenu } from './KebabMenu';
 import { TaskMediaIndicator, formatDueDate, formatDueTime } from './TaskRow';
-import { useIsMobile } from '../hooks/useIsMobile';
 
 /** A List item's row — deliberately its own component rather than a reuse of
  * TaskRow. Visually it needs to read as a plain checklist (small checkbox,
@@ -33,7 +32,6 @@ export function ListItemRow({
   onDemote?: (entity: Entity) => void;
   isRemoving?: boolean;
 }) {
-  const isMobile = useIsMobile();
   const isPinned = entity.pinned === 1;
   const subtasks = entity.subtasks ?? [];
   const media = entity.media ?? [];
@@ -56,10 +54,11 @@ export function ListItemRow({
       <span className={`list-row__title${!entity.title ? ' is-placeholder' : ''}`}>
         {entity.title || 'Untitled Item'}
       </span>
+      {/* Hidden entirely on mobile — see the .task-row__due media-query
+          rule in global.css, shared with TaskRow. */}
       {due && (
         <span className={`task-row__due task-row__due--${due.kind}`} title={dueDate ?? undefined}>
-          {!isMobile && '📅 '}
-          {due.label}
+          📅 {due.label}
           {entity.due_time && ` · ${formatDueTime(entity.due_time)}`}
         </span>
       )}

@@ -165,16 +165,15 @@ export function TaskRow({
             📁 {projectTag.title}
           </Link>
         )}
+        {/* Hidden entirely on mobile (see the .task-row__due media-query
+            rule) rather than shrunk — it was still crowding out the title
+            even compacted. */}
         {due && (
           <span
             className={`task-row__due task-row__due--${isDone ? 'done' : due.kind}`}
             title={dueDate ?? undefined}
           >
-            {/* Emoji dropped on mobile — the pill's own color already says
-                "this is a due date", so the icon was just taking up width
-                that's scarcer there than the label itself. */}
-            {!isMobile && '📅 '}
-            {due.label}
+            📅 {due.label}
             {entity.due_time && ` · ${formatDueTime(entity.due_time)}`}
           </span>
         )}
