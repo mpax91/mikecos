@@ -912,6 +912,12 @@ export interface NewsArticle {
   is_saved: boolean;
 }
 
+/** Auto-mark-as-read: articles older than auto_read_hours silently clear
+ * out of the unread feed on their own. null = disabled. */
+export interface NewsSettings {
+  auto_read_hours: number | null;
+}
+
 export interface NewsArticlesResponse {
   articles: NewsArticle[];
   stale_feeds: string[]; // feed ids that failed to refresh this call (network error etc.) — surfaced so the UI can say "some feeds didn't update" instead of silently showing old data

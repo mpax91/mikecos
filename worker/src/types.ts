@@ -326,6 +326,15 @@ export interface NewsSavedRow {
   saved_at: string;
 }
 
+// Single-row settings table (id fixed to 'default') rather than a generic
+// app_settings table since News is the only feature that needs one so far.
+// auto_read_hours: null disables auto-read entirely.
+export interface NewsSettingsRow {
+  id: string;
+  auto_read_hours: number | null;
+  updated_at: string;
+}
+
 // ---- Sports betting dashboard (0032_bets.sql) ----
 
 export type BetResult = 'win' | 'loss' | 'push' | 'void';

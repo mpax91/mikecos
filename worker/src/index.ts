@@ -20,6 +20,7 @@ import type {
   NewsArticleRow,
   NewsFeedRow,
   NewsSavedRow,
+  NewsSettingsRow,
   ShelfItem,
   ShelfItemType,
   TaskReschedule,
@@ -4623,6 +4624,33 @@ function newsFeedToApi(row: NewsFeedRow & { unread_count?: number }) {
   return { ...row, unread_count: row.unread_count ?? 0 };
 }
 
+/** Auto-marks-read any article older than the configured cutoff (by
+ * published_at, falling back to fetched_at for feeds with no item date)
+ * that isn't already read. Marked auto_marked = 1 so it never shows up in
+ * the "Recently Read" fail-safe view (see 0037_news_auto_read.sql) — that
+ * view is for undoing an intentional swipe, not for surfacing a whole
+ * backlog this sweep just cleared. A no-op when the setting is disabled
+ * (auto_read_hours IS NULL). Cheap enough (single INSERT...SELECT) to run
+ * on every unread-articles/feed-counts fetch rather than needing its own
+ * cron. */
+async function applyNewsAutoRead(env: Env): Promise<void> {
+  const settings = await env.DB.prepare('SELECT auto_read_hours FROM news_settings WHERE id = ?')
+    .bind('default')
+    .first<{ auto_read_hours: number | null }>();
+  const hours = settings?.auto_read_hours;
+  if (!hours || hours <= 0) return;
+
+  const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO news_read (article_id, read_at, auto_marked)
+     SELECT id, ?, 1 FROM news_articles
+     WHERE COALESCE(published_at, fetched_at) < ?
+       AND id NOT IN (SELECT article_id FROM news_read)`
+  )
+    .bind(now(), cutoff)
+    .run();
+}
+
 /** Fetches + parses one feed and upserts its items into news_articles.
  * Best-effort: on any failure it records the error on the feed row and
  * rethrows, so callers can decide whether to surface it (a fresh add) or
@@ -4673,6 +4701,7 @@ async function refreshFeed(env: Env, feed: NewsFeedRow, force = false): Promise<
 }
 
 app.get('/api/news/feeds', async (c) => {
+  await applyNewsAutoRead(c.env);
   const { results } = await c.env.DB.prepare(
     `SELECT f.*, (
        SELECT COUNT(*) FROM news_articles a
@@ -4750,6 +4779,27 @@ app.delete('/api/news/feeds/:id', async (c) => {
   return c.json({ ok: true });
 });
 
+app.get('/api/news/settings', async (c) => {
+  const row = await c.env.DB.prepare('SELECT * FROM news_settings WHERE id = ?').bind('default').first<NewsSettingsRow>();
+  return c.json({ auto_read_hours: row?.auto_read_hours ?? null });
+});
+
+app.put('/api/news/settings', async (c) => {
+  const body = await c.req.json<{ auto_read_hours?: number | null }>();
+  let hours: number | null = null;
+  if (body.auto_read_hours !== null && body.auto_read_hours !== undefined) {
+    hours = Math.round(Number(body.auto_read_hours));
+    if (!Number.isFinite(hours) || hours <= 0) return c.json({ error: 'auto_read_hours must be a positive number or null' }, 400);
+  }
+  await c.env.DB.prepare(
+    `INSERT INTO news_settings (id, auto_read_hours, updated_at) VALUES ('default', ?, ?)
+     ON CONFLICT (id) DO UPDATE SET auto_read_hours = excluded.auto_read_hours, updated_at = excluded.updated_at`
+  )
+    .bind(hours, now())
+    .run();
+  return c.json({ auto_read_hours: hours });
+});
+
 app.get('/api/news/articles', async (c) => {
   const feedId = c.req.query('feed_id');
   const folder = c.req.query('folder');
@@ -4776,6 +4826,11 @@ app.get('/api/news/articles', async (c) => {
 
   if (targetFeeds.length === 0) return c.json({ articles: [], stale_feeds: [] });
 
+  // Recently-read doesn't need the auto-read sweep — it only ever shows
+  // auto_marked = 0 rows anyway, and the sweep can't remove anything from
+  // that set.
+  if (!recentlyRead) await applyNewsAutoRead(c.env);
+
   // Recently-read doesn't need a feed refresh first — refreshing only
   // pulls in new articles, it can't change anything about articles
   // already marked read — so this path skips straight to the query,
@@ -4790,7 +4845,7 @@ app.get('/api/news/articles', async (c) => {
        JOIN news_feeds f ON f.id = a.feed_id
        JOIN news_read r ON r.article_id = a.id
        LEFT JOIN news_saved s ON s.article_id = a.id
-       WHERE a.feed_id IN (${placeholders})
+       WHERE a.feed_id IN (${placeholders}) AND r.auto_marked = 0
        ORDER BY r.read_at DESC
        LIMIT 25`
     )
@@ -4837,7 +4892,15 @@ app.post('/api/news/articles/:id/read', async (c) => {
   if (body.read === false) {
     await c.env.DB.prepare('DELETE FROM news_read WHERE article_id = ?').bind(id).run();
   } else {
-    await c.env.DB.prepare('INSERT OR IGNORE INTO news_read (article_id, read_at) VALUES (?, ?)').bind(id, now()).run();
+    // A manual mark-read is always a real, intentional read — even if the
+    // article happened to already be auto-marked, an explicit tap/swipe
+    // means it should count for "Recently Read" going forward.
+    await c.env.DB.prepare(
+      `INSERT INTO news_read (article_id, read_at, auto_marked) VALUES (?, ?, 0)
+       ON CONFLICT (article_id) DO UPDATE SET read_at = excluded.read_at, auto_marked = 0`
+    )
+      .bind(id, now())
+      .run();
   }
   return c.json({ ok: true });
 });
@@ -4859,8 +4922,8 @@ app.post('/api/news/read-all', async (c) => {
   const placeholders = feedIds.map(() => '?').join(',');
   const ts = now();
   const result = await c.env.DB.prepare(
-    `INSERT OR IGNORE INTO news_read (article_id, read_at)
-     SELECT id, ? FROM news_articles WHERE feed_id IN (${placeholders})`
+    `INSERT OR IGNORE INTO news_read (article_id, read_at, auto_marked)
+     SELECT id, ?, 0 FROM news_articles WHERE feed_id IN (${placeholders})`
   )
     .bind(ts, ...feedIds)
     .run();

@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../../api/client';
 import type { NewsFeed } from '../../api/types';
 import { ConfirmModal } from '../../components/ConfirmModal';
+
+const AUTO_READ_DEFAULT_HOURS = 48;
 
 /** News Feeds — add/edit/remove RSS feeds and their folder. Used to live as
  * a "Manage Feeds" modal launched from the News page itself; moved here
@@ -20,6 +22,16 @@ export function NewsFeedsPanel() {
   const [editing, setEditing] = useState<Record<string, { title: string; folder: string }>>({});
   const [confirmDelete, setConfirmDelete] = useState<NewsFeed | null>(null);
 
+  // Auto-mark-as-read: articles older than this many hours silently clear
+  // out of the unread feed on their own. `autoReadEnabled` toggles the
+  // checkbox; `autoReadHours` is the number field, only meaningful while
+  // enabled — kept separate so unchecking the box doesn't lose whatever
+  // number was typed in.
+  const [autoReadEnabled, setAutoReadEnabled] = useState(false);
+  const [autoReadHours, setAutoReadHours] = useState(AUTO_READ_DEFAULT_HOURS);
+  const [autoReadSaved, setAutoReadSaved] = useState(true);
+  const autoReadSaveTimer = useRef<number | null>(null);
+
   function load() {
     api
       .listNewsFeeds()
@@ -32,7 +44,36 @@ export function NewsFeedsPanel() {
 
   useEffect(() => {
     load();
+    api.getNewsSettings().then((s) => {
+      setAutoReadEnabled(s.auto_read_hours != null);
+      if (s.auto_read_hours != null) setAutoReadHours(s.auto_read_hours);
+    });
   }, []);
+
+  useEffect(
+    () => () => {
+      if (autoReadSaveTimer.current != null) window.clearTimeout(autoReadSaveTimer.current);
+    },
+    []
+  );
+
+  function saveAutoRead(enabled: boolean, hours: number) {
+    setAutoReadSaved(false);
+    if (autoReadSaveTimer.current != null) window.clearTimeout(autoReadSaveTimer.current);
+    autoReadSaveTimer.current = window.setTimeout(() => {
+      api.updateNewsSettings(enabled ? hours : null).then(() => setAutoReadSaved(true));
+    }, 500);
+  }
+
+  function toggleAutoRead(enabled: boolean) {
+    setAutoReadEnabled(enabled);
+    saveAutoRead(enabled, autoReadHours);
+  }
+
+  function changeAutoReadHours(hours: number) {
+    setAutoReadHours(hours);
+    if (autoReadEnabled) saveAutoRead(true, hours);
+  }
 
   const existingFolders = [...new Set((feeds ?? []).map((f) => f.folder).filter((f): f is string => !!f))].sort();
 
@@ -85,6 +126,30 @@ export function NewsFeedsPanel() {
   return (
     <div className="settings-page__section">
       <div className="toolbar-row">
+        <h2 className="settings-page__section-title">Reading</h2>
+      </div>
+      <p className="settings-page__section-hint">
+        Automatically mark articles as read once they've been sitting unread for a while, so the feed doesn't turn
+        into an unmanageable backlog. Anything you actually read stays out of this — it only clears articles you
+        never opened.
+      </p>
+      <label className="settings-page__checkbox-row">
+        <input type="checkbox" checked={autoReadEnabled} onChange={(e) => toggleAutoRead(e.target.checked)} />
+        Auto-mark as read after
+        <input
+          type="number"
+          min={1}
+          className="news-feeds-modal__row-input"
+          style={{ width: 56 }}
+          value={autoReadHours}
+          disabled={!autoReadEnabled}
+          onChange={(e) => changeAutoReadHours(Math.max(1, Number(e.target.value) || 1))}
+        />
+        hours
+      </label>
+      {!autoReadSaved && <p className="settings-page__section-hint">Saving…</p>}
+
+      <div className="toolbar-row" style={{ marginTop: 28 }}>
         <h2 className="settings-page__section-title">News Feeds</h2>
       </div>
       <p className="settings-page__section-hint">
