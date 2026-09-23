@@ -7743,86 +7743,195 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   font-weight: 600;
 }
 
-.bets-workspace__line-row {
+.bets-workspace__column-add-input input {
+  font-size: 12.5px;
+  padding: 5px 10px;
+  border-radius: 999px;
+}
+
+.bets-workspace__column-chips {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
+  margin: 8px 0 4px;
+}
+
+.bets-workspace__column-chip {
+  display: inline-flex;
   align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(120, 120, 120, 0.08);
+  font-size: 11px;
+  color: var(--color-muted);
 }
 
-.bets-workspace__line-row input:first-child {
-  flex: 0 1 140px;
-}
-
-.bets-workspace__line-row input:last-of-type {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.bets-workspace__board {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 10px;
-  margin-top: 14px;
-}
-
-.bets-workspace__game {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 12px 14px;
-  text-align: left;
+.bets-workspace__column-chip button {
+  background: none;
+  border: none;
+  color: var(--color-muted);
   cursor: pointer;
-  border: 1px solid transparent;
+  font-size: 10px;
+  padding: 0;
+  line-height: 1;
 }
 
-.bets-workspace__game:hover {
-  border-color: var(--color-accent);
+.bets-workspace__section {
+  margin-top: 14px;
+  padding: 0;
+  overflow: hidden;
 }
 
-.bets-workspace__game.is-pinned {
-  border-color: var(--color-accent);
-  background: rgba(120, 120, 120, 0.05);
+.bets-workspace__section--pinned {
+  border: 1px solid var(--color-accent);
 }
 
-.bets-workspace__game-head {
+.bets-workspace__section-header {
   display: flex;
   align-items: center;
   gap: 8px;
+  width: 100%;
+  padding: 12px 16px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+}
+
+.bets-workspace__section--pinned .bets-workspace__section-header {
+  cursor: default;
+}
+
+.bets-workspace__chevron {
   font-size: 11px;
   color: var(--color-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
+  transition: transform 0.15s ease;
 }
 
-.bets-workspace__game-time {
-  margin-left: auto;
+.bets-workspace__chevron.is-collapsed {
+  transform: rotate(-90deg);
 }
 
-.bets-workspace__game-pin {
-  color: var(--color-accent);
-}
-
-.bets-workspace__game-matchup {
-  font-size: 14.5px;
+.bets-workspace__section-title {
+  font-size: 13.5px;
   font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 
-.bets-workspace__game-lines {
+.bets-workspace__section-count {
   font-size: 11.5px;
   color: var(--color-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
+}
+
+.bets-workspace__table-wrap {
+  overflow-x: auto;
+}
+
+.bets-workspace__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.bets-workspace__table th {
+  text-align: left;
+  padding: 6px 10px;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--color-muted);
+  border-bottom: var(--border-hairline);
   white-space: nowrap;
 }
 
-.bets-workspace__game-note {
+.bets-workspace__table td {
+  padding: 6px 10px;
+  border-bottom: var(--border-hairline);
+  vertical-align: middle;
+}
+
+.bets-workspace__table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.bets-workspace__table tr.is-pinned {
+  background: rgba(120, 120, 120, 0.05);
+}
+
+.bets-workspace__pin-cell {
+  width: 24px;
+}
+
+.bets-workspace__pin-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--color-muted);
+  padding: 0;
+  line-height: 1;
+}
+
+.bets-workspace__pin-btn.is-active {
+  color: var(--color-accent);
+}
+
+.bets-workspace__sport-cell {
+  font-size: 10.5px;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.bets-workspace__time-cell {
+  font-size: 11.5px;
+  color: var(--color-muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.bets-workspace__matchup-cell {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.bets-workspace__cell-input {
+  width: 100px;
   font-size: 12px;
+  padding: 3px 6px;
+  border: 1px solid transparent;
+  background: rgba(120, 120, 120, 0.06);
+  border-radius: 6px;
+}
+
+.bets-workspace__cell-input:focus {
+  border-color: var(--color-accent);
+  background: var(--color-surface);
+}
+
+.bets-workspace__notes-cell {
+  white-space: nowrap;
+}
+
+.bets-workspace__notes-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--color-muted);
+  padding: 2px 4px;
+}
+
+.bets-workspace__notes-btn.has-note {
   color: var(--color-ink);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+}
+
+.bets-workspace__remove-cell {
+  width: 20px;
 }
 
 /* ---- App lock screen + Settings > Security ---- */

@@ -6087,16 +6087,40 @@ app.delete('/api/bet-promos/:id', async (c) => {
 // Odds aren't requested from any of these: Mike's fine typing lines in by
 // hand, and none of these free feeds have reliable odds coverage anyway.
 
-type ScheduleGame = { sport: string; external_id: string; matchup: string; start_time: string };
+// Abbreviated 2-3 letter codes for the table view (Mike wants "WSH @ DET",
+// not full team names) plus the full names for the one place they're still
+// useful (a manually-typed matchup, or a tooltip). NHL and ESPN both hand
+// back a real abbreviation field already; MLB's schedule endpoint doesn't
+// (its team objects there are just {id, name, link}), so its 30 team ids
+// are mapped by hand — stable, well-known ids everyone building on this
+// API relies on.
+const MLB_TEAM_ABBR: Record<number, string> = {
+  108: 'LAA', 109: 'ARI', 110: 'BAL', 111: 'BOS', 112: 'CHC', 113: 'CIN', 114: 'CLE', 115: 'COL',
+  116: 'DET', 117: 'HOU', 118: 'KC', 119: 'LAD', 120: 'WSH', 121: 'NYM', 133: 'ATH', 134: 'PIT',
+  135: 'SD', 136: 'SEA', 137: 'SF', 138: 'STL', 139: 'TB', 140: 'TEX', 141: 'TOR', 142: 'MIN',
+  143: 'PHI', 144: 'ATL', 145: 'CWS', 146: 'MIA', 147: 'NYY', 158: 'MIL',
+};
+
+type ScheduleGame = { sport: string; external_id: string; home_abbr: string; away_abbr: string; matchup: string; start_time: string };
 type LeagueDebug = { sport: string; source: string; status: number | null; note: string };
 type LeagueResult = { games: ScheduleGame[]; debug: LeagueDebug };
 
 const BROWSER_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36';
 
+function initials(name: string): string {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => w[0])
+    .join('')
+    .slice(0, 3)
+    .toUpperCase();
+}
+
 interface EspnEvent {
   id: string;
   date: string;
-  competitions?: { competitors?: { homeAway: 'home' | 'away'; team?: { displayName?: string; shortDisplayName?: string } }[] }[];
+  competitions?: { competitors?: { homeAway: 'home' | 'away'; team?: { displayName?: string; shortDisplayName?: string; abbreviation?: string } }[] }[];
 }
 
 async function fetchEspn(sport: string, path: string, dateCompact: string): Promise<LeagueResult> {
@@ -6111,10 +6135,14 @@ async function fetchEspn(sport: string, path: string, dateCompact: string): Prom
       const home = competitors.find((x) => x.homeAway === 'home');
       const away = competitors.find((x) => x.homeAway === 'away');
       if (!home?.team || !away?.team) continue;
+      const homeAbbr = home.team.abbreviation ?? initials(home.team.displayName ?? home.team.shortDisplayName ?? '');
+      const awayAbbr = away.team.abbreviation ?? initials(away.team.displayName ?? away.team.shortDisplayName ?? '');
       games.push({
         sport,
         external_id: event.id,
-        matchup: `${away.team.displayName ?? away.team.shortDisplayName} @ ${home.team.displayName ?? home.team.shortDisplayName}`,
+        home_abbr: homeAbbr,
+        away_abbr: awayAbbr,
+        matchup: `${awayAbbr} @ ${homeAbbr}`,
         start_time: event.date,
       });
     }
@@ -6125,43 +6153,55 @@ async function fetchEspn(sport: string, path: string, dateCompact: string): Prom
 }
 
 // MLB's own stats API — statsapi.mlb.com — public, unauthenticated, and
-// what mlb.com's own site runs on.
+// what mlb.com's own site runs on. gameType 'S' (spring training) and 'E'
+// (exhibition) are filtered out — Mike doesn't want those on the board;
+// regular season ('R') and postseason rounds all stay.
 async function fetchMlb(dateDash: string): Promise<LeagueResult> {
   const url = `https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=${dateDash}`;
   try {
     const res = await fetch(url, { headers: { 'user-agent': BROWSER_UA, accept: 'application/json' }, cf: { cacheTtl: 300, cacheEverything: true } });
     if (!res.ok) return { games: [], debug: { sport: 'MLB', source: 'mlb', status: res.status, note: (await res.text()).slice(0, 200) } };
-    const data = await res.json<{ dates?: { games?: { gamePk: number; gameDate: string; teams: { home: { team: { name: string } }; away: { team: { name: string } } } }[] }[] }>();
-    const games: ScheduleGame[] = (data.dates?.[0]?.games ?? []).map((g) => ({
-      sport: 'MLB',
-      external_id: String(g.gamePk),
-      matchup: `${g.teams.away.team.name} @ ${g.teams.home.team.name}`,
-      start_time: g.gameDate,
-    }));
-    return { games, debug: { sport: 'MLB', source: 'mlb', status: res.status, note: `${games.length} games` } };
+    const data = await res.json<{
+      dates?: { games?: { gamePk: number; gameDate: string; gameType: string; teams: { home: { team: { id: number; name: string } }; away: { team: { id: number; name: string } } } }[] }[];
+    }>();
+    const raw = data.dates?.[0]?.games ?? [];
+    const games: ScheduleGame[] = raw
+      .filter((g) => g.gameType !== 'S' && g.gameType !== 'E')
+      .map((g) => {
+        const homeAbbr = MLB_TEAM_ABBR[g.teams.home.team.id] ?? initials(g.teams.home.team.name);
+        const awayAbbr = MLB_TEAM_ABBR[g.teams.away.team.id] ?? initials(g.teams.away.team.name);
+        return { sport: 'MLB', external_id: String(g.gamePk), home_abbr: homeAbbr, away_abbr: awayAbbr, matchup: `${awayAbbr} @ ${homeAbbr}`, start_time: g.gameDate };
+      });
+    return { games, debug: { sport: 'MLB', source: 'mlb', status: res.status, note: `${games.length} games (${raw.length} raw)` } };
   } catch (e) {
     return { games: [], debug: { sport: 'MLB', source: 'mlb', status: null, note: String(e) } };
   }
 }
 
 // The NHL's own current API — api-web.nhle.com — public, unauthenticated,
-// what nhl.com's own site runs on.
+// what nhl.com's own site runs on. gameType 1 is preseason — filtered out,
+// same "no exhibition games" rule as MLB above.
 async function fetchNhl(dateDash: string): Promise<LeagueResult> {
   const url = `https://api-web.nhle.com/v1/schedule/${dateDash}`;
   try {
     const res = await fetch(url, { headers: { 'user-agent': BROWSER_UA, accept: 'application/json' }, cf: { cacheTtl: 300, cacheEverything: true } });
     if (!res.ok) return { games: [], debug: { sport: 'NHL', source: 'nhl', status: res.status, note: (await res.text()).slice(0, 200) } };
     const data = await res.json<{
-      gameWeek?: { date: string; games?: { id: number; startTimeUTC: string; homeTeam: { placeName: { default: string }; commonName: { default: string } }; awayTeam: { placeName: { default: string }; commonName: { default: string } } }[] }[];
+      gameWeek?: { date: string; games?: { id: number; gameType: number; startTimeUTC: string; homeTeam: { abbrev: string }; awayTeam: { abbrev: string } }[] }[];
     }>();
     const day = data.gameWeek?.find((w) => w.date === dateDash);
-    const games: ScheduleGame[] = (day?.games ?? []).map((g) => ({
-      sport: 'NHL',
-      external_id: String(g.id),
-      matchup: `${g.awayTeam.placeName.default} ${g.awayTeam.commonName.default} @ ${g.homeTeam.placeName.default} ${g.homeTeam.commonName.default}`,
-      start_time: g.startTimeUTC,
-    }));
-    return { games, debug: { sport: 'NHL', source: 'nhl', status: res.status, note: `${games.length} games` } };
+    const raw = day?.games ?? [];
+    const games: ScheduleGame[] = raw
+      .filter((g) => g.gameType !== 1)
+      .map((g) => ({
+        sport: 'NHL',
+        external_id: String(g.id),
+        home_abbr: g.homeTeam.abbrev,
+        away_abbr: g.awayTeam.abbrev,
+        matchup: `${g.awayTeam.abbrev} @ ${g.homeTeam.abbrev}`,
+        start_time: g.startTimeUTC,
+      }));
+    return { games, debug: { sport: 'NHL', source: 'nhl', status: res.status, note: `${games.length} games (${raw.length} raw)` } };
   } catch (e) {
     return { games: [], debug: { sport: 'NHL', source: 'nhl', status: null, note: String(e) } };
   }

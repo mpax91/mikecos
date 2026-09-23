@@ -1168,7 +1168,9 @@ export interface BetGameNote {
 export interface BetScheduleGame {
   sport: string;
   external_id: string;
-  matchup: string;
+  home_abbr: string;
+  away_abbr: string;
+  matchup: string; // already abbreviated, e.g. 'WSH @ DET' — see worker's fetchEspn/fetchMlb/fetchNhl
   start_time: string;
 }
 

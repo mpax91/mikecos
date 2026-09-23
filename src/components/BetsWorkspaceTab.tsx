@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
-import type { BetGameLine, BetGameNote, BetPromo, BetScheduleGame } from '../api/types';
-import { COMMON_SPORTSBOOKS, SPORTS, formatMoney, type SportsbookBalance } from '../utils/bets';
+import type { BetGameNote, BetPromo, BetScheduleGame } from '../api/types';
+import { SPORTS, formatMoney, type SportsbookBalance } from '../utils/bets';
 import { Modal } from './Modal';
 
 function todayLocalISODash(): string {
@@ -22,11 +22,33 @@ function formatKickoff(iso: string | null): string {
   return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 }
 
-/** A row on the board — merged from the auto-pulled ESPN schedule and
+const COLUMNS_KEY = 'mikeos-bets-workspace-columns';
+const COLLAPSED_KEY = 'mikeos-bets-workspace-collapsed';
+
+function loadStringList(key: string): string[] {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as string[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveStringList(key: string, list: string[]) {
+  try {
+    localStorage.setItem(key, JSON.stringify(list));
+  } catch {
+    /* best-effort — a per-browser convenience, not durable data */
+  }
+}
+
+/** A row on the board — merged from the auto-pulled schedule (ESPN for
+ * NFL/NBA, MLB's and the NHL's own official APIs for those two — see the
+ * worker's comment above GET /api/bets/games for why they're split) and
  * whatever's already saved in bet_game_notes for this date. `noteId` is
  * null until the first save, at which point a real BetGameNote gets
- * created (see save() below) — this is what lets "today's games" show up
- * with nothing to click through first. */
+ * created — this is what lets "today's games" show up with nothing to
+ * click through first. */
 interface BoardEntry {
   key: string;
   noteId: string | null;
@@ -36,32 +58,45 @@ interface BoardEntry {
   startTime: string | null;
   note: string;
   pinned: boolean;
-  lines: { sportsbook: string; line: string }[];
+  cells: Map<string, string>; // source -> value, e.g. 'DraftKings' -> '-6.5 (-110)', 'Sportsline' -> 'SEA -6.5'
 }
 
-type LineDraft = { sportsbook: string; line: string };
+function entryFromSchedule(g: BetScheduleGame, match: BetGameNote | undefined): BoardEntry {
+  return {
+    key: match?.id ?? `sched:${g.sport}:${g.external_id}`,
+    noteId: match?.id ?? null,
+    sport: g.sport,
+    externalId: g.external_id,
+    matchup: match?.matchup ?? g.matchup,
+    startTime: match?.start_time ?? g.start_time,
+    note: match?.note ?? '',
+    pinned: !!match?.pinned,
+    cells: new Map((match?.lines ?? []).map((l) => [l.sportsbook, l.line])),
+  };
+}
 
-function GameFormModal({ entry, onClose, onSave, onRemove }: { entry: BoardEntry; onClose: () => void; onSave: (params: { note: string; pinned: boolean; lines: LineDraft[] }) => Promise<void>; onRemove: (() => Promise<void>) | null }) {
+function entryFromNote(n: BetGameNote): BoardEntry {
+  return {
+    key: n.id,
+    noteId: n.id,
+    sport: n.sport,
+    externalId: n.external_id,
+    matchup: n.matchup,
+    startTime: n.start_time,
+    note: n.note ?? '',
+    pinned: !!n.pinned,
+    cells: new Map(n.lines.map((l) => [l.sportsbook, l.line])),
+  };
+}
+
+function NotesModal({ entry, onClose, onSave }: { entry: BoardEntry; onClose: () => void; onSave: (note: string) => Promise<void> }) {
   const [note, setNote] = useState(entry.note);
-  const [pinned, setPinned] = useState(entry.pinned);
-  const [lines, setLines] = useState<LineDraft[]>(entry.lines.length > 0 ? entry.lines : [{ sportsbook: '', line: '' }]);
   const [saving, setSaving] = useState(false);
-  const [removing, setRemoving] = useState(false);
-
-  function updateLine(i: number, patch: Partial<LineDraft>) {
-    setLines((prev) => prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
-  }
-  function addLine() {
-    setLines((prev) => [...prev, { sportsbook: '', line: '' }]);
-  }
-  function removeLine(i: number) {
-    setLines((prev) => prev.filter((_, idx) => idx !== i));
-  }
 
   async function handleSave() {
     setSaving(true);
     try {
-      await onSave({ note, pinned, lines: lines.filter((l) => l.sportsbook.trim() && l.line.trim()) });
+      await onSave(note);
       onClose();
     } finally {
       setSaving(false);
@@ -71,52 +106,12 @@ function GameFormModal({ entry, onClose, onSave, onRemove }: { entry: BoardEntry
   return (
     <Modal title={entry.matchup} onClose={onClose}>
       <div className="bets-form">
-        <label className="bets-form__field bets-form__field--checkbox">
-          <input type="checkbox" checked={pinned} onChange={(e) => setPinned(e.target.checked)} />
-          <span>Pin to top (best bet)</span>
-        </label>
-
-        <div className="bets-legs">
-          <div className="bets-legs__title">Lines by sportsbook</div>
-          {lines.map((l, i) => (
-            <div key={i} className="bets-workspace__line-row">
-              <input list="bets-sportsbooks-line" placeholder="Sportsbook" value={l.sportsbook} onChange={(e) => updateLine(i, { sportsbook: e.target.value })} />
-              <datalist id="bets-sportsbooks-line">
-                {COMMON_SPORTSBOOKS.map((b) => (
-                  <option key={b} value={b} />
-                ))}
-              </datalist>
-              <input placeholder="Chiefs -3.5 (-110)" value={l.line} onChange={(e) => updateLine(i, { line: e.target.value })} />
-              <button type="button" className="bets-legs__remove" onClick={() => removeLine(i)} aria-label="Remove line">
-                ✕
-              </button>
-            </div>
-          ))}
-          <button type="button" className="link-btn" onClick={addLine}>
-            + Add line
-          </button>
-        </div>
-
         <label className="bets-form__field">
           <span>Notes — bets you like, reasoning, anything</span>
-          <textarea rows={4} value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. SEA -6.5 looks soft, CAR getting too many points" />
+          <textarea rows={5} autoFocus value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. SEA -6.5 looks soft, CAR getting too many points" />
         </label>
       </div>
       <div className="modal__actions">
-        {onRemove && (
-          <button
-            className="btn btn--ghost"
-            style={{ marginRight: 'auto' }}
-            disabled={removing || saving}
-            onClick={async () => {
-              setRemoving(true);
-              await onRemove();
-              onClose();
-            }}
-          >
-            {removing ? 'Removing…' : 'Remove'}
-          </button>
-        )}
         <button className="btn btn--ghost" onClick={onClose} disabled={saving}>
           Cancel
         </button>
@@ -135,7 +130,7 @@ function AddGameModal({ date, onClose, onAdd }: { date: string; onClose: () => v
   const [error, setError] = useState<string | null>(null);
 
   async function handleSave() {
-    if (!matchup.trim()) return setError('Matchup is required, e.g. "Duke @ UNC".');
+    if (!matchup.trim()) return setError('Matchup is required, e.g. "DUKE @ UNC".');
     setSaving(true);
     setError(null);
     try {
@@ -162,7 +157,7 @@ function AddGameModal({ date, onClose, onAdd }: { date: string; onClose: () => v
         </label>
         <label className="bets-form__field">
           <span>Matchup</span>
-          <input placeholder="Duke @ UNC" value={matchup} onChange={(e) => setMatchup(e.target.value)} />
+          <input placeholder="DUKE @ UNC" value={matchup} onChange={(e) => setMatchup(e.target.value)} />
         </label>
         {error && <div className="bets-form__error">{error}</div>}
       </div>
@@ -178,13 +173,151 @@ function AddGameModal({ date, onClose, onAdd }: { date: string; onClose: () => v
   );
 }
 
+/** One editable cell — local draft state so typing doesn't fire a save on
+ * every keystroke; commits on blur/Enter, and only if the value actually
+ * changed. */
+function CellInput({ value, onCommit }: { value: string; onCommit: (v: string) => void }) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+  return (
+    <input
+      className="bets-workspace__cell-input"
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => {
+        if (draft !== value) onCommit(draft);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+      }}
+      placeholder="—"
+    />
+  );
+}
+
+function GameRow({
+  entry,
+  columns,
+  showSport,
+  onCellCommit,
+  onPinToggle,
+  onOpenNotes,
+  onRemove,
+}: {
+  entry: BoardEntry;
+  columns: string[];
+  showSport: boolean;
+  onCellCommit: (entry: BoardEntry, source: string, value: string) => void;
+  onPinToggle: (entry: BoardEntry) => void;
+  onOpenNotes: (entry: BoardEntry) => void;
+  onRemove: ((entry: BoardEntry) => void) | null;
+}) {
+  return (
+    <tr className={entry.pinned ? 'is-pinned' : undefined}>
+      <td className="bets-workspace__pin-cell">
+        <button type="button" className={`bets-workspace__pin-btn${entry.pinned ? ' is-active' : ''}`} onClick={() => onPinToggle(entry)} title={entry.pinned ? 'Unpin' : 'Pin as a best bet'}>
+          {entry.pinned ? '★' : '☆'}
+        </button>
+      </td>
+      {showSport && <td className="bets-workspace__sport-cell">{entry.sport}</td>}
+      <td className="bets-workspace__time-cell">{formatKickoff(entry.startTime)}</td>
+      <td className="bets-workspace__matchup-cell">{entry.matchup}</td>
+      {columns.map((col) => (
+        <td key={col}>
+          <CellInput value={entry.cells.get(col) ?? ''} onCommit={(v) => onCellCommit(entry, col, v)} />
+        </td>
+      ))}
+      <td className="bets-workspace__notes-cell">
+        <button type="button" className={`bets-workspace__notes-btn${entry.note ? ' has-note' : ''}`} onClick={() => onOpenNotes(entry)} title={entry.note || 'Add notes'}>
+          {entry.note ? '📝' : '+ note'}
+        </button>
+      </td>
+      <td className="bets-workspace__remove-cell">
+        {onRemove && (
+          <button type="button" className="bets-legs__remove" onClick={() => onRemove(entry)} aria-label="Remove game" title="Remove">
+            ✕
+          </button>
+        )}
+      </td>
+    </tr>
+  );
+}
+
+function SportSection({
+  sport,
+  entries,
+  columns,
+  collapsed,
+  onToggleCollapse,
+  onCellCommit,
+  onPinToggle,
+  onOpenNotes,
+  onRemove,
+}: {
+  sport: string;
+  entries: BoardEntry[];
+  columns: string[];
+  collapsed: boolean;
+  onToggleCollapse: () => void;
+  onCellCommit: (entry: BoardEntry, source: string, value: string) => void;
+  onPinToggle: (entry: BoardEntry) => void;
+  onOpenNotes: (entry: BoardEntry) => void;
+  onRemove: (entry: BoardEntry) => void;
+}) {
+  return (
+    <div className="bets-workspace__section card">
+      <button type="button" className="bets-workspace__section-header" onClick={onToggleCollapse}>
+        <span className={`bets-workspace__chevron${collapsed ? ' is-collapsed' : ''}`}>▾</span>
+        <span className="bets-workspace__section-title">{sport}</span>
+        <span className="bets-workspace__section-count">{entries.length}</span>
+      </button>
+      {!collapsed && (
+        <div className="bets-workspace__table-wrap">
+          <table className="bets-workspace__table">
+            <thead>
+              <tr>
+                <th />
+                <th>Time</th>
+                <th>Game</th>
+                {columns.map((col) => (
+                  <th key={col}>{col}</th>
+                ))}
+                <th>Notes</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {entries.map((entry) => (
+                <GameRow
+                  key={entry.key}
+                  entry={entry}
+                  columns={columns}
+                  showSport={false}
+                  onCellCommit={onCellCommit}
+                  onPinToggle={onPinToggle}
+                  onOpenNotes={onOpenNotes}
+                  onRemove={entry.noteId ? onRemove : null}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBalance[]; promos: BetPromo[] }) {
   const [date, setDate] = useState(todayLocalISODash());
   const [schedule, setSchedule] = useState<BetScheduleGame[] | null>(null);
   const [notes, setNotes] = useState<BetGameNote[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [editing, setEditing] = useState<BoardEntry | null>(null);
+  const [notesFor, setNotesFor] = useState<BoardEntry | null>(null);
   const [adding, setAdding] = useState(false);
+  const [columns, setColumns] = useState<string[]>(() => loadStringList(COLUMNS_KEY));
+  const [addingColumn, setAddingColumn] = useState(false);
+  const [newColumnName, setNewColumnName] = useState('');
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(loadStringList(COLLAPSED_KEY)));
 
   useEffect(() => {
     setSchedule(null);
@@ -205,37 +338,16 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
     const list: BoardEntry[] = schedule.map((g) => {
       const match = byExternal.get(`${g.sport}:${g.external_id}`);
       if (match) usedNoteIds.add(match.id);
-      return {
-        key: match?.id ?? `sched:${g.sport}:${g.external_id}`,
-        noteId: match?.id ?? null,
-        sport: g.sport,
-        externalId: g.external_id,
-        matchup: match?.matchup ?? g.matchup,
-        startTime: match?.start_time ?? g.start_time,
-        note: match?.note ?? '',
-        pinned: !!match?.pinned,
-        lines: (match?.lines ?? []).map((l: BetGameLine) => ({ sportsbook: l.sportsbook, line: l.line })),
-      };
+      return entryFromSchedule(g, match);
     });
     // Saved notes that didn't match a currently-scheduled game (manually
     // added games, or a schedule fetch that came back thin) still belong
-    // on the board — append them too.
+    // on the board.
     for (const n of notes) {
       if (usedNoteIds.has(n.id)) continue;
-      list.push({
-        key: n.id,
-        noteId: n.id,
-        sport: n.sport,
-        externalId: n.external_id,
-        matchup: n.matchup,
-        startTime: n.start_time,
-        note: n.note ?? '',
-        pinned: !!n.pinned,
-        lines: n.lines.map((l) => ({ sportsbook: l.sportsbook, line: l.line })),
-      });
+      list.push(entryFromNote(n));
     }
     return list.sort((a, b) => {
-      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
       if (a.startTime && b.startTime) return a.startTime < b.startTime ? -1 : a.startTime > b.startTime ? 1 : 0;
       if (a.startTime) return -1;
       if (b.startTime) return 1;
@@ -243,9 +355,39 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
     });
   }, [schedule, notes]);
 
-  async function saveEntry(entry: BoardEntry, params: { note: string; pinned: boolean; lines: LineDraft[] }) {
+  // Any source that already has data today stays a visible column even if
+  // it was never explicitly added this browser — grown into `columns`
+  // (and persisted) rather than shown only transiently, so it's still
+  // there next time regardless of which device added it.
+  useEffect(() => {
+    if (!notes) return;
+    const used = new Set<string>();
+    for (const n of notes) for (const l of n.lines) used.add(l.sportsbook);
+    const missing = [...used].filter((s) => !columns.includes(s));
+    if (missing.length > 0) {
+      const next = [...columns, ...missing];
+      setColumns(next);
+      saveStringList(COLUMNS_KEY, next);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notes]);
+
+  const pinned = entries.filter((e) => e.pinned);
+  const bySport = new Map<string, BoardEntry[]>();
+  for (const e of entries) {
+    if (e.pinned) continue;
+    const list = bySport.get(e.sport) ?? [];
+    list.push(e);
+    bySport.set(e.sport, list);
+  }
+
+  async function persist(entry: BoardEntry, patch: Partial<{ note: string; pinned: boolean; cells: Map<string, string> }>) {
+    const nextNote = patch.note ?? entry.note;
+    const nextPinned = patch.pinned ?? entry.pinned;
+    const nextCells = patch.cells ?? entry.cells;
+    const lines = [...nextCells.entries()].filter(([, v]) => v.trim()).map(([sportsbook, line]) => ({ sportsbook, line }));
     if (entry.noteId) {
-      const updated = await api.updateBetGameNote(entry.noteId, params);
+      const updated = await api.updateBetGameNote(entry.noteId, { note: nextNote, pinned: nextPinned, lines });
       setNotes((prev) => (prev ? prev.map((n) => (n.id === updated.id ? updated : n)) : prev));
     } else {
       const created = await api.createBetGameNote({
@@ -254,13 +396,30 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
         external_id: entry.externalId,
         matchup: entry.matchup,
         start_time: entry.startTime,
-        ...params,
+        note: nextNote,
+        pinned: nextPinned,
+        lines,
       });
       setNotes((prev) => [...(prev ?? []), created]);
     }
   }
 
-  async function removeEntry(entry: BoardEntry) {
+  function handleCellCommit(entry: BoardEntry, source: string, value: string) {
+    const nextCells = new Map(entry.cells);
+    if (value.trim()) nextCells.set(source, value.trim());
+    else nextCells.delete(source);
+    persist(entry, { cells: nextCells });
+  }
+
+  function handlePinToggle(entry: BoardEntry) {
+    persist(entry, { pinned: !entry.pinned });
+  }
+
+  async function handleNotesSave(entry: BoardEntry, note: string) {
+    await persist(entry, { note });
+  }
+
+  async function handleRemove(entry: BoardEntry) {
     if (!entry.noteId) return;
     await api.deleteBetGameNote(entry.noteId);
     setNotes((prev) => (prev ? prev.filter((n) => n.id !== entry.noteId) : prev));
@@ -271,11 +430,39 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
     setNotes((prev) => [...(prev ?? []), created]);
   }
 
+  function toggleCollapse(sport: string) {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(sport)) next.delete(sport);
+      else next.add(sport);
+      saveStringList(COLLAPSED_KEY, [...next]);
+      return next;
+    });
+  }
+
+  function commitNewColumn() {
+    const name = newColumnName.trim();
+    if (name && !columns.includes(name)) {
+      const next = [...columns, name];
+      setColumns(next);
+      saveStringList(COLUMNS_KEY, next);
+    }
+    setNewColumnName('');
+    setAddingColumn(false);
+  }
+
+  function removeColumn(name: string) {
+    const next = columns.filter((c) => c !== name);
+    setColumns(next);
+    saveStringList(COLUMNS_KEY, next);
+  }
+
   const activePromos = promos.filter((p) => p.status === 'active' && (!p.expires_at || p.expires_at >= date));
   const loading = schedule === null || notes === null;
+  const sportKeys = [...bySport.keys()].sort();
 
   return (
-    <div>
+    <div className="bets-workspace">
       {balances.length > 0 && (
         <div className="bets-workspace__balances">
           {balances.map((b) => (
@@ -306,10 +493,47 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
             Jump to today
           </button>
         )}
+        <div className="bets-workspace__column-add">
+          {addingColumn ? (
+            <div className="bets-workspace__column-add-input">
+              <input
+                autoFocus
+                placeholder="Sportsline, DraftKings…"
+                value={newColumnName}
+                onChange={(e) => setNewColumnName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') commitNewColumn();
+                  if (e.key === 'Escape') {
+                    setAddingColumn(false);
+                    setNewColumnName('');
+                  }
+                }}
+                onBlur={commitNewColumn}
+              />
+            </div>
+          ) : (
+            <button type="button" className="chip" onClick={() => setAddingColumn(true)}>
+              + Add column
+            </button>
+          )}
+        </div>
         <button className="btn" onClick={() => setAdding(true)}>
           + Add Game
         </button>
       </div>
+
+      {columns.length > 0 && (
+        <div className="bets-workspace__column-chips">
+          {columns.map((col) => (
+            <span key={col} className="bets-workspace__column-chip">
+              {col}
+              <button type="button" onClick={() => removeColumn(col)} aria-label={`Remove ${col} column`}>
+                ✕
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
 
       {activePromos.length > 0 && (
         <div className="bets-breakdown card" style={{ marginTop: 12 }}>
@@ -333,33 +557,63 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
         <div className="empty-state">No NFL, NBA, MLB, or NHL games found for this date. Add one manually if something else is on your slate.</div>
       )}
 
-      {!loading && entries.length > 0 && (
-        <div className="bets-workspace__board">
-          {entries.map((entry) => (
-            <button key={entry.key} type="button" className={`bets-workspace__game card${entry.pinned ? ' is-pinned' : ''}`} onClick={() => setEditing(entry)}>
-              <div className="bets-workspace__game-head">
-                <span className="bets-workspace__game-sport">{entry.sport}</span>
-                {entry.startTime && <span className="bets-workspace__game-time">{formatKickoff(entry.startTime)}</span>}
-                {entry.pinned && <span className="bets-workspace__game-pin" title="Pinned">★</span>}
-              </div>
-              <div className="bets-workspace__game-matchup">{entry.matchup}</div>
-              {entry.lines.length > 0 && (
-                <div className="bets-workspace__game-lines">{entry.lines.map((l) => `${l.sportsbook}: ${l.line}`).join(' · ')}</div>
-              )}
-              {entry.note && <div className="bets-workspace__game-note">{entry.note}</div>}
-            </button>
-          ))}
+      {!loading && pinned.length > 0 && (
+        <div className="bets-workspace__section bets-workspace__section--pinned card">
+          <div className="bets-workspace__section-header">
+            <span className="bets-workspace__section-title">★ Best Bets</span>
+            <span className="bets-workspace__section-count">{pinned.length}</span>
+          </div>
+          <div className="bets-workspace__table-wrap">
+            <table className="bets-workspace__table">
+              <thead>
+                <tr>
+                  <th />
+                  <th>Sport</th>
+                  <th>Time</th>
+                  <th>Game</th>
+                  {columns.map((col) => (
+                    <th key={col}>{col}</th>
+                  ))}
+                  <th>Notes</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {pinned.map((entry) => (
+                  <GameRow
+                    key={entry.key}
+                    entry={entry}
+                    columns={columns}
+                    showSport
+                    onCellCommit={handleCellCommit}
+                    onPinToggle={handlePinToggle}
+                    onOpenNotes={setNotesFor}
+                    onRemove={entry.noteId ? handleRemove : null}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
-      {editing && (
-        <GameFormModal
-          entry={editing}
-          onClose={() => setEditing(null)}
-          onSave={(params) => saveEntry(editing, params)}
-          onRemove={editing.noteId ? () => removeEntry(editing) : null}
-        />
-      )}
+      {!loading &&
+        sportKeys.map((sport) => (
+          <SportSection
+            key={sport}
+            sport={sport}
+            entries={bySport.get(sport) ?? []}
+            columns={columns}
+            collapsed={collapsed.has(sport)}
+            onToggleCollapse={() => toggleCollapse(sport)}
+            onCellCommit={handleCellCommit}
+            onPinToggle={handlePinToggle}
+            onOpenNotes={setNotesFor}
+            onRemove={handleRemove}
+          />
+        ))}
+
+      {notesFor && <NotesModal entry={notesFor} onClose={() => setNotesFor(null)} onSave={(note) => handleNotesSave(notesFor, note)} />}
       {adding && <AddGameModal date={date} onClose={() => setAdding(false)} onAdd={addManualGame} />}
     </div>
   );
