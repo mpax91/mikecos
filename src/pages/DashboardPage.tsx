@@ -5,11 +5,11 @@ import { useReportTabMeta } from '../contexts/TabsContext';
 import { buildPeriods, periodDeltaWithRef, type AggregatedPeriod, type Granularity } from '../utils/healthPeriods';
 import { CreditScoreDashboard } from '../components/CreditScoreTrend';
 
-type LifeArea = 'fitness' | 'finance' | 'vehicle';
+type LifeArea = 'fitness' | 'credit' | 'vehicle';
 
 const LIFE_AREAS: { id: LifeArea; label: string; icon: string; available: boolean }[] = [
   { id: 'fitness', label: 'Fitness', icon: '🩺', available: true },
-  { id: 'finance', label: 'Finance', icon: '💰', available: true },
+  { id: 'credit', label: 'Credit Score', icon: '💳', available: true },
   { id: 'vehicle', label: 'Vehicle', icon: '🚗', available: false },
 ];
 
@@ -465,12 +465,11 @@ export function DashboardPage() {
       </div>
 
       {area === 'fitness' && <FitnessDashboard />}
-      {area === 'finance' && <CreditScoreDashboard />}
+      {area === 'credit' && <CreditScoreDashboard />}
       {area === 'vehicle' && (
         <div className="empty-state">
-          Vehicle isn't built yet — Fitness and Finance (Credit Score Trend) are the life areas wired up here so
-          far; Betting moved to its own page (see the sidebar). This dropdown is where the rest will live as
-          they're added.
+          Vehicle isn't built yet — Fitness and Credit Score are the life areas wired up here so far; Betting
+          moved to its own page (see the sidebar). This dropdown is where the rest will live as they're added.
         </div>
       )}
     </div>

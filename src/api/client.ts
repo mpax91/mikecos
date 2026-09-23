@@ -355,7 +355,7 @@ export const api = {
    * charts and current-week tiles. */
   listHealthWeekly: () => request<HealthWeeklyReport[]>('/api/health/weekly'),
 
-  // ---- Credit Score Trend (Dashboard → Finance) ----
+  // ---- Credit Score Trend (Dashboard → Credit Score) ----
 
   /** Full history, oldest first — feeds the trend chart and every derived
    * stat (average/delta/all-time high-low), which are all computed

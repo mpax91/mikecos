@@ -4513,7 +4513,7 @@ app.get('/api/health/weekly', async (c) => {
 });
 
 // ---------------------------------------------------------------------
-// Credit Score Trend — Dashboard's Finance life area. See
+// Credit Score Trend — Dashboard's Credit Score life area. See
 // worker/migrations/0042_credit_score.sql for the schema/import
 // rationale. CreditSesame/Discover-Fico are historical-only; the manual
 // add/edit flow below only ever writes creditkarma/creditwise.
