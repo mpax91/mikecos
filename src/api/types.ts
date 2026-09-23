@@ -866,6 +866,20 @@ export interface HealthWeeklyReport {
   updated_at: string;
 }
 
+// One row per monthly credit-score check-in — mirrors worker/src/types.ts's
+// CreditScoreEntry. See worker/migrations/0042_credit_score.sql for the
+// full rationale (CreditSesame/Discover-Fico are historical-only; average
+// is computed client-side from whichever columns are non-null).
+export interface CreditScoreEntry {
+  entry_date: string; // 'YYYY-MM-DD'
+  creditkarma: number | null;
+  creditsesame: number | null;
+  discover_fico: number | null;
+  creditwise: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
 /** POST /api/health/parse — preview-only, no DB write. `week` is null when
  * the text didn't match the Google Health template at all (see
  * HealthParseError in worker/src/health.ts); `error` then holds the reason

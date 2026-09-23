@@ -15,6 +15,7 @@ import type {
   ContactCircle,
   ContactConnection,
   ContactNote,
+  CreditScoreEntry,
   Env,
   Entity,
   Habit,
@@ -4509,6 +4510,83 @@ app.post('/api/health/import', async (c) => {
 app.get('/api/health/weekly', async (c) => {
   const { results } = await c.env.DB.prepare('SELECT * FROM health_weekly_reports ORDER BY week_start ASC').all<HealthWeeklyReport>();
   return c.json(results ?? []);
+});
+
+// ---------------------------------------------------------------------
+// Credit Score Trend — Dashboard's Finance life area. See
+// worker/migrations/0042_credit_score.sql for the schema/import
+// rationale. CreditSesame/Discover-Fico are historical-only; the manual
+// add/edit flow below only ever writes creditkarma/creditwise.
+// ---------------------------------------------------------------------
+
+// GET /api/credit-score — full history, oldest first, for the trend chart
+// and the smart-summary calculations (average/delta/all-time high-low),
+// all of which are computed client-side from this raw list rather than
+// stored, so nothing needs recalculating as more entries come in.
+app.get('/api/credit-score', async (c) => {
+  const { results } = await c.env.DB.prepare('SELECT * FROM credit_score_entries ORDER BY entry_date ASC').all<CreditScoreEntry>();
+  return c.json(results ?? []);
+});
+
+// POST /api/credit-score — the "add this month" quick-entry form. Body:
+// { creditkarma?, creditwise?, entry_date? } (entry_date defaults to
+// today). One entry per calendar month is the real invariant (Mike's
+// reminder fires once a month, on the 22nd) — re-submitting within a month
+// that already has a row updates that row in place instead of creating a
+// second data point, the same upsert instinct health's weekly import uses
+// but keyed by month instead of exact day.
+app.post('/api/credit-score', async (c) => {
+  const body = await c.req.json<{ creditkarma?: number | null; creditwise?: number | null; entry_date?: string }>();
+  const entryDate = body.entry_date && /^\d{4}-\d{2}-\d{2}$/.test(body.entry_date) ? body.entry_date : now().slice(0, 10);
+  const month = entryDate.slice(0, 7);
+  const ts = now();
+
+  const existing = await c.env.DB.prepare('SELECT * FROM credit_score_entries WHERE substr(entry_date, 1, 7) = ?').bind(month).first<CreditScoreEntry>();
+
+  if (existing) {
+    const creditkarma = 'creditkarma' in body ? (body.creditkarma ?? null) : existing.creditkarma;
+    const creditwise = 'creditwise' in body ? (body.creditwise ?? null) : existing.creditwise;
+    await c.env.DB.prepare('UPDATE credit_score_entries SET creditkarma = ?, creditwise = ?, updated_at = ? WHERE entry_date = ?')
+      .bind(creditkarma, creditwise, ts, existing.entry_date)
+      .run();
+    const updated = await c.env.DB.prepare('SELECT * FROM credit_score_entries WHERE entry_date = ?').bind(existing.entry_date).first<CreditScoreEntry>();
+    return c.json(updated, 200);
+  }
+
+  await c.env.DB.prepare(
+    `INSERT INTO credit_score_entries (entry_date, creditkarma, creditsesame, discover_fico, creditwise, created_at, updated_at)
+     VALUES (?, ?, NULL, NULL, ?, ?, ?)`
+  )
+    .bind(entryDate, body.creditkarma ?? null, body.creditwise ?? null, ts, ts)
+    .run();
+  const created = await c.env.DB.prepare('SELECT * FROM credit_score_entries WHERE entry_date = ?').bind(entryDate).first<CreditScoreEntry>();
+  return c.json(created, 201);
+});
+
+// PATCH /api/credit-score/:date — edit an existing entry's CreditKarma/
+// CreditWise values (the recent-entries list's inline edit). Never touches
+// creditsesame/discover_fico — those are historical-only and read-only
+// from here on.
+app.patch('/api/credit-score/:date', async (c) => {
+  const date = c.req.param('date');
+  const body = await c.req.json<{ creditkarma?: number | null; creditwise?: number | null }>();
+  const existing = await c.env.DB.prepare('SELECT * FROM credit_score_entries WHERE entry_date = ?').bind(date).first<CreditScoreEntry>();
+  if (!existing) return c.json({ error: 'not found' }, 404);
+
+  const creditkarma = 'creditkarma' in body ? (body.creditkarma ?? null) : existing.creditkarma;
+  const creditwise = 'creditwise' in body ? (body.creditwise ?? null) : existing.creditwise;
+  const ts = now();
+  await c.env.DB.prepare('UPDATE credit_score_entries SET creditkarma = ?, creditwise = ?, updated_at = ? WHERE entry_date = ?')
+    .bind(creditkarma, creditwise, ts, date)
+    .run();
+  const updated = await c.env.DB.prepare('SELECT * FROM credit_score_entries WHERE entry_date = ?').bind(date).first<CreditScoreEntry>();
+  return c.json(updated);
+});
+
+// DELETE /api/credit-score/:date
+app.delete('/api/credit-score/:date', async (c) => {
+  await c.env.DB.prepare('DELETE FROM credit_score_entries WHERE entry_date = ?').bind(c.req.param('date')).run();
+  return c.json({ ok: true });
 });
 
 // A day's journal entry is mostly computed, not stored: journal_entries

@@ -277,6 +277,21 @@ export interface HealthWeeklyReport {
   updated_at: string;
 }
 
+// One row per monthly credit-score check-in — see
+// worker/migrations/0042_credit_score.sql for the full rationale
+// (CreditSesame/Discover-Fico are historical-only, kept nullable so old
+// rows keep their real values; average is computed from whichever columns
+// are non-null rather than stored).
+export interface CreditScoreEntry {
+  entry_date: string; // 'YYYY-MM-DD'
+  creditkarma: number | null;
+  creditsesame: number | null;
+  discover_fico: number | null;
+  creditwise: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Env {
   DB: D1Database;
   FILES: R2Bucket;
