@@ -6087,13 +6087,26 @@ interface EspnEvent {
   competitions?: { competitors?: { homeAway: 'home' | 'away'; team?: { displayName?: string; shortDisplayName?: string } }[] }[];
 }
 
-async function fetchLeagueGames(sport: string, path: string, dateCompact: string): Promise<{ sport: string; external_id: string; matchup: string; start_time: string }[]> {
+type ScheduleGame = { sport: string; external_id: string; matchup: string; start_time: string };
+
+/** `debug` is populated on every call (cheap) but only ever returned to the
+ * client when ?debug=1 is passed — see app.get('/api/bets/games'). Kept
+ * around rather than a bare try/catch that swallows everything, since an
+ * empty board and a blocked/rate-limited feed look identical to the user
+ * otherwise. */
+async function fetchLeagueGames(sport: string, path: string, dateCompact: string): Promise<{ games: ScheduleGame[]; debug: { sport: string; status: number | null; note: string } }> {
   const url = `https://site.api.espn.com/apis/site/v2/sports/${path}/scoreboard?dates=${dateCompact}`;
   try {
-    const res = await fetch(url, { headers: { 'user-agent': 'MikeOS-Bets/1.0 (+https://mikeos)' }, cf: { cacheTtl: 300, cacheEverything: true } });
-    if (!res.ok) return [];
+    const res = await fetch(url, {
+      headers: {
+        'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
+        accept: 'application/json',
+      },
+      cf: { cacheTtl: 300, cacheEverything: true },
+    });
+    if (!res.ok) return { games: [], debug: { sport, status: res.status, note: await res.text().then((t) => t.slice(0, 200)) } };
     const data = await res.json<{ events?: EspnEvent[] }>();
-    const games: { sport: string; external_id: string; matchup: string; start_time: string }[] = [];
+    const games: ScheduleGame[] = [];
     for (const event of data.events ?? []) {
       const competitors = event.competitions?.[0]?.competitors ?? [];
       const home = competitors.find((x) => x.homeAway === 'home');
@@ -6106,9 +6119,10 @@ async function fetchLeagueGames(sport: string, path: string, dateCompact: string
         start_time: event.date,
       });
     }
-    return games;
-  } catch {
-    return []; // one league's schedule feed hiccuping shouldn't blank out the whole board
+    return { games, debug: { sport, status: res.status, note: `${data.events?.length ?? 0} raw events` } };
+  } catch (e) {
+    // one league's schedule feed hiccuping shouldn't blank out the whole board
+    return { games: [], debug: { sport, status: null, note: String(e) } };
   }
 }
 
@@ -6117,7 +6131,8 @@ app.get('/api/bets/games', async (c) => {
   if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return c.json({ error: 'date (YYYY-MM-DD) is required' }, 400);
   const dateCompact = date.replaceAll('-', '');
   const results = await Promise.all(ESPN_LEAGUES.map((l) => fetchLeagueGames(l.sport, l.path, dateCompact)));
-  return c.json(results.flat());
+  if (c.req.query('debug') === '1') return c.json({ games: results.flatMap((r) => r.games), leagues: results.map((r) => r.debug) });
+  return c.json(results.flatMap((r) => r.games));
 });
 
 async function attachGameLines(env: Env, notes: BetGameNoteRow[]): Promise<(BetGameNoteRow & { lines: BetGameLineRow[] })[]> {
