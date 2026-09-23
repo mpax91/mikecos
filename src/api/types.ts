@@ -1170,6 +1170,8 @@ export interface BetScheduleGame {
   external_id: string;
   home_abbr: string;
   away_abbr: string;
+  home_name?: string; // full team name, when the source has it cheaply — used in the game-detail panel only
+  away_name?: string;
   matchup: string; // already abbreviated, e.g. 'WSH @ DET' — see worker's fetchEspn/fetchMlb/fetchNhl
   start_time: string;
 }

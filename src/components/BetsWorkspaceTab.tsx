@@ -46,6 +46,17 @@ function loadStringList(key: string, fallback: string[] = []): string[] {
   }
 }
 
+/** Tipper columns should never be one of the fixed Best Bets sportsbook
+ * names — a bug in an earlier build let odds entries leak into this list.
+ * Loading a tipper-columns list always strips them back out, so anything
+ * already contaminated in Mike's browser self-heals to the real defaults
+ * the moment the page loads, without needing to touch localStorage by
+ * hand. */
+function sanitizeTipperColumns(list: string[]): string[] {
+  const cleaned = list.filter((c) => !SPORTSBOOK_COLUMNS.includes(c));
+  return cleaned.length > 0 ? cleaned : DEFAULT_COLUMNS;
+}
+
 function saveStringList(key: string, list: string[]) {
   try {
     localStorage.setItem(key, JSON.stringify(list));
@@ -67,6 +78,8 @@ interface BoardEntry {
   sport: string;
   externalId: string | null;
   matchup: string;
+  homeName?: string; // full team names, when the schedule source has them — for the detail modal only
+  awayName?: string;
   startTime: string | null;
   note: string;
   pinned: boolean;
@@ -80,6 +93,8 @@ function entryFromSchedule(g: BetScheduleGame, match: BetGameNote | undefined): 
     sport: g.sport,
     externalId: g.external_id,
     matchup: match?.matchup ?? g.matchup,
+    homeName: g.home_name,
+    awayName: g.away_name,
     startTime: match?.start_time ?? g.start_time,
     note: match?.note ?? '',
     pinned: !!match?.pinned,
@@ -107,9 +122,19 @@ function entryFromNote(n: BetGameNote): BoardEntry {
  * that isn't odds at all (a spread-only note, or blank) just doesn't
  * participate in the comparison. */
 function parseAmericanOdds(value: string): number | null {
-  const matches = value.match(/[-+]\d{2,5}(?!\d)/g);
-  if (!matches || matches.length === 0) return null;
-  const n = Number(matches[matches.length - 1]);
+  const signed = value.match(/[-+]\d{2,5}(?!\d)/g);
+  if (signed && signed.length > 0) {
+    const n = Number(signed[signed.length - 1]);
+    return Number.isFinite(n) ? n : null;
+  }
+  // No explicit sign typed at all — Mike enters plus-money as a bare number
+  // ("105" meaning +105), so fall back to treating an unsigned 3-5 digit
+  // whole number as an implicit plus price. Guarded so a decimal like
+  // "220.5" (a total/spread, not odds) never matches: it must not be
+  // preceded by a digit-dot (part of a decimal) or followed by one.
+  const bare = value.match(/(?<![-+.\d])\d{3,5}(?!\.\d)(?!\d)/g);
+  if (!bare || bare.length === 0) return null;
+  const n = Number(bare[bare.length - 1]);
   return Number.isFinite(n) ? n : null;
 }
 
@@ -168,9 +193,30 @@ function NotesModal({
     }
   }
 
+  const cellEntries = [...entry.cells.entries()].filter(([, v]) => v.trim());
+
   return (
     <Modal title={entry.matchup} onClose={onClose}>
       <div className="bets-form">
+        {(entry.awayName || entry.homeName) && (
+          <div className="bets-workspace__modal-fullnames">
+            {entry.awayName ?? entry.matchup.split('@')[0]?.trim()} @ {entry.homeName ?? entry.matchup.split('@')[1]?.trim()}
+          </div>
+        )}
+        {entry.startTime && <div className="bets-workspace__modal-kickoff">{formatKickoff(entry.startTime)}</div>}
+        {cellEntries.length > 0 && (
+          <div className="bets-workspace__modal-cells">
+            <span className="bets-form__field-label">Entered values</span>
+            <div className="bets-workspace__modal-cells-grid">
+              {cellEntries.map(([label, value]) => (
+                <div key={label} className="bets-workspace__modal-cell">
+                  <span className="bets-workspace__modal-cell-label">{label}</span>
+                  <span className="bets-workspace__modal-cell-value">{value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         <label className="bets-form__field">
           <span>Notes — bets you like, reasoning, anything</span>
           <textarea rows={5} autoFocus value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. SEA -6.5 looks soft, CAR getting too many points" />
@@ -340,7 +386,16 @@ function GameRow({
         </button>
       </td>
       {showSport && <td className="bets-workspace__sport-cell">{entry.sport}</td>}
-      <td className="bets-workspace__matchup-cell">{entry.matchup}</td>
+      <td className="bets-workspace__matchup-cell">
+        <button
+          type="button"
+          className="bets-workspace__matchup-btn"
+          onClick={() => onOpenNotes(entry)}
+          title={entry.homeName || entry.awayName ? `${entry.awayName ?? ''} @ ${entry.homeName ?? ''}` : 'Click for details'}
+        >
+          {entry.matchup}
+        </button>
+      </td>
       <td className="bets-workspace__time-cell">{formatKickoff(entry.startTime)}</td>
       {columns.map((col) => (
         <td key={col} className={bestCols?.has(col) ? 'bets-workspace__cell--best' : undefined}>
@@ -424,7 +479,9 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
   const [error, setError] = useState<string | null>(null);
   const [notesFor, setNotesFor] = useState<BoardEntry | null>(null);
   const [adding, setAdding] = useState(false);
-  const [columns, setColumns] = useState<string[]>(() => loadStringList(`${COLUMNS_KEY}:${todayLocalISODash()}`, loadStringList(COLUMNS_KEY, DEFAULT_COLUMNS)));
+  const [columns, setColumns] = useState<string[]>(() =>
+    sanitizeTipperColumns(loadStringList(`${COLUMNS_KEY}:${todayLocalISODash()}`, loadStringList(COLUMNS_KEY, DEFAULT_COLUMNS)))
+  );
   const [addingColumn, setAddingColumn] = useState(false);
   const [newColumnName, setNewColumnName] = useState('');
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(loadStringList(COLLAPSED_KEY)));
@@ -440,7 +497,7 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
     // A date that's had its own columns saved (via rename/add while viewing
     // it) keeps that snapshot forever; any other date just tracks whatever
     // the current base default is.
-    setColumns(loadStringList(`${COLUMNS_KEY}:${date}`, loadStringList(COLUMNS_KEY, DEFAULT_COLUMNS)));
+    setColumns(sanitizeTipperColumns(loadStringList(`${COLUMNS_KEY}:${date}`, loadStringList(COLUMNS_KEY, DEFAULT_COLUMNS))));
     Promise.all([api.getBetScheduleGames(date), api.listBetGameNotes(date)])
       .then(([sched, n]) => {
         setSchedule(sched);
@@ -495,14 +552,18 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
     if (date === todayLocalISODash()) saveStringList(COLUMNS_KEY, next);
   }
 
-  // Any source that already has data today stays a visible column even if
-  // it was never explicitly added this browser — grown into `columns` (and
-  // persisted for this date) rather than shown only transiently, so it's
-  // still there next time regardless of which device added it.
+  // Any tipper source that already has data today stays a visible column
+  // even if it was never explicitly added this browser — grown into
+  // `columns` (and persisted for this date) rather than shown only
+  // transiently, so it's still there next time regardless of which device
+  // added it. Best Bets' sportsbook odds are stored through this same
+  // `lines` field (see `persist` below), so those names are explicitly
+  // excluded here — otherwise typing odds into Best Bets would leak a
+  // "BetMGM" column into every sport section's tipper table below it.
   useEffect(() => {
     if (!notes) return;
     const used = new Set<string>();
-    for (const n of notes) for (const l of n.lines) used.add(l.sportsbook);
+    for (const n of notes) for (const l of n.lines) if (!SPORTSBOOK_COLUMNS.includes(l.sportsbook)) used.add(l.sportsbook);
     const missing = [...used].filter((s) => !columns.includes(s));
     if (missing.length > 0) persistColumnsForDate([...columns, ...missing]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -521,9 +582,12 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
     : entries;
 
   const pinned = visibleEntries.filter((e) => e.pinned);
+  // Starring a game for Best Bets doesn't pull it out of its sport section —
+  // the tipper columns there are what Mike references while he's shopping
+  // odds in Best Bets, so a pinned game shows in both places (its row in the
+  // section below just also gets the `is-pinned` highlight).
   const bySport = new Map<string, BoardEntry[]>();
   for (const e of visibleEntries) {
-    if (e.pinned) continue;
     const list = bySport.get(e.sport) ?? [];
     list.push(e);
     bySport.set(e.sport, list);

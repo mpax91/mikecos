@@ -7487,6 +7487,11 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   color: var(--color-ink);
 }
 
+.bets-form__field-label {
+  font-size: 12.5px;
+  color: var(--color-muted);
+}
+
 .bets-form__preview {
   font-size: 13.5px;
   font-weight: 600;
@@ -7935,8 +7940,8 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 }
 
 .bets-workspace__pin-cell {
-  width: 16px;
-  padding: 4px 2px !important;
+  width: 11px;
+  padding: 4px 1px !important;
   text-align: center;
 }
 
@@ -7979,11 +7984,81 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 }
 
 .bets-workspace__matchup-cell {
-  width: 88px;
+  width: 104px;
   font-weight: 600;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+  padding: 0;
+}
+
+.bets-workspace__matchup-btn {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  color: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   text-align: center;
   padding: 4px 8px;
+}
+
+.bets-workspace__matchup-btn:hover {
+  text-decoration: underline;
+  color: var(--color-accent);
+}
+
+.bets-workspace__modal-fullnames {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-ink);
+}
+
+.bets-workspace__modal-kickoff {
+  font-size: 11.5px;
+  color: var(--color-muted);
+  margin-top: -8px;
+}
+
+.bets-workspace__modal-cells {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bets-workspace__modal-cells-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 6px 12px;
+}
+
+.bets-workspace__modal-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px 8px;
+  border: var(--border-hairline);
+  border-radius: 4px;
+  background: rgba(120, 120, 120, 0.05);
+}
+
+.bets-workspace__modal-cell-label {
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-muted);
+}
+
+.bets-workspace__modal-cell-value {
+  font-size: 12.5px;
+  font-weight: 600;
+  word-break: break-word;
 }
 
 .bets-workspace__cell-wrap {

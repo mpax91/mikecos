@@ -6101,7 +6101,20 @@ const MLB_TEAM_ABBR: Record<number, string> = {
   143: 'PHI', 144: 'ATL', 145: 'CWS', 146: 'MIA', 147: 'NYY', 158: 'MIL',
 };
 
-type ScheduleGame = { sport: string; external_id: string; home_abbr: string; away_abbr: string; matchup: string; start_time: string };
+// home_name/away_name are the full team names, when the source has them
+// cheaply available — used only for the Workspace's game-detail panel (the
+// table itself always shows the abbreviation), so it's fine for these to be
+// absent (undefined) on a source that doesn't expose them.
+type ScheduleGame = {
+  sport: string;
+  external_id: string;
+  home_abbr: string;
+  away_abbr: string;
+  home_name?: string;
+  away_name?: string;
+  matchup: string;
+  start_time: string;
+};
 type LeagueDebug = { sport: string; source: string; status: number | null; note: string };
 type LeagueResult = { games: ScheduleGame[]; debug: LeagueDebug };
 
@@ -6142,6 +6155,8 @@ async function fetchEspn(sport: string, path: string, dateCompact: string, extra
         external_id: event.id,
         home_abbr: homeAbbr,
         away_abbr: awayAbbr,
+        home_name: home.team.displayName,
+        away_name: away.team.displayName,
         matchup: `${awayAbbr} @ ${homeAbbr}`,
         start_time: event.date,
       });
@@ -6170,7 +6185,16 @@ async function fetchMlb(dateDash: string): Promise<LeagueResult> {
       .map((g) => {
         const homeAbbr = MLB_TEAM_ABBR[g.teams.home.team.id] ?? initials(g.teams.home.team.name);
         const awayAbbr = MLB_TEAM_ABBR[g.teams.away.team.id] ?? initials(g.teams.away.team.name);
-        return { sport: 'MLB', external_id: String(g.gamePk), home_abbr: homeAbbr, away_abbr: awayAbbr, matchup: `${awayAbbr} @ ${homeAbbr}`, start_time: g.gameDate };
+        return {
+          sport: 'MLB',
+          external_id: String(g.gamePk),
+          home_abbr: homeAbbr,
+          away_abbr: awayAbbr,
+          home_name: g.teams.home.team.name,
+          away_name: g.teams.away.team.name,
+          matchup: `${awayAbbr} @ ${homeAbbr}`,
+          start_time: g.gameDate,
+        };
       });
     return { games, debug: { sport: 'MLB', source: 'mlb', status: res.status, note: `${games.length} games (${raw.length} raw)` } };
   } catch (e) {
@@ -6233,22 +6257,38 @@ async function fetchNcaaf(dateDash: string): Promise<LeagueResult> {
     const res = await fetch(url, { headers: { 'user-agent': BROWSER_UA, accept: 'application/json' }, cf: { cacheTtl: 300, cacheEverything: true } });
     if (!res.ok) return { games: [], debug: { sport: 'NCAAF', source: 'ncaa', status: res.status, note: (await res.text()).slice(0, 200) } };
     const data = await res.json<{
-      data?: { contests?: { contestId: number; startTimeEpoch: number; teams: { isHome: boolean; name6Char: string }[] }[] };
+      data?: { contests?: { contestId: number; startTimeEpoch: number; teams: { isHome: boolean; name6Char: string; nameShort?: string; seoName?: string }[] }[] };
       errors?: unknown[];
     }>();
     if (data.errors) return { games: [], debug: { sport: 'NCAAF', source: 'ncaa', status: res.status, note: `graphql errors: ${JSON.stringify(data.errors).slice(0, 200)}` } };
     const raw = data.data?.contests ?? [];
+    // name6Char is NCAA's official short code, but not every school has one
+    // on file — some come back blank, others come back as an unshortened
+    // full name (Mike's "some full names, some abbreviations" complaint).
+    // nameShort is the fuller "short" display name NCAA does reliably
+    // populate; when name6Char looks unusably long, derive initials from
+    // nameShort instead so the table cell always gets something compact.
+    const shortAbbr = (t: { name6Char: string; nameShort?: string }): string => {
+      const raw6 = (t.name6Char ?? '').trim();
+      if (raw6 && raw6.length <= 7) return raw6;
+      const fallback = t.nameShort ?? raw6;
+      return fallback ? initials(fallback) : raw6;
+    };
     const games: ScheduleGame[] = raw
       .filter((g) => g.teams.length === 2)
       .map((g) => {
         const home = g.teams.find((t) => t.isHome)!;
         const away = g.teams.find((t) => !t.isHome)!;
+        const homeAbbr = shortAbbr(home);
+        const awayAbbr = shortAbbr(away);
         return {
           sport: 'NCAAF',
           external_id: String(g.contestId),
-          home_abbr: home.name6Char,
-          away_abbr: away.name6Char,
-          matchup: `${away.name6Char} @ ${home.name6Char}`,
+          home_abbr: homeAbbr,
+          away_abbr: awayAbbr,
+          home_name: home.nameShort ?? home.name6Char,
+          away_name: away.nameShort ?? away.name6Char,
+          matchup: `${awayAbbr} @ ${homeAbbr}`,
           start_time: new Date(g.startTimeEpoch * 1000).toISOString(),
         };
       });
