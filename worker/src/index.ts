@@ -6066,20 +6066,32 @@ app.delete('/api/bet-promos/:id', async (c) => {
 });
 
 // ---- Bets workspace: auto-pulled schedule + daily game scratchpad (0040_bet_workspace.sql) ----
+//
+// ESPN's public scoreboard endpoint (site.api.espn.com) was the original
+// plan for all four leagues — no key, widely relied on for exactly this.
+// It turns out to sit behind an Akamai WAF that blocks Cloudflare Workers'
+// own IP ranges outright (confirmed via GET /api/bets/games?debug=1: every
+// league came back 403 "Access Denied" from a deployed Worker, while the
+// identical URL loads fine from an ordinary browser — this is a
+// datacenter-ASN block, not a User-Agent thing). cdn.nba.com's static
+// schedule feed hits the same Akamai wall.
+//
+// MLB and NHL each publish their own official, unauthenticated schedule
+// API that isn't behind that block, so those two leagues use their real
+// source. NFL and NBA don't have an equivalent free public endpoint, so
+// they still attempt ESPN (harmless if it stays blocked — a league that
+// comes back empty just leaves its games to "+ Add Game") in case
+// Cloudflare's IP reputation with ESPN ever changes, rather than removing
+// the capability entirely.
+//
+// Odds aren't requested from any of these: Mike's fine typing lines in by
+// hand, and none of these free feeds have reliable odds coverage anyway.
 
-// ESPN's public scoreboard endpoint — no API key, widely relied on for
-// exactly this (schedule + team names + start time), though it's an
-// undocumented endpoint rather than a stable published API. Odds aren't
-// requested from it: Mike said he's fine typing lines in by hand, and
-// ESPN's own odds coverage there is inconsistent/unreliable anyway. Scoped
-// to the four leagues he asked for — a sport outside these four is still
-// addable to the workspace by hand.
-const ESPN_LEAGUES: { sport: string; path: string }[] = [
-  { sport: 'NFL', path: 'football/nfl' },
-  { sport: 'NBA', path: 'basketball/nba' },
-  { sport: 'MLB', path: 'baseball/mlb' },
-  { sport: 'NHL', path: 'hockey/nhl' },
-];
+type ScheduleGame = { sport: string; external_id: string; matchup: string; start_time: string };
+type LeagueDebug = { sport: string; source: string; status: number | null; note: string };
+type LeagueResult = { games: ScheduleGame[]; debug: LeagueDebug };
+
+const BROWSER_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36';
 
 interface EspnEvent {
   id: string;
@@ -6087,24 +6099,11 @@ interface EspnEvent {
   competitions?: { competitors?: { homeAway: 'home' | 'away'; team?: { displayName?: string; shortDisplayName?: string } }[] }[];
 }
 
-type ScheduleGame = { sport: string; external_id: string; matchup: string; start_time: string };
-
-/** `debug` is populated on every call (cheap) but only ever returned to the
- * client when ?debug=1 is passed — see app.get('/api/bets/games'). Kept
- * around rather than a bare try/catch that swallows everything, since an
- * empty board and a blocked/rate-limited feed look identical to the user
- * otherwise. */
-async function fetchLeagueGames(sport: string, path: string, dateCompact: string): Promise<{ games: ScheduleGame[]; debug: { sport: string; status: number | null; note: string } }> {
+async function fetchEspn(sport: string, path: string, dateCompact: string): Promise<LeagueResult> {
   const url = `https://site.api.espn.com/apis/site/v2/sports/${path}/scoreboard?dates=${dateCompact}`;
   try {
-    const res = await fetch(url, {
-      headers: {
-        'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
-        accept: 'application/json',
-      },
-      cf: { cacheTtl: 300, cacheEverything: true },
-    });
-    if (!res.ok) return { games: [], debug: { sport, status: res.status, note: await res.text().then((t) => t.slice(0, 200)) } };
+    const res = await fetch(url, { headers: { 'user-agent': BROWSER_UA, accept: 'application/json' }, cf: { cacheTtl: 300, cacheEverything: true } });
+    if (!res.ok) return { games: [], debug: { sport, source: 'espn', status: res.status, note: (await res.text()).slice(0, 200) } };
     const data = await res.json<{ events?: EspnEvent[] }>();
     const games: ScheduleGame[] = [];
     for (const event of data.events ?? []) {
@@ -6119,10 +6118,52 @@ async function fetchLeagueGames(sport: string, path: string, dateCompact: string
         start_time: event.date,
       });
     }
-    return { games, debug: { sport, status: res.status, note: `${data.events?.length ?? 0} raw events` } };
+    return { games, debug: { sport, source: 'espn', status: res.status, note: `${data.events?.length ?? 0} raw events` } };
   } catch (e) {
-    // one league's schedule feed hiccuping shouldn't blank out the whole board
-    return { games: [], debug: { sport, status: null, note: String(e) } };
+    return { games: [], debug: { sport, source: 'espn', status: null, note: String(e) } };
+  }
+}
+
+// MLB's own stats API — statsapi.mlb.com — public, unauthenticated, and
+// what mlb.com's own site runs on.
+async function fetchMlb(dateDash: string): Promise<LeagueResult> {
+  const url = `https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=${dateDash}`;
+  try {
+    const res = await fetch(url, { headers: { 'user-agent': BROWSER_UA, accept: 'application/json' }, cf: { cacheTtl: 300, cacheEverything: true } });
+    if (!res.ok) return { games: [], debug: { sport: 'MLB', source: 'mlb', status: res.status, note: (await res.text()).slice(0, 200) } };
+    const data = await res.json<{ dates?: { games?: { gamePk: number; gameDate: string; teams: { home: { team: { name: string } }; away: { team: { name: string } } } }[] }[] }>();
+    const games: ScheduleGame[] = (data.dates?.[0]?.games ?? []).map((g) => ({
+      sport: 'MLB',
+      external_id: String(g.gamePk),
+      matchup: `${g.teams.away.team.name} @ ${g.teams.home.team.name}`,
+      start_time: g.gameDate,
+    }));
+    return { games, debug: { sport: 'MLB', source: 'mlb', status: res.status, note: `${games.length} games` } };
+  } catch (e) {
+    return { games: [], debug: { sport: 'MLB', source: 'mlb', status: null, note: String(e) } };
+  }
+}
+
+// The NHL's own current API — api-web.nhle.com — public, unauthenticated,
+// what nhl.com's own site runs on.
+async function fetchNhl(dateDash: string): Promise<LeagueResult> {
+  const url = `https://api-web.nhle.com/v1/schedule/${dateDash}`;
+  try {
+    const res = await fetch(url, { headers: { 'user-agent': BROWSER_UA, accept: 'application/json' }, cf: { cacheTtl: 300, cacheEverything: true } });
+    if (!res.ok) return { games: [], debug: { sport: 'NHL', source: 'nhl', status: res.status, note: (await res.text()).slice(0, 200) } };
+    const data = await res.json<{
+      gameWeek?: { date: string; games?: { id: number; startTimeUTC: string; homeTeam: { placeName: { default: string }; commonName: { default: string } }; awayTeam: { placeName: { default: string }; commonName: { default: string } } }[] }[];
+    }>();
+    const day = data.gameWeek?.find((w) => w.date === dateDash);
+    const games: ScheduleGame[] = (day?.games ?? []).map((g) => ({
+      sport: 'NHL',
+      external_id: String(g.id),
+      matchup: `${g.awayTeam.placeName.default} ${g.awayTeam.commonName.default} @ ${g.homeTeam.placeName.default} ${g.homeTeam.commonName.default}`,
+      start_time: g.startTimeUTC,
+    }));
+    return { games, debug: { sport: 'NHL', source: 'nhl', status: res.status, note: `${games.length} games` } };
+  } catch (e) {
+    return { games: [], debug: { sport: 'NHL', source: 'nhl', status: null, note: String(e) } };
   }
 }
 
@@ -6130,7 +6171,12 @@ app.get('/api/bets/games', async (c) => {
   const date = c.req.query('date');
   if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return c.json({ error: 'date (YYYY-MM-DD) is required' }, 400);
   const dateCompact = date.replaceAll('-', '');
-  const results = await Promise.all(ESPN_LEAGUES.map((l) => fetchLeagueGames(l.sport, l.path, dateCompact)));
+  const results = await Promise.all([
+    fetchEspn('NFL', 'football/nfl', dateCompact),
+    fetchEspn('NBA', 'basketball/nba', dateCompact),
+    fetchMlb(date),
+    fetchNhl(date),
+  ]);
   if (c.req.query('debug') === '1') return c.json({ games: results.flatMap((r) => r.games), leagues: results.map((r) => r.debug) });
   return c.json(results.flatMap((r) => r.games));
 });
