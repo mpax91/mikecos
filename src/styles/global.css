@@ -7347,6 +7347,20 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   margin-top: 16px;
 }
 
+.credit-score__add-group {
+  margin-bottom: 12px;
+}
+
+.credit-score__add-group-label {
+  display: block;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  margin-bottom: 6px;
+}
+
 .credit-score__add-row {
   display: flex;
   align-items: flex-end;

@@ -3,11 +3,13 @@ import type { CreditScoreEntry } from '../api/types';
 /** A row's average is never stored (see the migration's own comment) — it's
  * the mean of whichever of the four source columns are non-null, so old
  * rows with up to 4 sources and every new row with just CreditKarma/
- * CreditWise both average correctly without any special-casing here. */
+ * CreditWise both average correctly without any special-casing here. Rounded
+ * to a whole number — credit scores never display with a decimal point,
+ * even when averaging two whole-number sources produces a .5. */
 export function entryAverage(entry: CreditScoreEntry): number | null {
   const values = [entry.creditkarma, entry.creditsesame, entry.discover_fico, entry.creditwise].filter((v): v is number => v != null);
   if (values.length === 0) return null;
-  return values.reduce((a, b) => a + b, 0) / values.length;
+  return Math.round(values.reduce((a, b) => a + b, 0) / values.length);
 }
 
 export interface CreditScorePoint {
@@ -41,15 +43,21 @@ export function monthYear(iso: string): string {
   return new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
 }
 
+/** Credit scores are always whole numbers — never render a decimal point,
+ * even for an average of two whole-number sources (e.g. 833 + 850 → 841.5
+ * displays as 842). */
 export function fmtPts(n: number): string {
-  const rounded = Math.round(n * 10) / 10;
-  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+  return String(Math.round(n));
 }
 
 export function fmtSigned(n: number, unit = ''): string {
-  const rounded = Math.round(n * 10) / 10;
-  const s = Number.isInteger(rounded) ? String(Math.abs(rounded)) : Math.abs(rounded).toFixed(1);
-  return `${rounded > 0 ? '+' : rounded < 0 ? '−' : '±'}${s}${unit}`;
+  if (unit === '%') {
+    const rounded = Math.round(n * 10) / 10;
+    const s = Number.isInteger(rounded) ? String(Math.abs(rounded)) : Math.abs(rounded).toFixed(1);
+    return `${rounded > 0 ? '+' : rounded < 0 ? '−' : '±'}${s}${unit}`;
+  }
+  const rounded = Math.round(n);
+  return `${rounded > 0 ? '+' : rounded < 0 ? '−' : '±'}${Math.abs(rounded)}${unit}`;
 }
 
 /** Nearest point at least ~11 months before `date` — "this time last year"

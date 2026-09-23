@@ -362,10 +362,13 @@ export const api = {
    * client-side from this raw list. */
   listCreditScore: () => request<CreditScoreEntry[]>('/api/credit-score'),
 
-  /** The "add this month" quick-entry form. Upserts by calendar month
+  /** The "add this month" quick-entry form. CreditKarma reports the
+   * average of two bureau scores rather than one number, so this takes
+   * the TransUnion/Equifax values separately and the server derives the
+   * single rounded creditkarma value from them. Upserts by calendar month
    * server-side, so calling this again within the same month updates that
    * entry rather than creating a second data point. */
-  addCreditScoreEntry: (params: { creditkarma?: number | null; creditwise?: number | null; entry_date?: string }) =>
+  addCreditScoreEntry: (params: { creditkarma_transunion?: number | null; creditkarma_equifax?: number | null; creditwise?: number | null; entry_date?: string }) =>
     request<CreditScoreEntry>('/api/credit-score', { method: 'POST', body: JSON.stringify(params) }),
 
   updateCreditScoreEntry: (entryDate: string, patch: { creditkarma?: number | null; creditwise?: number | null }) =>

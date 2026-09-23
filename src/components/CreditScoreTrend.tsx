@@ -186,7 +186,8 @@ function EntryHistory({
 export function CreditScoreDashboard() {
   const [entries, setEntries] = useState<CreditScoreEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [karmaInput, setKarmaInput] = useState('');
+  const [karmaTuInput, setKarmaTuInput] = useState('');
+  const [karmaEqInput, setKarmaEqInput] = useState('');
   const [wiseInput, setWiseInput] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -207,7 +208,12 @@ export function CreditScoreDashboard() {
   }, [entries]);
 
   useEffect(() => {
-    setKarmaInput(thisMonthEntry?.creditkarma != null ? String(thisMonthEntry.creditkarma) : '');
+    // Prefills from the stored TransUnion/Equifax breakdown when this
+    // month's entry has one; a month imported before that breakdown
+    // existed only has the single blended creditkarma value, which can't
+    // be split back apart, so those two fields just start blank.
+    setKarmaTuInput(thisMonthEntry?.creditkarma_transunion != null ? String(thisMonthEntry.creditkarma_transunion) : '');
+    setKarmaEqInput(thisMonthEntry?.creditkarma_equifax != null ? String(thisMonthEntry.creditkarma_equifax) : '');
     setWiseInput(thisMonthEntry?.creditwise != null ? String(thisMonthEntry.creditwise) : '');
   }, [thisMonthEntry]);
 
@@ -215,15 +221,20 @@ export function CreditScoreDashboard() {
 
   async function submitEntry() {
     setSaveError(null);
-    const karma = karmaInput.trim() === '' ? null : Number(karmaInput);
+    const tu = karmaTuInput.trim() === '' ? null : Number(karmaTuInput);
+    const eq = karmaEqInput.trim() === '' ? null : Number(karmaEqInput);
     const wise = wiseInput.trim() === '' ? null : Number(wiseInput);
-    if ((karmaInput.trim() !== '' && !Number.isFinite(karma)) || (wiseInput.trim() !== '' && !Number.isFinite(wise))) {
+    if (
+      (karmaTuInput.trim() !== '' && !Number.isFinite(tu)) ||
+      (karmaEqInput.trim() !== '' && !Number.isFinite(eq)) ||
+      (wiseInput.trim() !== '' && !Number.isFinite(wise))
+    ) {
       setSaveError('Enter a number for each score.');
       return;
     }
     setSaving(true);
     try {
-      await api.addCreditScoreEntry({ creditkarma: karma, creditwise: wise });
+      await api.addCreditScoreEntry({ creditkarma_transunion: tu, creditkarma_equifax: eq, creditwise: wise });
       load();
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : String(e));
@@ -283,11 +294,20 @@ export function CreditScoreDashboard() {
 
       <div className="credit-score__add card">
         <div className="stats-page__section-title">{thisMonthEntry ? 'Update this month' : 'Add this month'}</div>
+        <div className="credit-score__add-group">
+          <span className="credit-score__add-group-label">CreditKarma</span>
+          <div className="credit-score__add-row">
+            <label className="credit-score__add-field">
+              <span>TransUnion</span>
+              <input type="number" inputMode="numeric" value={karmaTuInput} onChange={(e) => setKarmaTuInput(e.target.value)} placeholder="e.g. 830" />
+            </label>
+            <label className="credit-score__add-field">
+              <span>Equifax</span>
+              <input type="number" inputMode="numeric" value={karmaEqInput} onChange={(e) => setKarmaEqInput(e.target.value)} placeholder="e.g. 835" />
+            </label>
+          </div>
+        </div>
         <div className="credit-score__add-row">
-          <label className="credit-score__add-field">
-            <span>CreditKarma</span>
-            <input type="number" inputMode="numeric" value={karmaInput} onChange={(e) => setKarmaInput(e.target.value)} placeholder="e.g. 832" />
-          </label>
           <label className="credit-score__add-field">
             <span>CreditWise</span>
             <input type="number" inputMode="numeric" value={wiseInput} onChange={(e) => setWiseInput(e.target.value)} placeholder="e.g. 850" />

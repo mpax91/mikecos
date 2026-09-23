@@ -4515,9 +4515,30 @@ app.get('/api/health/weekly', async (c) => {
 // ---------------------------------------------------------------------
 // Credit Score Trend — Dashboard's Credit Score life area. See
 // worker/migrations/0042_credit_score.sql for the schema/import
-// rationale. CreditSesame/Discover-Fico are historical-only; the manual
-// add/edit flow below only ever writes creditkarma/creditwise.
+// rationale and worker/migrations/0043_credit_score_rounding.sql for why
+// creditkarma is derived from two bureau scores. CreditSesame/
+// Discover-Fico are historical-only; the manual add/edit flow below only
+// ever writes creditkarma (+ its two bureau inputs)/creditwise.
+//
+// Credit scores are always whole numbers — every value written here is
+// rounded before it hits the database, on top of the display-layer
+// rounding in src/utils/creditScore.ts, so no decimal points ever surface
+// anywhere in the app, past or future.
 // ---------------------------------------------------------------------
+
+function roundScore(n: number | null | undefined): number | null {
+  return n == null ? null : Math.round(n);
+}
+
+// CreditKarma reports the average of two bureau scores (TransUnion and
+// Equifax) rather than one number — this combines them into the single
+// rounded value the rest of the app (creditkarma column, entryAverage,
+// the trend chart) reads.
+function karmaFromBureaus(transunion: number | null, equifax: number | null): number | null {
+  const values = [transunion, equifax].filter((v): v is number => v != null);
+  if (values.length === 0) return null;
+  return Math.round(values.reduce((a, b) => a + b, 0) / values.length);
+}
 
 // GET /api/credit-score — full history, oldest first, for the trend chart
 // and the smart-summary calculations (average/delta/all-time high-low),
@@ -4529,55 +4550,70 @@ app.get('/api/credit-score', async (c) => {
 });
 
 // POST /api/credit-score — the "add this month" quick-entry form. Body:
-// { creditkarma?, creditwise?, entry_date? } (entry_date defaults to
-// today). One entry per calendar month is the real invariant (Mike's
-// reminder fires once a month, on the 22nd) — re-submitting within a month
-// that already has a row updates that row in place instead of creating a
-// second data point, the same upsert instinct health's weekly import uses
-// but keyed by month instead of exact day.
+// { creditkarma_transunion?, creditkarma_equifax?, creditwise?, entry_date? }
+// (entry_date defaults to today). creditkarma itself is derived server-side
+// as round(avg(transunion, equifax)) — see karmaFromBureaus above. One
+// entry per calendar month is the real invariant (Mike's reminder fires
+// once a month, on the 22nd) — re-submitting within a month that already
+// has a row updates that row in place instead of creating a second data
+// point, the same upsert instinct health's weekly import uses but keyed by
+// month instead of exact day.
 app.post('/api/credit-score', async (c) => {
-  const body = await c.req.json<{ creditkarma?: number | null; creditwise?: number | null; entry_date?: string }>();
+  const body = await c.req.json<{ creditkarma_transunion?: number | null; creditkarma_equifax?: number | null; creditwise?: number | null; entry_date?: string }>();
   const entryDate = body.entry_date && /^\d{4}-\d{2}-\d{2}$/.test(body.entry_date) ? body.entry_date : now().slice(0, 10);
   const month = entryDate.slice(0, 7);
   const ts = now();
 
   const existing = await c.env.DB.prepare('SELECT * FROM credit_score_entries WHERE substr(entry_date, 1, 7) = ?').bind(month).first<CreditScoreEntry>();
 
+  const transunion = 'creditkarma_transunion' in body ? roundScore(body.creditkarma_transunion) : (existing?.creditkarma_transunion ?? null);
+  const equifax = 'creditkarma_equifax' in body ? roundScore(body.creditkarma_equifax) : (existing?.creditkarma_equifax ?? null);
+  const creditkarma = karmaFromBureaus(transunion, equifax);
+  const creditwise = 'creditwise' in body ? roundScore(body.creditwise) : (existing?.creditwise ?? null);
+
   if (existing) {
-    const creditkarma = 'creditkarma' in body ? (body.creditkarma ?? null) : existing.creditkarma;
-    const creditwise = 'creditwise' in body ? (body.creditwise ?? null) : existing.creditwise;
-    await c.env.DB.prepare('UPDATE credit_score_entries SET creditkarma = ?, creditwise = ?, updated_at = ? WHERE entry_date = ?')
-      .bind(creditkarma, creditwise, ts, existing.entry_date)
+    await c.env.DB.prepare(
+      'UPDATE credit_score_entries SET creditkarma = ?, creditkarma_transunion = ?, creditkarma_equifax = ?, creditwise = ?, updated_at = ? WHERE entry_date = ?'
+    )
+      .bind(creditkarma, transunion, equifax, creditwise, ts, existing.entry_date)
       .run();
     const updated = await c.env.DB.prepare('SELECT * FROM credit_score_entries WHERE entry_date = ?').bind(existing.entry_date).first<CreditScoreEntry>();
     return c.json(updated, 200);
   }
 
   await c.env.DB.prepare(
-    `INSERT INTO credit_score_entries (entry_date, creditkarma, creditsesame, discover_fico, creditwise, created_at, updated_at)
-     VALUES (?, ?, NULL, NULL, ?, ?, ?)`
+    `INSERT INTO credit_score_entries (entry_date, creditkarma, creditkarma_transunion, creditkarma_equifax, creditsesame, discover_fico, creditwise, created_at, updated_at)
+     VALUES (?, ?, ?, ?, NULL, NULL, ?, ?, ?)`
   )
-    .bind(entryDate, body.creditkarma ?? null, body.creditwise ?? null, ts, ts)
+    .bind(entryDate, creditkarma, transunion, equifax, creditwise, ts, ts)
     .run();
   const created = await c.env.DB.prepare('SELECT * FROM credit_score_entries WHERE entry_date = ?').bind(entryDate).first<CreditScoreEntry>();
   return c.json(created, 201);
 });
 
-// PATCH /api/credit-score/:date — edit an existing entry's CreditKarma/
-// CreditWise values (the recent-entries list's inline edit). Never touches
-// creditsesame/discover_fico — those are historical-only and read-only
-// from here on.
+// PATCH /api/credit-score/:date — edit an existing entry's CreditKarma
+// (as a single whole-number correction, no bureau breakdown needed for a
+// quick fix) or CreditWise value from the recent-entries list's inline
+// edit. Never touches creditsesame/discover_fico — those are
+// historical-only and read-only from here on. Editing creditkarma directly
+// this way clears any stored bureau breakdown for that row, since the two
+// would otherwise no longer agree with the corrected value.
 app.patch('/api/credit-score/:date', async (c) => {
   const date = c.req.param('date');
   const body = await c.req.json<{ creditkarma?: number | null; creditwise?: number | null }>();
   const existing = await c.env.DB.prepare('SELECT * FROM credit_score_entries WHERE entry_date = ?').bind(date).first<CreditScoreEntry>();
   if (!existing) return c.json({ error: 'not found' }, 404);
 
-  const creditkarma = 'creditkarma' in body ? (body.creditkarma ?? null) : existing.creditkarma;
-  const creditwise = 'creditwise' in body ? (body.creditwise ?? null) : existing.creditwise;
+  const karmaEdited = 'creditkarma' in body;
+  const creditkarma = karmaEdited ? roundScore(body.creditkarma) : existing.creditkarma;
+  const transunion = karmaEdited ? null : existing.creditkarma_transunion;
+  const equifax = karmaEdited ? null : existing.creditkarma_equifax;
+  const creditwise = 'creditwise' in body ? roundScore(body.creditwise) : existing.creditwise;
   const ts = now();
-  await c.env.DB.prepare('UPDATE credit_score_entries SET creditkarma = ?, creditwise = ?, updated_at = ? WHERE entry_date = ?')
-    .bind(creditkarma, creditwise, ts, date)
+  await c.env.DB.prepare(
+    'UPDATE credit_score_entries SET creditkarma = ?, creditkarma_transunion = ?, creditkarma_equifax = ?, creditwise = ?, updated_at = ? WHERE entry_date = ?'
+  )
+    .bind(creditkarma, transunion, equifax, creditwise, ts, date)
     .run();
   const updated = await c.env.DB.prepare('SELECT * FROM credit_score_entries WHERE entry_date = ?').bind(date).first<CreditScoreEntry>();
   return c.json(updated);

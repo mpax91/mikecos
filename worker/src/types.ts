@@ -284,7 +284,9 @@ export interface HealthWeeklyReport {
 // are non-null rather than stored).
 export interface CreditScoreEntry {
   entry_date: string; // 'YYYY-MM-DD'
-  creditkarma: number | null;
+  creditkarma: number | null; // round(avg(creditkarma_transunion, creditkarma_equifax)) going forward
+  creditkarma_transunion: number | null;
+  creditkarma_equifax: number | null;
   creditsesame: number | null;
   discover_fico: number | null;
   creditwise: number | null;
