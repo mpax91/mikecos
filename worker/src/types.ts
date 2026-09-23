@@ -374,6 +374,62 @@ export interface BetLegRow {
   created_at: string;
 }
 
+// ---- Bets banking/promos/workspace (0040_bet_workspace.sql) ----
+
+export type BetTransactionType = 'deposit' | 'withdrawal' | 'bonus' | 'adjustment';
+
+export interface BetTransaction {
+  id: string;
+  date: string;
+  sportsbook: string;
+  type: BetTransactionType;
+  amount: number;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type BetPromoStatus = 'active' | 'used' | 'expired';
+
+export interface BetPromo {
+  id: string;
+  sportsbook: string;
+  description: string;
+  promo_type: string;
+  expires_at: string | null;
+  legs: string | null;
+  odds: string | null;
+  amount: string | null;
+  max_bonus: number | null;
+  status: BetPromoStatus;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BetGameNoteRow {
+  id: string;
+  date: string;
+  sport: string;
+  external_id: string | null;
+  matchup: string;
+  start_time: string | null;
+  note: string | null;
+  pinned: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BetGameLineRow {
+  id: string;
+  game_note_id: string;
+  sportsbook: string;
+  line: string;
+  position: number;
+  created_at: string;
+  updated_at: string;
+}
+
 // ---- App-wide authentication (0033_auth.sql) ----
 
 export type AuthCredentialType = 'webauthn' | 'pin';

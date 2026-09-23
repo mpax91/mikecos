@@ -7,6 +7,10 @@ import type {
   CanvasItemType,
   Bet,
   BetLegRow,
+  BetGameLineRow,
+  BetGameNoteRow,
+  BetPromo,
+  BetTransaction,
   Contact,
   ContactCircle,
   ContactConnection,
@@ -5922,6 +5926,291 @@ app.patch('/api/bets/:id', async (c) => {
 app.delete('/api/bets/:id', async (c) => {
   const id = c.req.param('id');
   await c.env.DB.prepare('DELETE FROM bets WHERE id = ?').bind(id).run();
+  return c.json({ ok: true });
+});
+
+// ---- Bets banking (0040_bet_workspace.sql) ----
+// A book's balance is never stored — see the migration header. Deriving it
+// is the frontend's job (utils/bets.ts's bankBalances), same as bet profit.
+
+const BET_TRANSACTION_TYPES = ['deposit', 'withdrawal', 'bonus', 'adjustment'];
+
+app.get('/api/bet-transactions', async (c) => {
+  const { results } = await c.env.DB.prepare('SELECT * FROM bet_transactions ORDER BY date DESC, created_at DESC').all<BetTransaction>();
+  return c.json(results ?? []);
+});
+
+app.post('/api/bet-transactions', async (c) => {
+  const body = await c.req.json<Partial<BetTransaction>>();
+  if (!body.date || !/^\d{4}-\d{2}-\d{2}$/.test(body.date)) return c.json({ error: 'date (YYYY-MM-DD) is required' }, 400);
+  if (!body.sportsbook?.trim()) return c.json({ error: 'sportsbook is required' }, 400);
+  if (!body.type || !BET_TRANSACTION_TYPES.includes(body.type)) return c.json({ error: `type must be one of ${BET_TRANSACTION_TYPES.join(', ')}` }, 400);
+  if (typeof body.amount !== 'number' || !Number.isFinite(body.amount) || body.amount === 0) return c.json({ error: 'amount must be a non-zero number' }, 400);
+
+  const id = uid();
+  const ts = now();
+  await c.env.DB.prepare(
+    `INSERT INTO bet_transactions (id, date, sportsbook, type, amount, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  )
+    .bind(id, body.date, body.sportsbook.trim(), body.type, body.amount, body.notes?.trim() || null, ts, ts)
+    .run();
+  const row = await c.env.DB.prepare('SELECT * FROM bet_transactions WHERE id = ?').bind(id).first<BetTransaction>();
+  return c.json(row, 201);
+});
+
+app.patch('/api/bet-transactions/:id', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json<Partial<BetTransaction>>();
+  const existing = await c.env.DB.prepare('SELECT id FROM bet_transactions WHERE id = ?').bind(id).first();
+  if (!existing) return c.json({ error: 'not found' }, 404);
+  if (body.type !== undefined && !BET_TRANSACTION_TYPES.includes(body.type)) return c.json({ error: `type must be one of ${BET_TRANSACTION_TYPES.join(', ')}` }, 400);
+  if (body.amount !== undefined && (typeof body.amount !== 'number' || !Number.isFinite(body.amount) || body.amount === 0)) return c.json({ error: 'amount must be a non-zero number' }, 400);
+
+  const fields: [string, unknown][] = [];
+  const simple: (keyof BetTransaction)[] = ['date', 'sportsbook', 'type', 'amount'];
+  for (const key of simple) {
+    if (key in body) fields.push([key, (body as Record<string, unknown>)[key]]);
+  }
+  if ('notes' in body) fields.push(['notes', body.notes?.trim() || null]);
+  if (fields.length > 0) {
+    fields.push(['updated_at', now()]);
+    const setClause = fields.map(([k]) => `${k} = ?`).join(', ');
+    await c.env.DB.prepare(`UPDATE bet_transactions SET ${setClause} WHERE id = ?`)
+      .bind(...fields.map(([, v]) => v), id)
+      .run();
+  }
+  const row = await c.env.DB.prepare('SELECT * FROM bet_transactions WHERE id = ?').bind(id).first<BetTransaction>();
+  return c.json(row);
+});
+
+app.delete('/api/bet-transactions/:id', async (c) => {
+  await c.env.DB.prepare('DELETE FROM bet_transactions WHERE id = ?').bind(c.req.param('id')).run();
+  return c.json({ ok: true });
+});
+
+// ---- Bets promos (0040_bet_workspace.sql) ----
+
+const BET_PROMO_STATUSES = ['active', 'used', 'expired'];
+
+app.get('/api/bet-promos', async (c) => {
+  const { results } = await c.env.DB.prepare(
+    `SELECT * FROM bet_promos ORDER BY (status = 'active') DESC, (expires_at IS NULL), expires_at ASC, created_at DESC`
+  ).all<BetPromo>();
+  return c.json(results ?? []);
+});
+
+app.post('/api/bet-promos', async (c) => {
+  const body = await c.req.json<Partial<BetPromo>>();
+  if (!body.sportsbook?.trim()) return c.json({ error: 'sportsbook is required' }, 400);
+  if (!body.description?.trim()) return c.json({ error: 'description is required' }, 400);
+  if (body.status !== undefined && !BET_PROMO_STATUSES.includes(body.status)) return c.json({ error: `status must be one of ${BET_PROMO_STATUSES.join(', ')}` }, 400);
+
+  const id = uid();
+  const ts = now();
+  await c.env.DB.prepare(
+    `INSERT INTO bet_promos (id, sportsbook, description, promo_type, expires_at, legs, odds, amount, max_bonus, status, notes, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  )
+    .bind(
+      id,
+      body.sportsbook.trim(),
+      body.description.trim(),
+      body.promo_type?.trim() || 'Boost',
+      body.expires_at || null,
+      body.legs?.trim() || null,
+      body.odds?.trim() || null,
+      body.amount?.trim() || null,
+      body.max_bonus ?? null,
+      body.status ?? 'active',
+      body.notes?.trim() || null,
+      ts,
+      ts
+    )
+    .run();
+  const row = await c.env.DB.prepare('SELECT * FROM bet_promos WHERE id = ?').bind(id).first<BetPromo>();
+  return c.json(row, 201);
+});
+
+app.patch('/api/bet-promos/:id', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json<Partial<BetPromo>>();
+  const existing = await c.env.DB.prepare('SELECT id FROM bet_promos WHERE id = ?').bind(id).first();
+  if (!existing) return c.json({ error: 'not found' }, 404);
+  if (body.status !== undefined && !BET_PROMO_STATUSES.includes(body.status)) return c.json({ error: `status must be one of ${BET_PROMO_STATUSES.join(', ')}` }, 400);
+
+  const fields: [string, unknown][] = [];
+  if ('sportsbook' in body) fields.push(['sportsbook', body.sportsbook?.trim()]);
+  if ('description' in body) fields.push(['description', body.description?.trim()]);
+  if ('promo_type' in body) fields.push(['promo_type', body.promo_type?.trim() || 'Boost']);
+  if ('expires_at' in body) fields.push(['expires_at', body.expires_at || null]);
+  if ('legs' in body) fields.push(['legs', body.legs?.trim() || null]);
+  if ('odds' in body) fields.push(['odds', body.odds?.trim() || null]);
+  if ('amount' in body) fields.push(['amount', body.amount?.trim() || null]);
+  if ('max_bonus' in body) fields.push(['max_bonus', body.max_bonus ?? null]);
+  if ('status' in body) fields.push(['status', body.status]);
+  if ('notes' in body) fields.push(['notes', body.notes?.trim() || null]);
+  if (fields.length > 0) {
+    fields.push(['updated_at', now()]);
+    const setClause = fields.map(([k]) => `${k} = ?`).join(', ');
+    await c.env.DB.prepare(`UPDATE bet_promos SET ${setClause} WHERE id = ?`)
+      .bind(...fields.map(([, v]) => v), id)
+      .run();
+  }
+  const row = await c.env.DB.prepare('SELECT * FROM bet_promos WHERE id = ?').bind(id).first<BetPromo>();
+  return c.json(row);
+});
+
+app.delete('/api/bet-promos/:id', async (c) => {
+  await c.env.DB.prepare('DELETE FROM bet_promos WHERE id = ?').bind(c.req.param('id')).run();
+  return c.json({ ok: true });
+});
+
+// ---- Bets workspace: auto-pulled schedule + daily game scratchpad (0040_bet_workspace.sql) ----
+
+// ESPN's public scoreboard endpoint — no API key, widely relied on for
+// exactly this (schedule + team names + start time), though it's an
+// undocumented endpoint rather than a stable published API. Odds aren't
+// requested from it: Mike said he's fine typing lines in by hand, and
+// ESPN's own odds coverage there is inconsistent/unreliable anyway. Scoped
+// to the four leagues he asked for — a sport outside these four is still
+// addable to the workspace by hand.
+const ESPN_LEAGUES: { sport: string; path: string }[] = [
+  { sport: 'NFL', path: 'football/nfl' },
+  { sport: 'NBA', path: 'basketball/nba' },
+  { sport: 'MLB', path: 'baseball/mlb' },
+  { sport: 'NHL', path: 'hockey/nhl' },
+];
+
+interface EspnEvent {
+  id: string;
+  date: string;
+  competitions?: { competitors?: { homeAway: 'home' | 'away'; team?: { displayName?: string; shortDisplayName?: string } }[] }[];
+}
+
+async function fetchLeagueGames(sport: string, path: string, dateCompact: string): Promise<{ sport: string; external_id: string; matchup: string; start_time: string }[]> {
+  const url = `https://site.api.espn.com/apis/site/v2/sports/${path}/scoreboard?dates=${dateCompact}`;
+  try {
+    const res = await fetch(url, { headers: { 'user-agent': 'MikeOS-Bets/1.0 (+https://mikeos)' }, cf: { cacheTtl: 300, cacheEverything: true } });
+    if (!res.ok) return [];
+    const data = await res.json<{ events?: EspnEvent[] }>();
+    const games: { sport: string; external_id: string; matchup: string; start_time: string }[] = [];
+    for (const event of data.events ?? []) {
+      const competitors = event.competitions?.[0]?.competitors ?? [];
+      const home = competitors.find((x) => x.homeAway === 'home');
+      const away = competitors.find((x) => x.homeAway === 'away');
+      if (!home?.team || !away?.team) continue;
+      games.push({
+        sport,
+        external_id: event.id,
+        matchup: `${away.team.displayName ?? away.team.shortDisplayName} @ ${home.team.displayName ?? home.team.shortDisplayName}`,
+        start_time: event.date,
+      });
+    }
+    return games;
+  } catch {
+    return []; // one league's schedule feed hiccuping shouldn't blank out the whole board
+  }
+}
+
+app.get('/api/bets/games', async (c) => {
+  const date = c.req.query('date');
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return c.json({ error: 'date (YYYY-MM-DD) is required' }, 400);
+  const dateCompact = date.replaceAll('-', '');
+  const results = await Promise.all(ESPN_LEAGUES.map((l) => fetchLeagueGames(l.sport, l.path, dateCompact)));
+  return c.json(results.flat());
+});
+
+async function attachGameLines(env: Env, notes: BetGameNoteRow[]): Promise<(BetGameNoteRow & { lines: BetGameLineRow[] })[]> {
+  if (notes.length === 0) return [];
+  const placeholders = notes.map(() => '?').join(',');
+  const { results } = await env.DB.prepare(`SELECT * FROM bet_game_lines WHERE game_note_id IN (${placeholders}) ORDER BY game_note_id, position ASC`)
+    .bind(...notes.map((n) => n.id))
+    .all<BetGameLineRow>();
+  const byNote = new Map<string, BetGameLineRow[]>();
+  for (const line of results ?? []) {
+    const list = byNote.get(line.game_note_id) ?? [];
+    list.push(line);
+    byNote.set(line.game_note_id, list);
+  }
+  return notes.map((n) => ({ ...n, lines: byNote.get(n.id) ?? [] }));
+}
+
+type GameLineInput = { sportsbook?: string; line?: string };
+
+async function replaceGameLines(env: Env, noteId: string, lines: GameLineInput[]): Promise<void> {
+  await env.DB.prepare('DELETE FROM bet_game_lines WHERE game_note_id = ?').bind(noteId).run();
+  const clean = lines.filter((l) => l.sportsbook?.trim() && l.line?.trim());
+  if (clean.length === 0) return;
+  const ts = now();
+  await env.DB.batch(
+    clean.map((l, i) =>
+      env.DB.prepare(`INSERT INTO bet_game_lines (id, game_note_id, sportsbook, line, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`).bind(
+        uid(),
+        noteId,
+        l.sportsbook!.trim(),
+        l.line!.trim(),
+        i,
+        ts,
+        ts
+      )
+    )
+  );
+}
+
+app.get('/api/bet-game-notes', async (c) => {
+  const date = c.req.query('date');
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return c.json({ error: 'date (YYYY-MM-DD) is required' }, 400);
+  const { results } = await c.env.DB.prepare('SELECT * FROM bet_game_notes WHERE date = ? ORDER BY pinned DESC, start_time ASC').bind(date).all<BetGameNoteRow>();
+  return c.json(await attachGameLines(c.env, results ?? []));
+});
+
+app.post('/api/bet-game-notes', async (c) => {
+  const body = await c.req.json<Partial<BetGameNoteRow> & { lines?: GameLineInput[] }>();
+  if (!body.date || !/^\d{4}-\d{2}-\d{2}$/.test(body.date)) return c.json({ error: 'date (YYYY-MM-DD) is required' }, 400);
+  if (!body.sport?.trim()) return c.json({ error: 'sport is required' }, 400);
+  if (!body.matchup?.trim()) return c.json({ error: 'matchup is required' }, 400);
+
+  const id = uid();
+  const ts = now();
+  await c.env.DB.prepare(
+    `INSERT INTO bet_game_notes (id, date, sport, external_id, matchup, start_time, note, pinned, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  )
+    .bind(id, body.date, body.sport.trim(), body.external_id?.trim() || null, body.matchup.trim(), body.start_time || null, body.note?.trim() || null, body.pinned ? 1 : 0, ts, ts)
+    .run();
+  if (body.lines) await replaceGameLines(c.env, id, body.lines);
+  const row = await c.env.DB.prepare('SELECT * FROM bet_game_notes WHERE id = ?').bind(id).first<BetGameNoteRow>();
+  const [withLines] = await attachGameLines(c.env, [row as BetGameNoteRow]);
+  return c.json(withLines, 201);
+});
+
+app.patch('/api/bet-game-notes/:id', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json<Partial<BetGameNoteRow> & { lines?: GameLineInput[] }>();
+  const existing = await c.env.DB.prepare('SELECT id FROM bet_game_notes WHERE id = ?').bind(id).first();
+  if (!existing) return c.json({ error: 'not found' }, 404);
+
+  if (body.lines !== undefined) await replaceGameLines(c.env, id, body.lines);
+
+  const fields: [string, unknown][] = [];
+  if ('note' in body) fields.push(['note', body.note?.trim() || null]);
+  if ('pinned' in body) fields.push(['pinned', body.pinned ? 1 : 0]);
+  if ('matchup' in body) fields.push(['matchup', body.matchup?.trim()]);
+  if ('start_time' in body) fields.push(['start_time', body.start_time || null]);
+  if (fields.length > 0) {
+    fields.push(['updated_at', now()]);
+    const setClause = fields.map(([k]) => `${k} = ?`).join(', ');
+    await c.env.DB.prepare(`UPDATE bet_game_notes SET ${setClause} WHERE id = ?`)
+      .bind(...fields.map(([, v]) => v), id)
+      .run();
+  }
+  const row = await c.env.DB.prepare('SELECT * FROM bet_game_notes WHERE id = ?').bind(id).first<BetGameNoteRow>();
+  const [withLines] = await attachGameLines(c.env, [row as BetGameNoteRow]);
+  return c.json(withLines);
+});
+
+app.delete('/api/bet-game-notes/:id', async (c) => {
+  await c.env.DB.prepare('DELETE FROM bet_game_notes WHERE id = ?').bind(c.req.param('id')).run();
   return c.json({ ok: true });
 });
 

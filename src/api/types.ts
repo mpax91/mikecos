@@ -1098,6 +1098,80 @@ export interface Bet {
   updated_at: string;
 }
 
+// ---- Bets banking/promos/workspace (0040_bet_workspace.sql) ----
+
+export type BetTransactionType = 'deposit' | 'withdrawal' | 'bonus' | 'adjustment';
+
+export const BET_TRANSACTION_TYPES: { value: BetTransactionType; label: string }[] = [
+  { value: 'deposit', label: 'Deposit' },
+  { value: 'withdrawal', label: 'Withdrawal' },
+  { value: 'bonus', label: 'Bonus' },
+  { value: 'adjustment', label: 'Adjustment' },
+];
+
+export interface BetTransaction {
+  id: string;
+  date: string;
+  sportsbook: string;
+  type: BetTransactionType;
+  amount: number;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type BetPromoStatus = 'active' | 'used' | 'expired';
+
+export interface BetPromo {
+  id: string;
+  sportsbook: string;
+  description: string;
+  promo_type: string;
+  expires_at: string | null;
+  legs: string | null;
+  odds: string | null;
+  amount: string | null;
+  max_bonus: number | null;
+  status: BetPromoStatus;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BetGameLine {
+  id: string;
+  game_note_id: string;
+  sportsbook: string;
+  line: string;
+  position: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BetGameNote {
+  id: string;
+  date: string;
+  sport: string;
+  external_id: string | null;
+  matchup: string;
+  start_time: string | null;
+  note: string | null;
+  pinned: number;
+  lines: BetGameLine[];
+  created_at: string;
+  updated_at: string;
+}
+
+/** A game pulled live from GET /api/bets/games (ESPN's public schedule
+ * feed, no key) — not yet necessarily backed by a BetGameNote row; the
+ * Workspace tab merges these with saved notes by (sport, external_id). */
+export interface BetScheduleGame {
+  sport: string;
+  external_id: string;
+  matchup: string;
+  start_time: string;
+}
+
 // ---- App-wide authentication (0033_auth.sql) ----
 
 export type AuthCredentialType = 'webauthn' | 'pin';

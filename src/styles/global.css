@@ -7679,6 +7679,152 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   color: #c0392b;
 }
 
+.bets-form__field--checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--color-ink);
+}
+
+.bets-form__field--checkbox input {
+  width: auto;
+}
+
+/* ---- Bets page: Banking / Promos / Workspace tabs ---- */
+
+.bets-workspace__balances {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.bets-workspace__balance-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(120, 120, 120, 0.08);
+  font-size: 11.5px;
+}
+
+.bets-workspace__balance-chip span:first-child {
+  color: var(--color-muted);
+}
+
+.bets-workspace__balance-chip span:last-child {
+  font-size: 13.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.bets-workspace__balance-chip .is-up {
+  color: #2e8b57;
+}
+
+.bets-workspace__balance-chip .is-down {
+  color: #c0392b;
+}
+
+.bets-workspace__promo-chips {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bets-workspace__promo-chip {
+  font-size: 12.5px;
+  color: var(--color-ink);
+}
+
+.bets-workspace__promo-chip strong {
+  font-weight: 600;
+}
+
+.bets-workspace__line-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.bets-workspace__line-row input:first-child {
+  flex: 0 1 140px;
+}
+
+.bets-workspace__line-row input:last-of-type {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.bets-workspace__board {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.bets-workspace__game {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  text-align: left;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.bets-workspace__game:hover {
+  border-color: var(--color-accent);
+}
+
+.bets-workspace__game.is-pinned {
+  border-color: var(--color-accent);
+  background: rgba(120, 120, 120, 0.05);
+}
+
+.bets-workspace__game-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.bets-workspace__game-time {
+  margin-left: auto;
+}
+
+.bets-workspace__game-pin {
+  color: var(--color-accent);
+}
+
+.bets-workspace__game-matchup {
+  font-size: 14.5px;
+  font-weight: 600;
+}
+
+.bets-workspace__game-lines {
+  font-size: 11.5px;
+  color: var(--color-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bets-workspace__game-note {
+  font-size: 12px;
+  color: var(--color-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
 /* ---- App lock screen + Settings > Security ---- */
 
 .btn--link {

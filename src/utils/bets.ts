@@ -1,4 +1,4 @@
-import type { Bet, BetResult } from '../api/types';
+import type { Bet, BetResult, BetTransaction } from '../api/types';
 
 // Fixed lists (like Contacts' CIRCLES) rather than free text, so the
 // "performance by sport"/"performance by bet type" breakdowns stay clean
@@ -467,4 +467,74 @@ export function buildEquityCurve(bets: Bet[]): EquityPoint[] {
       cumulative += net;
       return { date, net, cumulative };
     });
+}
+
+// ---- Banking (0040_bet_workspace.sql) ----
+//
+// A sportsbook's current balance is never stored — same "D1 is the source
+// of truth" rule the rest of this file follows for bet profit. It's
+// derived here, live, as that book's transactions (deposits add,
+// withdrawals subtract, bonuses add, adjustments add-signed) plus that
+// book's net bet profit (money already sitting in the book from wins,
+// still owed from losses).
+
+export interface SportsbookBalance {
+  sportsbook: string;
+  deposited: number;
+  withdrawn: number;
+  bonuses: number;
+  adjustments: number;
+  betNet: number;
+  balance: number;
+}
+
+function emptyBalance(sportsbook: string): SportsbookBalance {
+  return { sportsbook, deposited: 0, withdrawn: 0, bonuses: 0, adjustments: 0, betNet: 0, balance: 0 };
+}
+
+/** One row per sportsbook that has at least one transaction or bet,
+ * sorted by current balance descending. */
+export function sportsbookBalances(bets: Bet[], transactions: BetTransaction[]): SportsbookBalance[] {
+  const byBook = new Map<string, SportsbookBalance>();
+  const get = (name: string) => {
+    let row = byBook.get(name);
+    if (!row) {
+      row = emptyBalance(name);
+      byBook.set(name, row);
+    }
+    return row;
+  };
+  for (const t of transactions) {
+    const row = get(t.sportsbook);
+    if (t.type === 'deposit') row.deposited += t.amount;
+    else if (t.type === 'withdrawal') row.withdrawn += t.amount;
+    else if (t.type === 'bonus') row.bonuses += t.amount;
+    else row.adjustments += t.amount;
+  }
+  for (const bet of bets) {
+    get(bet.sportsbook).betNet += computeProfit(bet);
+  }
+  for (const row of byBook.values()) {
+    row.balance = row.deposited - row.withdrawn + row.bonuses + row.adjustments + row.betNet;
+  }
+  return [...byBook.values()].sort((a, b) => b.balance - a.balance);
+}
+
+export interface BankingTotals {
+  deposited: number;
+  withdrawn: number;
+  netDeposited: number; // deposited - withdrawn — "money put in that hasn't come back out"
+  totalBalance: number; // sum of every book's current balance
+}
+
+export function bankingTotals(balances: SportsbookBalance[]): BankingTotals {
+  return balances.reduce(
+    (acc, b) => ({
+      deposited: acc.deposited + b.deposited,
+      withdrawn: acc.withdrawn + b.withdrawn,
+      netDeposited: acc.netDeposited + (b.deposited - b.withdrawn),
+      totalBalance: acc.totalBalance + b.balance,
+    }),
+    { deposited: 0, withdrawn: 0, netDeposited: 0, totalBalance: 0 }
+  );
 }

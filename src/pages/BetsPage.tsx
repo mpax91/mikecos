@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
-import type { Bet, BetLeg, BetResult } from '../api/types';
+import type { Bet, BetLeg, BetPromo, BetResult, BetTransaction } from '../api/types';
 import { useReportTabMeta } from '../contexts/TabsContext';
 import type { Granularity } from '../utils/healthPeriods';
 import {
@@ -24,6 +24,7 @@ import {
   pickAccuracyByBetType,
   pickAccuracyBySport,
   resultLabel,
+  sportsbookBalances,
   winRateByParlaySize,
   type AggregatedBetPeriod,
   type BetGroupStat,
@@ -32,13 +33,19 @@ import {
 import { Modal } from '../components/Modal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { KebabMenu } from '../components/KebabMenu';
+import { BetsBankingTab } from '../components/BetsBankingTab';
+import { BetsPromosTab } from '../components/BetsPromosTab';
+import { BetsWorkspaceTab } from '../components/BetsWorkspaceTab';
 
-type BetsTab = 'log' | 'performance' | 'trends';
+type BetsTab = 'workspace' | 'log' | 'performance' | 'trends' | 'banking' | 'promos';
 
 const TABS: { id: BetsTab; label: string }[] = [
+  { id: 'workspace', label: 'Workspace' },
   { id: 'log', label: 'Log' },
   { id: 'performance', label: 'Performance' },
   { id: 'trends', label: 'Trends' },
+  { id: 'banking', label: 'Banking' },
+  { id: 'promos', label: 'Promos' },
 ];
 
 const GRANULARITIES: { id: Granularity; label: string }[] = [
@@ -650,13 +657,22 @@ function TrendsTab({ bets }: { bets: Bet[] }) {
 export function BetsPage() {
   useReportTabMeta('Bets', 'bets');
   const [bets, setBets] = useState<Bet[] | null>(null);
+  const [transactions, setTransactions] = useState<BetTransaction[] | null>(null);
+  const [promos, setPromos] = useState<BetPromo[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<BetsTab>('log');
+  const [tab, setTab] = useState<BetsTab>('workspace');
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<Bet | null>(null);
   const [deleting, setDeleting] = useState<Bet | null>(null);
 
-  const load = () => api.listBets().then(setBets).catch((e) => setError(String(e)));
+  const load = () =>
+    Promise.all([api.listBets(), api.listBetTransactions(), api.listBetPromos()])
+      .then(([b, t, p]) => {
+        setBets(b);
+        setTransactions(t);
+        setPromos(p);
+      })
+      .catch((e) => setError(String(e)));
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -681,8 +697,40 @@ export function BetsPage() {
     setDeleting(null);
   }
 
+  async function handleCreateTransaction(params: Record<string, unknown>) {
+    const created = await api.createBetTransaction(params as Parameters<typeof api.createBetTransaction>[0]);
+    setTransactions((prev) => (prev ? [created, ...prev] : [created]));
+  }
+
+  async function handleUpdateTransaction(id: string, params: Record<string, unknown>) {
+    const updated = await api.updateBetTransaction(id, params);
+    setTransactions((prev) => (prev ? prev.map((t) => (t.id === id ? updated : t)) : prev));
+  }
+
+  async function handleDeleteTransaction(t: BetTransaction) {
+    setTransactions((prev) => (prev ? prev.filter((x) => x.id !== t.id) : prev));
+    await api.deleteBetTransaction(t.id);
+  }
+
+  async function handleCreatePromo(params: Record<string, unknown>) {
+    const created = await api.createBetPromo(params as Parameters<typeof api.createBetPromo>[0]);
+    setPromos((prev) => (prev ? [created, ...prev] : [created]));
+  }
+
+  async function handleUpdatePromo(id: string, params: Record<string, unknown>) {
+    const updated = await api.updateBetPromo(id, params);
+    setPromos((prev) => (prev ? prev.map((p) => (p.id === id ? updated : p)) : prev));
+  }
+
+  async function handleDeletePromo(p: BetPromo) {
+    setPromos((prev) => (prev ? prev.filter((x) => x.id !== p.id) : prev));
+    await api.deleteBetPromo(p.id);
+  }
+
   if (error) return <div className="empty-state">Couldn't load bets: {error}</div>;
-  if (!bets) return <div className="empty-state">Loading…</div>;
+  if (!bets || !transactions || !promos) return <div className="empty-state">Loading…</div>;
+
+  const balances = sportsbookBalances(bets, transactions);
 
   return (
     <div>
@@ -695,23 +743,28 @@ export function BetsPage() {
         </button>
       </div>
 
-      {bets.length === 0 ? (
-        <div className="empty-state">No bets logged yet — log one the day after you make it: sport, sportsbook, odds, wager, and the result.</div>
-      ) : (
-        <>
-          <div className="dashboard-page__granularity-tabs" style={{ marginBottom: 16 }}>
-            {TABS.map((t) => (
-              <button key={t.id} type="button" className={`dashboard-page__tab${tab === t.id ? ' is-active' : ''}`} onClick={() => setTab(t.id)}>
-                {t.label}
-              </button>
-            ))}
-          </div>
+      <div className="dashboard-page__granularity-tabs" style={{ marginBottom: 16 }}>
+        {TABS.map((t) => (
+          <button key={t.id} type="button" className={`dashboard-page__tab${tab === t.id ? ' is-active' : ''}`} onClick={() => setTab(t.id)}>
+            {t.label}
+          </button>
+        ))}
+      </div>
 
-          {tab === 'log' && <LogTab bets={bets} onEdit={setEditing} onDelete={setDeleting} />}
-          {tab === 'performance' && <PerformanceTab bets={bets} />}
-          {tab === 'trends' && <TrendsTab bets={bets} />}
-        </>
+      {tab === 'workspace' && <BetsWorkspaceTab balances={balances} promos={promos} />}
+      {tab === 'log' &&
+        (bets.length === 0 ? (
+          <div className="empty-state">No bets logged yet — log one the day after you make it: sport, sportsbook, odds, wager, and the result.</div>
+        ) : (
+          <LogTab bets={bets} onEdit={setEditing} onDelete={setDeleting} />
+        ))}
+      {tab === 'performance' &&
+        (bets.length === 0 ? <div className="empty-state">No bets logged yet.</div> : <PerformanceTab bets={bets} />)}
+      {tab === 'trends' && (bets.length === 0 ? <div className="empty-state">No bets logged yet.</div> : <TrendsTab bets={bets} />)}
+      {tab === 'banking' && (
+        <BetsBankingTab bets={bets} transactions={transactions} onCreate={handleCreateTransaction} onUpdate={handleUpdateTransaction} onDelete={handleDeleteTransaction} />
       )}
+      {tab === 'promos' && <BetsPromosTab promos={promos} onCreate={handleCreatePromo} onUpdate={handleUpdatePromo} onDelete={handleDeletePromo} />}
 
       {adding && <BetFormModal bet={null} onClose={() => setAdding(false)} onSave={handleCreate} />}
       {editing && <BetFormModal bet={editing} onClose={() => setEditing(null)} onSave={handleUpdate} />}

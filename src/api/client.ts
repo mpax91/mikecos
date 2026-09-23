@@ -1,5 +1,5 @@
 import type { AuthenticationResponseJSON, PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON, RegistrationResponseJSON } from '@simplewebauthn/browser';
-import type { AuthCredentialSummary, AuthStatus, Bet, BetLeg, VaultEntryDetail, VaultFact, BriefingResponse, CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitLog, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsSavedArticle, NewsSettings, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, VaultFactLabel, VaultRollupGroup, WeatherResponse, WeekResponse } from './types';
+import type { AuthCredentialSummary, AuthStatus, Bet, BetLeg, BetGameNote, BetPromo, BetPromoStatus, BetScheduleGame, BetTransaction, BetTransactionType, VaultEntryDetail, VaultFact, BriefingResponse, CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitLog, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsSavedArticle, NewsSettings, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, VaultFactLabel, VaultRollupGroup, WeatherResponse, WeekResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -687,6 +687,60 @@ export const api = {
     request<Bet>(`/api/bets/${id}`, { method: 'PATCH', body: JSON.stringify(params) }),
 
   deleteBet: (id: string) => request<{ ok: true }>(`/api/bets/${id}`, { method: 'DELETE' }),
+
+  // ---- Bets banking/promos/workspace (0040_bet_workspace.sql) ----
+
+  listBetTransactions: () => request<BetTransaction[]>('/api/bet-transactions'),
+
+  createBetTransaction: (params: { date: string; sportsbook: string; type: BetTransactionType; amount: number; notes?: string }) =>
+    request<BetTransaction>('/api/bet-transactions', { method: 'POST', body: JSON.stringify(params) }),
+
+  updateBetTransaction: (id: string, params: Partial<Pick<BetTransaction, 'date' | 'sportsbook' | 'type' | 'amount' | 'notes'>>) =>
+    request<BetTransaction>(`/api/bet-transactions/${id}`, { method: 'PATCH', body: JSON.stringify(params) }),
+
+  deleteBetTransaction: (id: string) => request<{ ok: true }>(`/api/bet-transactions/${id}`, { method: 'DELETE' }),
+
+  listBetPromos: () => request<BetPromo[]>('/api/bet-promos'),
+
+  createBetPromo: (params: {
+    sportsbook: string;
+    description: string;
+    promo_type?: string;
+    expires_at?: string | null;
+    legs?: string;
+    odds?: string;
+    amount?: string;
+    max_bonus?: number | null;
+    status?: BetPromoStatus;
+    notes?: string;
+  }) => request<BetPromo>('/api/bet-promos', { method: 'POST', body: JSON.stringify(params) }),
+
+  updateBetPromo: (id: string, params: Partial<Omit<BetPromo, 'id' | 'created_at' | 'updated_at'>>) =>
+    request<BetPromo>(`/api/bet-promos/${id}`, { method: 'PATCH', body: JSON.stringify(params) }),
+
+  deleteBetPromo: (id: string) => request<{ ok: true }>(`/api/bet-promos/${id}`, { method: 'DELETE' }),
+
+  getBetScheduleGames: (date: string) => request<BetScheduleGame[]>(`/api/bets/games?date=${date}`),
+
+  listBetGameNotes: (date: string) => request<BetGameNote[]>(`/api/bet-game-notes?date=${date}`),
+
+  createBetGameNote: (params: {
+    date: string;
+    sport: string;
+    external_id?: string | null;
+    matchup: string;
+    start_time?: string | null;
+    note?: string;
+    pinned?: boolean;
+    lines?: { sportsbook: string; line: string }[];
+  }) => request<BetGameNote>('/api/bet-game-notes', { method: 'POST', body: JSON.stringify(params) }),
+
+  updateBetGameNote: (
+    id: string,
+    params: Partial<{ note: string | null; pinned: boolean; matchup: string; start_time: string | null; lines: { sportsbook: string; line: string }[] }>
+  ) => request<BetGameNote>(`/api/bet-game-notes/${id}`, { method: 'PATCH', body: JSON.stringify(params) }),
+
+  deleteBetGameNote: (id: string) => request<{ ok: true }>(`/api/bet-game-notes/${id}`, { method: 'DELETE' }),
 
   // ---- Auth (app-wide lock screen — 0033_auth.sql) ----
 
