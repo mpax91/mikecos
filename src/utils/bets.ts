@@ -22,11 +22,12 @@ export function isParlayType(betType: string): boolean {
 // parlay types themselves (a leg can't contain another parlay).
 export const LEG_BET_TYPES = BET_TYPES.filter((t) => !PARLAY_BET_TYPES.includes(t));
 
-// Sportsbook stays free text (unlike sport/bet type) since the set of books
-// Mike actually uses is small and stable in practice, but a hard-coded list
-// would go stale the moment a new book runs a promo worth using — this is
-// just a convenience suggestion list for the entry form's <datalist>.
-export const COMMON_SPORTSBOOKS = ['DraftKings', 'FanDuel', 'BetMGM', 'Caesars', 'ESPN Bet', 'Fanatics', 'Bet365', 'BetRivers'];
+// Sportsbook stays free text (unlike sport/bet type) so a one-off entry
+// never gets blocked, but the suggestion list itself is exactly the five
+// books Mike actually uses — same set as Workspace's Best Bets columns
+// (SPORTSBOOK_COLUMNS in BetsWorkspaceTab.tsx) — so dropdowns across
+// Banking/Promos/the bet log don't dangle stale or unused books.
+export const COMMON_SPORTSBOOKS = ['BetMGM', 'BetRivers', 'DraftKings', 'FanDuel', 'Caesars'];
 
 export const RESULT_OPTIONS: { value: BetResult; label: string }[] = [
   { value: 'win', label: 'Win' },

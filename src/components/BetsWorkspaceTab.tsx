@@ -30,6 +30,22 @@ const COLLAPSED_KEY = 'mikeos-bets-workspace-collapsed';
 // once he edits his columns, localStorage takes over.
 const DEFAULT_COLUMNS = ['EPH', 'yLose', 'Walter', 'ChatGPT', 'Claude'];
 
+// Default section order when a date has multiple sports — NFL first (when
+// it's on the slate), then NHL, MLB, NBA, NCAAF. Anything not in this list
+// (a manually-added one-off sport) falls in alphabetically after it.
+const SPORT_ORDER = ['NFL', 'NHL', 'MLB', 'NBA', 'NCAAF'];
+
+function sortSports(sports: string[]): string[] {
+  return [...sports].sort((a, b) => {
+    const ai = SPORT_ORDER.indexOf(a);
+    const bi = SPORT_ORDER.indexOf(b);
+    if (ai !== -1 && bi !== -1) return ai - bi;
+    if (ai !== -1) return -1;
+    if (bi !== -1) return 1;
+    return a.localeCompare(b);
+  });
+}
+
 // Best Bets uses its own fixed set of columns, separate from the day's
 // tipper columns above — once a game is starred it's no longer "what do my
 // tipsters think", it's "which book has the best number right now". Matches
@@ -307,6 +323,7 @@ function CellInput({ value, onCommit }: { value: string; onCommit: (v: string) =
         if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
       }}
       placeholder="—"
+      title={value || undefined}
     />
   );
 }
@@ -487,6 +504,10 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(loadStringList(COLLAPSED_KEY)));
   const [clearedSnapshot, setClearedSnapshot] = useState<BetGameNote[] | null>(null);
   const [search, setSearch] = useState('');
+  // Default is every game; flip on to hide any row in a sport section where
+  // none of that day's tipper columns have a value — Best Bets isn't
+  // affected, since a pinned row isn't judged by tipper cells.
+  const [tipsOnly, setTipsOnly] = useState(false);
 
   useEffect(() => {
     setSchedule(null);
@@ -588,6 +609,7 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
   // section below just also gets the `is-pinned` highlight).
   const bySport = new Map<string, BoardEntry[]>();
   for (const e of visibleEntries) {
+    if (tipsOnly && !columns.some((col) => (e.cells.get(col) ?? '').trim())) continue;
     const list = bySport.get(e.sport) ?? [];
     list.push(e);
     bySport.set(e.sport, list);
@@ -720,7 +742,7 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
   const promoSportsbooks = new Set(activePromos.map((p) => p.sportsbook));
   const balanceBySportsbook = new Map(balances.map((b) => [b.sportsbook, b.balance]));
   const loading = schedule === null || notes === null;
-  const sportKeys = [...bySport.keys()].sort();
+  const sportKeys = sortSports([...bySport.keys()]);
 
   return (
     <div className="bets-workspace">
@@ -761,6 +783,14 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
+        <button
+          type="button"
+          className={`chip${tipsOnly ? ' is-active' : ''}`}
+          onClick={() => setTipsOnly((v) => !v)}
+          title="Hide games where none of today's tipper columns have a value"
+        >
+          {tipsOnly ? '✓ Tips only' : 'Tips only'}
+        </button>
         <div className="bets-workspace__column-add">
           {addingColumn ? (
             <div className="bets-workspace__column-add-input">
@@ -830,6 +860,10 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
 
       {!loading && !error && entries.length > 0 && searchQuery && visibleEntries.length === 0 && (
         <div className="empty-state">No games, notes, or tips match "{search.trim()}".</div>
+      )}
+
+      {!loading && !error && visibleEntries.length > 0 && tipsOnly && sportKeys.length === 0 && pinned.length === 0 && (
+        <div className="empty-state">No games have a tip entered yet for this date. Turn off "Tips only" to see the full slate.</div>
       )}
 
       {!loading && pinned.length > 0 && (
