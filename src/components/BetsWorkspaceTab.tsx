@@ -24,13 +24,18 @@ function formatKickoff(iso: string | null): string {
 
 const COLUMNS_KEY = 'mikeos-bets-workspace-columns';
 const COLLAPSED_KEY = 'mikeos-bets-workspace-collapsed';
+// Mike's default tipper roster — matches the "Tipper" tab of his old sheet,
+// swapping out the two he doesn't use anymore (Sportsline, CBS Props) for
+// ChatGPT and Claude. Only applied the very first time (nothing saved yet);
+// once he edits his columns, localStorage takes over.
+const DEFAULT_COLUMNS = ['EPH', 'yLose', 'Walter', 'ChatGPT', 'Claude'];
 
-function loadStringList(key: string): string[] {
+function loadStringList(key: string, fallback: string[] = []): string[] {
   try {
     const raw = localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as string[]) : [];
+    return raw ? (JSON.parse(raw) as string[]) : fallback;
   } catch {
-    return [];
+    return fallback;
   }
 }
 
@@ -220,8 +225,8 @@ function GameRow({
         </button>
       </td>
       {showSport && <td className="bets-workspace__sport-cell">{entry.sport}</td>}
-      <td className="bets-workspace__time-cell">{formatKickoff(entry.startTime)}</td>
       <td className="bets-workspace__matchup-cell">{entry.matchup}</td>
+      <td className="bets-workspace__time-cell">{formatKickoff(entry.startTime)}</td>
       {columns.map((col) => (
         <td key={col}>
           <CellInput value={entry.cells.get(col) ?? ''} onCommit={(v) => onCellCommit(entry, col, v)} />
@@ -277,8 +282,8 @@ function SportSection({
             <thead>
               <tr>
                 <th />
-                <th>Time</th>
                 <th>Game</th>
+                <th>Time</th>
                 {columns.map((col) => (
                   <th key={col}>{col}</th>
                 ))}
@@ -314,7 +319,7 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
   const [error, setError] = useState<string | null>(null);
   const [notesFor, setNotesFor] = useState<BoardEntry | null>(null);
   const [adding, setAdding] = useState(false);
-  const [columns, setColumns] = useState<string[]>(() => loadStringList(COLUMNS_KEY));
+  const [columns, setColumns] = useState<string[]>(() => loadStringList(COLUMNS_KEY, DEFAULT_COLUMNS));
   const [addingColumn, setAddingColumn] = useState(false);
   const [newColumnName, setNewColumnName] = useState('');
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(loadStringList(COLLAPSED_KEY)));
@@ -569,8 +574,8 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
                 <tr>
                   <th />
                   <th>Sport</th>
-                  <th>Time</th>
                   <th>Game</th>
+                  <th>Time</th>
                   {columns.map((col) => (
                     <th key={col}>{col}</th>
                   ))}
