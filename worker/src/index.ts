@@ -126,11 +126,76 @@ function listItemCounts(db: D1Database, id: string) {
     .first<{ open_count: number; done_count: number }>();
 }
 
+// Days of advance notice an expiring note/file's reminder task fires —
+// see migrations/0039_entity_expiration.sql.
+const EXPIRY_REMINDER_DAYS = 30;
+
+// Keeps a note/file's auto-created reminder task in sync with its
+// expires_at, whichever way it just changed:
+//  - cleared -> delete the linked task (if the person hasn't already
+//    completed/deleted it themselves) and clear expiry_task_id
+//  - set/changed -> update the existing task's due date, or create one if
+//    this is the first time an expiration was set
+// Called from PATCH /api/entities/:id right after expires_at is written.
+async function syncExpiryTask(db: D1Database, entity: Entity): Promise<void> {
+  if (!entity.expires_at) {
+    if (entity.expiry_task_id) {
+      await db.prepare('DELETE FROM entities WHERE id = ?').bind(entity.expiry_task_id).run();
+      await db.prepare('UPDATE entities SET expiry_task_id = NULL WHERE id = ?').bind(entity.id).run();
+    }
+    return;
+  }
+
+  const reminderDue = addDaysStr(entity.expires_at, -EXPIRY_REMINDER_DAYS);
+  const title = `Renew: ${entity.title || 'expiring document'} (expires ${entity.expires_at})`;
+
+  const existingTask = entity.expiry_task_id
+    ? await db.prepare('SELECT id, status FROM entities WHERE id = ?').bind(entity.expiry_task_id).first<{ id: string; status: string | null }>()
+    : null;
+
+  if (existingTask && existingTask.status !== 'done') {
+    await db.prepare('UPDATE entities SET title = ?, due_date = ?, updated_at = ? WHERE id = ?').bind(title, reminderDue, now(), existingTask.id).run();
+    return;
+  }
+
+  // No live task to reuse — either this is the first expiration date set,
+  // or the person already completed/deleted the previous reminder (a
+  // finished task shouldn't silently un-complete itself; a fresh one is
+  // created instead, same as a recurring task definition respawning).
+  const taskId = uid();
+  const ts = now();
+  await db
+    .prepare(
+      `INSERT INTO entities (id, type, title, parent_id, is_top_level, status, position, due_date, last_touched, created_at, updated_at)
+       VALUES (?, 'task', ?, ?, 0, 'open', 0, ?, ?, ?, ?)`
+    )
+    .bind(taskId, title, entity.parent_id, reminderDue, ts, ts, ts)
+    .run();
+  await db.prepare('UPDATE entities SET expiry_task_id = ? WHERE id = ?').bind(taskId, entity.id).run();
+}
+
 // Deletes an entity and every descendant (same recursive-CTE walk as
 // DELETE /api/entities/:id, factored out so "Clear completed" on a List can
 // remove a batch of items — including any of their own R2 attachments —
 // without duplicating this logic).
 async function deleteEntityDeep(db: D1Database, files: R2Bucket, id: string) {
+  // A note/file's reminder task is a sibling (parented under the same
+  // Vault entry), not a descendant, so the recursive delete below won't
+  // catch it on its own — gather every expiry_task_id among what's about
+  // to be deleted first and remove those too, so deleting the card the
+  // reminder was for doesn't leave an orphaned "Renew: ..." task behind.
+  const { results: expiryRows } = await db
+    .prepare(
+      `WITH RECURSIVE descendants(id) AS (
+         SELECT id FROM entities WHERE id = ?
+         UNION ALL
+         SELECT e.id FROM entities e JOIN descendants d ON e.parent_id = d.id
+       )
+       SELECT expiry_task_id FROM entities WHERE id IN (SELECT id FROM descendants) AND expiry_task_id IS NOT NULL`
+    )
+    .bind(id)
+    .all<{ expiry_task_id: string }>();
+
   const { results: fileRows } = await db
     .prepare(
       `WITH RECURSIVE descendants(id) AS (
@@ -164,6 +229,14 @@ async function deleteEntityDeep(db: D1Database, files: R2Bucket, id: string) {
     )
     .bind(id)
     .run();
+
+  const expiryTaskIds = (expiryRows ?? []).map((r) => r.expiry_task_id);
+  if (expiryTaskIds.length) {
+    await db
+      .prepare(`DELETE FROM entities WHERE id IN (${expiryTaskIds.map(() => '?').join(',')})`)
+      .bind(...expiryTaskIds)
+      .run();
+  }
 }
 
 // Subtasks live one level deeper than the project (task -> subtask), so they
@@ -2585,7 +2658,7 @@ app.post('/api/entities', async (c) => {
 app.patch('/api/entities/:id', async (c) => {
   const id = c.req.param('id');
   const body = await c.req.json<
-    Partial<Pick<Entity, 'title' | 'content' | 'status' | 'parent_id' | 'position' | 'pinned' | 'due_date' | 'due_time' | 'last_touched'>>
+    Partial<Pick<Entity, 'title' | 'content' | 'status' | 'parent_id' | 'position' | 'pinned' | 'due_date' | 'due_time' | 'last_touched' | 'expires_at'>>
   >();
 
   const existing = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(id).first<Entity>();
@@ -2599,6 +2672,10 @@ app.patch('/api/entities/:id', async (c) => {
     fields.push('title = ?');
     values.push(body.title);
     touchesContent = true;
+  }
+  if (body.expires_at !== undefined) {
+    fields.push('expires_at = ?');
+    values.push(body.expires_at);
   }
   if (body.content !== undefined) {
     fields.push('content = ?');
@@ -2711,7 +2788,18 @@ app.patch('/api/entities/:id', async (c) => {
       .run();
   }
 
-  const entity = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(id).first<Entity>();
+  let entity = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(id).first<Entity>();
+
+  // Only note/file entities are ever offered the expiration UI, but this
+  // stays type-agnostic — nothing stops any entity from getting an
+  // expires_at through the API, and the reminder-task sync is the same
+  // regardless of what kind of thing is expiring. Re-fetched afterward so
+  // the response reflects the expiry_task_id the sync just wrote.
+  if (entity && body.expires_at !== undefined) {
+    await syncExpiryTask(c.env.DB, entity);
+    entity = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(id).first<Entity>();
+  }
+
   return c.json(entity);
 });
 

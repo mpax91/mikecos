@@ -1257,6 +1257,32 @@ a {
 .entity-card__meta {
   margin-top: auto;
   padding-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.entity-card__expiry-badge {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+
+.entity-card__expiry-badge--ok {
+  background: rgba(120, 120, 120, 0.12);
+  color: var(--color-muted);
+}
+
+.entity-card__expiry-badge--soon {
+  background: rgba(214, 158, 46, 0.16);
+  color: #a06a00;
+}
+
+.entity-card__expiry-badge--expired {
+  background: rgba(192, 57, 43, 0.14);
+  color: #c0392b;
 }
 
 .entity-card__snippet {
@@ -2010,6 +2036,12 @@ a {
   justify-content: flex-end;
   gap: 8px;
   margin-top: 6px;
+}
+
+.modal__hint {
+  font-size: 12.5px;
+  color: var(--color-muted);
+  margin: 0 0 10px;
 }
 
 .meeting-note-modal__textarea {

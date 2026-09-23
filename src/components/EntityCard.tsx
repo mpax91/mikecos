@@ -127,6 +127,21 @@ function BookmarkIcon() {
   );
 }
 
+// How many days out an expiration counts as "soon" for the amber warning
+// state — matches EXPIRY_REMINDER_DAYS on the worker (the reminder task
+// itself fires at the same 30-day mark), so the badge starts glowing
+// exactly when the "Renew: ..." task has landed in Today.
+const EXPIRY_WARNING_DAYS = 30;
+
+function expiryStatus(expiresAt: string | null, todayIso: string): 'expired' | 'soon' | 'ok' | null {
+  if (!expiresAt) return null;
+  if (expiresAt < todayIso) return 'expired';
+  const warnBy = new Date(`${todayIso}T00:00:00`);
+  warnBy.setDate(warnBy.getDate() + EXPIRY_WARNING_DAYS);
+  const warnByIso = warnBy.toISOString().slice(0, 10);
+  return expiresAt <= warnByIso ? 'soon' : 'ok';
+}
+
 /** Tile card for notes, files, and links. Folders render via FolderTile instead. */
 export function EntityCard({
   entity,
@@ -137,6 +152,7 @@ export function EntityCard({
   onDemote,
   onMoveToNotes,
   onOpenNote,
+  onSetExpiration,
   compact = false,
 }: {
   entity: Entity;
@@ -156,6 +172,10 @@ export function EntityCard({
    * has nowhere for a dedicated note route to go. Files/links are
    * unaffected; they already open directly rather than navigating. */
   onOpenNote?: (entity: Entity) => void;
+  /** Offers "Set/change/clear expiration date" in the kebab menu and shows
+   * an expiry badge when set. Only wired in by Vault — a project note's
+   * card simply omits this prop, same convention as onMoveToNotes. */
+  onSetExpiration?: (entity: Entity) => void;
   /** Pinned mixes notes with files/links/folders/tasks in one row — a note's
    * usual big square would force every shorter card in that row to stretch
    * to match it. `compact` renders the note at the same rectangle size as a
@@ -177,6 +197,7 @@ export function EntityCard({
     fileMeta?.mime_type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
   const mediaKind = isImage ? 'image' : isPdf ? 'pdf' : isDoc ? 'doc' : isLink ? 'link' : isFile ? 'generic' : null;
   const notePreview = isNote ? extractNoteText(entity.content) : '';
+  const status = onSetExpiration ? expiryStatus(entity.expires_at, new Date().toISOString().slice(0, 10)) : null;
 
   const menuItems = [
     ...(isFile && fileMeta
@@ -188,6 +209,9 @@ export function EntityCard({
     { label: 'Demote', onClick: () => onDemote(entity) },
     ...(isNote && onMoveToNotes
       ? [{ label: 'Move to Notes', onClick: () => onMoveToNotes(entity), separatorBefore: true }]
+      : []),
+    ...(onSetExpiration
+      ? [{ label: entity.expires_at ? 'Change expiration date…' : 'Set expiration date…', onClick: () => onSetExpiration(entity), separatorBefore: true }]
       : []),
     { label: 'Delete', onClick: () => onDelete(entity), danger: true, separatorBefore: true },
   ];
@@ -263,6 +287,11 @@ export function EntityCard({
         <span className="last-modified-badge" title={new Date(entity.updated_at).toLocaleString()}>
           {formatRelativeTime(entity.updated_at)}
         </span>
+        {status && (
+          <span className={`entity-card__expiry-badge entity-card__expiry-badge--${status}`}>
+            {status === 'expired' ? `Expired ${entity.expires_at}` : `Expires ${entity.expires_at}`}
+          </span>
+        )}
       </div>
     </div>
   );

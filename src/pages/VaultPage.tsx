@@ -15,6 +15,7 @@ import { KebabMenu } from '../components/KebabMenu';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { LinkModal } from '../components/LinkModal';
 import { RenameModal } from '../components/RenameModal';
+import { ExpirationModal } from '../components/ExpirationModal';
 import { useIsCompact } from '../hooks/useIsMobile';
 import { formatRelativeTime } from '../utils/formatRelativeTime';
 import { useTabs, useReportTabMeta } from '../contexts/TabsContext';
@@ -42,6 +43,7 @@ export function VaultPage() {
   const [addingLink, setAddingLink] = useState(false);
   const [deleting, setDeleting] = useState<Entity | null>(null);
   const [renaming, setRenaming] = useState<Entity | null>(null);
+  const [settingExpiration, setSettingExpiration] = useState<Entity | null>(null);
   const [openNote, setOpenNote] = useState<Entity | null>(null);
   const [taskStack, setTaskStack] = useState<string[]>([]);
 
@@ -172,6 +174,12 @@ export function VaultPage() {
     setChildren((prev) => prev.map((c) => (c.id === entity.id ? { ...c, title: newTitle } : c)));
     setRenaming(null);
     await api.updateEntity(entity.id, { title: newTitle });
+  }
+
+  async function setChildExpiration(entity: Entity, expiresAt: string | null) {
+    const updated = await api.updateEntity(entity.id, { expires_at: expiresAt });
+    setChildren((prev) => prev.map((c) => (c.id === entity.id ? updated : c)));
+    setSettingExpiration(null);
   }
 
   function saveNoteTitle(noteId: string, title: string) {
@@ -309,6 +317,7 @@ export function VaultPage() {
                         onPromote={noop}
                         onDemote={noop}
                         onOpenNote={setOpenNote}
+                        onSetExpiration={setSettingExpiration}
                         compact
                       />
                     )
@@ -329,6 +338,7 @@ export function VaultPage() {
                     onPromote={noop}
                     onDemote={noop}
                     onOpenNote={setOpenNote}
+                    onSetExpiration={setSettingExpiration}
                     compact={isCompact}
                   />
                 ))}
@@ -382,6 +392,15 @@ export function VaultPage() {
           label={renaming.type === 'file' ? 'File Name' : 'Name'}
           onSave={(v) => renameChild(renaming, v)}
           onClose={() => setRenaming(null)}
+        />
+      )}
+
+      {settingExpiration && (
+        <ExpirationModal
+          title={settingExpiration.title || 'Untitled'}
+          initialValue={settingExpiration.expires_at}
+          onSave={(expiresAt) => setChildExpiration(settingExpiration, expiresAt)}
+          onClose={() => setSettingExpiration(null)}
         />
       )}
 

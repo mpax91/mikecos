@@ -57,6 +57,13 @@ export interface Entity {
   last_touched: string | null;
   created_at: string;
   updated_at: string;
+  /** A note/file's expiration date ('YYYY-MM-DD') — insurance card,
+   * registration, inspection sticker, a warranty doc, anything with a
+   * renewal date. Setting it auto-creates a real task due 30 days out
+   * (see worker/migrations/0039_entity_expiration.sql), which shows up in
+   * Today on its own; the frontend only ever needs to read/write this
+   * field, never expiry_task_id. */
+  expires_at: string | null;
   /** Only present on task entities returned as children of another entity —
    * one level of the task's own child tasks, attached by the API so the
    * project view can render subtasks nested under their parent. */
