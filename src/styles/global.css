@@ -8495,6 +8495,22 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
     height: 68px;
   }
 
+  /* Saved's row of 3 actions ("→ Jots", "→ Notes", ✕) is wide enough,
+     laid out inline, to eat most of a phone-width row on its own — the
+     body (flex: 1; min-width: 0) had nowhere left to go and got squeezed
+     down to almost nothing, wrapping the title one word per line with
+     the actions floating in the middle of it. Wrapping the actions onto
+     their own full-width row below fixes both at once. */
+  .news-article-card--saved-row {
+    flex-wrap: wrap;
+  }
+
+  .news-article-card--saved-row .news-article-card__actions--saved {
+    flex: 1 1 100%;
+    justify-content: flex-end;
+    margin-top: 4px;
+  }
+
   .news-story__card {
     width: 100%;
     /* Base rule sizes the card from width via aspect-ratio (9/15), which

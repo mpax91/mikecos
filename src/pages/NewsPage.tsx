@@ -134,7 +134,12 @@ export function NewsPage() {
 
   async function saveArticle(article: NewsArticle) {
     setArticles((prev) => prev.map((a) => (a.id === article.id ? { ...a, is_saved: true } : a)));
-    await api.saveNewsArticle(article.id);
+    const savedArticle = await api.saveNewsArticle(article.id);
+    // Without this, the Saved tab's (N) badge only ever picked up a new
+    // save the next time the Saved tab itself was opened (loadSaved runs
+    // on a view switch, not on save) — so a swipe-to-save on Feed/Story
+    // looked like it hadn't registered until you happened to tap over.
+    setSaved((prev) => (prev.some((s) => s.id === savedArticle.id) ? prev : [savedArticle, ...prev]));
   }
 
   async function markAllRead() {
@@ -724,7 +729,7 @@ function SavedView({
   return (
     <div className="news-article-list">
       {saved.map((s) => (
-        <div key={s.id} className="news-article-card" onClick={() => openExternally(s.url)}>
+        <div key={s.id} className="news-article-card news-article-card--saved-row" onClick={() => openExternally(s.url)}>
           <ArticleImage src={s.image_url} alt="" />
           <div className="news-article-card__body">
             <div className="news-article-card__meta">
