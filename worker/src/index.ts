@@ -6123,8 +6123,8 @@ interface EspnEvent {
   competitions?: { competitors?: { homeAway: 'home' | 'away'; team?: { displayName?: string; shortDisplayName?: string; abbreviation?: string } }[] }[];
 }
 
-async function fetchEspn(sport: string, path: string, dateCompact: string): Promise<LeagueResult> {
-  const url = `https://site.api.espn.com/apis/site/v2/sports/${path}/scoreboard?dates=${dateCompact}`;
+async function fetchEspn(sport: string, path: string, dateCompact: string, extraParams = ''): Promise<LeagueResult> {
+  const url = `https://site.api.espn.com/apis/site/v2/sports/${path}/scoreboard?dates=${dateCompact}${extraParams}`;
   try {
     const res = await fetch(url, { headers: { 'user-agent': BROWSER_UA, accept: 'application/json' }, cf: { cacheTtl: 300, cacheEverything: true } });
     if (!res.ok) return { games: [], debug: { sport, source: 'espn', status: res.status, note: (await res.text()).slice(0, 200) } };
@@ -6214,6 +6214,11 @@ app.get('/api/bets/games', async (c) => {
   const results = await Promise.all([
     fetchEspn('NFL', 'football/nfl', dateCompact),
     fetchEspn('NBA', 'basketball/nba', dateCompact),
+    // groups=80 is ESPN's FBS (Division I) group — leaves out FCS/D-II/D-III,
+    // which is what "only D1 games" means here. limit bumped up since a full
+    // Saturday slate is 60+ games and ESPN's scoreboard endpoint otherwise
+    // truncates to a small default page size.
+    fetchEspn('NCAAF', 'football/college-football', dateCompact, '&groups=80&limit=300'),
     fetchMlb(date),
     fetchNhl(date),
   ]);

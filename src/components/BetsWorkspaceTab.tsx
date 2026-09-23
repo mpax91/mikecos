@@ -30,6 +30,13 @@ const COLLAPSED_KEY = 'mikeos-bets-workspace-collapsed';
 // once he edits his columns, localStorage takes over.
 const DEFAULT_COLUMNS = ['EPH', 'yLose', 'Walter', 'ChatGPT', 'Claude'];
 
+// Best Bets uses its own fixed set of columns, separate from the day's
+// tipper columns above — once a game is starred it's no longer "what do my
+// tipsters think", it's "which book has the best number right now". Matches
+// the "Sportsbooks" tab of Mike's old sheet. Not renameable — these are real
+// sportsbook names that Banking/Promos also key off of.
+const SPORTSBOOK_COLUMNS = ['BetMGM', 'BetRivers', 'DraftKings', 'FanDuel', 'Caesars'];
+
 function loadStringList(key: string, fallback: string[] = []): string[] {
   try {
     const raw = localStorage.getItem(key);
@@ -48,12 +55,12 @@ function saveStringList(key: string, list: string[]) {
 }
 
 /** A row on the board — merged from the auto-pulled schedule (ESPN for
- * NFL/NBA, MLB's and the NHL's own official APIs for those two — see the
- * worker's comment above GET /api/bets/games for why they're split) and
- * whatever's already saved in bet_game_notes for this date. `noteId` is
- * null until the first save, at which point a real BetGameNote gets
- * created — this is what lets "today's games" show up with nothing to
- * click through first. */
+ * NFL/NBA/NCAAF — D1/FBS only, via groups=80; MLB's and the NHL's own
+ * official APIs for those two — see the worker's comment above GET
+ * /api/bets/games for why they're split) and whatever's already saved in
+ * bet_game_notes for this date. `noteId` is null until the first save, at
+ * which point a real BetGameNote gets created — this is what lets "today's
+ * games" show up with nothing to click through first. */
 interface BoardEntry {
   key: string;
   noteId: string | null;
@@ -63,7 +70,7 @@ interface BoardEntry {
   startTime: string | null;
   note: string;
   pinned: boolean;
-  cells: Map<string, string>; // source -> value, e.g. 'DraftKings' -> '-6.5 (-110)', 'Sportsline' -> 'SEA -6.5'
+  cells: Map<string, string>; // source -> value, e.g. 'DraftKings' -> '-6.5 (-110)', 'EPH' -> 'SEA -6.5'
 }
 
 function entryFromSchedule(g: BetScheduleGame, match: BetGameNote | undefined): BoardEntry {
@@ -94,9 +101,51 @@ function entryFromNote(n: BetGameNote): BoardEntry {
   };
 }
 
-function NotesModal({ entry, onClose, onSave }: { entry: BoardEntry; onClose: () => void; onSave: (note: string) => Promise<void> }) {
+/** Pulls the last American-odds-looking token out of a free-typed cell
+ * ("SEA -6.5 (-110)" -> -110, "-107" -> -107) so Best Bets can highlight the
+ * best price across books without forcing a rigid input format. A cell
+ * that isn't odds at all (a spread-only note, or blank) just doesn't
+ * participate in the comparison. */
+function parseAmericanOdds(value: string): number | null {
+  const matches = value.match(/[-+]\d{2,5}(?!\d)/g);
+  if (!matches || matches.length === 0) return null;
+  const n = Number(matches[matches.length - 1]);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Which of a row's sportsbook cells currently show the best price — on the
+ * American-odds scale, higher is always better (-107 beats -115, +150 beats
+ * -110), so it's a single max across whatever cells parse as odds. Ties all
+ * get marked. */
+function bestOddsColumns(entry: BoardEntry, cols: string[]): Set<string> {
+  let best: number | null = null;
+  const parsed = new Map<string, number>();
+  for (const col of cols) {
+    const n = parseAmericanOdds(entry.cells.get(col) ?? '');
+    if (n == null) continue;
+    parsed.set(col, n);
+    if (best == null || n > best) best = n;
+  }
+  const winners = new Set<string>();
+  if (best == null) return winners;
+  for (const [col, n] of parsed) if (n === best) winners.add(col);
+  return winners;
+}
+
+function NotesModal({
+  entry,
+  onClose,
+  onSave,
+  onRemove,
+}: {
+  entry: BoardEntry;
+  onClose: () => void;
+  onSave: (note: string) => Promise<void>;
+  onRemove: (() => Promise<void>) | null;
+}) {
   const [note, setNote] = useState(entry.note);
   const [saving, setSaving] = useState(false);
+  const [removing, setRemoving] = useState(false);
 
   async function handleSave() {
     setSaving(true);
@@ -105,6 +154,17 @@ function NotesModal({ entry, onClose, onSave }: { entry: BoardEntry; onClose: ()
       onClose();
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleRemove() {
+    if (!onRemove) return;
+    setRemoving(true);
+    try {
+      await onRemove();
+      onClose();
+    } finally {
+      setRemoving(false);
     }
   }
 
@@ -117,10 +177,15 @@ function NotesModal({ entry, onClose, onSave }: { entry: BoardEntry; onClose: ()
         </label>
       </div>
       <div className="modal__actions">
-        <button className="btn btn--ghost" onClick={onClose} disabled={saving}>
+        {onRemove && (
+          <button type="button" className="btn btn--ghost bets-workspace__modal-remove" onClick={handleRemove} disabled={saving || removing}>
+            {removing ? 'Removing…' : 'Remove game'}
+          </button>
+        )}
+        <button className="btn btn--ghost" onClick={onClose} disabled={saving || removing}>
           Cancel
         </button>
-        <button className="btn" onClick={handleSave} disabled={saving}>
+        <button className="btn" onClick={handleSave} disabled={saving || removing}>
           {saving ? 'Saving…' : 'Save'}
         </button>
       </div>
@@ -200,22 +265,72 @@ function CellInput({ value, onCommit }: { value: string; onCommit: (v: string) =
   );
 }
 
+/** A column header that doubles as an inline rename field — click the label
+ * to edit it, blur/Enter commits. Only used for the day's tipper columns;
+ * Best Bets' sportsbook columns are a fixed list and aren't renameable. */
+function ColumnHeaderCell({ name, onRename }: { name: string; onRename: (oldName: string, newName: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(name);
+
+  useEffect(() => {
+    if (!editing) setDraft(name);
+  }, [name, editing]);
+
+  function commit() {
+    setEditing(false);
+    const trimmed = draft.trim();
+    if (trimmed && trimmed !== name) onRename(name, trimmed);
+    else setDraft(name);
+  }
+
+  if (!editing) {
+    return (
+      <th className="bets-workspace__col-th">
+        <button type="button" className="bets-workspace__col-th-btn" onClick={() => setEditing(true)} title="Click to rename this column">
+          {name}
+        </button>
+      </th>
+    );
+  }
+  return (
+    <th className="bets-workspace__col-th">
+      <input
+        autoFocus
+        className="bets-workspace__col-th-input"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onFocus={(e) => e.target.select()}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+          if (e.key === 'Escape') {
+            setDraft(name);
+            setEditing(false);
+          }
+        }}
+      />
+    </th>
+  );
+}
+
 function GameRow({
   entry,
   columns,
   showSport,
+  bestCols,
+  promoCols,
   onCellCommit,
   onPinToggle,
   onOpenNotes,
-  onRemove,
 }: {
   entry: BoardEntry;
   columns: string[];
   showSport: boolean;
+  bestCols?: Set<string>;
+  promoCols?: Set<string>;
   onCellCommit: (entry: BoardEntry, source: string, value: string) => void;
   onPinToggle: (entry: BoardEntry) => void;
   onOpenNotes: (entry: BoardEntry) => void;
-  onRemove: ((entry: BoardEntry) => void) | null;
 }) {
   return (
     <tr className={entry.pinned ? 'is-pinned' : undefined}>
@@ -228,21 +343,21 @@ function GameRow({
       <td className="bets-workspace__matchup-cell">{entry.matchup}</td>
       <td className="bets-workspace__time-cell">{formatKickoff(entry.startTime)}</td>
       {columns.map((col) => (
-        <td key={col}>
-          <CellInput value={entry.cells.get(col) ?? ''} onCommit={(v) => onCellCommit(entry, col, v)} />
+        <td key={col} className={bestCols?.has(col) ? 'bets-workspace__cell--best' : undefined}>
+          <div className="bets-workspace__cell-wrap">
+            <CellInput value={entry.cells.get(col) ?? ''} onCommit={(v) => onCellCommit(entry, col, v)} />
+            {promoCols?.has(col) && (
+              <span className="bets-workspace__promo-flag" title={`Active promo at ${col} — double-check it actually applies to this bet (odds/legs, straight vs. parlay can matter)`}>
+                🔥
+              </span>
+            )}
+          </div>
         </td>
       ))}
       <td className="bets-workspace__notes-cell">
         <button type="button" className={`bets-workspace__notes-btn${entry.note ? ' has-note' : ''}`} onClick={() => onOpenNotes(entry)} title={entry.note || 'Add notes'}>
           {entry.note ? '📝' : '+ note'}
         </button>
-      </td>
-      <td className="bets-workspace__remove-cell">
-        {onRemove && (
-          <button type="button" className="bets-legs__remove" onClick={() => onRemove(entry)} aria-label="Remove game" title="Remove">
-            ✕
-          </button>
-        )}
       </td>
     </tr>
   );
@@ -257,7 +372,7 @@ function SportSection({
   onCellCommit,
   onPinToggle,
   onOpenNotes,
-  onRemove,
+  onRenameColumn,
 }: {
   sport: string;
   entries: BoardEntry[];
@@ -267,7 +382,7 @@ function SportSection({
   onCellCommit: (entry: BoardEntry, source: string, value: string) => void;
   onPinToggle: (entry: BoardEntry) => void;
   onOpenNotes: (entry: BoardEntry) => void;
-  onRemove: (entry: BoardEntry) => void;
+  onRenameColumn: (oldName: string, newName: string) => void;
 }) {
   return (
     <div className="bets-workspace__section card">
@@ -282,27 +397,17 @@ function SportSection({
             <thead>
               <tr>
                 <th />
-                <th>Game</th>
-                <th>Time</th>
+                <th className="bets-workspace__game-th">Game</th>
+                <th className="bets-workspace__time-th">Time</th>
                 {columns.map((col) => (
-                  <th key={col}>{col}</th>
+                  <ColumnHeaderCell key={col} name={col} onRename={onRenameColumn} />
                 ))}
                 <th>Notes</th>
-                <th />
               </tr>
             </thead>
             <tbody>
               {entries.map((entry) => (
-                <GameRow
-                  key={entry.key}
-                  entry={entry}
-                  columns={columns}
-                  showSport={false}
-                  onCellCommit={onCellCommit}
-                  onPinToggle={onPinToggle}
-                  onOpenNotes={onOpenNotes}
-                  onRemove={entry.noteId ? onRemove : null}
-                />
+                <GameRow key={entry.key} entry={entry} columns={columns} showSport={false} onCellCommit={onCellCommit} onPinToggle={onPinToggle} onOpenNotes={onOpenNotes} />
               ))}
             </tbody>
           </table>
@@ -319,15 +424,21 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
   const [error, setError] = useState<string | null>(null);
   const [notesFor, setNotesFor] = useState<BoardEntry | null>(null);
   const [adding, setAdding] = useState(false);
-  const [columns, setColumns] = useState<string[]>(() => loadStringList(COLUMNS_KEY, DEFAULT_COLUMNS));
+  const [columns, setColumns] = useState<string[]>(() => loadStringList(`${COLUMNS_KEY}:${todayLocalISODash()}`, loadStringList(COLUMNS_KEY, DEFAULT_COLUMNS)));
   const [addingColumn, setAddingColumn] = useState(false);
   const [newColumnName, setNewColumnName] = useState('');
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(loadStringList(COLLAPSED_KEY)));
+  const [clearedSnapshot, setClearedSnapshot] = useState<BetGameNote[] | null>(null);
 
   useEffect(() => {
     setSchedule(null);
     setNotes(null);
     setError(null);
+    setClearedSnapshot(null);
+    // A date that's had its own columns saved (via rename/add while viewing
+    // it) keeps that snapshot forever; any other date just tracks whatever
+    // the current base default is.
+    setColumns(loadStringList(`${COLUMNS_KEY}:${date}`, loadStringList(COLUMNS_KEY, DEFAULT_COLUMNS)));
     Promise.all([api.getBetScheduleGames(date), api.listBetGameNotes(date)])
       .then(([sched, n]) => {
         setSchedule(sched);
@@ -335,6 +446,14 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
       })
       .catch((e) => setError(String(e)));
   }, [date]);
+
+  // Auto-dismiss the "Cleared — Undo" banner after a while so it doesn't
+  // linger forever if Mike doesn't touch it.
+  useEffect(() => {
+    if (!clearedSnapshot) return;
+    const t = setTimeout(() => setClearedSnapshot(null), 15000);
+    return () => clearTimeout(t);
+  }, [clearedSnapshot]);
 
   const entries: BoardEntry[] = useMemo(() => {
     if (!schedule || !notes) return [];
@@ -360,20 +479,30 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
     });
   }, [schedule, notes]);
 
+  /** Saves a new effective column list for the currently-viewed date, and
+   * — only when that date is today — also updates the base default that a
+   * brand-new date starts from. That's the whole "future days default to
+   * what we set up today, but editing a given day only holds for that day"
+   * rule: a date that's never had this called for it just keeps tracking
+   * the live base default (see the `date` effect above), so renaming
+   * today's columns doesn't retroactively rewrite some day Mike already
+   * looked at and left alone. */
+  function persistColumnsForDate(next: string[]) {
+    setColumns(next);
+    saveStringList(`${COLUMNS_KEY}:${date}`, next);
+    if (date === todayLocalISODash()) saveStringList(COLUMNS_KEY, next);
+  }
+
   // Any source that already has data today stays a visible column even if
-  // it was never explicitly added this browser — grown into `columns`
-  // (and persisted) rather than shown only transiently, so it's still
-  // there next time regardless of which device added it.
+  // it was never explicitly added this browser — grown into `columns` (and
+  // persisted for this date) rather than shown only transiently, so it's
+  // still there next time regardless of which device added it.
   useEffect(() => {
     if (!notes) return;
     const used = new Set<string>();
     for (const n of notes) for (const l of n.lines) used.add(l.sportsbook);
     const missing = [...used].filter((s) => !columns.includes(s));
-    if (missing.length > 0) {
-      const next = [...columns, ...missing];
-      setColumns(next);
-      saveStringList(COLUMNS_KEY, next);
-    }
+    if (missing.length > 0) persistColumnsForDate([...columns, ...missing]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [notes]);
 
@@ -447,22 +576,71 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
 
   function commitNewColumn() {
     const name = newColumnName.trim();
-    if (name && !columns.includes(name)) {
-      const next = [...columns, name];
-      setColumns(next);
-      saveStringList(COLUMNS_KEY, next);
-    }
+    if (name && !columns.includes(name)) persistColumnsForDate([...columns, name]);
     setNewColumnName('');
     setAddingColumn(false);
   }
 
-  function removeColumn(name: string) {
-    const next = columns.filter((c) => c !== name);
-    setColumns(next);
-    saveStringList(COLUMNS_KEY, next);
+  /** Renames a tipper column and migrates any already-saved cells for this
+   * date from the old key to the new one, so existing tips don't silently
+   * vanish under the old header name. */
+  async function handleRenameColumn(oldName: string, newName: string) {
+    if (columns.includes(newName)) return; // don't collide with an existing column
+    persistColumnsForDate(columns.map((c) => (c === oldName ? newName : c)));
+    const affected = entries.filter((e) => e.cells.has(oldName));
+    await Promise.all(
+      affected.map((entry) => {
+        const nextCells = new Map(entry.cells);
+        const value = nextCells.get(oldName)!;
+        nextCells.delete(oldName);
+        nextCells.set(newName, value);
+        return persist(entry, { cells: nextCells });
+      })
+    );
+  }
+
+  async function handleClearAll() {
+    if (!notes || notes.length === 0) return;
+    const snapshot = notes;
+    setNotes([]);
+    setClearedSnapshot(snapshot);
+    try {
+      await Promise.all(snapshot.map((n) => api.deleteBetGameNote(n.id)));
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  async function handleUndoClear() {
+    if (!clearedSnapshot) return;
+    const toRestore = clearedSnapshot;
+    setClearedSnapshot(null);
+    const restored = await Promise.all(
+      toRestore.map((n) =>
+        api.createBetGameNote({
+          date: n.date,
+          sport: n.sport,
+          external_id: n.external_id,
+          matchup: n.matchup,
+          start_time: n.start_time,
+          note: n.note ?? '',
+          pinned: !!n.pinned,
+          lines: n.lines.map((l) => ({ sportsbook: l.sportsbook, line: l.line })),
+        })
+      )
+    );
+    setNotes((prev) => [...(prev ?? []), ...restored]);
   }
 
   const activePromos = promos.filter((p) => p.status === 'active' && (!p.expires_at || p.expires_at >= date));
+  // Boost-availability is flagged per sportsbook only — a promo carries no
+  // sport of its own (see BetPromo), and matching a promo's odds/legs
+  // against a specific game is unreliable for anything but a plain straight
+  // bet (a promo boost tied to a parlay can look like it applies to one leg
+  // in isolation when it really doesn't). So this is a "check this book"
+  // nudge, not an auto-verified match — the tooltip says as much.
+  const promoSportsbooks = new Set(activePromos.map((p) => p.sportsbook));
+  const balanceBySportsbook = new Map(balances.map((b) => [b.sportsbook, b.balance]));
   const loading = schedule === null || notes === null;
   const sportKeys = [...bySport.keys()].sort();
 
@@ -503,7 +681,7 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
             <div className="bets-workspace__column-add-input">
               <input
                 autoFocus
-                placeholder="Sportsline, DraftKings…"
+                placeholder="New tipper column…"
                 value={newColumnName}
                 onChange={(e) => setNewColumnName(e.target.value)}
                 onKeyDown={(e) => {
@@ -522,21 +700,24 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
             </button>
           )}
         </div>
+        {notes && notes.length > 0 && (
+          <button type="button" className="chip" onClick={handleClearAll} title="Delete every saved note/tip/pin for this date">
+            Clear All
+          </button>
+        )}
         <button className="btn" onClick={() => setAdding(true)}>
           + Add Game
         </button>
       </div>
 
-      {columns.length > 0 && (
-        <div className="bets-workspace__column-chips">
-          {columns.map((col) => (
-            <span key={col} className="bets-workspace__column-chip">
-              {col}
-              <button type="button" onClick={() => removeColumn(col)} aria-label={`Remove ${col} column`}>
-                ✕
-              </button>
-            </span>
-          ))}
+      {clearedSnapshot && (
+        <div className="bets-workspace__undo-banner">
+          <span>
+            Cleared {clearedSnapshot.length} game{clearedSnapshot.length === 1 ? '' : 's'} for {date}.
+          </span>
+          <button type="button" className="chip" onClick={handleUndoClear}>
+            Undo
+          </button>
         </div>
       )}
 
@@ -559,7 +740,7 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
       {loading && !error && <div className="empty-state">Loading games…</div>}
 
       {!loading && !error && entries.length === 0 && (
-        <div className="empty-state">No NFL, NBA, MLB, or NHL games found for this date. Add one manually if something else is on your slate.</div>
+        <div className="empty-state">No NFL, NCAAF, NBA, MLB, or NHL games found for this date. Add one manually if something else is on your slate.</div>
       )}
 
       {!loading && pinned.length > 0 && (
@@ -574,26 +755,37 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
                 <tr>
                   <th />
                   <th>Sport</th>
-                  <th>Game</th>
-                  <th>Time</th>
-                  {columns.map((col) => (
+                  <th className="bets-workspace__game-th">Game</th>
+                  <th className="bets-workspace__time-th">Time</th>
+                  {SPORTSBOOK_COLUMNS.map((col) => (
                     <th key={col}>{col}</th>
                   ))}
                   <th>Notes</th>
-                  <th />
                 </tr>
+                {balances.length > 0 && (
+                  <tr className="bets-workspace__balance-row">
+                    <th colSpan={4} className="bets-workspace__balance-row-label">
+                      Balance
+                    </th>
+                    {SPORTSBOOK_COLUMNS.map((col) => (
+                      <th key={col}>{balanceBySportsbook.has(col) ? formatMoney(balanceBySportsbook.get(col)!) : '—'}</th>
+                    ))}
+                    <th />
+                  </tr>
+                )}
               </thead>
               <tbody>
                 {pinned.map((entry) => (
                   <GameRow
                     key={entry.key}
                     entry={entry}
-                    columns={columns}
+                    columns={SPORTSBOOK_COLUMNS}
                     showSport
+                    bestCols={bestOddsColumns(entry, SPORTSBOOK_COLUMNS)}
+                    promoCols={promoSportsbooks}
                     onCellCommit={handleCellCommit}
                     onPinToggle={handlePinToggle}
                     onOpenNotes={setNotesFor}
-                    onRemove={entry.noteId ? handleRemove : null}
                   />
                 ))}
               </tbody>
@@ -614,11 +806,18 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
             onCellCommit={handleCellCommit}
             onPinToggle={handlePinToggle}
             onOpenNotes={setNotesFor}
-            onRemove={handleRemove}
+            onRenameColumn={handleRenameColumn}
           />
         ))}
 
-      {notesFor && <NotesModal entry={notesFor} onClose={() => setNotesFor(null)} onSave={(note) => handleNotesSave(notesFor, note)} />}
+      {notesFor && (
+        <NotesModal
+          entry={notesFor}
+          onClose={() => setNotesFor(null)}
+          onSave={(note) => handleNotesSave(notesFor, note)}
+          onRemove={notesFor.noteId ? () => handleRemove(notesFor) : null}
+        />
+      )}
       {adding && <AddGameModal date={date} onClose={() => setAdding(false)} onAdd={addManualGame} />}
     </div>
   );

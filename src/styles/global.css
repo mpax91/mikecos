@@ -7749,32 +7749,53 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   border-radius: 999px;
 }
 
-.bets-workspace__column-chips {
+.bets-workspace__undo-banner {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 8px 0 4px;
-}
-
-.bets-workspace__column-chip {
-  display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 3px 8px;
-  border-radius: 999px;
-  background: rgba(120, 120, 120, 0.08);
-  font-size: 11px;
-  color: var(--color-muted);
+  justify-content: space-between;
+  gap: 10px;
+  margin: 8px 0 4px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(120, 120, 120, 0.1);
+  font-size: 12.5px;
+  color: var(--color-ink);
 }
 
-.bets-workspace__column-chip button {
+.bets-workspace__col-th {
+  padding: 0 !important;
+}
+
+.bets-workspace__col-th-btn {
+  display: block;
+  width: 100%;
+  text-align: left;
   background: none;
   border: none;
-  color: var(--color-muted);
-  cursor: pointer;
-  font-size: 10px;
-  padding: 0;
-  line-height: 1;
+  cursor: text;
+  font: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+  padding: 5px 8px;
+}
+
+.bets-workspace__col-th-btn:hover {
+  background: rgba(120, 120, 120, 0.12);
+  color: var(--color-ink);
+}
+
+.bets-workspace__col-th-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  padding: 5px 8px;
+  border: 1px solid var(--color-accent);
+  background: var(--color-surface);
+  color: var(--color-ink);
 }
 
 .bets-workspace__section {
@@ -7790,7 +7811,7 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 .bets-workspace__section-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   width: 100%;
   padding: 12px 16px;
   background: none;
@@ -7801,14 +7822,31 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   color: inherit;
 }
 
+.bets-workspace__section-header:hover {
+  background: rgba(120, 120, 120, 0.06);
+}
+
 .bets-workspace__section--pinned .bets-workspace__section-header {
   cursor: default;
 }
 
+.bets-workspace__section--pinned .bets-workspace__section-header:hover {
+  background: none;
+}
+
 .bets-workspace__chevron {
-  font-size: 11px;
-  color: var(--color-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--color-ink);
+  background: rgba(120, 120, 120, 0.12);
   transition: transform 0.15s ease;
+  flex-shrink: 0;
 }
 
 .bets-workspace__chevron.is-collapsed {
@@ -7882,7 +7920,8 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 }
 
 .bets-workspace__pin-cell {
-  width: 22px;
+  width: 16px;
+  padding: 4px 2px !important;
   text-align: center;
 }
 
@@ -7890,9 +7929,9 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 13px;
   color: var(--color-muted);
-  padding: 4px;
+  padding: 2px;
   line-height: 1;
 }
 
@@ -7905,23 +7944,37 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   color: var(--color-muted);
   text-transform: uppercase;
   white-space: nowrap;
+  text-align: center;
   padding: 4px 8px;
 }
 
+.bets-workspace__game-th,
+.bets-workspace__time-th {
+  text-align: center;
+}
+
 .bets-workspace__time-cell {
-  width: 74px;
+  width: 68px;
   font-size: 11px;
   color: var(--color-muted);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+  text-align: center;
   padding: 4px 8px;
 }
 
 .bets-workspace__matchup-cell {
-  width: 92px;
+  width: 88px;
   font-weight: 600;
   white-space: nowrap;
+  text-align: center;
   padding: 4px 8px;
+}
+
+.bets-workspace__cell-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
 }
 
 .bets-workspace__cell-input {
@@ -7952,6 +8005,40 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   box-shadow: inset 0 0 0 1px var(--color-accent);
 }
 
+.bets-workspace__cell--best {
+  background: rgba(46, 139, 87, 0.14);
+}
+
+.bets-workspace__cell--best .bets-workspace__cell-input {
+  color: #2e8b57;
+  font-weight: 700;
+}
+
+.bets-workspace__promo-flag {
+  position: absolute;
+  right: 4px;
+  font-size: 11px;
+  cursor: help;
+  pointer-events: auto;
+}
+
+.bets-workspace__balance-row th {
+  background: rgba(120, 120, 120, 0.04);
+  border-bottom: var(--border-hairline);
+  font-size: 10.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink);
+  text-transform: none;
+}
+
+.bets-workspace__balance-row-label {
+  text-align: right;
+  color: var(--color-muted) !important;
+  text-transform: uppercase !important;
+  font-weight: 500 !important;
+}
+
 .bets-workspace__notes-cell {
   width: 56px;
   white-space: nowrap;
@@ -7971,10 +8058,9 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   color: var(--color-ink);
 }
 
-.bets-workspace__remove-cell {
-  width: 22px;
-  padding: 4px 6px;
-  text-align: center;
+.bets-workspace__modal-remove {
+  margin-right: auto;
+  color: #c0392b;
 }
 
 /* ---- App lock screen + Settings > Security ---- */
