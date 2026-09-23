@@ -78,6 +78,16 @@ export interface Entity {
    * usual last-modified text, and floats the task to the top of the Day
    * view's list. */
   is_recurring?: boolean;
+  /** A Vault Password card is stored as type='note' with this flag set, not
+   * a distinct type (see worker/migrations/0041_vault_passwords.sql, same
+   * trick as is_jot/is_list). */
+  is_password?: number;
+  /** Only present when is_password is set — attached by GET
+   * /api/entities/:id from the sibling vault_credentials table. Never
+   * present on any other entity. */
+  url?: string | null;
+  username?: string | null;
+  password?: string | null;
 }
 
 export interface ProjectListItem extends Entity {

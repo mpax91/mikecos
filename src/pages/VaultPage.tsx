@@ -6,11 +6,13 @@ import { EntityCard } from '../components/EntityCard';
 import { TaskRow } from '../components/TaskRow';
 import { NewTaskRow } from '../components/NewTaskRow';
 import { TaskDetailModal } from '../components/TaskDetailModal';
-import { NewNoteTile, NewFileTile } from '../components/NewItemTiles';
+import { NewNoteTile, NewFileTile, NewPasswordTile } from '../components/NewItemTiles';
 import { Section } from '../components/Section';
 import { VaultFactsTable } from '../components/VaultFactsTable';
 import { VaultLinkRow } from '../components/VaultLinkRow';
 import { VaultNoteModal } from '../components/VaultNoteModal';
+import { PasswordCard } from '../components/PasswordCard';
+import { PasswordDetailModal } from '../components/PasswordDetailModal';
 import { KebabMenu } from '../components/KebabMenu';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { LinkModal } from '../components/LinkModal';
@@ -21,7 +23,10 @@ import { formatRelativeTime } from '../utils/formatRelativeTime';
 import { useTabs, useReportTabMeta } from '../contexts/TabsContext';
 
 const noop = () => {};
-const isFileOrNote = (c: Entity) => c.type === 'file' || c.type === 'note';
+// is_password entries are type='note' children too (see the is_jot/is_list
+// flag-on-existing-type precedent) — excluded here so a password card
+// doesn't also render in the plain Notes section below.
+const isFileOrNote = (c: Entity) => (c.type === 'file' || c.type === 'note') && c.is_password !== 1;
 
 /** Vault — the Evernote-replacement filing cabinet. An entry is a lightweight
  * quick-facts table (label/value, added inline — no field/group/template
@@ -46,6 +51,7 @@ export function VaultPage() {
   const [settingExpiration, setSettingExpiration] = useState<Entity | null>(null);
   const [openNote, setOpenNote] = useState<Entity | null>(null);
   const [taskStack, setTaskStack] = useState<string[]>([]);
+  const [openPassword, setOpenPassword] = useState<Entity | null>(null);
 
   const load = useCallback(() => {
     api.listVaultEntries().then(setEntries).catch((e) => setError(String(e)));
@@ -168,6 +174,7 @@ export function VaultPage() {
     await api.deleteEntity(entity.id);
     setDeleting(null);
     if (openNote?.id === entity.id) setOpenNote(null);
+    if (openPassword?.id === entity.id) setOpenPassword(null);
   }
 
   async function renameChild(entity: Entity, newTitle: string) {
@@ -191,6 +198,21 @@ export function VaultPage() {
     api.updateEntity(noteId, { content: json });
   }
 
+  // ---- Passwords ----
+
+  async function createPassword() {
+    if (!detail) return;
+    const password = await api.createVaultPassword(detail.id, {});
+    loadDetail(detail.id);
+    setOpenPassword(password);
+  }
+
+  async function savePassword(entity: Entity, patch: { title?: string; url?: string; username?: string; password?: string }) {
+    const updated = await api.updateVaultPassword(entity.id, patch);
+    setChildren((prev) => prev.map((c) => (c.id === entity.id ? updated : c)));
+    setOpenPassword((prev) => (prev && prev.id === entity.id ? updated : prev));
+  }
+
   if (error) return <div className="empty-state">Couldn't load Vault: {error}</div>;
   if (!entries) return <div className="empty-state">Loading…</div>;
 
@@ -198,6 +220,7 @@ export function VaultPage() {
   const showDetail = !isCompact || !!id;
 
   const notes = children.filter(isFileOrNote);
+  const passwords = children.filter((c) => c.is_password === 1);
   const links = children.filter((c) => c.type === 'link');
   const tasks = children.filter((c) => c.type === 'task');
   const openTasks = tasks.filter((t) => t.status !== 'done');
@@ -347,6 +370,15 @@ export function VaultPage() {
               </div>
             </Section>
 
+            <Section title="Passwords" count={passwords.length} defaultExpanded={!isCompact}>
+              <div className="entity-card-grid">
+                {passwords.map((c) => (
+                  <PasswordCard key={c.id} entity={c} onOpen={setOpenPassword} onDelete={setDeleting} />
+                ))}
+                <NewPasswordTile onCreate={createPassword} />
+              </div>
+            </Section>
+
             <Section title="Links" count={links.length} defaultExpanded={!isCompact}>
               <div className="vault-link-list">
                 {links.map((c) => (
@@ -410,6 +442,15 @@ export function VaultPage() {
           onSaveTitle={(title) => saveNoteTitle(openNote.id, title)}
           onSaveContent={(json) => saveNoteContent(openNote.id, json)}
           onClose={() => setOpenNote(null)}
+        />
+      )}
+
+      {openPassword && (
+        <PasswordDetailModal
+          entity={openPassword}
+          onSave={(patch) => savePassword(openPassword, patch)}
+          onDelete={() => deleteChild(openPassword)}
+          onClose={() => setOpenPassword(null)}
         />
       )}
 

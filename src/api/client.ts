@@ -806,4 +806,19 @@ export const api = {
   getVaultRollup: () => request<VaultRollupGroup[]>('/api/vault/facts/rollup'),
 
   getVaultFactLabels: () => request<VaultFactLabel[]>('/api/vault/facts/labels'),
+
+  // Generic "facts for this entity id" read — works for a Password card's
+  // Custom fields too, not just a top-level Vault entry (see worker's
+  // GET /api/vault/entries/:id/facts).
+  getVaultEntryFacts: (id: string) => request<VaultFact[]>(`/api/vault/entries/${id}/facts`),
+
+  // ---- Vault Passwords (0041_vault_passwords.sql) — a credential card
+  // (url/username/password), its own "Passwords" section on a Vault entry.
+  // Deletion reuses deleteEntity, same as any other Vault child. ----
+
+  createVaultPassword: (entryId: string, params: { title?: string; url?: string; username?: string; password?: string }) =>
+    request<Entity>(`/api/vault/entries/${entryId}/passwords`, { method: 'POST', body: JSON.stringify(params) }),
+
+  updateVaultPassword: (id: string, patch: { title?: string; url?: string; username?: string; password?: string }) =>
+    request<Entity>(`/api/vault/passwords/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
 };

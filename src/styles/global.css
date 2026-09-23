@@ -9926,6 +9926,139 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   background: var(--color-sidebar);
 }
 
+/* Passwords section — LastPass/Bitwarden-style credential cards, a compact
+   entity-card variant with a colored lock-icon badge in place of the usual
+   file/note preview. */
+
+.password-card {
+  gap: 8px;
+}
+
+.password-card__badge {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.password-card__title {
+  font-size: 13.5px;
+  font-weight: var(--weight-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.password-card__username {
+  font-size: 12px;
+  color: var(--color-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.password-card--ghost {
+  min-height: 88px;
+}
+
+/* Password detail modal — Name/URL/Username/Password fields plus a reused
+   VaultFactsTable for Custom fields. Wider than the default 380px modal so
+   the password field's reveal + copy buttons have room without cramping. */
+
+.modal:has(.password-modal) {
+  width: 420px;
+}
+
+.password-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.password-modal__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.password-modal__field span {
+  font-size: 11.5px;
+  font-weight: var(--weight-medium);
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.password-modal__field-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.password-modal__field-row input {
+  margin-bottom: 0;
+  flex: 1;
+}
+
+.password-modal__icon-btn {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: var(--border-hairline);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--color-muted);
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.password-modal__icon-btn:hover {
+  color: var(--color-ink);
+  border-color: var(--color-muted);
+}
+
+.password-modal__facts {
+  margin-top: 8px;
+  padding-top: 14px;
+  border-top: var(--border-hairline);
+}
+
+.password-modal__facts-label {
+  display: block;
+  font-size: 11.5px;
+  font-weight: var(--weight-medium);
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 8px;
+}
+
+.password-modal__delete {
+  margin-right: auto;
+}
+
+.password-modal__confirm {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--color-sidebar);
+  font-size: 12.5px;
+}
+
+.password-modal__confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
 /* Links section — domain-styled rows, standing in for v1's Folders */
 
 .vault-link-list {

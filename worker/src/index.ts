@@ -29,6 +29,7 @@ import type {
   ShelfItem,
   ShelfItemType,
   TaskReschedule,
+  VaultCredentialRow,
   VoterRecord,
 } from './types';
 import { calendarIdFromIcsUrl, meetingsForDate, meetingsForRange } from './ics';
@@ -220,6 +221,23 @@ async function deleteEntityDeep(db: D1Database, files: R2Bucket, id: string) {
       // malformed metadata — nothing to clean up
     }
   }
+  // Vault Password cards (is_password=1 entities) keep their url/username/
+  // password in a separate vault_credentials table — not covered by FK
+  // cascade for the same reason noted below, so it needs the same explicit
+  // descendant cleanup as the file rows above.
+  await db
+    .prepare(
+      `DELETE FROM vault_credentials WHERE entity_id IN (
+         WITH RECURSIVE descendants(id) AS (
+           SELECT id FROM entities WHERE id = ?
+           UNION ALL
+           SELECT e.id FROM entities e JOIN descendants d ON e.parent_id = d.id
+         )
+         SELECT id FROM descendants
+       )`
+    )
+    .bind(id)
+    .run();
   await db
     .prepare(
       `DELETE FROM entities WHERE id IN (
@@ -2592,6 +2610,14 @@ app.get('/api/entities/:id', async (c) => {
 
   const withSubtasks = await Promise.all(
     (children ?? []).map(async (child) => {
+      // A Vault Password card's url/username/password live in a sibling
+      // table (vault_credentials), not on entities itself — attach them
+      // here so the Vault page gets a full card in one round trip, same
+      // idea as subtasks/media below for tasks.
+      if (child.is_password === 1) {
+        const cred = await c.env.DB.prepare('SELECT * FROM vault_credentials WHERE entity_id = ?').bind(child.id).first<VaultCredentialRow>();
+        return { ...child, url: cred?.url ?? null, username: cred?.username ?? null, password: cred?.password ?? null };
+      }
       if (child.type !== 'task') return child;
       const [{ results: rawSubtasks }, media] = await Promise.all([
         c.env.DB.prepare(

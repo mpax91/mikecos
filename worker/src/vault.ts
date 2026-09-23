@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import type { Entity, Env, VaultFactRow } from './types';
+import type { Entity, Env, VaultCredentialRow, VaultFactRow } from './types';
 
 const now = () => new Date().toISOString();
 const uid = () => crypto.randomUUID();
@@ -116,8 +116,40 @@ vaultRouter.patch('/entries/:id', async (c) => {
   return c.json(entity);
 });
 
+// Deletes the entry and every descendant it has (Notes, Passwords, Links,
+// Tasks, and any nested children of those) — plus their side-table rows
+// (vault_facts, vault_credentials), which a plain `DELETE FROM entities`
+// alone wouldn't touch, whether or not foreign_keys enforcement happens to
+// be on for this connection (index.ts's deleteEntityDeep, used for every
+// other entity type, takes the same explicit-walk approach for the same
+// reason — see the comment on DELETE /api/entities/:id).
 vaultRouter.delete('/entries/:id', async (c) => {
-  await db(c).prepare('DELETE FROM entities WHERE id = ?').bind(c.req.param('id')).run();
+  const id = c.req.param('id');
+  const descendantsCte = `WITH RECURSIVE descendants(id) AS (
+     SELECT id FROM entities WHERE id = ?
+     UNION ALL
+     SELECT e.id FROM entities e JOIN descendants d ON e.parent_id = d.id
+   )`;
+
+  const { results: fileRows } = await db(c)
+    .prepare(`${descendantsCte} SELECT content FROM entities WHERE id IN (SELECT id FROM descendants) AND type = 'file'`)
+    .bind(id)
+    .all<{ content: string | null }>();
+  for (const row of fileRows ?? []) {
+    if (!row.content) continue;
+    try {
+      const meta = JSON.parse(row.content) as { r2_key?: string };
+      if (meta.r2_key) await c.env.FILES.delete(meta.r2_key);
+    } catch {
+      // malformed metadata — nothing to clean up
+    }
+  }
+
+  await db(c).batch([
+    db(c).prepare(`DELETE FROM vault_facts WHERE entry_id IN (${descendantsCte} SELECT id FROM descendants)`).bind(id),
+    db(c).prepare(`DELETE FROM vault_credentials WHERE entity_id IN (${descendantsCte} SELECT id FROM descendants)`).bind(id),
+    db(c).prepare(`DELETE FROM entities WHERE id IN (${descendantsCte} SELECT id FROM descendants)`).bind(id),
+  ]);
   return c.json({ ok: true });
 });
 
@@ -139,6 +171,17 @@ vaultRouter.post('/entries/:id/facts', async (c) => {
   await reindexEntry(c, entryId);
   const row = await db(c).prepare('SELECT * FROM vault_facts WHERE id = ?').bind(id).first<VaultFactRow>();
   return c.json(row, 201);
+});
+
+// Generic "facts for this entity id" read — vault_facts.entry_id isn't
+// actually restricted to vault_entry rows (see the table's own comment in
+// 0036_vault_facts.sql), so this works unchanged for a Password card's
+// "Custom fields" too; GET /entries/:id above stays vault_entry-only since
+// it also returns the full entity row shaped as VaultEntryDetail, which a
+// Password's own PATCH /passwords/:id response already covers on its own.
+vaultRouter.get('/entries/:id/facts', async (c) => {
+  const facts = await db(c).prepare('SELECT * FROM vault_facts WHERE entry_id = ? ORDER BY position ASC').bind(c.req.param('id')).all<VaultFactRow>();
+  return c.json(facts.results ?? []);
 });
 
 // Reorder — same "send the whole ordered id list, position = index" shape
@@ -187,6 +230,95 @@ vaultRouter.delete('/facts/:id', async (c) => {
   await db(c).prepare('DELETE FROM vault_facts WHERE id = ?').bind(id).run();
   if (existing) await reindexEntry(c, existing.entry_id);
   return c.json({ ok: true });
+});
+
+// ---- Passwords — a LastPass/Bitwarden-style credential card. Stored as an
+// ordinary type='note' child entity (parent_id = the Vault entry) with
+// is_password=1, plus a 1:1 vault_credentials row for url/username/
+// password — see migrations/0041_vault_passwords.sql for why this isn't a
+// new entities.type value. Rendered as its own "Passwords" section on the
+// entry, between Notes and Links. ----
+
+type PasswordEntity = Entity & Pick<VaultCredentialRow, 'url' | 'username' | 'password'>;
+
+function mergeCredential(entity: Entity, cred: VaultCredentialRow | null): PasswordEntity {
+  return { ...entity, url: cred?.url ?? null, username: cred?.username ?? null, password: cred?.password ?? null };
+}
+
+vaultRouter.post('/entries/:id/passwords', async (c) => {
+  const entryId = c.req.param('id');
+  const body = await c.req.json<{ title?: string; url?: string | null; username?: string | null; password?: string | null }>();
+  const title = body.title?.trim() || 'Untitled Password';
+  const url = body.url?.trim() || null;
+  const username = body.username?.trim() || null;
+  const password = body.password ?? null;
+
+  const maxPos = await db(c).prepare('SELECT COALESCE(MAX(position), -1) as m FROM entities WHERE parent_id = ?').bind(entryId).first<{ m: number }>();
+  const id = uid();
+  const ts = now();
+  const searchText = [title, username].filter(Boolean).join(' ') || null;
+
+  await db(c)
+    .prepare(
+      `INSERT INTO entities (id, type, title, content, parent_id, is_top_level, status, position, is_password, last_touched, created_at, updated_at, search_text)
+       VALUES (?, 'note', ?, NULL, ?, 0, NULL, ?, 1, ?, ?, ?, ?)`
+    )
+    .bind(id, title, entryId, (maxPos?.m ?? -1) + 1, ts, ts, ts, searchText)
+    .run();
+  await db(c)
+    .prepare('INSERT INTO vault_credentials (entity_id, url, username, password, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
+    .bind(id, url, username, password, ts, ts)
+    .run();
+  await db(c).prepare('UPDATE entities SET last_touched = ? WHERE id = ?').bind(ts, entryId).run();
+
+  const entity = await db(c).prepare('SELECT * FROM entities WHERE id = ?').bind(id).first<Entity>();
+  return c.json(mergeCredential(entity!, { entity_id: id, url, username, password, created_at: ts, updated_at: ts }), 201);
+});
+
+vaultRouter.patch('/passwords/:id', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json<{ title?: string; url?: string | null; username?: string | null; password?: string | null }>();
+  const existing = await db(c).prepare("SELECT * FROM entities WHERE id = ? AND is_password = 1").bind(id).first<Entity>();
+  if (!existing) return c.json({ error: 'not found' }, 404);
+
+  const ts = now();
+  if (body.title !== undefined) {
+    const title = body.title.trim() || 'Untitled Password';
+    await db(c).prepare('UPDATE entities SET title = ?, updated_at = ?, last_touched = ? WHERE id = ?').bind(title, ts, ts, id).run();
+  } else {
+    await db(c).prepare('UPDATE entities SET updated_at = ?, last_touched = ? WHERE id = ?').bind(ts, ts, id).run();
+  }
+
+  const credSets: string[] = [];
+  const credBinds: unknown[] = [];
+  if (body.url !== undefined) {
+    credSets.push('url = ?');
+    credBinds.push(body.url?.trim() || null);
+  }
+  if (body.username !== undefined) {
+    credSets.push('username = ?');
+    credBinds.push(body.username?.trim() || null);
+  }
+  if (body.password !== undefined) {
+    credSets.push('password = ?');
+    credBinds.push(body.password || null);
+  }
+  if (credSets.length) {
+    credSets.push('updated_at = ?');
+    credBinds.push(ts, id);
+    await db(c).prepare(`UPDATE vault_credentials SET ${credSets.join(', ')} WHERE entity_id = ?`).bind(...credBinds).run();
+  }
+
+  const entity = await db(c).prepare('SELECT * FROM entities WHERE id = ?').bind(id).first<Entity>();
+  const cred = await db(c).prepare('SELECT * FROM vault_credentials WHERE entity_id = ?').bind(id).first<VaultCredentialRow>();
+  // Re-derive search_text from whatever title/username ended up current
+  // (never the password itself).
+  await db(c)
+    .prepare('UPDATE entities SET search_text = ? WHERE id = ?')
+    .bind([entity!.title, cred?.username].filter(Boolean).join(' ') || null, id)
+    .run();
+
+  return c.json(mergeCredential(entity!, cred ?? null));
 });
 
 // ---- Rollup — group every quick fact across all entries by its label, so

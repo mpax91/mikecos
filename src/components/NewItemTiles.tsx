@@ -28,6 +28,18 @@ export function NewNoteTile({ onCreate, compact = false }: { onCreate: () => voi
   );
 }
 
+/** Dashed "+" card at the end of the Passwords section — click to create a
+ * blank credential and jump straight into its detail view, same immediacy
+ * as New Note. */
+export function NewPasswordTile({ onCreate }: { onCreate: () => void }) {
+  return (
+    <div className="entity-card entity-card--ghost entity-card--compact password-card--ghost" onClick={onCreate}>
+      <div className="entity-card__ghost-plus">+</div>
+      <div className="entity-card__title entity-card__title--ghost">New Password</div>
+    </div>
+  );
+}
+
 /** Dashed "+" card at the end of the Files section. Files can be either an
  * upload or a link, so clicking it opens a tiny inline menu instead of
  * acting immediately. */

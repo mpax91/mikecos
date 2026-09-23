@@ -23,6 +23,7 @@ export interface Entity {
   search_text?: string | null; // plain-text mirror of `content`, queried by GET /api/search
   expires_at: string | null; // 'YYYY-MM-DD' — a note/file's expiration date (insurance card, registration...); see migrations/0039_entity_expiration.sql
   expiry_task_id: string | null; // the auto-created reminder task (due 30 days before expires_at), kept in sync by syncExpiryTask — null when expires_at is null
+  is_password: number; // 0 | 1 — a Vault Password card is stored as type='note' with this flag set, not a distinct type (see migrations/0041_vault_passwords.sql, same trick as is_jot/is_list)
 
   subtasks?: Entity[]; // attached in-memory for task children only, not a DB column
   media?: Entity[]; // attached in-memory for task children only (file/link attachments), not a DB column
@@ -534,4 +535,16 @@ export interface VaultFactRow {
   value: string | null;
   position: number;
   created_at: string;
+}
+
+// ---- Vault Passwords (0041_vault_passwords.sql) — the credential fields
+// for a type='note', is_password=1 entity. 1:1 with that entity's id.
+
+export interface VaultCredentialRow {
+  entity_id: string;
+  url: string | null;
+  username: string | null;
+  password: string | null;
+  created_at: string;
+  updated_at: string;
 }
