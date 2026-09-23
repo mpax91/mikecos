@@ -7948,8 +7948,8 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   padding: 4px 8px;
 }
 
-.bets-workspace__game-th,
-.bets-workspace__time-th {
+.bets-workspace__table th.bets-workspace__game-th,
+.bets-workspace__table th.bets-workspace__time-th {
   text-align: center;
 }
 
