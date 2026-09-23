@@ -6207,6 +6207,57 @@ async function fetchNhl(dateDash: string): Promise<LeagueResult> {
   }
 }
 
+// NCAA.com's own GraphQL API — sdataprod.ncaa.com — the same one ncaa.com's
+// scoreboard page itself calls. Public, unauthenticated, and (unlike ESPN's
+// scoreboard endpoint) not Akamai-blocked for Cloudflare Workers, confirmed
+// via the debug endpoint below. `meta`/`extensions`/`queryName` are a
+// GraphQL "automatic persisted query" — the server already has this query
+// text cached under that sha256 hash, so the request only has to send the
+// hash plus variables, not the query itself. That hash is tied to ncaa.com's
+// current frontend build and could go stale if they ship a new one (same
+// "reverse-engineered, could break" risk already accepted for MLB/NHL below)
+// — if this starts 400ing, re-capture the hash from a fresh network trace of
+// https://www.ncaa.com/scoreboard/football/fbs. `division: 11` is NCAA's
+// internal code for FBS (Division I) — the equivalent of ESPN's groups=80,
+// and it's applied server-side, so the response is already exactly "D1
+// games on this date" with no client-side filtering needed.
+const NCAAF_PERSISTED_HASH = '4bcb5e6432fa9da365c0c19af01b1f9015cc7eb5c21e7af2dba308784a166df7';
+
+async function fetchNcaaf(dateDash: string): Promise<LeagueResult> {
+  const [y, m, d] = dateDash.split('-');
+  const contestDate = `${m}/${d}/${y}`;
+  const extensions = encodeURIComponent(JSON.stringify({ persistedQuery: { version: 1, sha256Hash: NCAAF_PERSISTED_HASH } }));
+  const variables = encodeURIComponent(JSON.stringify({ sportCode: 'MFB', division: 11, seasonYear: Number(y), contestDate, week: null }));
+  const url = `https://sdataprod.ncaa.com/?meta=GetContests_web&extensions=${extensions}&queryName=GetContests_web&variables=${variables}`;
+  try {
+    const res = await fetch(url, { headers: { 'user-agent': BROWSER_UA, accept: 'application/json' }, cf: { cacheTtl: 300, cacheEverything: true } });
+    if (!res.ok) return { games: [], debug: { sport: 'NCAAF', source: 'ncaa', status: res.status, note: (await res.text()).slice(0, 200) } };
+    const data = await res.json<{
+      data?: { contests?: { contestId: number; startTimeEpoch: number; teams: { isHome: boolean; name6Char: string }[] }[] };
+      errors?: unknown[];
+    }>();
+    if (data.errors) return { games: [], debug: { sport: 'NCAAF', source: 'ncaa', status: res.status, note: `graphql errors: ${JSON.stringify(data.errors).slice(0, 200)}` } };
+    const raw = data.data?.contests ?? [];
+    const games: ScheduleGame[] = raw
+      .filter((g) => g.teams.length === 2)
+      .map((g) => {
+        const home = g.teams.find((t) => t.isHome)!;
+        const away = g.teams.find((t) => !t.isHome)!;
+        return {
+          sport: 'NCAAF',
+          external_id: String(g.contestId),
+          home_abbr: home.name6Char,
+          away_abbr: away.name6Char,
+          matchup: `${away.name6Char} @ ${home.name6Char}`,
+          start_time: new Date(g.startTimeEpoch * 1000).toISOString(),
+        };
+      });
+    return { games, debug: { sport: 'NCAAF', source: 'ncaa', status: res.status, note: `${games.length} games (${raw.length} raw)` } };
+  } catch (e) {
+    return { games: [], debug: { sport: 'NCAAF', source: 'ncaa', status: null, note: String(e) } };
+  }
+}
+
 app.get('/api/bets/games', async (c) => {
   const date = c.req.query('date');
   if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return c.json({ error: 'date (YYYY-MM-DD) is required' }, 400);
@@ -6214,11 +6265,7 @@ app.get('/api/bets/games', async (c) => {
   const results = await Promise.all([
     fetchEspn('NFL', 'football/nfl', dateCompact),
     fetchEspn('NBA', 'basketball/nba', dateCompact),
-    // groups=80 is ESPN's FBS (Division I) group — leaves out FCS/D-II/D-III,
-    // which is what "only D1 games" means here. limit bumped up since a full
-    // Saturday slate is 60+ games and ESPN's scoreboard endpoint otherwise
-    // truncates to a small default page size.
-    fetchEspn('NCAAF', 'football/college-football', dateCompact, '&groups=80&limit=300'),
+    fetchNcaaf(date),
     fetchMlb(date),
     fetchNhl(date),
   ]);

@@ -429,12 +429,14 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
   const [newColumnName, setNewColumnName] = useState('');
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(loadStringList(COLLAPSED_KEY)));
   const [clearedSnapshot, setClearedSnapshot] = useState<BetGameNote[] | null>(null);
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     setSchedule(null);
     setNotes(null);
     setError(null);
     setClearedSnapshot(null);
+    setSearch('');
     // A date that's had its own columns saved (via rename/add while viewing
     // it) keeps that snapshot forever; any other date just tracks whatever
     // the current base default is.
@@ -506,9 +508,21 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [notes]);
 
-  const pinned = entries.filter((e) => e.pinned);
+  // With five leagues now pulling in, a full slate can run 100+ rows across
+  // sections — search matches matchup, sport, notes, and any tip/line
+  // already typed into a cell, so "which game did EPH like" works too, not
+  // just team names.
+  const searchQuery = search.trim().toLowerCase();
+  const visibleEntries = searchQuery
+    ? entries.filter((e) => {
+        const haystack = [e.matchup, e.sport, e.note, ...e.cells.values()].join(' ').toLowerCase();
+        return haystack.includes(searchQuery);
+      })
+    : entries;
+
+  const pinned = visibleEntries.filter((e) => e.pinned);
   const bySport = new Map<string, BoardEntry[]>();
-  for (const e of entries) {
+  for (const e of visibleEntries) {
     if (e.pinned) continue;
     const list = bySport.get(e.sport) ?? [];
     list.push(e);
@@ -676,6 +690,13 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
             Jump to today
           </button>
         )}
+        <input
+          type="search"
+          className="bets-workspace__search"
+          placeholder="Search games, notes, tips…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
         <div className="bets-workspace__column-add">
           {addingColumn ? (
             <div className="bets-workspace__column-add-input">
@@ -743,6 +764,10 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
         <div className="empty-state">No NFL, NCAAF, NBA, MLB, or NHL games found for this date. Add one manually if something else is on your slate.</div>
       )}
 
+      {!loading && !error && entries.length > 0 && searchQuery && visibleEntries.length === 0 && (
+        <div className="empty-state">No games, notes, or tips match "{search.trim()}".</div>
+      )}
+
       {!loading && pinned.length > 0 && (
         <div className="bets-workspace__section bets-workspace__section--pinned card">
           <div className="bets-workspace__section-header">
@@ -801,7 +826,7 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
             sport={sport}
             entries={bySport.get(sport) ?? []}
             columns={columns}
-            collapsed={collapsed.has(sport)}
+            collapsed={!searchQuery && collapsed.has(sport)}
             onToggleCollapse={() => toggleCollapse(sport)}
             onCellCommit={handleCellCommit}
             onPinToggle={handlePinToggle}

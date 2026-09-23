@@ -7743,6 +7743,21 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   font-weight: 600;
 }
 
+.bets-workspace__search {
+  font-size: 12.5px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: var(--border-hairline);
+  background: rgba(120, 120, 120, 0.06);
+  color: var(--color-ink);
+  min-width: 190px;
+}
+
+.bets-workspace__search:focus {
+  border-color: var(--color-accent);
+  background: var(--color-surface);
+}
+
 .bets-workspace__column-add-input input {
   font-size: 12.5px;
   padding: 5px 10px;
