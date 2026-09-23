@@ -1212,3 +1212,11 @@ export interface VaultRollupGroup {
   count: number;
   entries: VaultRollupEntry[];
 }
+
+// Lightweight sibling of VaultRollupGroup (no entries) for ghost-text
+// autocomplete and the promoted-filter threshold — see GET
+// /api/vault/facts/labels.
+export interface VaultFactLabel {
+  label: string;
+  count: number;
+}

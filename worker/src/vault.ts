@@ -238,3 +238,35 @@ vaultRouter.get('/facts/rollup', async (c) => {
 
   return c.json(result);
 });
+
+// ---- Distinct labels + usage counts — a lightweight sibling of /rollup
+// (no entries/values, just label+count) for two UI features that both
+// need "which labels already exist, ranked by how often they're used":
+// the ghost-text autocomplete on a blank label field (VaultFactsTable),
+// and the "5+ uses" promoted-filter chips on the Rollups page. Same
+// case/whitespace-insensitive-but-not-fuzzy grouping as /rollup. ----
+vaultRouter.get('/facts/labels', async (c) => {
+  const rows = await db(c).prepare('SELECT label FROM vault_facts').all<{ label: string }>();
+
+  const groups = new Map<string, Map<string, number>>();
+  for (const r of rows.results ?? []) {
+    const key = r.label.trim().toLowerCase();
+    if (!key) continue;
+    let counts = groups.get(key);
+    if (!counts) {
+      counts = new Map();
+      groups.set(key, counts);
+    }
+    counts.set(r.label, (counts.get(r.label) ?? 0) + 1);
+  }
+
+  const result = Array.from(groups.values())
+    .map((counts) => {
+      const displayLabel = Array.from(counts.entries()).sort((a, b) => b[1] - a[1])[0][0];
+      const count = Array.from(counts.values()).reduce((a, b) => a + b, 0);
+      return { label: displayLabel, count };
+    })
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+
+  return c.json(result);
+});

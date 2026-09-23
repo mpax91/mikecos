@@ -9373,6 +9373,29 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   flex: 1;
 }
 
+.vault-facts__ghost-wrap {
+  position: relative;
+  width: 110px;
+  flex-shrink: 0;
+}
+
+.vault-facts__ghost-wrap .vault-facts__input--label {
+  width: 100%;
+  position: relative;
+  background: transparent;
+}
+
+.vault-facts__ghost {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  background: transparent;
+  border-color: transparent;
+  color: var(--color-muted);
+  opacity: 0.65;
+  pointer-events: none;
+}
+
 .vault-facts__delete {
   border: none;
   background: transparent;
@@ -9581,6 +9604,28 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 }
 
 /* ---- Vault rollups: every Quick Fact across the Vault, grouped by label ---- */
+
+.vault-rollup-filters {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 10px 0 16px;
+}
+
+.vault-rollup-filters__label {
+  font-size: 11px;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+
+.vault-rollup-filters__chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
 
 .vault-rollup-grid {
   display: grid;

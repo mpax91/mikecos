@@ -1,5 +1,81 @@
-import { useState } from 'react';
-import type { VaultFact } from '../api/types';
+import { useEffect, useRef, useState } from 'react';
+import { api } from '../api/client';
+import type { VaultFact, VaultFactLabel } from '../api/types';
+
+/** Single inline grey completion (not a dropdown of several matches — see
+ * the ghost-text-vs-search-bar discussion this was built from) ranked by
+ * how often a label is already used across the Vault. Classic two-input
+ * overlay trick: a disabled "ghost" input underneath shows the full
+ * label (typed prefix + suggested tail) in grey; the real input on top
+ * has a transparent background, so the user's own dark keystrokes sit
+ * exactly over the ghost's matching prefix and only the tail shows
+ * through. Tab or → (with the caret at the end) accepts it; anything
+ * else — more typing, backspace, a non-matching letter — just lets the
+ * suggestion stop matching and disappear on the next render. */
+function useLabelSuggestion(typed: string, labels: VaultFactLabel[]): string | null {
+  const q = typed.trim().toLowerCase();
+  if (!q) return null;
+  const match = labels.find((l) => l.label.toLowerCase().startsWith(q) && l.label.toLowerCase() !== q);
+  return match ? match.label : null;
+}
+
+function LabelGhostInput({
+  value,
+  onChange,
+  onAccept,
+  labels,
+  placeholder,
+  autoFocus,
+  onEnter,
+  onEscape,
+  onBlur,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onAccept?: (v: string) => void;
+  labels: VaultFactLabel[];
+  placeholder?: string;
+  autoFocus?: boolean;
+  onEnter?: () => void;
+  onEscape?: () => void;
+  onBlur?: () => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const suggestion = useLabelSuggestion(value, labels);
+
+  function accept() {
+    if (!suggestion) return;
+    onChange(suggestion);
+    onAccept?.(suggestion);
+  }
+
+  return (
+    <div className="vault-facts__ghost-wrap">
+      <input className="vault-facts__input vault-facts__ghost" value={suggestion ?? ''} disabled tabIndex={-1} aria-hidden="true" />
+      <input
+        ref={inputRef}
+        className="vault-facts__input vault-facts__input--label"
+        placeholder={placeholder}
+        value={value}
+        autoFocus={autoFocus}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={onBlur}
+        onKeyDown={(e) => {
+          if ((e.key === 'Tab' || e.key === 'ArrowRight') && suggestion) {
+            const atEnd = inputRef.current ? inputRef.current.selectionStart === value.length : true;
+            if (atEnd) {
+              e.preventDefault();
+              accept();
+              return;
+            }
+          }
+          if (e.key === 'Enter') onEnter?.();
+          if (e.key === 'Escape') onEscape?.();
+        }}
+      />
+    </div>
+  );
+}
 
 /** Quick facts — a plain label/value table on the entry itself. Deliberately
  * not the old field/group/template system: no type to pick, no reusable
@@ -24,6 +100,15 @@ export function VaultFactsTable({
   const [newLabel, setNewLabel] = useState('');
   const [newValue, setNewValue] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [labels, setLabels] = useState<VaultFactLabel[]>([]);
+
+  // Fetched once per mount — this table only mounts when a Vault entry is
+  // open, and a stale list for the length of one entry visit is a
+  // non-issue (worst case: a label added seconds ago doesn't ghost-
+  // complete yet).
+  useEffect(() => {
+    api.getVaultFactLabels().then(setLabels).catch(() => {});
+  }, []);
 
   function submitAdd() {
     const label = newLabel.trim();
@@ -79,16 +164,14 @@ export function VaultFactsTable({
       ))}
       {adding ? (
         <div className="vault-facts__row vault-facts__row--new">
-          <input
-            className="vault-facts__input vault-facts__input--label"
-            placeholder="Label"
+          <LabelGhostInput
             value={newLabel}
+            onChange={setNewLabel}
+            labels={labels}
+            placeholder="Label"
             autoFocus
-            onChange={(e) => setNewLabel(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') submitAdd();
-              if (e.key === 'Escape') setAdding(false);
-            }}
+            onEnter={submitAdd}
+            onEscape={() => setAdding(false)}
           />
           <input
             className="vault-facts__input vault-facts__input--value"
