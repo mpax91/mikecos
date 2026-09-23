@@ -6167,6 +6167,99 @@ async function fetchEspn(sport: string, path: string, dateCompact: string, extra
   }
 }
 
+interface CdnEspnCalendarEntry {
+  value: string; // week number, as a string
+  startDate: string;
+  endDate: string;
+}
+interface CdnEspnCalendarGroup {
+  value: string; // season type: '1' preseason, '2' regular, '3' postseason, '4' off-season
+  entries?: CdnEspnCalendarEntry[];
+}
+interface CdnEspnScoreboard {
+  content?: {
+    sbData?: {
+      season?: { year?: number };
+      events?: EspnEvent[];
+      leagues?: { calendar?: CdnEspnCalendarGroup[] }[];
+    };
+  };
+}
+
+/** en-CA formats as YYYY-MM-DD — an easy way to get a date's US-Eastern
+ * calendar day as a directly-comparable string, which is how ESPN/NFL
+ * label which day a game is "on" regardless of the UTC instant it kicks
+ * off at. */
+function easternDateOf(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+}
+
+// ESPN's site.api.espn.com scoreboard (used by fetchEspn above) is
+// Akamai-blocked for Cloudflare Workers — 403 Access Denied, confirmed
+// repeatedly, despite loading fine from a real browser. cdn.espn.com serves
+// the same underlying event data via a different front door — Amazon
+// CloudFront, not Akamai — that isn't blocked. It has no single-date filter
+// though (only year/week/seasontype), so this first resolves which NFL week
+// contains the requested date from the endpoint's own calendar (refetched
+// live rather than hardcoded, so it keeps working as next year's actual
+// schedule shifts), fetches that week's full slate, then filters down to
+// games on the requested date. If this endpoint ever gets Akamai'd too, the
+// next thing to try is sports.core.api.espn.com (Fastly-fronted) with a
+// follow-up GET per event for team names/date.
+async function fetchNfl(dateDash: string): Promise<LeagueResult> {
+  try {
+    const calRes = await fetch('https://cdn.espn.com/core/nfl/scoreboard?xhr=1', {
+      headers: { 'user-agent': BROWSER_UA, accept: 'application/json' },
+      cf: { cacheTtl: 3600, cacheEverything: true },
+    });
+    if (!calRes.ok) return { games: [], debug: { sport: 'NFL', source: 'espn-cdn', status: calRes.status, note: (await calRes.text()).slice(0, 200) } };
+    const calData = await calRes.json<CdnEspnScoreboard>();
+    const groups = calData.content?.sbData?.leagues?.[0]?.calendar ?? [];
+    const target = new Date(`${dateDash}T12:00:00Z`).getTime();
+    let found: { season: string; week: string } | null = null;
+    for (const group of groups) {
+      for (const entry of group.entries ?? []) {
+        if (target >= new Date(entry.startDate).getTime() && target <= new Date(entry.endDate).getTime()) {
+          found = { season: group.value, week: entry.value };
+          break;
+        }
+      }
+      if (found) break;
+    }
+    if (!found) return { games: [], debug: { sport: 'NFL', source: 'espn-cdn', status: calRes.status, note: 'date is outside the known NFL calendar (likely off-season)' } };
+    const year = calData.content?.sbData?.season?.year ?? new Date(dateDash).getFullYear();
+
+    const url = `https://cdn.espn.com/core/nfl/scoreboard?xhr=1&year=${year}&seasontype=${found.season}&week=${found.week}`;
+    const res = await fetch(url, { headers: { 'user-agent': BROWSER_UA, accept: 'application/json' }, cf: { cacheTtl: 300, cacheEverything: true } });
+    if (!res.ok) return { games: [], debug: { sport: 'NFL', source: 'espn-cdn', status: res.status, note: (await res.text()).slice(0, 200) } };
+    const data = await res.json<CdnEspnScoreboard>();
+    const weekEvents = data.content?.sbData?.events ?? [];
+    const events = weekEvents.filter((e) => easternDateOf(e.date) === dateDash);
+    const games: ScheduleGame[] = [];
+    for (const event of events) {
+      const competitors = event.competitions?.[0]?.competitors ?? [];
+      const home = competitors.find((x) => x.homeAway === 'home');
+      const away = competitors.find((x) => x.homeAway === 'away');
+      if (!home?.team || !away?.team) continue;
+      const homeAbbr = home.team.abbreviation ?? initials(home.team.displayName ?? home.team.shortDisplayName ?? '');
+      const awayAbbr = away.team.abbreviation ?? initials(away.team.displayName ?? away.team.shortDisplayName ?? '');
+      games.push({
+        sport: 'NFL',
+        external_id: event.id,
+        home_abbr: homeAbbr,
+        away_abbr: awayAbbr,
+        home_name: home.team.displayName,
+        away_name: away.team.displayName,
+        matchup: `${awayAbbr} @ ${homeAbbr}`,
+        start_time: event.date,
+      });
+    }
+    return { games, debug: { sport: 'NFL', source: 'espn-cdn', status: res.status, note: `${games.length} games (week ${found.week}, ${weekEvents.length} in week)` } };
+  } catch (e) {
+    return { games: [], debug: { sport: 'NFL', source: 'espn-cdn', status: null, note: String(e) } };
+  }
+}
+
 // MLB's own stats API — statsapi.mlb.com — public, unauthenticated, and
 // what mlb.com's own site runs on. gameType 'S' (spring training) and 'E'
 // (exhibition) are filtered out — Mike doesn't want those on the board;
@@ -6303,7 +6396,7 @@ app.get('/api/bets/games', async (c) => {
   if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return c.json({ error: 'date (YYYY-MM-DD) is required' }, 400);
   const dateCompact = date.replaceAll('-', '');
   const results = await Promise.all([
-    fetchEspn('NFL', 'football/nfl', dateCompact),
+    fetchNfl(date),
     fetchEspn('NBA', 'basketball/nba', dateCompact),
     fetchNcaaf(date),
     fetchMlb(date),
