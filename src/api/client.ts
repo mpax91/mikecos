@@ -1,5 +1,5 @@
 import type { AuthenticationResponseJSON, PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON, RegistrationResponseJSON } from '@simplewebauthn/browser';
-import type { AuthCredentialSummary, AuthStatus, Bet, VaultEntryDetail, VaultFact, BriefingResponse, CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitLog, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsSavedArticle, NewsSettings, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, VaultRollupGroup, WeatherResponse, WeekResponse } from './types';
+import type { AuthCredentialSummary, AuthStatus, Bet, BetLeg, VaultEntryDetail, VaultFact, BriefingResponse, CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitLog, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsSavedArticle, NewsSettings, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, VaultRollupGroup, WeatherResponse, WeekResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -669,10 +669,22 @@ export const api = {
 
   listBets: () => request<Bet[]>('/api/bets'),
 
-  createBet: (params: { date: string; sport: string; sportsbook: string; bet_type: string; pick?: string; odds: number; wager: number; result: string; manual_profit?: number | null; notes?: string }) =>
-    request<Bet>('/api/bets', { method: 'POST', body: JSON.stringify(params) }),
+  createBet: (params: {
+    date: string;
+    sport: string;
+    sportsbook: string;
+    bet_type: string;
+    pick?: string;
+    odds: number;
+    wager: number;
+    result: string;
+    manual_profit?: number | null;
+    notes?: string;
+    legs?: Omit<BetLeg, 'id' | 'bet_id' | 'position' | 'created_at'>[];
+  }) => request<Bet>('/api/bets', { method: 'POST', body: JSON.stringify(params) }),
 
-  updateBet: (id: string, params: Partial<Bet>) => request<Bet>(`/api/bets/${id}`, { method: 'PATCH', body: JSON.stringify(params) }),
+  updateBet: (id: string, params: Partial<Omit<Bet, 'legs'>> & { legs?: Omit<BetLeg, 'id' | 'bet_id' | 'position' | 'created_at'>[] }) =>
+    request<Bet>(`/api/bets/${id}`, { method: 'PATCH', body: JSON.stringify(params) }),
 
   deleteBet: (id: string) => request<{ ok: true }>(`/api/bets/${id}`, { method: 'DELETE' }),
 

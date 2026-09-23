@@ -355,6 +355,23 @@ export interface Bet {
   updated_at: string;
 }
 
+// bet_legs (0038_bet_legs.sql) — only populated for Parlay/Same Game
+// Parlay/SGP+ bets. See that migration's header for the money-vs-pick-
+// accuracy split this exists for.
+export interface BetLegRow {
+  id: string;
+  bet_id: string;
+  sport: string;
+  bet_type: string;
+  pick: string | null;
+  line: number | null;
+  over_under: 'over' | 'under' | null;
+  odds: number | null;
+  result: BetResult;
+  position: number;
+  created_at: string;
+}
+
 // ---- App-wide authentication (0033_auth.sql) ----
 
 export type AuthCredentialType = 'webauthn' | 'pin';

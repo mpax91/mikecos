@@ -17,6 +17,7 @@ import { ContactsListPage } from './pages/ContactsListPage';
 import { ContactDetailPage } from './pages/ContactDetailPage';
 import { JournalPage } from './pages/JournalPage';
 import { DashboardPage } from './pages/DashboardPage';
+import { BetsPage } from './pages/BetsPage';
 import { NewsPage } from './pages/NewsPage';
 import { LinksPage } from './pages/LinksPage';
 import { VaultPage } from './pages/VaultPage';
@@ -69,6 +70,7 @@ export default function App() {
             <Route path="/journal" element={<JournalPage />} />
             <Route path="/journal/:date" element={<JournalPage />} />
             <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/bets" element={<BetsPage />} />
             <Route path="/news" element={<NewsPage />} />
             <Route path="/links" element={<LinksPage />} />
             <Route path="/vault" element={<VaultPage />} />

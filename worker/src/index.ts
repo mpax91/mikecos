@@ -6,6 +6,7 @@ import type {
   CanvasItem,
   CanvasItemType,
   Bet,
+  BetLegRow,
   Contact,
   ContactCircle,
   ContactConnection,
@@ -5648,13 +5649,83 @@ app.get('/api/briefing', async (c) => {
 // scale there's no reason to duplicate that math on the server.
 const BET_RESULTS = ['win', 'loss', 'push', 'void'];
 
+// Only these three bet_type values ever carry legs (see 0038_bet_legs.sql).
+// A straight bet keeps using bets.pick/odds directly, unchanged.
+const PARLAY_BET_TYPES = ['Parlay', 'Same Game Parlay', 'SGP+'];
+
+type BetLegInput = {
+  sport?: string;
+  bet_type?: string;
+  pick?: string | null;
+  line?: number | null;
+  over_under?: 'over' | 'under' | null;
+  odds?: number | null;
+  result?: string;
+};
+
+function validateLegs(legs: unknown): { error: string } | { legs: BetLegInput[] } {
+  if (!Array.isArray(legs) || legs.length === 0) return { error: 'at least one leg is required for a parlay' };
+  for (const leg of legs as BetLegInput[]) {
+    if (!leg.sport?.trim()) return { error: 'every leg needs a sport' };
+    if (!leg.bet_type?.trim()) return { error: 'every leg needs a bet type' };
+    if (!leg.result || !BET_RESULTS.includes(leg.result)) return { error: `every leg's result must be one of ${BET_RESULTS.join(', ')}` };
+    if (leg.over_under !== undefined && leg.over_under !== null && leg.over_under !== 'over' && leg.over_under !== 'under') {
+      return { error: "a leg's over_under must be 'over', 'under', or null" };
+    }
+  }
+  return { legs: legs as BetLegInput[] };
+}
+
+async function replaceLegs(env: Env, betId: string, legs: BetLegInput[]): Promise<void> {
+  await env.DB.prepare('DELETE FROM bet_legs WHERE bet_id = ?').bind(betId).run();
+  const ts = now();
+  await env.DB.batch(
+    legs.map((leg, i) =>
+      env.DB.prepare(
+        `INSERT INTO bet_legs (id, bet_id, sport, bet_type, pick, line, over_under, odds, result, position, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(
+        uid(),
+        betId,
+        leg.sport!.trim(),
+        leg.bet_type!.trim(),
+        leg.pick?.trim() || null,
+        leg.line ?? null,
+        leg.over_under ?? null,
+        leg.odds ?? null,
+        leg.result!,
+        i,
+        ts
+      )
+    )
+  );
+}
+
+/** Attaches each bet's legs (only ever non-empty for Parlay/SGP/SGP+ rows)
+ * in one extra query rather than N+1 — same pattern as habitsWithLogs in
+ * the Journal endpoint. */
+async function attachLegs(env: Env, bets: Bet[]): Promise<(Bet & { legs: BetLegRow[] })[]> {
+  if (bets.length === 0) return [];
+  const placeholders = bets.map(() => '?').join(',');
+  const { results } = await env.DB.prepare(`SELECT * FROM bet_legs WHERE bet_id IN (${placeholders}) ORDER BY bet_id, position ASC`)
+    .bind(...bets.map((b) => b.id))
+    .all<BetLegRow>();
+  const byBet = new Map<string, BetLegRow[]>();
+  for (const leg of results ?? []) {
+    const list = byBet.get(leg.bet_id) ?? [];
+    list.push(leg);
+    byBet.set(leg.bet_id, list);
+  }
+  return bets.map((b) => ({ ...b, legs: byBet.get(b.id) ?? [] }));
+}
+
 app.get('/api/bets', async (c) => {
   const { results } = await c.env.DB.prepare('SELECT * FROM bets ORDER BY date DESC, created_at DESC').all<Bet>();
-  return c.json(results ?? []);
+  return c.json(await attachLegs(c.env, results ?? []));
 });
 
 app.post('/api/bets', async (c) => {
-  const body = await c.req.json<Partial<Bet>>();
+  const body = await c.req.json<Partial<Bet> & { legs?: unknown }>();
   if (!body.date || !/^\d{4}-\d{2}-\d{2}$/.test(body.date)) return c.json({ error: 'date (YYYY-MM-DD) is required' }, 400);
   if (!body.sport?.trim()) return c.json({ error: 'sport is required' }, 400);
   if (!body.sportsbook?.trim()) return c.json({ error: 'sportsbook is required' }, 400);
@@ -5662,6 +5733,14 @@ app.post('/api/bets', async (c) => {
   if (typeof body.odds !== 'number' || !Number.isFinite(body.odds) || body.odds === 0) return c.json({ error: 'odds must be a non-zero number (American odds, e.g. -110 or 150)' }, 400);
   if (typeof body.wager !== 'number' || !Number.isFinite(body.wager) || body.wager <= 0) return c.json({ error: 'wager must be a positive number' }, 400);
   if (!body.result || !BET_RESULTS.includes(body.result)) return c.json({ error: `result must be one of ${BET_RESULTS.join(', ')}` }, 400);
+
+  const isParlay = PARLAY_BET_TYPES.includes(body.bet_type.trim());
+  let legs: BetLegInput[] = [];
+  if (isParlay) {
+    const validated = validateLegs(body.legs);
+    if ('error' in validated) return c.json({ error: validated.error }, 400);
+    legs = validated.legs;
+  }
 
   const id = uid();
   const ts = now();
@@ -5671,19 +5750,33 @@ app.post('/api/bets', async (c) => {
   )
     .bind(id, body.date, body.sport.trim(), body.sportsbook.trim(), body.bet_type.trim(), body.pick?.trim() || null, body.odds, body.wager, body.result, body.manual_profit ?? null, body.notes?.trim() || null, ts, ts)
     .run();
+  if (isParlay) await replaceLegs(c.env, id, legs);
   const bet = await c.env.DB.prepare('SELECT * FROM bets WHERE id = ?').bind(id).first<Bet>();
-  return c.json(bet, 201);
+  const [withLegs] = await attachLegs(c.env, [bet as Bet]);
+  return c.json(withLegs, 201);
 });
 
 app.patch('/api/bets/:id', async (c) => {
   const id = c.req.param('id');
-  const body = await c.req.json<Partial<Bet>>();
-  const existing = await c.env.DB.prepare('SELECT id FROM bets WHERE id = ?').bind(id).first();
+  const body = await c.req.json<Partial<Bet> & { legs?: unknown }>();
+  const existing = await c.env.DB.prepare('SELECT * FROM bets WHERE id = ?').bind(id).first<Bet>();
   if (!existing) return c.json({ error: 'not found' }, 404);
 
   if (body.result !== undefined && !BET_RESULTS.includes(body.result)) return c.json({ error: `result must be one of ${BET_RESULTS.join(', ')}` }, 400);
   if (body.odds !== undefined && (typeof body.odds !== 'number' || !Number.isFinite(body.odds) || body.odds === 0)) return c.json({ error: 'odds must be a non-zero number' }, 400);
   if (body.wager !== undefined && (typeof body.wager !== 'number' || !Number.isFinite(body.wager) || body.wager <= 0)) return c.json({ error: 'wager must be a positive number' }, 400);
+
+  const nextBetType = body.bet_type ?? existing.bet_type;
+  const isParlay = PARLAY_BET_TYPES.includes(nextBetType);
+  if (isParlay && body.legs !== undefined) {
+    const validated = validateLegs(body.legs);
+    if ('error' in validated) return c.json({ error: validated.error }, 400);
+    await replaceLegs(c.env, id, validated.legs);
+  } else if (!isParlay) {
+    // Switched away from a parlay type (or always wasn't one) — legs, if
+    // any, no longer apply to this bet.
+    await c.env.DB.prepare('DELETE FROM bet_legs WHERE bet_id = ?').bind(id).run();
+  }
 
   const fields: [string, unknown][] = [];
   const simple: (keyof Bet)[] = ['date', 'sport', 'sportsbook', 'bet_type', 'odds', 'wager', 'result'];
@@ -5702,7 +5795,8 @@ app.patch('/api/bets/:id', async (c) => {
       .run();
   }
   const bet = await c.env.DB.prepare('SELECT * FROM bets WHERE id = ?').bind(id).first<Bet>();
-  return c.json(bet);
+  const [withLegs] = await attachLegs(c.env, [bet as Bet]);
+  return c.json(withLegs);
 });
 
 app.delete('/api/bets/:id', async (c) => {

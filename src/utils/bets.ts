@@ -7,7 +7,20 @@ import type { Bet, BetResult } from '../api/types';
 // scoping discussion this feature was built from).
 export const SPORTS = ['NFL', 'NBA', 'MLB', 'NHL', 'NCAAF', 'NCAAB', 'Soccer', 'Tennis', 'Golf', 'MMA/Boxing', 'Other'];
 
-export const BET_TYPES = ['Moneyline', 'Spread', 'Total (Over/Under)', 'Parlay', 'Prop', 'Teaser', 'Futures', 'Other'];
+export const BET_TYPES = ['Moneyline', 'Spread', 'Total (Over/Under)', 'Player Prop', 'Parlay', 'Same Game Parlay', 'SGP+', 'Prop', 'Teaser', 'Futures', 'Other'];
+
+// Only these three ever carry legs (see worker/migrations/0038_bet_legs.sql)
+// — a straight bet (including a plain 'Prop') keeps using the single
+// pick/odds fields on the bet itself.
+export const PARLAY_BET_TYPES = ['Parlay', 'Same Game Parlay', 'SGP+'];
+
+export function isParlayType(betType: string): boolean {
+  return PARLAY_BET_TYPES.includes(betType);
+}
+
+// A leg reuses the same bet-type vocabulary as a straight bet, minus the
+// parlay types themselves (a leg can't contain another parlay).
+export const LEG_BET_TYPES = BET_TYPES.filter((t) => !PARLAY_BET_TYPES.includes(t));
 
 // Sportsbook stays free text (unlike sport/bet type) since the set of books
 // Mike actually uses is small and stable in practice, but a hard-coded list
@@ -240,4 +253,218 @@ export function buildBetPeriods(bets: Bet[], granularity: Granularity): Aggregat
   return [...buckets.entries()]
     .sort(([a], [b]) => (a < b ? -1 : 1))
     .map(([key, { label, shortLabel, bets: bucketBets }]) => aggregateBucket(key, label, shortLabel, bucketBets));
+}
+
+// ---- Pick accuracy (leg-aware — see worker/migrations/0038_bet_legs.sql) ----
+
+/** Every individual "pick" across a set of bets. A straight bet counts as
+ * one pick (its own sport/bet_type/result); a parlay's picks are its legs.
+ * Deliberately separate from the money stats above: a parlay is one wager
+ * for money purposes, win or lose as a whole, but "was I right about the
+ * Mahomes prop" is a per-leg question that shouldn't be erased just
+ * because another leg of the same parlay busted. */
+export interface Pick {
+  sport: string;
+  betType: string;
+  overUnder: 'over' | 'under' | null;
+  result: BetResult;
+}
+
+export function picksFromBets(bets: Bet[]): Pick[] {
+  const picks: Pick[] = [];
+  for (const bet of bets) {
+    if (isParlayType(bet.bet_type) && bet.legs.length > 0) {
+      for (const leg of bet.legs) {
+        picks.push({ sport: leg.sport, betType: leg.bet_type, overUnder: leg.over_under, result: leg.result });
+      }
+    } else {
+      picks.push({ sport: bet.sport, betType: bet.bet_type, overUnder: null, result: bet.result });
+    }
+  }
+  return picks;
+}
+
+export interface PickAccuracyStat {
+  key: string;
+  wins: number;
+  losses: number;
+  pushes: number;
+  voids: number;
+  winRate: number | null;
+}
+
+function emptyPickStat(key: string): PickAccuracyStat {
+  return { key, wins: 0, losses: 0, pushes: 0, voids: 0, winRate: null };
+}
+
+function foldPick(stat: PickAccuracyStat, result: BetResult): void {
+  if (result === 'win') stat.wins += 1;
+  else if (result === 'loss') stat.losses += 1;
+  else if (result === 'push') stat.pushes += 1;
+  else stat.voids += 1;
+  stat.winRate = stat.wins + stat.losses > 0 ? stat.wins / (stat.wins + stat.losses) : null;
+}
+
+/** Groups picks (not bets) by an arbitrary key — "am I good at NBA player
+ * props" regardless of which parlays those props rode in. Sorted by win
+ * rate descending, same convention as groupBets. */
+export function groupPickAccuracy(picks: Pick[], keyOf: (p: Pick) => string): PickAccuracyStat[] {
+  const map = new Map<string, PickAccuracyStat>();
+  for (const p of picks) {
+    const key = keyOf(p);
+    const stat = map.get(key) ?? emptyPickStat(key);
+    foldPick(stat, p.result);
+    map.set(key, stat);
+  }
+  return [...map.values()].sort((a, b) => (b.winRate ?? -1) - (a.winRate ?? -1));
+}
+
+export function pickAccuracyBySport(bets: Bet[]): PickAccuracyStat[] {
+  return groupPickAccuracy(picksFromBets(bets), (p) => p.sport);
+}
+
+export function pickAccuracyByBetType(bets: Bet[]): PickAccuracyStat[] {
+  return groupPickAccuracy(picksFromBets(bets), (p) => p.betType);
+}
+
+/** Over vs. under hit rate, pooled across every leg/straight-bet pick that
+ * actually has a direction (a moneyline or spread pick has none). */
+export function overUnderHitRate(bets: Bet[]): { over: PickAccuracyStat; under: PickAccuracyStat } {
+  const over = emptyPickStat('Over');
+  const under = emptyPickStat('Under');
+  for (const p of picksFromBets(bets)) {
+    if (p.overUnder === 'over') foldPick(over, p.result);
+    else if (p.overUnder === 'under') foldPick(under, p.result);
+  }
+  return { over, under };
+}
+
+export interface ParlaySizeStat extends PickAccuracyStat {
+  legCount: number;
+}
+
+/** Win rate broken down by number of legs — "am I actually good at 6-leg
+ * parlays or am I fooling myself." Money-level (the whole parlay wins or
+ * loses), unlike the per-leg pick stats above. */
+export function winRateByParlaySize(bets: Bet[]): ParlaySizeStat[] {
+  const map = new Map<number, ParlaySizeStat>();
+  for (const bet of bets) {
+    if (!isParlayType(bet.bet_type) || bet.legs.length === 0) continue;
+    const legCount = bet.legs.length;
+    const stat = map.get(legCount) ?? { ...emptyPickStat(`${legCount}-leg`), legCount };
+    foldPick(stat, bet.result);
+    map.set(legCount, stat);
+  }
+  return [...map.values()].sort((a, b) => a.legCount - b.legCount);
+}
+
+export function averageLegsPerParlay(bets: Bet[]): number | null {
+  const parlays = bets.filter((b) => isParlayType(b.bet_type) && b.legs.length > 0);
+  if (parlays.length === 0) return null;
+  return parlays.reduce((sum, b) => sum + b.legs.length, 0) / parlays.length;
+}
+
+// ---- Odds-range breakdown ----
+
+const ODDS_BUCKETS: { label: string; test: (odds: number) => boolean }[] = [
+  { label: 'Heavy favorite (-200 or shorter)', test: (o) => o <= -200 },
+  { label: 'Favorite (-199 to -110)', test: (o) => o < -109 && o > -200 },
+  { label: 'Even money (-109 to +109)', test: (o) => o >= -109 && o <= 109 },
+  { label: 'Underdog (+110 to +199)', test: (o) => o >= 110 && o <= 199 },
+  { label: 'Big underdog (+200 or longer)', test: (o) => o >= 200 },
+];
+
+export function bucketOdds(odds: number): string {
+  return ODDS_BUCKETS.find((b) => b.test(odds))?.label ?? 'Other';
+}
+
+/** Same shape as groupBets, but kept in favorite → underdog order rather
+ * than sorted by net — the point of this table is seeing the shape across
+ * the odds spectrum, not which bucket happens to be most profitable. */
+export function groupByOddsRange(bets: Bet[]): BetGroupStat[] {
+  const map = new Map<string, BetGroupStat>();
+  for (const bucket of ODDS_BUCKETS) map.set(bucket.label, emptyGroupStat(bucket.label));
+  for (const bet of bets) {
+    const key = bucketOdds(bet.odds);
+    const stat = map.get(key) ?? emptyGroupStat(key);
+    foldBet(stat, bet, computeProfit(bet));
+    map.set(key, stat);
+  }
+  return [...map.values()].filter((s) => s.count > 0);
+}
+
+// ---- Trends: streaks, day-of-week, favorite/dog split, equity curve ----
+
+export interface StreakInfo {
+  currentType: 'win' | 'loss' | null;
+  currentLength: number;
+  longestWin: number;
+  longestLoss: number;
+}
+
+/** Streaks only count win/loss — a push or void breaks neither the run nor
+ * extends it, since nothing actually happened to the record. Bets must
+ * already be sorted oldest-first for "current" to mean anything. */
+export function computeStreaks(betsOldestFirst: Bet[]): StreakInfo {
+  let longestWin = 0;
+  let longestLoss = 0;
+  let runType: 'win' | 'loss' | null = null;
+  let runLength = 0;
+  for (const bet of betsOldestFirst) {
+    if (bet.result !== 'win' && bet.result !== 'loss') continue;
+    if (bet.result === runType) {
+      runLength += 1;
+    } else {
+      runType = bet.result;
+      runLength = 1;
+    }
+    if (runType === 'win') longestWin = Math.max(longestWin, runLength);
+    else longestLoss = Math.max(longestLoss, runLength);
+  }
+  return { currentType: runType, currentLength: runLength, longestWin, longestLoss };
+}
+
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+export function byDayOfWeek(bets: Bet[]): BetGroupStat[] {
+  const stats = groupBets(bets, (b) => DAY_NAMES[new Date(`${b.date}T00:00:00`).getDay()]);
+  // Sunday→Saturday order, not net-descending — day-of-week trends read
+  // naturally in calendar order, unlike the sport/bet-type breakdowns.
+  return DAY_NAMES.map((name) => stats.find((s) => s.key === name) ?? emptyGroupStat(name));
+}
+
+/** Favorite/underdog split derived free from the odds sign already on
+ * every bet — no separate field needed. Parlays are excluded since a
+ * parlay's combined odds don't mean "favorite" the way a single leg's do. */
+export function favoriteUnderdogSplit(bets: Bet[]): { favorites: BetGroupStat; underdogs: BetGroupStat } {
+  const straight = bets.filter((b) => !isParlayType(b.bet_type));
+  const favorites = emptyGroupStat('Favorites');
+  const underdogs = emptyGroupStat('Underdogs');
+  for (const bet of straight) {
+    const stat = bet.odds < 0 ? favorites : underdogs;
+    foldBet(stat, bet, computeProfit(bet));
+  }
+  return { favorites, underdogs };
+}
+
+export interface EquityPoint {
+  date: string;
+  net: number; // that day's net
+  cumulative: number; // running total through this day
+}
+
+/** Bankroll equity curve — cumulative net over time, one point per day that
+ * had at least one bet settled. */
+export function buildEquityCurve(bets: Bet[]): EquityPoint[] {
+  const byDate = new Map<string, number>();
+  for (const bet of bets) {
+    byDate.set(bet.date, (byDate.get(bet.date) ?? 0) + computeProfit(bet));
+  }
+  let cumulative = 0;
+  return [...byDate.entries()]
+    .sort(([a], [b]) => (a < b ? -1 : 1))
+    .map(([date, net]) => {
+      cumulative += net;
+      return { date, net, cumulative };
+    });
 }

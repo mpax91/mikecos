@@ -1042,6 +1042,23 @@ export interface BriefingResponse {
 
 export type BetResult = 'win' | 'loss' | 'push' | 'void';
 
+// Only ever non-empty when bet_type is 'Parlay' | 'Same Game Parlay' |
+// 'SGP+' — see worker/migrations/0038_bet_legs.sql for the money-vs-
+// pick-accuracy split this exists for.
+export interface BetLeg {
+  id: string;
+  bet_id: string;
+  sport: string;
+  bet_type: string;
+  pick: string | null;
+  line: number | null;
+  over_under: 'over' | 'under' | null;
+  odds: number | null;
+  result: BetResult;
+  position: number;
+  created_at: string;
+}
+
 export interface Bet {
   id: string;
   date: string; // 'YYYY-MM-DD'
@@ -1054,6 +1071,7 @@ export interface Bet {
   result: BetResult;
   manual_profit: number | null;
   notes: string | null;
+  legs: BetLeg[];
   created_at: string;
   updated_at: string;
 }
