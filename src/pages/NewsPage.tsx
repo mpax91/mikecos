@@ -77,9 +77,24 @@ export function NewsPage() {
   const [staleFeedIds, setStaleFeedIds] = useState<string[]>([]);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
+  // Every article NewsPage has ever fetched, by id — not just the ones
+  // currently visible. markRead's local patch below needs an article's
+  // full data (feed_id, in particular) even after it's been filtered out
+  // of `articles`, e.g. to put it back in view when a Story-mode "undo"
+  // marks it unread again — a plain prev.map can't resurrect an entry
+  // that's no longer in the array at all.
+  const articleCacheRef = useRef<Map<string, NewsArticle>>(new Map());
+  // Guards against an earlier-started loadFeeds() resolving AFTER a later
+  // one and clobbering fresher counts with stale ones — exactly the race
+  // a quick burst of story-mode swipes (each firing its own markRead ->
+  // loadFeeds) could hit, which is what made the unread badges only look
+  // right after a manual refresh.
+  const feedsRequestRef = useRef(0);
+
   const loadFeeds = useCallback(async () => {
+    const requestId = ++feedsRequestRef.current;
     const list = await api.listNewsFeeds();
-    setFeeds(list);
+    if (requestId === feedsRequestRef.current) setFeeds(list);
   }, []);
 
   const loadArticles = useCallback(async () => {
@@ -98,6 +113,7 @@ export function NewsPage() {
       const res = await api.listNewsArticles(opts);
       setArticles(res.articles);
       setStaleFeedIds(res.stale_feeds);
+      for (const a of res.articles) articleCacheRef.current.set(a.id, a);
     } finally {
       setLoading(false);
     }
@@ -125,11 +141,25 @@ export function NewsPage() {
     // list it's currently shown in, it's removed immediately rather than
     // updated in place and left dangling.
     const shouldRemove = recentlyRead ? !read : read;
-    setArticles((prev) =>
-      shouldRemove ? prev.filter((a) => a.id !== articleId) : prev.map((a) => (a.id === articleId ? { ...a, is_read: read } : a))
-    );
+    const cached = articleCacheRef.current.get(articleId);
+    setArticles((prev) => {
+      if (shouldRemove) return prev.filter((a) => a.id !== articleId);
+      if (prev.some((a) => a.id === articleId)) return prev.map((a) => (a.id === articleId ? { ...a, is_read: read } : a));
+      // Not currently in the list at all — e.g. Story mode's "undo" just
+      // marked a previously-removed article unread again. Put it back at
+      // the front (Story mode always reads off articles[0]) using the
+      // cached copy, rather than silently dropping it until the next full
+      // reload.
+      return cached ? [{ ...cached, is_read: read }, ...prev] : prev;
+    });
+    // Instant feedback for the folder/feed unread badges, rather than
+    // waiting on loadFeeds' round trip — see feedsRequestRef above for why
+    // that round trip alone wasn't reliably instant either.
+    if (cached) {
+      setFeeds((prev) => prev.map((f) => (f.id === cached.feed_id ? { ...f, unread_count: Math.max(0, f.unread_count + (read ? -1 : 1)) } : f)));
+    }
     await api.markNewsArticleRead(articleId, read);
-    loadFeeds(); // refresh unread badges
+    loadFeeds(); // reconciles with the server in case of drift
   }
 
   async function saveArticle(article: NewsArticle) {
@@ -144,6 +174,14 @@ export function NewsPage() {
 
   async function markAllRead() {
     const opts = scope.type === 'feed' ? { feedId: scope.feedId } : scope.type === 'folder' ? { folder: scope.folder ?? '' } : undefined;
+    // Instant feedback — zero out whichever feeds are in scope rather than
+    // waiting on the round trip before the badges update.
+    setFeeds((prev) =>
+      prev.map((f) => {
+        const inScope = scope.type === 'feed' ? f.id === scope.feedId : scope.type === 'folder' ? f.folder === scope.folder : true;
+        return inScope ? { ...f, unread_count: 0 } : f;
+      })
+    );
     await api.markAllNewsRead(opts);
     loadFeeds();
     loadArticles();
@@ -594,18 +632,24 @@ function StoryView({
   onSave: (article: NewsArticle) => void;
   onOpen: (url: string) => void;
 }) {
-  const [index, setIndex] = useState(0);
   const [history, setHistory] = useState<{ id: string; markedRead: boolean }[]>([]);
   const [dragY, setDragY] = useState(0);
   const [flash, setFlash] = useState<'read' | 'saved' | null>(null);
   const wheelLock = useRef(false);
 
   useEffect(() => {
-    setIndex(0);
     setHistory([]);
   }, [articles.length === 0]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const current = articles[index];
+  // `articles` here is already unread-only, and a swipe that marks one
+  // read removes it from this same array up in NewsPage (see markRead) —
+  // so the "next" card is always whichever one is now at the front, not a
+  // separately-tracked numeric index. Tracking index as its own piece of
+  // state used to double-advance (the array shrinks by one AND the index
+  // incremented by one), silently skipping every other article — which is
+  // exactly what made Story mode claim "that's everything" while unread
+  // articles it had skipped over were still sitting there unread.
+  const current = articles[0];
 
   function showFlash(kind: 'read' | 'saved') {
     setFlash(kind);
@@ -614,18 +658,22 @@ function StoryView({
 
   function advance(markedRead: boolean) {
     if (!current) return;
+    // Marking it read removes it from `articles` up in NewsPage, which
+    // alone brings the next article to the front — no index bump needed
+    // (see the comment on `current` above).
     if (markedRead) onMarkRead(current.id, true);
     setHistory((h) => [...h, { id: current.id, markedRead }]);
-    setIndex((i) => i + 1);
     setDragY(0);
   }
 
   function goBack() {
     if (history.length === 0) return;
     const last = history[history.length - 1];
+    // Marking it unread again puts it back at the front of `articles` (see
+    // markRead's resurrection case in NewsPage), which is what brings it
+    // back into view here — again, no index bookkeeping needed.
     if (last.markedRead) onMarkRead(last.id, false);
     setHistory((h) => h.slice(0, -1));
-    setIndex((i) => Math.max(0, i - 1));
     setDragY(0);
   }
 

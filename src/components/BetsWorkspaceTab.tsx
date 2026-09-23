@@ -348,7 +348,7 @@ function ColumnHeaderCell({ name, onRename }: { name: string; onRename: (oldName
 
   if (!editing) {
     return (
-      <th className="bets-workspace__col-th">
+      <th className="bets-workspace__col-th bets-workspace__value-th">
         <button type="button" className="bets-workspace__col-th-btn" onClick={() => setEditing(true)} title="Click to rename this column">
           {name}
         </button>
@@ -356,7 +356,7 @@ function ColumnHeaderCell({ name, onRename }: { name: string; onRename: (oldName
     );
   }
   return (
-    <th className="bets-workspace__col-th">
+    <th className="bets-workspace__col-th bets-workspace__value-th">
       <input
         autoFocus
         className="bets-workspace__col-th-input"
@@ -415,7 +415,7 @@ function GameRow({
       </td>
       <td className="bets-workspace__time-cell">{formatKickoff(entry.startTime)}</td>
       {columns.map((col) => (
-        <td key={col} className={bestCols?.has(col) ? 'bets-workspace__cell--best' : undefined}>
+        <td key={col} className={`bets-workspace__value-cell${bestCols?.has(col) ? ' bets-workspace__cell--best' : ''}`}>
           <div className="bets-workspace__cell-wrap">
             <CellInput value={entry.cells.get(col) ?? ''} onCommit={(v) => onCellCommit(entry, col, v)} />
             {promoCols?.has(col) && (
@@ -881,7 +881,7 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
                   <th className="bets-workspace__game-th">Game</th>
                   <th className="bets-workspace__time-th">Time</th>
                   {SPORTSBOOK_COLUMNS.map((col) => (
-                    <th key={col}>{col}</th>
+                    <th key={col} className="bets-workspace__value-th">{col}</th>
                   ))}
                   <th>Notes</th>
                 </tr>
@@ -891,7 +891,7 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
                       Balance
                     </th>
                     {SPORTSBOOK_COLUMNS.map((col) => (
-                      <th key={col}>{balanceBySportsbook.has(col) ? formatMoney(balanceBySportsbook.get(col)!) : '—'}</th>
+                      <th key={col} className="bets-workspace__value-th">{balanceBySportsbook.has(col) ? formatMoney(balanceBySportsbook.get(col)!) : '—'}</th>
                     ))}
                     <th />
                   </tr>

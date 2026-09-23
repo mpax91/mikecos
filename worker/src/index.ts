@@ -5130,7 +5130,7 @@ app.get('/api/news/articles', async (c) => {
      WHERE a.feed_id IN (${placeholders})
      ${unreadOnly ? 'AND r.article_id IS NULL' : ''}
      ORDER BY a.published_at IS NULL, a.published_at DESC, a.fetched_at DESC
-     LIMIT 500`
+     LIMIT 2000`
   )
     .bind(...targetFeeds.map((f) => f.id))
     .all<NewsArticleRow & { feed_title: string; feed_folder: string | null; is_read: number; is_saved: number }>();

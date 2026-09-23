@@ -4959,13 +4959,20 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 
 .link-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  /* minmax(0, 1fr), not a bare 1fr — a plain 1fr track still grows to fit
+     its item's automatic minimum size, and a link's subtitle (a long,
+     unbroken URL) has a large one despite its own text-overflow: ellipsis,
+     because that only kicks in once the item is actually allowed to
+     shrink. That's what was pushing tiles past the viewport edge on
+     mobile, with no way to scroll to see the rest (.main__content clips
+     horizontal overflow rather than scrolling it — see its own comment). */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
 
 @media (max-width: 640px) {
   .link-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -4981,6 +4988,7 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   cursor: pointer;
   text-align: left;
   width: 100%;
+  min-width: 0;
   font-family: inherit;
   color: inherit;
 }
@@ -7228,6 +7236,7 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 
 .credit-score__summary {
   padding: 16px;
+  margin-bottom: 16px;
   border-left: 3px solid var(--color-accent);
 }
 
@@ -8395,6 +8404,33 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 .bets-workspace__modal-remove {
   margin-right: auto;
   color: #c0392b;
+}
+
+/* On a small screen the day's tipper columns (and Best Bets' sportsbook
+ * price columns) don't fit — table-layout: fixed at width: 100% squeezes
+ * every column down to a sliver instead of overflowing, which is what
+ * truncated the Game column to a single letter. Below the tablet
+ * breakpoint we hide those value columns outright and let Game (and Time)
+ * take the freed-up space; tapping a game still opens its notes modal,
+ * which lists every value that's been entered for it, so nothing is lost —
+ * just not shown in the table itself. Desktop/tablet keep the full grid. */
+@media (max-width: 640px) {
+  .bets-workspace__value-th,
+  .bets-workspace__value-cell {
+    display: none;
+  }
+
+  .bets-workspace__matchup-cell,
+  .bets-workspace__matchup-btn {
+    width: auto;
+    white-space: normal;
+    text-overflow: clip;
+  }
+
+  .bets-workspace__time-cell {
+    width: 52px;
+    font-size: 10px;
+  }
 }
 
 /* ---- App lock screen + Settings > Security ---- */
