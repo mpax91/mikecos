@@ -8,6 +8,7 @@ import { ConfirmModal } from '../components/ConfirmModal';
 import { useReportTabMeta } from '../contexts/TabsContext';
 import { meetingHasEnded } from '../utils/meetingNotes';
 import { MOOD_OPTIONS, MOOD_BY_VALUE } from '../utils/mood';
+import { formatMoney, resultLabel } from '../utils/bets';
 
 // Same small pure date helpers TodayPage.tsx already has — kept local and
 // duplicated by eye rather than shared, same call TodayPage's own comment
@@ -502,6 +503,27 @@ export function JournalPage() {
             </ul>
             <Link to="/dashboard" className="journal-page__auto-hint">
               See the full Health dashboard →
+            </Link>
+          </div>
+        )}
+
+        {data?.bets && (
+          <div className="journal-page__auto-section">
+            <div className="journal-page__auto-label">Betting</div>
+            <div className="journal-page__auto-hint">
+              {data.bets.count} bet{data.bets.count === 1 ? '' : 's'} · {data.bets.wins}-{data.bets.losses}
+              {data.bets.pushes ? `-${data.bets.pushes}p` : ''} ·{' '}
+              <span className={data.bets.net >= 0 ? 'is-up' : 'is-down'}>{formatMoney(data.bets.net)}</span>
+            </div>
+            <ul className="journal-page__auto-list">
+              {data.bets.items.map((b) => (
+                <li key={b.id}>
+                  {b.pick || (b.legs.length > 0 ? `${b.legs.length}-leg ${b.bet_type}` : `${b.sport} ${b.bet_type}`)} · {b.sportsbook} · {resultLabel(b.result)}
+                </li>
+              ))}
+            </ul>
+            <Link to="/bets" className="journal-page__auto-hint">
+              See the full Bets page →
             </Link>
           </div>
         )}

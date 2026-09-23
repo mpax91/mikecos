@@ -4483,6 +4483,25 @@ app.get('/api/journal/:date', async (c) => {
     .bind(date, date)
     .first<HealthWeeklyReport>();
 
+  // Bets for the day — count, W-L-Push-Void, net profit, and the bets
+  // themselves — computed live from `bets` exactly like everything else on
+  // this endpoint, never stored on journal_entries. Legs attached the same
+  // one-extra-query way GET /api/bets does (see attachLegs), so the day
+  // view can show parlay legs too without an N+1.
+  const { results: dayBets } = await c.env.DB.prepare('SELECT * FROM bets WHERE date = ? ORDER BY created_at ASC').bind(date).all<Bet>();
+  const betsWithLegs = await attachLegs(c.env, dayBets ?? []);
+  const betStats = betsWithLegs.reduce(
+    (acc, bet) => {
+      acc.net += computeBetProfit(bet);
+      if (bet.result === 'win') acc.wins += 1;
+      else if (bet.result === 'loss') acc.losses += 1;
+      else if (bet.result === 'push') acc.pushes += 1;
+      else acc.voids += 1;
+      return acc;
+    },
+    { wins: 0, losses: 0, pushes: 0, voids: 0, net: 0 }
+  );
+
   return c.json({
     date,
     entry: entry ?? null,
@@ -4492,6 +4511,7 @@ app.get('/api/journal/:date', async (c) => {
     contactNotes,
     habits: habitsWithLogs,
     health: health ?? null,
+    bets: betsWithLegs.length > 0 ? { count: betsWithLegs.length, ...betStats, items: betsWithLegs } : null,
   });
 });
 
@@ -5648,6 +5668,18 @@ app.get('/api/briefing', async (c) => {
 // household connections, the Journal's pulled-in data). At personal-bet-log
 // scale there's no reason to duplicate that math on the server.
 const BET_RESULTS = ['win', 'loss', 'push', 'void'];
+
+// Same American-odds payout math as computeProfit in src/utils/bets.ts —
+// duplicated here (not imported; the worker and frontend are separate
+// builds) because GET /api/journal/:date needs a day's net profit and
+// isn't going to make the frontend recompute it from a separate fetch.
+// Keep in sync with the frontend copy if the payout rule ever changes.
+function computeBetProfit(bet: Bet): number {
+  if (bet.manual_profit != null) return bet.manual_profit;
+  if (bet.result === 'win') return bet.odds > 0 ? bet.wager * (bet.odds / 100) : bet.wager * (100 / Math.abs(bet.odds));
+  if (bet.result === 'loss') return -bet.wager;
+  return 0; // push | void
+}
 
 // Only these three bet_type values ever carry legs (see 0038_bet_legs.sql).
 // A straight bet keeps using bets.pick/odds directly, unchanged.

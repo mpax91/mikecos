@@ -867,6 +867,20 @@ export interface HealthImportResponse {
   weeks: string[]; // week_start values written, oldest first
 }
 
+// Computed live from `bets` by GET /api/journal/:date, exactly like every
+// other block on this response — never stored on journal_entries. Absent
+// (null) on a day with zero bets, matching notes/contactNotes' convention
+// of just not rendering a section rather than showing an empty one.
+export interface JournalDayBets {
+  count: number;
+  wins: number;
+  losses: number;
+  pushes: number;
+  voids: number;
+  net: number;
+  items: Bet[];
+}
+
 export interface JournalDayResponse {
   date: string;
   entry: JournalEntry | null;
@@ -876,6 +890,7 @@ export interface JournalDayResponse {
   contactNotes: JournalContactNote[];
   habits: Habit[];
   health: HealthWeeklyReport | null;
+  bets: JournalDayBets | null;
 }
 
 // ---- News (RSS reader) ----
