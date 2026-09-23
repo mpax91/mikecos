@@ -15,6 +15,7 @@ dist-ssr
 .dev.vars
 worker/.wrangler
 worker/.dev.vars
+*.tsbuildinfo
 
 # Local scratch space (mockups, one-off exploration files) — never meant
 # to be committed, so ignored rather than accidentally tracked.
