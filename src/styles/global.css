@@ -699,6 +699,22 @@ a {
   text-align: left;
 }
 
+/* prosemirror-tables marks each cell in a drag-selected range with this
+   class and expects the caller to render the highlight — without it,
+   selecting cells to merge (drag across the header row, say) gives no
+   visual feedback that anything is selected at all. */
+.note-editor table .selectedCell {
+  position: relative;
+}
+.note-editor table .selectedCell:after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--color-accent);
+  opacity: 0.18;
+  pointer-events: none;
+}
+
 .note-editor table .column-resize-handle {
   position: absolute;
   right: -2px;
@@ -1000,6 +1016,16 @@ a {
 .editor-toolbar__table-controls button:hover {
   background: var(--color-sidebar);
   color: var(--color-ink);
+}
+
+.editor-toolbar__table-controls button:disabled {
+  opacity: 0.32;
+  cursor: default;
+}
+
+.editor-toolbar__table-controls button:disabled:hover {
+  background: transparent;
+  color: var(--color-muted);
 }
 
 .editor-toolbar__table-controls-danger:hover {

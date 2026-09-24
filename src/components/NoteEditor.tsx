@@ -80,7 +80,7 @@ const DEFAULT_TABLE_COL_WIDTH = 120;
  * overall width as expected.
  */
 function insertSizedTable(editor: Editor) {
-  editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
+  editor.chain().focus().insertTable({ rows: 3, cols: 2, withHeaderRow: true }).run();
   const { state, view } = editor;
   const $from = state.selection.$from;
   let tablePos: number | null = null;
@@ -293,6 +293,29 @@ function ColIcon({ remove, left }: { remove?: boolean; left?: boolean }) {
   );
 }
 
+// Two cells with the dividing line fading out — merging them into one.
+function MergeCellsIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+      <rect x="1" y="2.5" width="14" height="11" rx="0.7" stroke="currentColor" strokeWidth="1.1" />
+      <path d="M8 2.5v3.2M8 10.3v3.2" stroke="currentColor" strokeWidth="1.1" strokeDasharray="1.6 1.4" />
+      <path d="M5.5 8h5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+      <path d="M6.7 6.4L5.5 8l1.2 1.6M9.3 6.4L10.5 8L9.3 9.6" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+// One cell with a solid dividing line down the middle — splitting it in two.
+function SplitCellIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+      <rect x="1" y="2.5" width="14" height="11" rx="0.7" stroke="currentColor" strokeWidth="1.1" />
+      <path d="M8 2.5v11" stroke="currentColor" strokeWidth="1.1" />
+      <path d="M6.3 6.4L5.1 8l1.2 1.6M9.7 6.4L10.9 8L9.7 9.6" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function TrashIcon() {
   return (
     <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
@@ -424,6 +447,22 @@ function TableControls({ editor }: { editor: Editor }) {
       </button>
       <button type="button" onClick={() => editor.chain().focus().deleteColumn().run()} title="Delete column">
         <ColIcon remove />
+      </button>
+      <button
+        type="button"
+        disabled={!editor.can().mergeCells()}
+        onClick={() => editor.chain().focus().mergeCells().run()}
+        title="Merge selected cells — select across a row (e.g. drag across both header cells) first, so one heading can span the whole table"
+      >
+        <MergeCellsIcon />
+      </button>
+      <button
+        type="button"
+        disabled={!editor.can().splitCell()}
+        onClick={() => editor.chain().focus().splitCell().run()}
+        title="Split cell back apart"
+      >
+        <SplitCellIcon />
       </button>
       <button
         type="button"
