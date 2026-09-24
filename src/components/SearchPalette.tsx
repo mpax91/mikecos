@@ -170,7 +170,15 @@ export function SearchPalette() {
 
   function openResult(r: SearchResult) {
     closePalette();
-    navigate(r.path, r.openId ? { state: { openId: r.openId } } : undefined);
+    // For a note/jot result, hand the query along too — NoteEditor uses it
+    // to jump straight to (and select) wherever it actually matched,
+    // instead of leaving a long note's match to be found by eye. Harmless
+    // to pass even when the match was on the title rather than the body
+    // (nothing to find, so it's just a no-op on the receiving end).
+    const state: { openId?: string; highlight?: string } = {};
+    if (r.openId) state.openId = r.openId;
+    if (r.kind === 'note' || r.kind === 'jot') state.highlight = query.trim();
+    navigate(r.path, Object.keys(state).length ? { state } : undefined);
   }
 
   function onKeyDown(e: React.KeyboardEvent) {

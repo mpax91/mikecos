@@ -12,11 +12,15 @@ export function VaultNoteModal({
   onSaveTitle,
   onSaveContent,
   onClose,
+  highlightQuery,
 }: {
   note: Entity;
   onSaveTitle: (title: string) => void;
   onSaveContent: (json: string) => void;
   onClose: () => void;
+  /** Passed straight through to NoteEditor — see its own doc comment. Set
+   * when this note was opened from a search result. */
+  highlightQuery?: string;
 }) {
   const [title, setTitle] = useState(note.title);
 
@@ -40,7 +44,7 @@ export function VaultNoteModal({
           </button>
         </div>
         <div className="vault-note-modal__body">
-          <NoteEditor key={note.id} content={note.content} onSave={onSaveContent} />
+          <NoteEditor key={note.id} content={note.content} onSave={onSaveContent} highlightQuery={highlightQuery} />
         </div>
       </div>
     </div>

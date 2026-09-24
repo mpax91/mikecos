@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
 import type { Entity } from '../api/types';
 import { NoteEditor } from '../components/NoteEditor';
@@ -29,6 +29,7 @@ interface ToastState {
 export function NotesPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const isCompact = useIsCompact();
   const { openTab, showContextMenu } = useTabs();
   const [notes, setNotes] = useState<Entity[] | null>(null);
@@ -246,7 +247,12 @@ export function NotesPage() {
                 📁 <span>Move to Project</span>
               </button>
             </div>
-            <NoteEditor key={selected.id} content={selected.content} onSave={handleContentSave} />
+            <NoteEditor
+              key={selected.id}
+              content={selected.content}
+              onSave={handleContentSave}
+              highlightQuery={(location.state as { highlight?: string } | null)?.highlight}
+            />
           </div>
         )}
 

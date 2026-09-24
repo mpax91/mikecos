@@ -52,6 +52,12 @@ export function VaultPage() {
   const [renaming, setRenaming] = useState<Entity | null>(null);
   const [settingExpiration, setSettingExpiration] = useState<Entity | null>(null);
   const [openNote, setOpenNote] = useState<Entity | null>(null);
+  // Captured alongside setOpenNote in the deep-link effect below, rather
+  // than read from location.state at render time — the effect's own
+  // navigate('.', {state: null}) can otherwise land in the same commit as
+  // the re-render that first shows the modal, clearing it before
+  // VaultNoteModal ever sees it.
+  const [openNoteHighlight, setOpenNoteHighlight] = useState<string | undefined>(undefined);
   const [openPassword, setOpenPassword] = useState<Entity | null>(null);
 
   const load = useCallback(() => {
@@ -82,11 +88,12 @@ export function VaultPage() {
   // task deep-link and Jots use. Waits on `children` since the note isn't
   // there to find until loadDetail's fetch resolves.
   useEffect(() => {
-    const openId = (location.state as { openId?: string } | null)?.openId;
-    if (!openId) return;
-    const child = children.find((c) => c.id === openId);
+    const state = location.state as { openId?: string; highlight?: string } | null;
+    if (!state?.openId) return;
+    const child = children.find((c) => c.id === state.openId);
     if (!child) return;
     setOpenNote(child);
+    setOpenNoteHighlight(state.highlight);
     navigate('.', { replace: true, state: null });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.state, children]);
@@ -147,11 +154,22 @@ export function VaultPage() {
 
   // ---- Children: Attachments, Notes, Links, Pinned ----
 
+  // Opening a note any way other than the search deep-link effect above
+  // should never carry forward a stale highlight from a previous
+  // search-triggered open — VaultNoteModal remounts fresh each time it
+  // opens (it's conditionally rendered, not prop-updated), so without this
+  // reset, re-opening the same note by clicking it later would re-select
+  // whatever search once landed on.
+  function openNotePlain(note: Entity) {
+    setOpenNoteHighlight(undefined);
+    setOpenNote(note);
+  }
+
   async function createNote() {
     if (!detail) return;
     const note = await api.createEntity({ type: 'note', parent_id: detail.id });
     loadDetail(detail.id);
-    setOpenNote(note);
+    openNotePlain(note);
   }
 
   async function uploadFile(file: File) {
@@ -365,7 +383,7 @@ export function VaultPage() {
                         onRename={setRenaming}
                         onPromote={(e) => promoteWithin(pinned, e)}
                         onDemote={(e) => demoteWithin(pinned, e)}
-                        onOpenNote={setOpenNote}
+                        onOpenNote={openNotePlain}
                         onSetExpiration={setSettingExpiration}
                         compact
                       />
@@ -400,7 +418,7 @@ export function VaultPage() {
                   <VaultNoteRow
                     key={c.id}
                     entity={c}
-                    onOpen={setOpenNote}
+                    onOpen={openNotePlain}
                     onDelete={setDeleting}
                     onTogglePin={togglePinChild}
                     onPromote={(e) => promoteWithin(notes, e)}
@@ -468,6 +486,7 @@ export function VaultPage() {
           onSaveTitle={(title) => saveNoteTitle(openNote.id, title)}
           onSaveContent={(json) => saveNoteContent(openNote.id, json)}
           onClose={() => setOpenNote(null)}
+          highlightQuery={openNoteHighlight}
         />
       )}
 

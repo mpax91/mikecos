@@ -304,6 +304,7 @@ export function ProjectDetail() {
           key={entity.id}
           content={entity.content}
           onSave={(json) => handleNoteContentSave(json, entity.id)}
+          highlightQuery={(location.state as { highlight?: string } | null)?.highlight}
         />
       </div>
     );

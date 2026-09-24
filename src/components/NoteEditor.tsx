@@ -122,6 +122,28 @@ function ensureTrailingParagraph(editor: Editor) {
   }
 }
 
+/** Finds the first text run in the doc containing `query` (case-insensitive,
+ * whole-substring match — same matching a search result's own snippet came
+ * from) and returns its document position range, or null if nothing
+ * matches. Walks every text node regardless of nesting, so a hit inside a
+ * table cell is found the same as one in a plain paragraph. Only finds a
+ * match that lives within a single text node — good enough for jumping to
+ * roughly the right spot in a long note, which is the whole point; a query
+ * that happens to straddle two adjacent marks (bold cutting a word in half,
+ * say) just won't be found, same as it wouldn't be by a simple text search. */
+function findTextMatch(editor: Editor, query: string): { from: number; to: number } | null {
+  const q = query.trim().toLowerCase();
+  if (!q) return null;
+  let match: { from: number; to: number } | null = null;
+  editor.state.doc.descendants((node, pos) => {
+    if (match) return false;
+    if (!node.isText || !node.text) return;
+    const idx = node.text.toLowerCase().indexOf(q);
+    if (idx !== -1) match = { from: pos + idx, to: pos + idx + q.length };
+  });
+  return match;
+}
+
 function activeBlockStyle(editor: Editor): BlockStyle {
   if (editor.isActive('heading', { level: 1 })) return 'title';
   if (editor.isActive('heading', { level: 2 })) return 'heading';
@@ -482,6 +504,7 @@ export function NoteEditor({
   onChange,
   autoFocus,
   compact,
+  highlightQuery,
 }: {
   content: string | null;
   onSave: (json: string) => void;
@@ -503,6 +526,14 @@ export function NoteEditor({
    * independent of the isMobile-driven collapse below (which uses a
    * different, larger core set and stays exactly as-is for Notes). */
   compact?: boolean;
+  /** Jump straight to (and select) the first place in the body this text
+   * occurs, when the note was opened from a search result — for a note
+   * long enough that the match could otherwise take real scrolling to
+   * find. One-shot: applies once when the editor mounts with this prop
+   * set (callers that open a specific note in a fresh mount, e.g. via a
+   * `key={note.id}` remount, already get that for free); a value that
+   * doesn't match anything is silently ignored. */
+  highlightQuery?: string;
 }) {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingJson = useRef<string | null>(null);
@@ -591,6 +622,22 @@ export function NoteEditor({
   useEffect(() => {
     instanceIdRef.current = ++latestNoteEditorInstanceId;
   }, []);
+
+  // One-shot jump-to-match for a note opened from a search result — see
+  // highlightQuery's own doc comment. Deferred a frame so this runs after
+  // the editor's first real layout (scrollIntoView needs accurate
+  // measurements, which right on mount can still reflect an empty/
+  // collapsed container).
+  useEffect(() => {
+    if (!editor || !highlightQuery) return;
+    const raf = requestAnimationFrame(() => {
+      if (editor.isDestroyed) return;
+      const match = findTextMatch(editor, highlightQuery);
+      if (match) editor.chain().setTextSelection(match).scrollIntoView().focus().run();
+    });
+    return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor]);
 
   // Fallback for pasting an image/file straight into an editor that isn't
   // focused yet — which is the normal case for an *existing* jot or note,
