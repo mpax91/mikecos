@@ -5482,7 +5482,15 @@ async function runSearch(db: D1Database, q: string, scope: Set<SearchGroup>, inc
       group = e.is_jot ? 'jots' : parentIsVaultEntry ? 'vault' : parentIsProject ? 'projects' : 'notes';
       parentTitle = parentIsVaultEntry || parentIsProject ? e.parent_title : parentTitle;
       path = e.is_jot ? '/jots' : parentIsVaultEntry ? `/vault/${e.parent_id}` : parentIsProject ? `/projects/${e.id}` : `/notes/${e.id}`;
-      if (e.is_jot) openId = e.id; // Jots has no per-item route — opened via location.state on /jots instead
+      // Jots and Vault notes both have no per-item route of their own —
+      // opened via router state on /jots or /vault/:entryId instead, same
+      // trick ProjectDetail's task deep-link uses. Password cards are also
+      // type='note' rows but open through a different modal (openPassword,
+      // not openNote) — excluded here so a matching password doesn't try
+      // to open as a note; deep-linking straight to a password is a
+      // separate, not-yet-built case.
+      if (e.is_jot) openId = e.id;
+      else if (parentIsVaultEntry && e.is_password !== 1) openId = e.id;
     } else if (e.type === 'project') {
       kind = e.is_list ? 'list' : 'project';
       group = e.is_list ? 'lists' : 'projects';

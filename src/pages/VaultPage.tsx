@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
 import type { Entity, VaultEntryDetail, VaultFact } from '../api/types';
 import { EntityCard } from '../components/EntityCard';
@@ -38,6 +38,7 @@ const isPlainNote = (c: Entity) => c.type === 'note' && c.is_password !== 1;
 export function VaultPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const isCompact = useIsCompact();
   const { openTab, showContextMenu } = useTabs();
 
@@ -74,6 +75,21 @@ export function VaultPage() {
   useEffect(() => {
     setEntryTitle(detail?.title ?? '');
   }, [detail?.id]);
+
+  // Deep-link from the search palette: a Vault note result navigates here
+  // (there's no per-note route — a note opens in a modal, not a page) and
+  // hands the note's id through router state, same trick ProjectDetail's
+  // task deep-link and Jots use. Waits on `children` since the note isn't
+  // there to find until loadDetail's fetch resolves.
+  useEffect(() => {
+    const openId = (location.state as { openId?: string } | null)?.openId;
+    if (!openId) return;
+    const child = children.find((c) => c.id === openId);
+    if (!child) return;
+    setOpenNote(child);
+    navigate('.', { replace: true, state: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state, children]);
 
   useReportTabMeta(detail ? entryTitle || 'Untitled Entry' : 'Vault', detail ? 'vault' : 'vault-list');
 
