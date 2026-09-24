@@ -20,7 +20,6 @@ import { useIsCompact } from '../hooks/useIsMobile';
 import { formatRelativeTime } from '../utils/formatRelativeTime';
 import { useTabs, useReportTabMeta } from '../contexts/TabsContext';
 
-const noop = () => {};
 // is_password entries are type='note' children too (see the is_jot/is_list
 // flag-on-existing-type precedent) — excluded here so a password card
 // doesn't also render in the plain Notes section below.
@@ -156,6 +155,32 @@ export function VaultPage() {
     const next = entity.pinned === 1 ? 0 : 1;
     setChildren((prev) => prev.map((c) => (c.id === entity.id ? { ...c, pinned: next } : c)));
     await api.setPinned(entity.id, next === 1);
+  }
+
+  // Promote/demote swap an item with its neighbor within a given group and
+  // persist via the same scoped reorder endpoint ProjectDetail uses — see
+  // its promoteWithin/demoteWithin for why a refetch (not a local splice)
+  // is what keeps `position` correct once children can mix groups (Pinned).
+  async function persistReorder(orderedIds: string[]) {
+    if (!detail) return;
+    await api.reorder(detail.id, orderedIds);
+    loadDetail(detail.id);
+  }
+
+  function promoteWithin(group: Entity[], entity: Entity) {
+    const idx = group.findIndex((e) => e.id === entity.id);
+    if (idx <= 0) return;
+    const ordered = [...group];
+    [ordered[idx - 1], ordered[idx]] = [ordered[idx], ordered[idx - 1]];
+    persistReorder(ordered.map((o) => o.id));
+  }
+
+  function demoteWithin(group: Entity[], entity: Entity) {
+    const idx = group.findIndex((e) => e.id === entity.id);
+    if (idx === -1 || idx >= group.length - 1) return;
+    const ordered = [...group];
+    [ordered[idx + 1], ordered[idx]] = [ordered[idx], ordered[idx + 1]];
+    persistReorder(ordered.map((o) => o.id));
   }
 
   async function deleteChild(entity: Entity) {
@@ -322,8 +347,8 @@ export function VaultPage() {
                         onDelete={setDeleting}
                         onTogglePin={togglePinChild}
                         onRename={setRenaming}
-                        onPromote={noop}
-                        onDemote={noop}
+                        onPromote={(e) => promoteWithin(pinned, e)}
+                        onDemote={(e) => demoteWithin(pinned, e)}
                         onOpenNote={setOpenNote}
                         onSetExpiration={setSettingExpiration}
                         compact
@@ -343,8 +368,8 @@ export function VaultPage() {
                     onDelete={setDeleting}
                     onTogglePin={togglePinChild}
                     onRename={setRenaming}
-                    onPromote={noop}
-                    onDemote={noop}
+                    onPromote={(e) => promoteWithin(attachments, e)}
+                    onDemote={(e) => demoteWithin(attachments, e)}
                     onSetExpiration={setSettingExpiration}
                     compact={isCompact}
                   />
