@@ -10431,6 +10431,87 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   flex-shrink: 0;
 }
 
+/* Vault Notes — a compact index row, same convention as vault-link-row,
+   deliberately NOT the post-it card look (--color-postit) the old mixed
+   Notes/Files grid used: a Vault note is meant to read as a real note (same
+   family as the standalone Notes page), not a sticky-note overlay, and a
+   plain row scans much faster once an entry has more than a couple. */
+
+.vault-note-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.vault-note-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--color-card-bg, #fff);
+  border: var(--border-hairline);
+  border-radius: var(--radius-card);
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.vault-note-row:hover {
+  background: var(--color-sidebar);
+}
+
+.vault-note-row.is-pinned {
+  border-color: var(--color-accent-secondary);
+}
+
+.vault-note-row--ghost {
+  border-style: dashed;
+  color: var(--color-placeholder);
+  justify-content: flex-start;
+}
+
+.vault-note-row--ghost:hover {
+  color: var(--color-accent);
+}
+
+.vault-note-row__icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: var(--color-accent-secondary);
+}
+
+.vault-note-row__body {
+  min-width: 0;
+  flex: 1;
+}
+
+.vault-note-row__title {
+  font-size: 13px;
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vault-note-row__preview {
+  font-size: 11.5px;
+  color: var(--color-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vault-note-row__meta {
+  flex-shrink: 0;
+}
+
 /* Note modal — a note opened from inside a Vault entry, in place rather
    than navigating away (Vault entries don't nest, so there's no page for
    a child note to live at). */

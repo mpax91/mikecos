@@ -3,13 +3,11 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
 import type { Entity, VaultEntryDetail, VaultFact } from '../api/types';
 import { EntityCard } from '../components/EntityCard';
-import { TaskRow } from '../components/TaskRow';
-import { NewTaskRow } from '../components/NewTaskRow';
-import { TaskDetailModal } from '../components/TaskDetailModal';
-import { NewNoteTile, NewFileTile, NewPasswordTile } from '../components/NewItemTiles';
+import { NewFileTile, NewPasswordTile } from '../components/NewItemTiles';
 import { Section } from '../components/Section';
 import { VaultFactsTable } from '../components/VaultFactsTable';
 import { VaultLinkRow } from '../components/VaultLinkRow';
+import { VaultNoteRow } from '../components/VaultNoteRow';
 import { VaultNoteModal } from '../components/VaultNoteModal';
 import { PasswordCard } from '../components/PasswordCard';
 import { PasswordDetailModal } from '../components/PasswordDetailModal';
@@ -26,14 +24,18 @@ const noop = () => {};
 // is_password entries are type='note' children too (see the is_jot/is_list
 // flag-on-existing-type precedent) — excluded here so a password card
 // doesn't also render in the plain Notes section below.
-const isFileOrNote = (c: Entity) => (c.type === 'file' || c.type === 'note') && c.is_password !== 1;
+const isPlainNote = (c: Entity) => c.type === 'note' && c.is_password !== 1;
 
 /** Vault — the Evernote-replacement filing cabinet. An entry is a lightweight
  * quick-facts table (label/value, added inline — no field/group/template
- * setup) plus the same Notes/Links/Tasks/Pinned children Projects already
- * use, reframed as reference rather than active work: no status lifecycle,
- * no folder nesting. A "Folder" from v1 is gone — Google Drive is the real
- * file repository, so a folder's job is now just a styled Link to it. */
+ * setup) plus Attachments/Notes/Passwords/Links children, reframed as
+ * reference rather than active work: no status lifecycle, no folder
+ * nesting, and — as of 0044_vault_drop_tasks — no Tasks section either,
+ * since a Vault attachment's own expiration date already covers the
+ * renewal-reminder case a per-entry to-do list would have been used for
+ * (see ExpirationModal / the "Renew: ..." task it generates in Today). A
+ * "Folder" from v1 is gone too — Google Drive is the real file repository,
+ * so a folder's job is now just a styled Link to it. */
 export function VaultPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -50,7 +52,6 @@ export function VaultPage() {
   const [renaming, setRenaming] = useState<Entity | null>(null);
   const [settingExpiration, setSettingExpiration] = useState<Entity | null>(null);
   const [openNote, setOpenNote] = useState<Entity | null>(null);
-  const [taskStack, setTaskStack] = useState<string[]>([]);
   const [openPassword, setOpenPassword] = useState<Entity | null>(null);
 
   const load = useCallback(() => {
@@ -129,7 +130,7 @@ export function VaultPage() {
     await api.reorderVaultFacts(detail.id, orderedIds);
   }
 
-  // ---- Children: Notes (incl. uploaded files), Links, Tasks, Pinned ----
+  // ---- Children: Attachments, Notes, Links, Pinned ----
 
   async function createNote() {
     if (!detail) return;
@@ -149,18 +150,6 @@ export function VaultPage() {
     await api.createLink(detail.id, url, title);
     setAddingLink(false);
     loadDetail(detail.id);
-  }
-
-  async function createTask(title: string) {
-    if (!detail) return;
-    await api.createEntity({ type: 'task', parent_id: detail.id, title });
-    loadDetail(detail.id);
-  }
-
-  async function toggleTask(entity: Entity) {
-    const nextStatus = entity.status === 'done' ? 'open' : 'done';
-    setChildren((prev) => prev.map((c) => (c.id === entity.id ? { ...c, status: nextStatus } : c)));
-    await api.updateEntity(entity.id, { status: nextStatus });
   }
 
   async function togglePinChild(entity: Entity) {
@@ -219,12 +208,10 @@ export function VaultPage() {
   const showList = !isCompact || !id;
   const showDetail = !isCompact || !!id;
 
-  const notes = children.filter(isFileOrNote);
+  const attachments = children.filter((c) => c.type === 'file');
+  const notes = children.filter(isPlainNote);
   const passwords = children.filter((c) => c.is_password === 1);
   const links = children.filter((c) => c.type === 'link');
-  const tasks = children.filter((c) => c.type === 'task');
-  const openTasks = tasks.filter((t) => t.status !== 'done');
-  const doneTasks = tasks.filter((t) => t.status === 'done');
   const pinned = children.filter((c) => c.pinned === 1);
 
   return (
@@ -328,8 +315,6 @@ export function VaultPage() {
                   {pinned.map((c) =>
                     c.type === 'link' ? (
                       <VaultLinkRow key={c.id} entity={c} onDelete={setDeleting} onTogglePin={togglePinChild} />
-                    ) : c.type === 'task' ? (
-                      <TaskRow key={c.id} entity={c} onToggle={toggleTask} onDelete={setDeleting} onTogglePin={togglePinChild} onOpen={(e) => setTaskStack([e.id])} />
                     ) : (
                       <EntityCard
                         key={c.id}
@@ -349,9 +334,9 @@ export function VaultPage() {
               </Section>
             )}
 
-            <Section title="Notes" count={notes.length} defaultExpanded={!isCompact}>
+            <Section title="Attachments" count={attachments.length} defaultExpanded={!isCompact}>
               <div className="entity-card-grid">
-                {notes.map((c) => (
+                {attachments.map((c) => (
                   <EntityCard
                     key={c.id}
                     entity={c}
@@ -360,13 +345,22 @@ export function VaultPage() {
                     onRename={setRenaming}
                     onPromote={noop}
                     onDemote={noop}
-                    onOpenNote={setOpenNote}
                     onSetExpiration={setSettingExpiration}
                     compact={isCompact}
                   />
                 ))}
-                <NewNoteTile onCreate={createNote} compact={isCompact} />
                 <NewFileTile onUploadFile={uploadFile} onAddLink={() => setAddingLink(true)} />
+              </div>
+            </Section>
+
+            <Section title="Notes" count={notes.length} defaultExpanded={!isCompact}>
+              <div className="vault-note-list">
+                {notes.map((c) => (
+                  <VaultNoteRow key={c.id} entity={c} onOpen={setOpenNote} onDelete={setDeleting} onTogglePin={togglePinChild} />
+                ))}
+                <button type="button" className="vault-note-row vault-note-row--ghost" onClick={createNote}>
+                  ＋ new note
+                </button>
               </div>
             </Section>
 
@@ -387,23 +381,6 @@ export function VaultPage() {
                 <button type="button" className="vault-link-row vault-link-row--ghost" onClick={() => setAddingLink(true)}>
                   ＋ add a link
                 </button>
-              </div>
-            </Section>
-
-            <Section title="Tasks" count={openTasks.length} defaultExpanded={true}>
-              <div className="task-list">
-                {openTasks.map((c) => (
-                  <TaskRow key={c.id} entity={c} onToggle={toggleTask} onDelete={setDeleting} onTogglePin={togglePinChild} onOpen={(e) => setTaskStack([e.id])} />
-                ))}
-                <NewTaskRow onCreate={createTask} />
-                {doneTasks.length > 0 && (
-                  <>
-                    <div className="task-divider">Completed</div>
-                    {doneTasks.map((c) => (
-                      <TaskRow key={c.id} entity={c} onToggle={toggleTask} onDelete={setDeleting} onTogglePin={togglePinChild} onOpen={(e) => setTaskStack([e.id])} />
-                    ))}
-                  </>
-                )}
               </div>
             </Section>
           </div>
@@ -464,21 +441,6 @@ export function VaultPage() {
           }
           onConfirm={() => (deleting.type === 'vault_entry' ? deleteEntry(deleting) : deleteChild(deleting))}
           onCancel={() => setDeleting(null)}
-        />
-      )}
-
-      {taskStack.length > 0 && detail && (
-        <TaskDetailModal
-          key={taskStack[taskStack.length - 1]}
-          taskId={taskStack[taskStack.length - 1]}
-          onBack={taskStack.length > 1 ? () => setTaskStack((prev) => prev.slice(0, -1)) : undefined}
-          onClose={() => setTaskStack([])}
-          onOpenSubtask={(taskId) => setTaskStack((prev) => [...prev, taskId])}
-          onMutated={() => loadDetail(detail.id)}
-          onRequestDelete={(entityToDelete) => {
-            setTaskStack([]);
-            setDeleting(entityToDelete);
-          }}
         />
       )}
     </div>
