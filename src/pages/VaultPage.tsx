@@ -381,7 +381,15 @@ export function VaultPage() {
             <Section title="Notes" count={notes.length} defaultExpanded={!isCompact}>
               <div className="vault-note-list">
                 {notes.map((c) => (
-                  <VaultNoteRow key={c.id} entity={c} onOpen={setOpenNote} onDelete={setDeleting} onTogglePin={togglePinChild} />
+                  <VaultNoteRow
+                    key={c.id}
+                    entity={c}
+                    onOpen={setOpenNote}
+                    onDelete={setDeleting}
+                    onTogglePin={togglePinChild}
+                    onPromote={(e) => promoteWithin(notes, e)}
+                    onDemote={(e) => demoteWithin(notes, e)}
+                  />
                 ))}
                 <button type="button" className="vault-note-row vault-note-row--ghost" onClick={createNote}>
                   ＋ new note

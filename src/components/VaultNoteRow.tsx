@@ -25,11 +25,15 @@ export function VaultNoteRow({
   onOpen,
   onDelete,
   onTogglePin,
+  onPromote,
+  onDemote,
 }: {
   entity: Entity;
   onOpen: (entity: Entity) => void;
   onDelete: (entity: Entity) => void;
   onTogglePin: (entity: Entity) => void;
+  onPromote: (entity: Entity) => void;
+  onDemote: (entity: Entity) => void;
 }) {
   const isPinned = entity.pinned === 1;
   const preview = extractNoteText(entity.content, 140);
@@ -52,6 +56,8 @@ export function VaultNoteRow({
       <KebabMenu
         items={[
           { label: isPinned ? 'Unpin' : 'Pin', onClick: () => onTogglePin(entity) },
+          { label: 'Promote', onClick: () => onPromote(entity) },
+          { label: 'Demote', onClick: () => onDemote(entity) },
           { label: 'Delete', onClick: () => onDelete(entity), danger: true, separatorBefore: true },
         ]}
       />
