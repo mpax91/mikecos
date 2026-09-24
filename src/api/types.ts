@@ -984,7 +984,7 @@ export interface NewsSavedArticle {
 
 // ---- Global search (Cmd/Ctrl+K palette) ----
 
-export type SearchGroupKey = 'notes' | 'jots' | 'lists' | 'projects' | 'boards' | 'contacts' | 'journal' | 'meeting_notes' | 'links';
+export type SearchGroupKey = 'notes' | 'jots' | 'lists' | 'projects' | 'vault' | 'boards' | 'contacts' | 'journal' | 'meeting_notes' | 'links';
 
 export interface SearchResult {
   id: string;

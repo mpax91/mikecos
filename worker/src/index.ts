@@ -5329,14 +5329,19 @@ app.get('/api/top-news', async (c) => {
 // simple to reason about/extend as new modules show up. Plenty fast at
 // personal-app scale; add FTS5 only if this ever actually gets slow.
 //
-// Every source funnels into one of nine result "groups" — the same set the
-// search palette's filter chips offer (notes/jots/lists/projects/boards/
-// contacts/journal/meeting_notes/links). `entities` alone covers five of
-// them (notes, jots, projects, lists, and list/project tasks) plus file
-// attachments, which are folded into whichever group their parent belongs
-// to rather than getting a chip of their own — a match on a filename reads
-// naturally as "found inside Notes/Projects/etc", not a separate concept.
-const SEARCH_GROUPS = ['notes', 'jots', 'lists', 'projects', 'boards', 'contacts', 'journal', 'meeting_notes', 'links'] as const;
+// Every source funnels into one of ten result "groups" — the same set the
+// search palette's filter chips offer (notes/jots/lists/projects/vault/
+// boards/contacts/journal/meeting_notes/links). `entities` alone covers six
+// of them (notes, jots, projects, lists, vault, and list/project/vault
+// children) plus file attachments, which are folded into whichever group
+// their parent belongs to rather than getting a chip of their own — a
+// match on a filename reads naturally as "found inside Notes/Projects/
+// Vault/etc", not a separate concept. `vault` is its own group rather than
+// folding into `projects` — a Vault entry isn't a Project (it has no
+// status lifecycle or folder nesting; see VaultPage's own header comment),
+// and showing its children under a "📁 Projects" chip read as "there's a
+// Project here" when there wasn't one.
+const SEARCH_GROUPS = ['notes', 'jots', 'lists', 'projects', 'vault', 'boards', 'contacts', 'journal', 'meeting_notes', 'links'] as const;
 type SearchGroup = (typeof SEARCH_GROUPS)[number];
 
 interface SearchResult {
@@ -5387,7 +5392,7 @@ async function runSearch(db: D1Database, q: string, scope: Set<SearchGroup>, inc
   const like = `%${q}%`;
   const results: SearchResult[] = [];
 
-  const wantsEntities = scope.has('notes') || scope.has('jots') || scope.has('lists') || scope.has('projects');
+  const wantsEntities = scope.has('notes') || scope.has('jots') || scope.has('lists') || scope.has('projects') || scope.has('vault');
   const wantsBoards = scope.has('boards');
   const wantsContacts = scope.has('contacts');
   const wantsJournal = scope.has('journal');
@@ -5459,18 +5464,24 @@ async function runSearch(db: D1Database, q: string, scope: Set<SearchGroup>, inc
     // a page) — the closest real destination for anything filed under one
     // is the entry itself, so every branch below routes a vault_entry
     // parent (or the entry's own row) to /vault/:id instead of falling
-    // through to a /projects/:id that doesn't exist for that id.
+    // through to a /projects/:id that doesn't exist for that id. A note
+    // parented to a Project, by contrast, DOES have its own route — the
+    // same /projects/:id ProjectDetail uses for the project itself, dual-
+    // purposed to render NoteEditor when the id resolves to a note instead
+    // (see ProjectDetail's `if (entity.type === 'note')` branch) — so that
+    // one keys off the note's own id, not its parent's.
     const parentIsVaultEntry = e.parent_type === 'vault_entry';
+    const parentIsProject = e.parent_type === 'project';
 
     if (e.type === 'vault_entry') {
       kind = 'vault_entry';
-      group = 'projects';
+      group = 'vault';
       path = `/vault/${e.id}`;
     } else if (e.type === 'note') {
       kind = e.is_jot ? 'jot' : 'note';
-      group = e.is_jot ? 'jots' : parentIsVaultEntry ? 'projects' : 'notes';
-      parentTitle = parentIsVaultEntry ? e.parent_title : parentTitle;
-      path = e.is_jot ? '/jots' : parentIsVaultEntry ? `/vault/${e.parent_id}` : `/notes/${e.id}`;
+      group = e.is_jot ? 'jots' : parentIsVaultEntry ? 'vault' : parentIsProject ? 'projects' : 'notes';
+      parentTitle = parentIsVaultEntry || parentIsProject ? e.parent_title : parentTitle;
+      path = e.is_jot ? '/jots' : parentIsVaultEntry ? `/vault/${e.parent_id}` : parentIsProject ? `/projects/${e.id}` : `/notes/${e.id}`;
       if (e.is_jot) openId = e.id; // Jots has no per-item route — opened via location.state on /jots instead
     } else if (e.type === 'project') {
       kind = e.is_list ? 'list' : 'project';
@@ -5479,7 +5490,7 @@ async function runSearch(db: D1Database, q: string, scope: Set<SearchGroup>, inc
     } else if (e.type === 'task') {
       const parentIsList = e.parent_is_list === 1;
       kind = parentIsList ? 'list_item' : 'task';
-      group = parentIsList ? 'lists' : 'projects';
+      group = parentIsList ? 'lists' : parentIsVaultEntry ? 'vault' : 'projects';
       parentTitle = e.parent_title;
       path = parentIsList ? `/lists/${e.parent_id}` : parentIsVaultEntry ? `/vault/${e.parent_id}` : `/projects/${e.parent_id}`;
       openId = parentIsVaultEntry ? null : e.id; // Vault has no task-detail deep-link (yet) — land on the entry itself
@@ -5497,7 +5508,7 @@ async function runSearch(db: D1Database, q: string, scope: Set<SearchGroup>, inc
         group = e.parent_is_list ? 'lists' : 'projects';
         path = e.parent_is_list ? `/lists/${e.parent_id}` : `/projects/${e.parent_id}`;
       } else if (parentIsVaultEntry) {
-        group = 'projects';
+        group = 'vault';
         path = `/vault/${e.parent_id}`;
       } else {
         group = 'projects';
@@ -5609,9 +5620,18 @@ async function runSearch(db: D1Database, q: string, scope: Set<SearchGroup>, inc
     results.push({ id: l.id, kind: 'quick_link', group: 'links', title: l.name || l.url, snippet: score < 60 ? l.url : null, parentTitle: null, path: '/links', openId: null, updatedAt: l.updated_at, score });
   }
 
-  results.sort((a, b) => b.score - a.score || b.updatedAt.localeCompare(a.updatedAt));
+  // A Vault entry's own row (kind 'vault_entry') and every one of its
+  // children share the same destination (/vault/:id — Vault has no
+  // per-child route), so when a specific child already matched, the
+  // entry's own generic match is pure noise: same click target, no
+  // specifics about *why* it matched. Drop it and let the more specific
+  // child(ren) stand alone.
+  const matchedVaultChildPaths = new Set(results.filter((r) => r.group === 'vault' && r.kind !== 'vault_entry').map((r) => r.path));
+  const deduped = results.filter((r) => !(r.kind === 'vault_entry' && matchedVaultChildPaths.has(r.path)));
 
-  return SEARCH_GROUPS.filter((g) => scope.has(g)).map((key) => ({ key, results: results.filter((r) => r.group === key) }));
+  deduped.sort((a, b) => b.score - a.score || b.updatedAt.localeCompare(a.updatedAt));
+
+  return SEARCH_GROUPS.filter((g) => scope.has(g)).map((key) => ({ key, results: deduped.filter((r) => r.group === key) }));
 }
 
 app.get('/api/search', async (c) => {
@@ -5667,7 +5687,7 @@ interface BriefingMeeting {
   related: BriefingRelated[];
 }
 
-const BRIEFING_RELATED_SCOPE = new Set<SearchGroup>(['notes', 'jots', 'lists', 'projects', 'boards', 'links', 'meeting_notes']);
+const BRIEFING_RELATED_SCOPE = new Set<SearchGroup>(['notes', 'jots', 'lists', 'projects', 'vault', 'boards', 'links', 'meeting_notes']);
 const BRIEFING_RELATED_LIMIT = 6;
 const UPCOMING_DATE_WINDOW_DAYS = 7;
 const STALE_PROJECT_DAYS = 14;

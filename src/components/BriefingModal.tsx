@@ -52,6 +52,7 @@ const GROUP_ICON: Record<string, string> = {
   jots: '🗒️',
   lists: '☑️',
   projects: '📁',
+  vault: '🗄️',
   boards: '📌',
   contacts: '👤',
   journal: '📔',
