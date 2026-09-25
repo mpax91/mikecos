@@ -11590,6 +11590,21 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   margin-top: 2px;
 }
 
+.rewards-find__online {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: var(--border-hairline);
+}
+
+.rewards-find__online-title {
+  font-size: 12px;
+  font-weight: var(--weight-medium);
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 8px;
+}
+
 /* ---- Rewards card editor — bonus/perk sub-sections ---- */
 
 .wallet-editor__checkbox-field {

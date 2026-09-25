@@ -14,12 +14,19 @@ function tileColor(id: string): string {
  * feel like a sibling, not a bolted-on second app. */
 export function RewardsCardTile({
   card,
+  reason,
   onOpen,
   onEdit,
   onToggleAlwaysCarry,
   onDelete,
 }: {
   card: RewardsCard;
+  /** Overrides the base-rate subtitle with why this card is shown here
+   * (e.g. "Dining 5% · 2% everywhere") — used on the "Carry in your
+   * wallet" grid, where "1% base" would be actively misleading about why
+   * the card made the list. Omitted elsewhere (All Cards), where the raw
+   * base rate is the more useful, general-purpose fact to show. */
+  reason?: string;
   onOpen: (card: RewardsCard) => void;
   onEdit: (card: RewardsCard) => void;
   onToggleAlwaysCarry: (card: RewardsCard) => void;
@@ -45,7 +52,8 @@ export function RewardsCardTile({
       </div>
       <div className="wallet-tile__name">{card.nickname}</div>
       <div className="wallet-tile__category">
-        {card.baseRate}% base{card.network ? ` · ${card.network}` : ''}
+        {reason || `${card.baseRate}% base`}
+        {card.network ? ` · ${card.network}` : ''}
         {card.last4 ? ` ····${card.last4}` : ''}
       </div>
     </div>

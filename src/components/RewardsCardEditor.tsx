@@ -234,6 +234,7 @@ function BonusesEditor({ card, onChanged }: { card: RewardsCard; onChanged: (car
   const [startsOn, setStartsOn] = useState('');
   const [endsOn, setEndsOn] = useState('');
   const [keywords, setKeywords] = useState('');
+  const [onlineOnly, setOnlineOnly] = useState(false);
   const [saving, setSaving] = useState(false);
 
   async function addBonus() {
@@ -250,6 +251,7 @@ function BonusesEditor({ card, onChanged }: { card: RewardsCard; onChanged: (car
         startsOn: kind === 'rotating' ? (range ? range.startsOn : startsOn || null) : null,
         endsOn: kind === 'rotating' ? (range ? range.endsOn : endsOn || null) : null,
         keywords: keywords.trim() || null,
+        onlineOnly,
       });
       onChanged({ ...card, bonuses: [...card.bonuses, bonus] });
       setCategory('');
@@ -257,6 +259,7 @@ function BonusesEditor({ card, onChanged }: { card: RewardsCard; onChanged: (car
       setStartsOn('');
       setEndsOn('');
       setKeywords('');
+      setOnlineOnly(false);
     } finally {
       setSaving(false);
     }
@@ -282,6 +285,7 @@ function BonusesEditor({ card, onChanged }: { card: RewardsCard; onChanged: (car
                   </span>
                 )}
                 {b.keywords && <span className="wallet-editor__row-item-tag">merchants: {b.keywords}</span>}
+                {b.onlineOnly && <span className="wallet-editor__row-item-tag">online only</span>}
               </span>
               <button type="button" className="wallet-editor__row-item-remove" onClick={() => removeBonus(b.id)} aria-label="Remove">
                 ×
@@ -329,6 +333,10 @@ function BonusesEditor({ card, onChanged }: { card: RewardsCard; onChanged: (car
       <div className="wallet-editor__hint" style={{ marginTop: -4 }}>
         Lets Find match a merchant you type ("Rhoback.com") even when it doesn't share the category's own wording.
       </div>
+      <label className="wallet-editor__checkbox-field" style={{ marginTop: 4 }}>
+        <input type="checkbox" checked={onlineOnly} onChange={(e) => setOnlineOnly(e.target.checked)} />
+        <span>Online-only category (e.g. "Online Shopping", Amazon.com, Chase Travel) — doesn't need the physical card, so it won't pull this card into "Carry in your wallet" on its own</span>
+      </label>
       {kind === 'rotating' && (
         <button
           type="button"

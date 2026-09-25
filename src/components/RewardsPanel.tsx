@@ -6,7 +6,17 @@ import { RewardsCardTile } from './RewardsCardTile';
 import { RewardsCardDetail } from './RewardsCardDetail';
 import { RewardsCardEditor } from './RewardsCardEditor';
 import { ConfirmModal } from './ConfirmModal';
-import { cardsToCarry, cardsNeedingQuarterUpdate, everydayCategories, bestCardForCategory, defaultFlatRateCard, findBestCardsFor, describeRotatingWindow, type RewardsMatch } from '../utils/rewards';
+import {
+  carryPlan,
+  cardsNeedingQuarterUpdate,
+  everydayCategories,
+  bestCardForCategory,
+  defaultFlatRateCard,
+  findBestCardsFor,
+  onlineEligibleCards,
+  describeRotatingWindow,
+  type RewardsMatch,
+} from '../utils/rewards';
 
 const QUICK_CHIPS = ['Dining', 'Gas', 'Groceries', 'Travel', 'Drugstores', 'Streaming'];
 
@@ -81,7 +91,7 @@ export function RewardsPanel() {
   }
 
   const activeCards = useMemo(() => (cards ?? []).filter((c) => c.active), [cards]);
-  const carry = useMemo(() => cardsToCarry(activeCards), [activeCards]);
+  const carry = useMemo(() => carryPlan(activeCards), [activeCards]);
   const needsUpdate = useMemo(() => cardsNeedingQuarterUpdate(activeCards), [activeCards]);
   // Only worth a row here when it actually beats the default flat-rate
   // card's own rate — the default already covers every category at that
@@ -95,7 +105,20 @@ export function RewardsPanel() {
         .filter((row): row is { category: string; match: RewardsMatch } => !!row.match && row.match.rate > floorRate),
     [activeCards, floorRate]
   );
-  const findResults = useMemo(() => findBestCardsFor(activeCards, findQuery), [activeCards, findQuery]);
+  // Below-floor cards are hidden here too — same reasoning as the category
+  // table: a 1% card is never the right answer when the default already
+  // covers everything at 2%, so it's just noise in a ranked list.
+  const findResults = useMemo(
+    () => findBestCardsFor(activeCards, findQuery).filter((m) => m.rate >= floorRate),
+    [activeCards, findQuery, floorRate]
+  );
+  // Find deliberately doesn't try to know whether "Rhoback.com" is an
+  // online store — Mike doesn't want a maintained merchant database. So
+  // instead, whenever there's a query, it also surfaces any card whose
+  // best trick is an online-only bonus (Amazon.com, "Online Shopping,"
+  // Chase Travel) as a standing "if this is online" suggestion, regardless
+  // of whether the query text matched it directly.
+  const onlineCards = useMemo(() => onlineEligibleCards(activeCards), [activeCards]);
 
   if (error) return <div className="empty-state">Couldn't load Rewards: {error}</div>;
   if (!cards) return <div className="empty-state">Loading…</div>;
@@ -143,8 +166,16 @@ export function RewardsPanel() {
               <div className="empty-state">Add a card to get a carry recommendation.</div>
             ) : (
               <div className="wallet-tile-grid">
-                {carry.map((c) => (
-                  <RewardsCardTile key={c.id} card={c} onOpen={setOpenCard} onEdit={setEditing} onToggleAlwaysCarry={toggleAlwaysCarry} onDelete={setDeleting} />
+                {carry.map(({ card: c, reasons }) => (
+                  <RewardsCardTile
+                    key={c.id}
+                    card={c}
+                    reason={reasons.join(' · ')}
+                    onOpen={setOpenCard}
+                    onEdit={setEditing}
+                    onToggleAlwaysCarry={toggleAlwaysCarry}
+                    onDelete={setDeleting}
+                  />
                 ))}
               </div>
             )}
@@ -205,28 +236,48 @@ export function RewardsPanel() {
           {!findQuery.trim() ? (
             <div className="empty-state">Type what you're buying (or a merchant name), or tap a category above.</div>
           ) : (
-            <ul className="rewards-find__results">
-              {findResults.map((match) => (
-                <RewardsMatchRow
-                  key={match.card.id}
-                  label={match.card.nickname}
-                  rate={match.rate}
-                  card={match.card}
-                  onOpen={setOpenCard}
-                  perks={match.card.perks.map((p) => p.label)}
-                  subtitle={
-                    match.bonus ? (
-                      <>
-                        {match.bonus.category}
-                        {match.bonus.kind === 'rotating' && ' · active now'}
-                      </>
-                    ) : (
-                      'no matching category — base rate'
-                    )
-                  }
-                />
-              ))}
-            </ul>
+            <>
+              <ul className="rewards-find__results">
+                {findResults.map((match) => (
+                  <RewardsMatchRow
+                    key={match.card.id}
+                    label={match.card.nickname}
+                    rate={match.rate}
+                    card={match.card}
+                    onOpen={setOpenCard}
+                    perks={match.card.perks.map((p) => p.label)}
+                    subtitle={
+                      match.bonus ? (
+                        <>
+                          {match.bonus.category}
+                          {match.bonus.kind === 'rotating' && ' · active now'}
+                        </>
+                      ) : (
+                        'no matching category — base rate'
+                      )
+                    }
+                  />
+                ))}
+              </ul>
+
+              {onlineCards.length > 0 && (
+                <div className="rewards-find__online">
+                  <div className="rewards-find__online-title">If this is an online purchase</div>
+                  <ul className="rewards-find__results">
+                    {onlineCards.map((match) => (
+                      <RewardsMatchRow
+                        key={match.card.id}
+                        label={match.card.nickname}
+                        rate={match.rate}
+                        card={match.card}
+                        onOpen={setOpenCard}
+                        subtitle={match.bonus?.category ?? 'online'}
+                      />
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </>
           )}
         </div>
       )}

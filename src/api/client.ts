@@ -921,10 +921,10 @@ export const api = {
 
   deleteRewardsCard: (id: string) => request<{ ok: true }>(`/api/rewards/cards/${id}`, { method: 'DELETE' }),
 
-  createRewardsBonus: (cardId: string, params: Pick<RewardsBonus, 'category' | 'rate' | 'kind' | 'startsOn' | 'endsOn' | 'keywords'>) =>
+  createRewardsBonus: (cardId: string, params: Pick<RewardsBonus, 'category' | 'rate' | 'kind' | 'startsOn' | 'endsOn' | 'keywords' | 'onlineOnly'>) =>
     request<RewardsBonus>(`/api/rewards/cards/${cardId}/bonuses`, { method: 'POST', body: JSON.stringify(params) }),
 
-  updateRewardsBonus: (id: string, patch: Partial<Pick<RewardsBonus, 'category' | 'rate' | 'kind' | 'startsOn' | 'endsOn' | 'keywords'>>) =>
+  updateRewardsBonus: (id: string, patch: Partial<Pick<RewardsBonus, 'category' | 'rate' | 'kind' | 'startsOn' | 'endsOn' | 'keywords' | 'onlineOnly'>>) =>
     request<RewardsBonus>(`/api/rewards/bonuses/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
 
   deleteRewardsBonus: (id: string) => request<{ ok: true }>(`/api/rewards/bonuses/${id}`, { method: 'DELETE' }),

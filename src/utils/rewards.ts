@@ -31,43 +31,65 @@ export function defaultFlatRateCard(cards: RewardsCard[]): RewardsCard | null {
 // three drive which cards make it into the physical wallet by default.
 export const MAJOR_CATEGORIES = ['Dining', 'Gas', 'Groceries'];
 
-/** Cards worth actually carrying, as few as possible: the single default
- * flat-rate card (the floor — see defaultFlatRateCard) always makes the
- * list, since it's the fallback for everything else. On top of that, only
- * the single best card for each of the 3 major categories gets added —
- * and only when it actually beats the default; if nothing beats 2%, the
- * default already has it covered and no extra card is worth carrying for
- * it. One card winning two categories (a card at 5% on both Dining and
- * Gas this quarter, say) only gets added once. Beyond the 3 majors, any
- * card with its own currently-active rotating bonus that beats the
- * default also earns a slot — Mike's own "if another category pops up,
- * we can consider it" case. A manual "Always Carry" flag is a deliberate
- * override on top of all of this (perks/points reasons the cashback math
- * alone wouldn't capture), never a replacement for it. */
-export function cardsToCarry(cards: RewardsCard[]): RewardsCard[] {
+export interface CarryPlanEntry {
+  card: RewardsCard;
+  /** Short labels for why this card made the list — "Dining 5%", "2%
+   * everywhere", "Always carry" — joined for display rather than picking
+   * just one, since a card can earn its spot more than one way. */
+  reasons: string[];
+}
+
+/** Cards worth actually carrying, as few as possible, with the reason each
+ * one made the cut. The single default flat-rate card (the floor — see
+ * defaultFlatRateCard) always makes the list, since it's the fallback for
+ * everything else. On top of that, only the single best *in-person* card
+ * for each of the 3 major categories gets added — and only when it
+ * actually beats the default; if nothing beats 2%, the default already
+ * has it covered and no extra card is worth carrying for it. Beyond the
+ * 3 majors, any card with its own currently-active in-person rotating
+ * bonus that beats the default also earns a slot — Mike's own "if another
+ * category pops up, we can consider it" case. Online-only bonuses (see
+ * RewardsBonus.onlineOnly — "Online Shopping," Amazon.com, Chase Travel)
+ * never earn a card a spot here on their own: an online purchase doesn't
+ * need the physical card present, so a card that's only good online
+ * belongs in Find, not the wallet. A manual "Always Carry" flag is a
+ * deliberate override on top of all of this (perks/points reasons the
+ * cashback math alone wouldn't capture), never a replacement for it. */
+export function carryPlan(cards: RewardsCard[]): CarryPlanEntry[] {
   const active = cards.filter((c) => c.active);
   const flat = defaultFlatRateCard(active);
   if (!flat) return [];
   const floor = flat.baseRate;
 
-  const keep = new Map<string, RewardsCard>();
-  keep.set(flat.id, flat);
+  const cardById = new Map<string, RewardsCard>();
+  const reasonsById = new Map<string, string[]>();
+  const addReason = (card: RewardsCard, reason: string) => {
+    cardById.set(card.id, card);
+    const list = reasonsById.get(card.id) ?? [];
+    if (!list.includes(reason)) list.push(reason);
+    reasonsById.set(card.id, list);
+  };
+
+  addReason(flat, `${floor}% everywhere`);
 
   for (const category of MAJOR_CATEGORIES) {
-    const best = bestCardForCategory(active, category);
-    if (best && best.rate > floor) keep.set(best.card.id, best.card);
+    const best = bestCardForCategory(active, category, { excludeOnlineOnly: true });
+    if (best && best.rate > floor) addReason(best.card, `${category} ${best.rate}%`);
   }
 
   for (const c of active) {
-    const worthwhileRotatingBonus = c.bonuses.some((b) => b.kind === 'rotating' && isBonusActiveToday(b) && b.rate > floor);
-    if (worthwhileRotatingBonus) keep.set(c.id, c);
+    for (const b of c.bonuses) {
+      if (b.kind === 'rotating' && !b.onlineOnly && isBonusActiveToday(b) && b.rate > floor) {
+        addReason(c, `${b.category} ${b.rate}%`);
+      }
+    }
   }
 
   for (const c of active) {
-    if (c.alwaysCarry) keep.set(c.id, c);
+    if (c.alwaysCarry) addReason(c, 'Always carry');
   }
 
-  return Array.from(keep.values());
+  return Array.from(cardById.values()).map((card) => ({ card, reasons: reasonsById.get(card.id) ?? [] }));
 }
 
 // The everyday categories worth always showing a "best card" answer for,
@@ -180,6 +202,15 @@ function bonusMatchesQuery(bonus: RewardsBonus, rawQuery: string, normQuery: str
     .some((k) => normQuery.includes(k) || k.includes(normQuery));
 }
 
+export interface FindOptions {
+  /** Ignore online-only bonuses (see RewardsBonus.onlineOnly) — used by
+   * carryPlan's physical-wallet selection, since an online-only bonus
+   * shouldn't be the reason a card earns a spot in the wallet. Find and
+   * the category table leave this off, since both are meant to answer
+   * "what's my best card for X," online or not. */
+  excludeOnlineOnly?: boolean;
+}
+
 /** Ranks every active card for a free-text query — a category ("dining")
  * or a merchant ("Home Depot", "Rhoback.com"). A card's best applicable
  * rate wins: an active bonus that matches (by category text or a stored
@@ -187,14 +218,16 @@ function bonusMatchesQuery(bonus: RewardsBonus, rawQuery: string, normQuery: str
  * rate. A card with no match at all still shows up at its base rate, so
  * the ranking always surfaces the honest fallback (e.g. a flat 2% card)
  * rather than only cards with a specific bonus. */
-export function findBestCardsFor(cards: RewardsCard[], query: string): RewardsMatch[] {
+export function findBestCardsFor(cards: RewardsCard[], query: string, opts: FindOptions = {}): RewardsMatch[] {
   const rawQuery = query.trim().toLowerCase();
   if (!rawQuery) return [];
   const normQuery = normalizeForMatch(rawQuery);
   const matches: RewardsMatch[] = [];
   for (const card of cards) {
     if (!card.active) continue;
-    const applicable = card.bonuses.filter((b) => isBonusActiveToday(b) && bonusMatchesQuery(b, rawQuery, normQuery));
+    const applicable = card.bonuses.filter(
+      (b) => isBonusActiveToday(b) && bonusMatchesQuery(b, rawQuery, normQuery) && !(opts.excludeOnlineOnly && b.onlineOnly)
+    );
     if (applicable.length > 0) {
       const best = applicable.reduce((a, b) => (b.rate > a.rate ? b : a));
       matches.push({ card, bonus: best, rate: best.rate });
@@ -208,6 +241,25 @@ export function findBestCardsFor(cards: RewardsCard[], query: string): RewardsMa
 /** The single best card for one known category — same ranking as
  * findBestCardsFor, just the top result, for the main screen's
  * category-by-category reference table. */
-export function bestCardForCategory(cards: RewardsCard[], category: string): RewardsMatch | null {
-  return findBestCardsFor(cards, category)[0] ?? null;
+export function bestCardForCategory(cards: RewardsCard[], category: string, opts: FindOptions = {}): RewardsMatch | null {
+  return findBestCardsFor(cards, category, opts)[0] ?? null;
+}
+
+/** Cards whose best applicable answer right now is specifically an
+ * online-only bonus (Amazon.com, "Online Shopping," Chase Travel) — Find's
+ * "if this is an online purchase" callout. Deliberately not merchant-
+ * specific (Mike doesn't want to maintain a database of every e-commerce
+ * site): whenever the query doesn't hit a more specific match, this is the
+ * generic fallback for "well, it's probably online, so use this instead
+ * of your everyday default." */
+export function onlineEligibleCards(cards: RewardsCard[]): RewardsMatch[] {
+  const matches: RewardsMatch[] = [];
+  for (const card of cards) {
+    if (!card.active) continue;
+    const applicable = card.bonuses.filter((b) => b.onlineOnly && isBonusActiveToday(b));
+    if (applicable.length === 0) continue;
+    const best = applicable.reduce((a, b) => (b.rate > a.rate ? b : a));
+    matches.push({ card, bonus: best, rate: best.rate });
+  }
+  return matches.sort((a, b) => b.rate - a.rate);
 }

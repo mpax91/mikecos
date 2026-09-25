@@ -432,6 +432,12 @@ export interface RewardsBonus {
   /** Optional comma-separated merchant/search aliases (e.g. "amazon, rhoback, etsy")
    * so Find can match a merchant name that shares no text with the category itself. */
   keywords: string | null;
+  /** True for a category that only applies to online purchases (Amazon.com,
+   * "Online Shopping", Chase Travel's own portal) — the physical card doesn't
+   * need to be in the wallet for these, so they never earn a card a spot on
+   * their own in "Carry in your wallet"; Find still surfaces them under its
+   * "if this is an online purchase" callout. */
+  onlineOnly: boolean;
   sortOrder: number;
 }
 
