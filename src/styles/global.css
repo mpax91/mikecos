@@ -44,6 +44,15 @@ a {
   flex-direction: column;
   padding: 20px 12px;
   gap: 20px;
+  /* .app-shell is height: 100vh with overflow: hidden, and the sidebar
+     stretches to fill it (the default cross-axis stretch of a row flex
+     container) — on a short window, once Now/Capture/Plan/Reference/
+     Insights add up to more than that height, the rest (including the
+     bottom Settings row, held down by .sidebar__spacer) had nowhere to go
+     and no way to reach it. Scroll the sidebar itself instead of clipping
+     it silently. */
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .sidebar__top {
