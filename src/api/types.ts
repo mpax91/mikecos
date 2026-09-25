@@ -507,6 +507,11 @@ export interface RewardsCard {
 export interface RewardsImportResult {
   created: number;
   updated: number;
+  /** Of `updated`, how many were actually a keyless card Mike had entered
+   * by hand before this import existed for it — matched by nickname on
+   * this first run and linked to the new importKey, rather than creating
+   * a duplicate. Purely informational. */
+  adopted: number;
   bonusesWritten: number;
   perksWritten: number;
   merchantsWritten: number;

@@ -509,6 +509,7 @@ rewardsRouter.post('/import', async (c) => {
 
   let created = 0;
   let updated = 0;
+  let adopted = 0;
   let bonusesWritten = 0;
   let perksWritten = 0;
   let merchantsWritten = 0;
@@ -533,13 +534,25 @@ rewardsRouter.post('/import', async (c) => {
     }
     seenKeys.push(importKey);
 
-    const existing = await c.env.DB.prepare('SELECT id FROM rewards_cards WHERE import_key = ?').bind(importKey).first<{ id: string }>();
     const ts = now();
     let cardId: string;
+    let existing = await c.env.DB.prepare('SELECT id FROM rewards_cards WHERE import_key = ?').bind(importKey).first<{ id: string }>();
+
+    // First-run bootstrap: no card has this importKey yet, but Mike may
+    // already have entered this exact card by hand before the research
+    // project existed for it — a keyless row with the same nickname. Adopt
+    // it (backfill its import_key) instead of creating a duplicate; this
+    // fallback only ever fires once per card, since every subsequent
+    // import matches cleanly by import_key from here on.
+    if (!existing) {
+      existing = await c.env.DB.prepare('SELECT id FROM rewards_cards WHERE import_key IS NULL AND nickname = ? COLLATE NOCASE').bind(nickname).first<{ id: string }>();
+      if (existing) adopted++;
+    }
+
     if (existing) {
       cardId = existing.id;
-      await c.env.DB.prepare('UPDATE rewards_cards SET nickname = ?, network = ?, base_rate = ?, annual_fee = ?, updated_at = ? WHERE id = ?')
-        .bind(nickname, card.network?.trim() || null, typeof card.baseRate === 'number' ? card.baseRate : 1.0, typeof card.annualFee === 'number' ? card.annualFee : null, ts, cardId)
+      await c.env.DB.prepare('UPDATE rewards_cards SET nickname = ?, network = ?, base_rate = ?, annual_fee = ?, import_key = ?, updated_at = ? WHERE id = ?')
+        .bind(nickname, card.network?.trim() || null, typeof card.baseRate === 'number' ? card.baseRate : 1.0, typeof card.annualFee === 'number' ? card.annualFee : null, importKey, ts, cardId)
         .run();
       updated++;
     } else {
@@ -608,7 +621,7 @@ rewardsRouter.post('/import', async (c) => {
     unmatched = (allImported ?? []).filter((r) => !seenKeys.includes(r.import_key)).map((r) => ({ nickname: r.nickname, importKey: r.import_key }));
   }
 
-  return c.json({ created, updated, bonusesWritten, perksWritten, merchantsWritten, errors, unmatchedExisting: unmatched });
+  return c.json({ created, updated, adopted, bonusesWritten, perksWritten, merchantsWritten, errors, unmatchedExisting: unmatched });
 });
 
 // ---- Merchants (name/alias -> category directory, 0058) ----

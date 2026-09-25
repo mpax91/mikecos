@@ -6,14 +6,43 @@ credit card in Mike's wallet and hand back one JSON file that MikeOS's Rewards �
 Import screen can ingest directly. It does no coding and touches no app code —
 MikeOS's `/api/rewards/import` endpoint is what actually applies the result.
 
+## First run: bootstrapping cards that already exist in MikeOS
+
+Mike likely already has some cards entered by hand in MikeOS from before this
+project existed — the first run's job is to research and fully flesh those out
+(plus add any card CardCaddy has that MikeOS doesn't yet), not to treat them as
+already handled. Nothing special needs to happen for this to work correctly:
+
+- MikeOS's export (see step 1 below) includes every card on file regardless of
+  whether it has an `importKey` yet — a hand-entered card just shows up with
+  `"importKey": null`.
+- When this project's output assigns a brand-new `importKey` to a card whose
+  **nickname exactly matches** one of those keyless entries, MikeOS's import
+  links the two automatically — it does not create a duplicate. This only ever
+  happens once per card; every later quarter's import matches by `importKey`
+  directly.
+- So: for a card that's already in the export, just use its exact existing
+  `nickname` (copy it verbatim, don't rephrase it) when writing this run's
+  output, invent a sensible `importKey` for it same as any other card, and
+  research/fill in everything else (bonuses, perks, keywords, online-only
+  splits) as if it were new — because functionally, for this project's
+  purposes, it is. The import result will report how many cards this run
+  linked to an existing hand-entered one that way, so Mike can confirm nothing
+  duplicated.
+- A card CardCaddy or Mike's own list has that MikeOS's export doesn't show at
+  all yet is simply new — give it a fresh `importKey` and it's created on
+  import, same as any other card.
+
 ## What to do, each run
 
 1. **Get the starting context.** Ask Mike for two things if they're not already
    pasted in: (a) his current CardCaddy list or a plain list of the cards he
    holds, and (b) MikeOS's current export — from Settings → Rewards → Import →
    "Export current cards," which downloads a JSON file with every card already
-   on file, keyed by `importKey`, with its current bonus rows. Starting from the
-   export means updating an existing card rather than accidentally duplicating
+   on file (hand-entered ones included, even with no `importKey` yet — see
+   "First run" above), keyed by `importKey` where one exists, with each card's
+   current bonus rows. Starting from the export means updating (or, on a first
+   encounter, linking to) an existing card rather than accidentally duplicating
    it under a new key.
 
 2. **For every card, verify current terms against the issuer's own site** —

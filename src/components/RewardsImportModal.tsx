@@ -97,7 +97,9 @@ export function RewardsImportModal({ onClose, onImported }: { onClose: () => voi
       {result && (
         <div className="rewards-import__result">
           <div>
-            {result.created} card{result.created === 1 ? '' : 's'} created, {result.updated} updated, {result.bonusesWritten} bonus rows written
+            {result.created} card{result.created === 1 ? '' : 's'} created, {result.updated} updated
+            {result.adopted > 0 ? ` (${result.adopted} of those linked to a card you'd already entered by hand)` : ''}, {result.bonusesWritten} bonus rows
+            written
             {result.perksWritten > 0 ? `, ${result.perksWritten} perks written` : ''}
             {result.merchantsWritten > 0 ? `, ${result.merchantsWritten} merchants written` : ''}.
           </div>
