@@ -1,5 +1,5 @@
 import type { AuthenticationResponseJSON, PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON, RegistrationResponseJSON } from '@simplewebauthn/browser';
-import type { AuthCredentialSummary, AuthStatus, Bet, BetLeg, BetGameNote, BetPromo, BetPromoStatus, BetScheduleGame, BetTransaction, BetTransactionType, VaultEntryDetail, VaultFact, BriefingResponse, CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, CreditScoreEntry, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitLog, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsSavedArticle, NewsSettings, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, VaultFactLabel, VaultRollupGroup, WalletCard, WalletCardFact, WalletCategory, RewardsCard, RewardsBonus, RewardsPerk, PaymentCard, PaymentCardFact, PaymentCardSecrets, PlexLibrary, PlexItem, PlexItemDetail, PlexIssue, PlexMissingEpisode, PlexSyncChunkResult, PlexAiringCheckResult, PlexAiringScanChunkResult, WeatherResponse, WeekResponse } from './types';
+import type { AuthCredentialSummary, AuthStatus, Bet, BetLeg, BetGameNote, BetPromo, BetPromoStatus, BetScheduleGame, BetTransaction, BetTransactionType, VaultEntryDetail, VaultFact, BriefingResponse, CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, CreditScoreEntry, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitDirection, HabitEvent, HabitLog, HabitSummary, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsSavedArticle, NewsSettings, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, VaultFactLabel, VaultRollupGroup, WalletCard, WalletCardFact, WalletCategory, RewardsCard, RewardsBonus, RewardsPerk, PaymentCard, PaymentCardFact, PaymentCardSecrets, PlexLibrary, PlexItem, PlexItemDetail, PlexIssue, PlexMissingEpisode, PlexSyncChunkResult, PlexAiringCheckResult, PlexAiringScanChunkResult, WeatherResponse, WeekResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -646,10 +646,13 @@ export const api = {
 
   listHabits: (includeArchived = false) => request<Habit[]>(`/api/habits${includeArchived ? '?archived=1' : ''}`),
 
-  createHabit: (name: string, unit?: string | null, targetValue?: number | null) =>
-    request<Habit>('/api/habits', { method: 'POST', body: JSON.stringify({ name, unit, target_value: targetValue }) }),
+  createHabit: (name: string, opts?: { unit?: string | null; targetValue?: number | null; direction?: HabitDirection; icon?: string | null }) =>
+    request<Habit>('/api/habits', {
+      method: 'POST',
+      body: JSON.stringify({ name, unit: opts?.unit, target_value: opts?.targetValue, direction: opts?.direction, icon: opts?.icon }),
+    }),
 
-  updateHabit: (id: string, patch: Partial<Pick<Habit, 'name' | 'unit' | 'target_value' | 'active' | 'position'>>) =>
+  updateHabit: (id: string, patch: Partial<Pick<Habit, 'name' | 'unit' | 'target_value' | 'direction' | 'icon' | 'active' | 'position'>>) =>
     request<Habit>(`/api/habits/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
 
   deleteHabit: (id: string) => request<{ ok: true }>(`/api/habits/${id}`, { method: 'DELETE' }),
@@ -659,6 +662,16 @@ export const api = {
 
   deleteHabitLog: (habitId: string, date: string) =>
     request<{ ok: true }>(`/api/habits/${habitId}/logs/${date}`, { method: 'DELETE' }),
+
+  getHabitsSummary: () => request<HabitSummary[]>('/api/habits/summary'),
+
+  listHabitEvents: (habitId: string, date: string) => request<HabitEvent[]>(`/api/habits/${habitId}/events?date=${encodeURIComponent(date)}`),
+
+  logHabitEvent: (habitId: string, value?: number) =>
+    request<HabitEvent>(`/api/habits/${habitId}/events`, { method: 'POST', body: JSON.stringify(value !== undefined ? { value } : {}) }),
+
+  deleteHabitEvent: (habitId: string, eventId: string) =>
+    request<{ ok: true }>(`/api/habits/${habitId}/events/${eventId}`, { method: 'DELETE' }),
 
   // ---- News (RSS reader) ----
 

@@ -226,11 +226,15 @@ export interface TaskReschedule {
   rescheduled_date: string; // 'YYYY-MM-DD'
 }
 
+export type HabitDirection = 'build' | 'reduce';
+
 export interface Habit {
   id: string;
   name: string;
   unit: string | null;
   target_value: number | null;
+  direction: HabitDirection;
+  icon: string | null;
   active: number; // 0 | 1
   position: number;
   created_at: string;
@@ -243,6 +247,15 @@ export interface HabitLog {
   value: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface HabitEvent {
+  id: string;
+  habit_id: string;
+  occurred_at: string; // ISO instant
+  date: string; // 'YYYY-MM-DD', local
+  value: number;
+  created_at: string;
 }
 
 export interface HealthLog {

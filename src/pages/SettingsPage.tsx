@@ -9,6 +9,7 @@ import { QuickLinksPanel } from './settings/QuickLinksPanel';
 import { WalletCategoriesPanel } from './settings/WalletCategoriesPanel';
 import { SecurityPanel } from './settings/SecurityPanel';
 import { NewsFeedsPanel } from './settings/NewsFeedsPanel';
+import { HabitsPanel } from './settings/HabitsPanel';
 
 interface Category {
   id: string;
@@ -31,6 +32,7 @@ const CATEGORIES: Category[] = [
   { id: 'calendars', label: 'Calendar Integrations', icon: '📅' },
   { id: 'links', label: 'Links', icon: '🔗' },
   { id: 'wallet', label: 'Wallet Categories', icon: '🎫' },
+  { id: 'habits', label: 'Habits', icon: '📈' },
   { id: 'news-feeds', label: 'News Feeds', icon: '📰' },
   { id: 'contact-import', label: 'Contact Import', icon: '👤' },
   { id: 'security', label: 'Security', icon: '🔒' },
@@ -76,6 +78,7 @@ export function SettingsPage() {
           {active === 'calendars' && <CalendarsPanel />}
           {active === 'links' && <QuickLinksPanel />}
           {active === 'wallet' && <WalletCategoriesPanel />}
+          {active === 'habits' && <HabitsPanel />}
           {active === 'news-feeds' && <NewsFeedsPanel />}
           {active === 'contact-import' && <ContactImportPanel />}
           {active === 'security' && <SecurityPanel />}

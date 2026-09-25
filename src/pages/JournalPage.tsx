@@ -111,43 +111,15 @@ function HabitRow({ habit, date, onLogged }: { habit: Habit; date: string; onLog
   );
 }
 
-function AddHabitRow({ onAdd }: { onAdd: (name: string, unit: string, target: string) => void }) {
-  const [open, setOpen] = useState(false);
-  const [name, setName] = useState('');
-  const [unit, setUnit] = useState('');
-  const [target, setTarget] = useState('');
-
-  if (!open) {
-    return (
-      <button type="button" className="journal-page__add-habit-trigger" onClick={() => setOpen(true)}>
-        + Add Habit
-      </button>
-    );
-  }
-
+// Creating/editing habit definitions themselves (name, unit, target,
+// direction, icon) lives in Settings → Habits now, alongside the quick-tap
+// Habits capture page — Journal just logs against whatever's already set
+// up, the same division WalletCategoriesPanel draws for Wallet.
+function ManageHabitsLink() {
   return (
-    <form
-      className="journal-page__add-habit-form"
-      onSubmit={(e) => {
-        e.preventDefault();
-        if (!name.trim()) return;
-        onAdd(name.trim(), unit.trim(), target.trim());
-        setName('');
-        setUnit('');
-        setTarget('');
-        setOpen(false);
-      }}
-    >
-      <input className="journal-page__add-habit-input" placeholder="Habit name (e.g. Water)" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
-      <input className="journal-page__add-habit-input journal-page__add-habit-input--small" placeholder="Unit (optional)" value={unit} onChange={(e) => setUnit(e.target.value)} />
-      <input className="journal-page__add-habit-input journal-page__add-habit-input--small" placeholder="Target (optional)" type="number" value={target} onChange={(e) => setTarget(e.target.value)} />
-      <button type="submit" className="btn">
-        Add
-      </button>
-      <button type="button" className="btn btn--ghost" onClick={() => setOpen(false)}>
-        Cancel
-      </button>
-    </form>
+    <Link to="/settings?cat=habits" className="journal-page__add-habit-trigger">
+      + Manage Habits
+    </Link>
   );
 }
 
@@ -297,11 +269,6 @@ export function JournalPage() {
 
   async function saveEntry(content: string) {
     await api.updateJournalEntry(date, content);
-  }
-
-  async function addHabit(name: string, unit: string, target: string) {
-    await api.createHabit(name, unit || null, target ? Number(target) : null);
-    load();
   }
 
   if (error) {
@@ -534,7 +501,7 @@ export function JournalPage() {
         {(data?.habits ?? []).map((h) => (
           <HabitRow key={h.id} habit={h} date={date} onLogged={load} />
         ))}
-        <AddHabitRow onAdd={addHabit} />
+        <ManageHabitsLink />
       </div>
 
       <div className="journal-page__freeform card">

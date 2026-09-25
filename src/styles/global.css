@@ -11955,3 +11955,337 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   background: #f4ede0;
   color: var(--color-muted);
 }
+
+/* ---- Habits ---- */
+
+/* Settings > Habits' add/edit form — a two-input row plus radio-style
+   direction picker. Uses the .modal .foo double-class trick documented
+   above custom-recurrence's rules, since .modal input{width:100%} beats a
+   single-class selector on specificity. */
+.settings-page__form-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.modal .settings-page__form-row input {
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.settings-page__direction-choice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--color-ink);
+  cursor: pointer;
+  flex: 1;
+}
+
+.modal .settings-page__direction-choice input {
+  width: auto;
+  margin: 0;
+  flex: 0 0 auto;
+}
+
+.settings-page__archived-tag {
+  color: var(--color-placeholder);
+  font-weight: var(--weight-regular);
+}
+
+/* The Habits capture page — a tap-to-log tile grid, same card-shaped
+   language as Wallet/Rewards' tiles since it lives in the same "reference
+   grids of tiles" family, but each tile is an action (tap to log) as much
+   as a fact, so it gets its own count/headline/button stack rather than
+   reusing wallet-tile directly. */
+.habits-page__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 12px;
+}
+
+.habits-page__tile {
+  background: var(--color-card-bg);
+  border: var(--border-hairline);
+  border-radius: var(--radius-card);
+  padding: 14px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: box-shadow 0.12s ease, transform 0.12s ease;
+}
+
+.habits-page__tile:hover {
+  box-shadow: 0 4px 14px rgba(46, 42, 34, 0.1);
+  transform: translateY(-1px);
+}
+
+.habits-page__tile-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--color-muted);
+}
+
+.habits-page__tile-name {
+  font-size: 13px;
+  font-weight: var(--weight-medium);
+  color: var(--color-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.habits-page__tile-icon {
+  margin-right: 4px;
+}
+
+.habits-page__tile-count {
+  font-family: var(--font-serif);
+  font-size: 32px;
+  line-height: 1;
+  color: var(--color-ink);
+}
+
+.habits-page__tile-unit {
+  font-size: 13px;
+  font-weight: var(--weight-regular);
+  color: var(--color-muted);
+  margin-left: 6px;
+}
+
+.habits-page__tile-headline {
+  font-size: 12px;
+  min-height: 32px;
+  color: var(--color-muted);
+}
+
+.habits-page__tile-headline--good {
+  color: var(--color-success, #2f7a4f);
+}
+
+.habits-page__tile-headline--bad {
+  color: var(--color-danger, #c0392b);
+}
+
+.habits-page__tile-tap {
+  margin-top: 2px;
+  border: var(--border-hairline);
+  background: var(--color-sidebar);
+  color: var(--color-ink);
+  border-radius: 8px;
+  padding: 7px;
+  font-size: 12.5px;
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+}
+
+.habits-page__tile-tap:hover:not(:disabled) {
+  background: var(--color-accent);
+  color: var(--color-accent-text);
+}
+
+.habits-page__tile-tap:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.habits-page__sparkline {
+  color: var(--color-accent);
+  flex-shrink: 0;
+}
+
+/* The habit detail modal — today's precise, timestamped log with per-tap
+   undo, plus the four headline stats and a way to log a custom amount or
+   another one right from here. */
+.habits-page__detail-headline {
+  font-size: 14px;
+  margin-bottom: 6px;
+  color: var(--color-ink);
+}
+
+.habits-page__detail-headline--good {
+  color: var(--color-success, #2f7a4f);
+}
+
+.habits-page__detail-headline--bad {
+  color: var(--color-danger, #c0392b);
+}
+
+.habits-page__detail-streak {
+  font-size: 12.5px;
+  color: var(--color-accent-secondary);
+  margin-bottom: 10px;
+}
+
+.habits-page__detail-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.habits-page__detail-stat-value {
+  font-family: var(--font-serif);
+  font-size: 20px;
+  color: var(--color-ink);
+}
+
+.habits-page__detail-stat-label {
+  font-size: 11px;
+  color: var(--color-muted);
+}
+
+.habits-page__detail-log-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.modal .habits-page__detail-log-actions input {
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.habits-page__detail-events-label {
+  font-size: 12px;
+  color: var(--color-muted);
+  margin-bottom: 6px;
+}
+
+.habits-page__detail-events {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.habits-page__detail-event {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--color-ink);
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--color-sidebar);
+}
+
+.habits-page__detail-event span:first-child {
+  flex: 1;
+  color: var(--color-muted);
+}
+
+.habits-page__detail-event button {
+  border: none;
+  background: transparent;
+  color: var(--color-placeholder);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.habits-page__detail-event button:hover {
+  color: var(--color-danger, #c0392b);
+}
+
+/* Dashboard's Habits life-area card — a compact, read-only row per habit. */
+.dashboard-page__habits {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.dashboard-page__habit-row {
+  display: block;
+  padding: 12px 14px;
+  text-decoration: none;
+  color: inherit;
+}
+
+.dashboard-page__habit-row-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--color-muted);
+}
+
+.dashboard-page__habit-row-name {
+  font-size: 13px;
+  font-weight: var(--weight-medium);
+  color: var(--color-ink);
+}
+
+.dashboard-page__habit-row-count {
+  font-family: var(--font-serif);
+  font-size: 26px;
+  color: var(--color-ink);
+  margin-top: 4px;
+}
+
+.dashboard-page__habit-row-unit {
+  font-size: 13px;
+  font-weight: var(--weight-regular);
+  color: var(--color-muted);
+}
+
+.dashboard-page__habit-row-headline {
+  font-size: 12px;
+  color: var(--color-muted);
+  margin-top: 2px;
+}
+
+.dashboard-page__habit-row-headline--good {
+  color: var(--color-success, #2f7a4f);
+}
+
+.dashboard-page__habit-row-headline--bad {
+  color: var(--color-danger, #c0392b);
+}
+
+/* Stats' Habits section — a 14-day bar chart per habit, reusing the
+   completions trend's bar/column classes so the two sections read as the
+   same visual system, at a slightly shorter max height (compact) since
+   there are several of these on the page instead of just one. */
+.stats-page__habit-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.stats-page__habit-card {
+  padding: 14px;
+}
+
+.stats-page__habit-card-title {
+  font-size: 13px;
+  font-weight: var(--weight-medium);
+  color: var(--color-ink);
+  margin-bottom: 8px;
+}
+
+.stats-page__trend--compact {
+  height: 90px;
+  padding: 14px 4px 6px;
+  gap: 3px;
+}
+
+.stats-page__habit-card-compare {
+  font-size: 12px;
+  color: var(--color-muted);
+  margin-top: 8px;
+}
+
+.stats-page__habit-card-compare--good {
+  color: var(--color-success, #2f7a4f);
+}
+
+.stats-page__habit-card-compare--bad {
+  color: var(--color-danger, #c0392b);
+}

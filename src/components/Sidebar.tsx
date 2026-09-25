@@ -43,6 +43,7 @@ const SIDEBAR_SECTIONS: NavSectionDef[] = [
       { path: '/jots', label: 'Jots', kind: 'jots-list' },
       { path: '/notes', label: 'Notes', kind: 'notes-list' },
       { path: '/lists', label: 'Lists', kind: 'lists-list' },
+      { path: '/habits', label: 'Habits', kind: 'habits' },
     ],
   },
   {

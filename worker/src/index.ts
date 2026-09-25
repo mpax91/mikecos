@@ -20,6 +20,7 @@ import type {
   Entity,
   Habit,
   HabitLog,
+  HabitEvent,
   HealthWeeklyReport,
   ImportBatch,
   JournalEntry,
@@ -4795,16 +4796,22 @@ app.get('/api/habits', async (c) => {
 });
 
 app.post('/api/habits', async (c) => {
-  const body = await c.req.json<{ name: string; unit?: string | null; target_value?: number | null }>();
+  const body = await c.req.json<{
+    name: string;
+    unit?: string | null;
+    target_value?: number | null;
+    direction?: 'build' | 'reduce';
+    icon?: string | null;
+  }>();
   if (!body.name?.trim()) return c.json({ error: 'name required' }, 400);
   const id = uid();
   const ts = now();
   const { results: maxPos } = await c.env.DB.prepare('SELECT COALESCE(MAX(position), -1) as maxPos FROM journal_habits').all<{ maxPos: number }>();
   const position = (maxPos?.[0]?.maxPos ?? -1) + 1;
   await c.env.DB.prepare(
-    `INSERT INTO journal_habits (id, name, unit, target_value, active, position, created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?, ?)`
+    `INSERT INTO journal_habits (id, name, unit, target_value, direction, icon, active, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`
   )
-    .bind(id, body.name.trim(), body.unit ?? null, body.target_value ?? null, position, ts, ts)
+    .bind(id, body.name.trim(), body.unit ?? null, body.target_value ?? null, body.direction ?? 'build', body.icon ?? null, position, ts, ts)
     .run();
   const habit = await c.env.DB.prepare('SELECT * FROM journal_habits WHERE id = ?').bind(id).first<Habit>();
   return c.json(habit, 201);
@@ -4812,13 +4819,13 @@ app.post('/api/habits', async (c) => {
 
 app.patch('/api/habits/:id', async (c) => {
   const id = c.req.param('id');
-  const body = await c.req.json<Partial<Pick<Habit, 'name' | 'unit' | 'target_value' | 'active' | 'position'>>>();
+  const body = await c.req.json<Partial<Pick<Habit, 'name' | 'unit' | 'target_value' | 'direction' | 'icon' | 'active' | 'position'>>>();
   const existing = await c.env.DB.prepare('SELECT id FROM journal_habits WHERE id = ?').bind(id).first();
   if (!existing) return c.json({ error: 'not found' }, 404);
 
   const fields: string[] = [];
   const values: unknown[] = [];
-  for (const key of ['name', 'unit', 'target_value', 'active', 'position'] as const) {
+  for (const key of ['name', 'unit', 'target_value', 'direction', 'icon', 'active', 'position'] as const) {
     if (body[key] !== undefined) {
       fields.push(`${key} = ?`);
       values.push(body[key]);
@@ -4836,15 +4843,42 @@ app.patch('/api/habits/:id', async (c) => {
 
 app.delete('/api/habits/:id', async (c) => {
   const id = c.req.param('id');
+  await c.env.DB.prepare('DELETE FROM journal_habit_events WHERE habit_id = ?').bind(id).run();
   await c.env.DB.prepare('DELETE FROM journal_habit_logs WHERE habit_id = ?').bind(id).run();
   await c.env.DB.prepare('DELETE FROM journal_habits WHERE id = ?').bind(id).run();
   return c.json({ ok: true });
 });
 
-// POST /api/habits/:id/logs — upserts this habit's value for a given day
-// (body: { date, value }). A second log for the same habit/day overwrites
-// rather than accumulating — (habit_id, date) is the row's whole identity,
-// see migrations/0020_journal.sql.
+// Recomputes journal_habit_logs' cached day-total from journal_habit_events
+// and keeps the two in sync — see 0056_habit_events.sql's comment. Deletes
+// the logs row entirely (rather than writing a 0) when no events remain for
+// that day, so Journal's "blank means not logged" behavior stays intact.
+async function syncHabitLogFromEvents(db: D1Database, habitId: string, date: string) {
+  const sum = await db
+    .prepare('SELECT COALESCE(SUM(value), 0) as total, COUNT(*) as n FROM journal_habit_events WHERE habit_id = ? AND date = ?')
+    .bind(habitId, date)
+    .first<{ total: number; n: number }>();
+  const ts = now();
+  if (!sum || sum.n === 0) {
+    await db.prepare('DELETE FROM journal_habit_logs WHERE habit_id = ? AND date = ?').bind(habitId, date).run();
+    return;
+  }
+  await db
+    .prepare(
+      `INSERT INTO journal_habit_logs (habit_id, date, value, created_at, updated_at) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(habit_id, date) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+    )
+    .bind(habitId, date, sum.total, ts, ts)
+    .run();
+}
+
+// POST /api/habits/:id/logs — sets this habit's total for a given day
+// directly (body: { date, value }), the way Journal's typed number input
+// uses it. Since a day's total is really SUM(value) over
+// journal_habit_events (see 0056_habit_events.sql), typing a total here
+// replaces whatever precise taps existed that day with a single event
+// carrying the typed value — an explicit correction, same as before this
+// existed, just now expressed as one lump event instead of a bare number.
 app.post('/api/habits/:id/logs', async (c) => {
   const habitId = c.req.param('id');
   const body = await c.req.json<{ date: string; value: number }>();
@@ -4854,12 +4888,13 @@ app.post('/api/habits/:id/logs', async (c) => {
   if (!habit) return c.json({ error: 'habit not found' }, 404);
 
   const ts = now();
+  await c.env.DB.prepare('DELETE FROM journal_habit_events WHERE habit_id = ? AND date = ?').bind(habitId, body.date).run();
   await c.env.DB.prepare(
-    `INSERT INTO journal_habit_logs (habit_id, date, value, created_at, updated_at) VALUES (?, ?, ?, ?, ?)
-     ON CONFLICT(habit_id, date) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+    `INSERT INTO journal_habit_events (id, habit_id, occurred_at, date, value, created_at) VALUES (?, ?, ?, ?, ?, ?)`
   )
-    .bind(habitId, body.date, body.value, ts, ts)
+    .bind(uid(), habitId, ts, body.date, body.value, ts)
     .run();
+  await syncHabitLogFromEvents(c.env.DB, habitId, body.date);
 
   const log = await c.env.DB.prepare('SELECT * FROM journal_habit_logs WHERE habit_id = ? AND date = ?').bind(habitId, body.date).first<HabitLog>();
   return c.json(log);
@@ -4868,8 +4903,119 @@ app.post('/api/habits/:id/logs', async (c) => {
 app.delete('/api/habits/:id/logs/:date', async (c) => {
   const habitId = c.req.param('id');
   const date = c.req.param('date');
+  await c.env.DB.prepare('DELETE FROM journal_habit_events WHERE habit_id = ? AND date = ?').bind(habitId, date).run();
   await c.env.DB.prepare('DELETE FROM journal_habit_logs WHERE habit_id = ? AND date = ?').bind(habitId, date).run();
   return c.json({ ok: true });
+});
+
+// ---- Habit events (precise, timestamped occurrences) ----
+// The quick-tap logging path behind the new Habits capture page — each tap
+// is its own row with a real timestamp, rather than accumulating into one
+// number for the day. journal_habit_logs stays in sync automatically (see
+// syncHabitLogFromEvents) so Journal's day-total view needs no changes.
+
+// GET /api/habits/:id/events?date=YYYY-MM-DD — today's (or any day's) taps
+// in order, for the detail/undo view.
+app.get('/api/habits/:id/events', async (c) => {
+  const habitId = c.req.param('id');
+  const date = c.req.query('date');
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return c.json({ error: 'date query param must be YYYY-MM-DD' }, 400);
+  const { results } = await c.env.DB
+    .prepare('SELECT * FROM journal_habit_events WHERE habit_id = ? AND date = ? ORDER BY occurred_at ASC')
+    .bind(habitId, date)
+    .all<HabitEvent>();
+  return c.json(results ?? []);
+});
+
+// POST /api/habits/:id/events — logs one occurrence right now (body:
+// { value? } — defaults to 1, so the common case is a bare tap).
+app.post('/api/habits/:id/events', async (c) => {
+  const habitId = c.req.param('id');
+  const body = await c.req.json<{ value?: number }>().catch(() => ({}) as { value?: number });
+  const value = typeof body.value === 'number' && Number.isFinite(body.value) ? body.value : 1;
+  const habit = await c.env.DB.prepare('SELECT id FROM journal_habits WHERE id = ?').bind(habitId).first();
+  if (!habit) return c.json({ error: 'habit not found' }, 404);
+
+  const ts = now();
+  const date = localDateString(ts);
+  const id = uid();
+  await c.env.DB.prepare('INSERT INTO journal_habit_events (id, habit_id, occurred_at, date, value, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+    .bind(id, habitId, ts, date, value, ts)
+    .run();
+  await syncHabitLogFromEvents(c.env.DB, habitId, date);
+
+  const event = await c.env.DB.prepare('SELECT * FROM journal_habit_events WHERE id = ?').bind(id).first<HabitEvent>();
+  return c.json(event, 201);
+});
+
+app.delete('/api/habits/:id/events/:eventId', async (c) => {
+  const habitId = c.req.param('id');
+  const eventId = c.req.param('eventId');
+  const event = await c.env.DB.prepare('SELECT * FROM journal_habit_events WHERE id = ? AND habit_id = ?').bind(eventId, habitId).first<HabitEvent>();
+  if (!event) return c.json({ error: 'not found' }, 404);
+  await c.env.DB.prepare('DELETE FROM journal_habit_events WHERE id = ?').bind(eventId).run();
+  await syncHabitLogFromEvents(c.env.DB, habitId, event.date);
+  return c.json({ ok: true });
+});
+
+// GET /api/habits/summary — everything the Habits capture page, Dashboard
+// card, and Stats section need in one call: today/yesterday totals,
+// rolling averages, and a zero-filled daily series, all computed live from
+// journal_habit_events rather than stored, same "derive at read time"
+// philosophy as the rest of Journal (see 0020_journal.sql's header).
+// SERIES_DAYS covers enough history for a 30-day rolling average plus a
+// couple of weeks of margin for Stats' trend chart without over-fetching.
+const HABIT_SUMMARY_SERIES_DAYS = 42;
+app.get('/api/habits/summary', async (c) => {
+  const { results: habits } = await c.env.DB.prepare('SELECT * FROM journal_habits WHERE active = 1 ORDER BY position ASC').all<Habit>();
+  const todayDate = localDateString(now());
+  const startDate = addDaysStr(todayDate, -(HABIT_SUMMARY_SERIES_DAYS - 1));
+
+  const { results: rows } = await c.env.DB
+    .prepare('SELECT habit_id, date, SUM(value) as total FROM journal_habit_events WHERE date >= ? GROUP BY habit_id, date')
+    .bind(startDate)
+    .all<{ habit_id: string; date: string; total: number }>();
+
+  const byHabit = new Map<string, Map<string, number>>();
+  for (const row of rows ?? []) {
+    if (!byHabit.has(row.habit_id)) byHabit.set(row.habit_id, new Map());
+    byHabit.get(row.habit_id)!.set(row.date, row.total);
+  }
+
+  const yesterdayDate = addDaysStr(todayDate, -1);
+  const summaries = (habits ?? []).map((habit) => {
+    const totals = byHabit.get(habit.id) ?? new Map<string, number>();
+    const series: { date: string; total: number }[] = [];
+    for (let i = HABIT_SUMMARY_SERIES_DAYS - 1; i >= 0; i--) {
+      const d = addDaysStr(todayDate, -i);
+      series.push({ date: d, total: totals.get(d) ?? 0 });
+    }
+    const last7 = series.slice(-7);
+    const last30 = series.slice(-30);
+    const avg7 = last7.reduce((a, s) => a + s.total, 0) / last7.length;
+    const avg30 = last30.reduce((a, s) => a + s.total, 0) / last30.length;
+    const loggedDays = series.filter((s) => totals.has(s.date));
+    const best =
+      loggedDays.length === 0
+        ? null
+        : habit.direction === 'reduce'
+          ? Math.min(...loggedDays.map((s) => s.total))
+          : Math.max(...loggedDays.map((s) => s.total));
+
+    return {
+      habit,
+      today: totals.get(todayDate) ?? 0,
+      yesterday: totals.get(yesterdayDate) ?? 0,
+      todayLogged: totals.has(todayDate),
+      yesterdayLogged: totals.has(yesterdayDate),
+      avg7,
+      avg30,
+      best,
+      series: series.slice(-14),
+    };
+  });
+
+  return c.json(summaries);
 });
 
 // ---- News (RSS reader) ----

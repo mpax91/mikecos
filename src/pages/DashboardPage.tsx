@@ -1,17 +1,67 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../api/client';
-import type { HealthWeeklyReport } from '../api/types';
+import type { HabitSummary, HealthWeeklyReport } from '../api/types';
 import { useReportTabMeta } from '../contexts/TabsContext';
 import { buildPeriods, periodDeltaWithRef, type AggregatedPeriod, type Granularity } from '../utils/healthPeriods';
 import { CreditScoreDashboard } from '../components/CreditScoreTrend';
+import { HabitSparkline } from '../components/HabitSparkline';
+import { habitHeadline } from '../utils/habits';
 
-type LifeArea = 'fitness' | 'credit' | 'vehicle';
+type LifeArea = 'fitness' | 'credit' | 'habits' | 'vehicle';
 
 const LIFE_AREAS: { id: LifeArea; label: string; icon: string; available: boolean }[] = [
   { id: 'fitness', label: 'Fitness', icon: '🩺', available: true },
   { id: 'credit', label: 'Credit Score', icon: '💳', available: true },
+  { id: 'habits', label: 'Habits', icon: '🎯', available: true },
   { id: 'vehicle', label: 'Vehicle', icon: '🚗', available: false },
 ];
+
+/** Habits' Dashboard card — a condensed, read-only version of the Habits
+ * capture page: each habit's today count, its one contextual comparison
+ * sentence, and its 14-day sparkline, with the actual tap-to-log
+ * interaction left to the Habits page itself (linked below) since a
+ * dashboard is somewhere you check, not somewhere you work. */
+function HabitsDashboard() {
+  const [summaries, setSummaries] = useState<HabitSummary[] | null>(null);
+
+  useEffect(() => {
+    api.getHabitsSummary().then(setSummaries);
+  }, []);
+
+  if (!summaries) return <div className="empty-state">Loading…</div>;
+  if (summaries.length === 0) {
+    return (
+      <div className="empty-state">
+        No habits set up yet. <Link to="/settings?cat=habits">Add your first one in Settings</Link>.
+      </div>
+    );
+  }
+
+  return (
+    <div className="dashboard-page__habits">
+      {summaries.map((s) => {
+        const headline = habitHeadline(s);
+        return (
+          <Link to="/habits" key={s.habit.id} className="dashboard-page__habit-row card">
+            <div className="dashboard-page__habit-row-top">
+              <div className="dashboard-page__habit-row-name">
+                {s.habit.icon ? `${s.habit.icon} ` : ''}
+                {s.habit.name}
+              </div>
+              <HabitSparkline summary={s} />
+            </div>
+            <div className="dashboard-page__habit-row-count">
+              {s.today}
+              {s.habit.unit && <span className="dashboard-page__habit-row-unit"> {s.habit.unit}</span>}
+            </div>
+            <div className={`dashboard-page__habit-row-headline dashboard-page__habit-row-headline--${headline.tone}`}>{headline.text}</div>
+          </Link>
+        );
+      })}
+    </div>
+  );
+}
 
 const GRANULARITIES: { id: Granularity; label: string }[] = [
   { id: 'week', label: 'Week' },
@@ -466,6 +516,7 @@ export function DashboardPage() {
 
       {area === 'fitness' && <FitnessDashboard />}
       {area === 'credit' && <CreditScoreDashboard />}
+      {area === 'habits' && <HabitsDashboard />}
       {area === 'vehicle' && (
         <div className="empty-state">
           Vehicle isn't built yet — Fitness and Credit Score are the life areas wired up here so far; Betting

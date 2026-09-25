@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
-import type { CompletionItem, Entity, StatsResponse } from '../api/types';
+import type { CompletionItem, Entity, HabitSummary, StatsResponse } from '../api/types';
 import { TaskDetailModal } from '../components/TaskDetailModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { useReportTabMeta } from '../contexts/TabsContext';
+import { isBetter, weekOverWeekAvg } from '../utils/habits';
 
 function todayLocalISO(): string {
   const d = new Date();
@@ -17,6 +18,46 @@ function formatTrendLabel(iso: string): string {
 
 /** "Sep 8, 2026 · 2:34 PM" — the exact moment, not just the day, since the
  * whole point of this list is answering "when did I actually do that". */
+/** One habit's card — a 14-day bar chart (same visual language as the
+ * completions trend above it) plus the one comparison that actually
+ * matters over a longer horizon: this week's daily average against last
+ * week's, since a single day is noisy but a week is a real trend. */
+function HabitStatsCard({ summary }: { summary: HabitSummary }) {
+  const habit = summary.habit;
+  const maxVal = Math.max(1, ...summary.series.map((d) => d.total));
+  const { thisWeek, lastWeek } = weekOverWeekAvg(summary);
+  const diff = thisWeek - lastWeek;
+  const hasLastWeek = summary.series.slice(-14, -7).some((d) => d.total > 0);
+  const better = hasLastWeek ? isBetter(habit.direction, thisWeek, lastWeek) : null;
+
+  return (
+    <div className="stats-page__habit-card card">
+      <div className="stats-page__habit-card-title">
+        {habit.icon ? `${habit.icon} ` : ''}
+        {habit.name}
+      </div>
+      <div className="stats-page__trend stats-page__trend--compact">
+        {summary.series.map((d) => (
+          <div key={d.date} className="stats-page__trend-col" title={`${d.total}${habit.unit ? ` ${habit.unit}` : ''} on ${d.date}`}>
+            <div className="stats-page__trend-count">{d.total > 0 ? d.total : ''}</div>
+            <div className="stats-page__trend-bar" style={{ height: `${Math.max(2, (d.total / maxVal) * 60)}px` }} />
+          </div>
+        ))}
+      </div>
+      {hasLastWeek ? (
+        <div className={`stats-page__habit-card-compare stats-page__habit-card-compare--${better ? 'good' : diff === 0 ? 'neutral' : 'bad'}`}>
+          This week averaging {thisWeek.toFixed(1)}{habit.unit ? ` ${habit.unit}` : ''}/day, vs. {lastWeek.toFixed(1)} last week —{' '}
+          {diff === 0 ? 'holding steady' : better ? 'trending the right way' : 'trending the wrong way'}.
+        </div>
+      ) : (
+        <div className="stats-page__habit-card-compare stats-page__habit-card-compare--neutral">
+          This week averaging {thisWeek.toFixed(1)}{habit.unit ? ` ${habit.unit}` : ''}/day — not enough history yet for a week-over-week comparison.
+        </div>
+      )}
+    </div>
+  );
+}
+
 function formatCompletedAt(iso: string): string {
   return new Date(iso).toLocaleString('en-US', {
     month: 'short',
@@ -51,6 +92,7 @@ interface SummaryCardDef {
 export function StatsPage() {
   const [stats, setStats] = useState<StatsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [habitSummaries, setHabitSummaries] = useState<HabitSummary[] | null>(null);
 
   const [query, setQuery] = useState('');
   const [completions, setCompletions] = useState<CompletionItem[] | null>(null);
@@ -71,6 +113,7 @@ export function StatsPage() {
       .getStats(todayLocalISO())
       .then(setStats)
       .catch((e) => setError(String(e)));
+    api.getHabitsSummary().then(setHabitSummaries);
   }, []);
 
   const loadCompletions = useCallback((q: string) => {
@@ -170,6 +213,17 @@ export function StatsPage() {
               </div>
             ))}
           </div>
+
+          {habitSummaries && habitSummaries.length > 0 && (
+            <div className="stats-page__section">
+              <div className="stats-page__section-title">Habits</div>
+              <div className="stats-page__habit-cards">
+                {habitSummaries.map((s) => (
+                  <HabitStatsCard key={s.habit.id} summary={s} />
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="stats-page__section">
             <div className="stats-page__section-title">Last 14 Days</div>

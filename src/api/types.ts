@@ -970,21 +970,59 @@ export interface HabitLog {
   updated_at: string;
 }
 
+export type HabitDirection = 'build' | 'reduce';
+
 /** A habit is quantified rather than plain done/not-done — `unit`/
  * `target_value` are both optional, so a simple habit just logs 1 (or any
  * number) per day with no target shown. `log` is this specific day's value,
  * attached only on GET /api/journal/:date's habit list — null means nothing
- * logged for that habit on that day yet. */
+ * logged for that habit on that day yet. `direction` says which way is
+ * winning ('reduce' for a habit you're cutting down, like counting
+ * something down day over day — 'build' for everything else, the default),
+ * and drives the wording/coloring of every comparison shown for it. */
 export interface Habit {
   id: string;
   name: string;
   unit: string | null;
   target_value: number | null;
+  direction: HabitDirection;
+  icon: string | null;
   active: number; // 0 | 1
   position: number;
   created_at: string;
   updated_at: string;
   log?: HabitLog | null;
+}
+
+/** One precise, timestamped occurrence — the unit the Habits capture page
+ * logs (a single tap), as opposed to HabitLog's one-total-per-day. */
+export interface HabitEvent {
+  id: string;
+  habit_id: string;
+  occurred_at: string; // ISO instant
+  date: string; // 'YYYY-MM-DD', local
+  value: number;
+  created_at: string;
+}
+
+export interface HabitDaySeries {
+  date: string;
+  total: number;
+}
+
+/** Everything the Habits page, Dashboard card, and Stats section need for
+ * one habit, computed live server-side from journal_habit_events — see
+ * GET /api/habits/summary. */
+export interface HabitSummary {
+  habit: Habit;
+  today: number;
+  yesterday: number;
+  todayLogged: boolean;
+  yesterdayLogged: boolean;
+  avg7: number;
+  avg30: number;
+  best: number | null;
+  series: HabitDaySeries[]; // last 14 days, oldest first, zero-filled
 }
 
 export interface HealthLog {
