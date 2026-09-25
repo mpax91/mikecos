@@ -200,18 +200,35 @@ export function WalletCardEditor({
 
           <label className="wallet-editor__field">
             <span>Category</span>
-            <input
-              value={form.category}
-              onChange={(e) => set('category', e.target.value)}
-              onFocus={(e) => e.target.select()}
-              list="wallet-category-presets"
-              placeholder="Retail, Grocery, Parks & Recreation…"
-            />
-            <datalist id="wallet-category-presets">
+            {/* A native <select> rather than a text input + datalist — the
+                datalist combo silently refused to show its suggestion
+                dropdown when the field already held a value that matched
+                an option exactly (e.g. an existing "Retail"), so clicking
+                it appeared to do nothing until the text was deleted first.
+                A <select> has no such ambiguity: clicking it always opens
+                the full list. "Custom…" is the escape hatch back to free
+                text, since the field itself is never meant to be a fence
+                (see 0046_wallet_categories.sql). */}
+            <select
+              value={categoryNames.includes(form.category) ? form.category : '__custom__'}
+              onChange={(e) => set('category', e.target.value === '__custom__' ? '' : e.target.value)}
+            >
               {categoryNames.map((c) => (
-                <option key={c} value={c} />
+                <option key={c} value={c}>
+                  {c}
+                </option>
               ))}
-            </datalist>
+              <option value="__custom__">Custom…</option>
+            </select>
+            {!categoryNames.includes(form.category) && (
+              <input
+                value={form.category}
+                onChange={(e) => set('category', e.target.value)}
+                placeholder="Type a category"
+                autoFocus
+                style={{ marginTop: 6 }}
+              />
+            )}
             <button
               type="button"
               className="wallet-editor__manage-link"
