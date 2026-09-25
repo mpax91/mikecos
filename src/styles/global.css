@@ -10754,3 +10754,376 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 .vault-rollup-show-all:hover {
   text-decoration: underline;
 }
+
+/* ---- Wallet (loyalty/membership/pass/gift cards) ---- */
+
+.wallet-page {
+  max-width: 760px;
+}
+
+.wallet-page__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.wallet-page__search {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: var(--border-hairline);
+  background: #fff;
+  font-size: 14px;
+  margin-bottom: 12px;
+}
+
+.wallet-page__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+
+.wallet-page__chip {
+  border: var(--border-hairline);
+  background: var(--color-sidebar);
+  color: var(--color-ink);
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 12.5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.wallet-page__chip.is-active {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-accent-text);
+}
+
+.wallet-page__section {
+  margin-bottom: 22px;
+}
+
+.wallet-page__section-title {
+  font-size: 12px;
+  font-weight: var(--weight-medium);
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 8px;
+}
+
+.wallet-tile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.wallet-tile {
+  background: var(--color-card-bg);
+  border: var(--border-hairline);
+  border-radius: var(--radius-card);
+  padding: 10px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: box-shadow 0.12s ease, transform 0.12s ease;
+}
+
+.wallet-tile:hover {
+  box-shadow: 0 4px 14px rgba(46, 42, 34, 0.1);
+  transform: translateY(-1px);
+}
+
+.wallet-tile__top {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.wallet-tile__spacer {
+  flex: 1;
+}
+
+.wallet-tile__art {
+  width: 100%;
+  aspect-ratio: 5 / 3;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.wallet-tile__art-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.wallet-tile__art-icon {
+  font-size: 30px;
+}
+
+.wallet-tile__name {
+  font-size: 13px;
+  font-weight: var(--weight-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wallet-tile__category {
+  font-size: 11.5px;
+  color: var(--color-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Full-screen "hand this to the cashier" barcode view. Deliberately opts
+   out of the app's own paper/ink theme — the surrounding chrome is plain
+   white on purpose, in both light and dark mode, because a dim or tinted
+   background around the code is what actually costs a scan. */
+.wallet-barcode-view {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 18, 14, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 60;
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+.wallet-barcode-view__card {
+  background: #ffffff;
+  color: #14120e;
+  border-radius: 18px;
+  width: 340px;
+  max-width: 100%;
+  padding: 28px 24px 22px;
+  box-sizing: border-box;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+}
+
+.wallet-barcode-view__close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  border: none;
+  background: transparent;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  color: #6b6353;
+  padding: 6px;
+}
+
+.wallet-barcode-view__header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-align: center;
+}
+
+.wallet-barcode-view__logo {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  object-fit: cover;
+  margin-bottom: 4px;
+}
+
+.wallet-barcode-view__name {
+  font-size: 17px;
+  font-weight: var(--weight-medium);
+}
+
+.wallet-barcode-view__category {
+  font-size: 12px;
+  color: #8a7b5e;
+}
+
+.wallet-barcode-view__code {
+  width: 100%;
+  min-height: 110px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.wallet-barcode-view__code canvas {
+  max-width: 100%;
+}
+
+.wallet-barcode-view__no-code {
+  font-size: 12.5px;
+  color: #8a7b5e;
+  text-align: center;
+  padding: 20px 0;
+}
+
+.wallet-barcode-view__number {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 16px;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+.wallet-barcode-view__extra {
+  width: 100%;
+  border-top: 1px solid #eee5d2;
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.wallet-barcode-view__extra-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+}
+
+.wallet-barcode-view__extra-row > span:first-child {
+  color: #8a7b5e;
+}
+
+.wallet-barcode-view__reveal {
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: var(--weight-medium);
+  color: #14120e;
+  cursor: pointer;
+  padding: 0;
+}
+
+.wallet-barcode-view__edit {
+  border: none;
+  background: transparent;
+  color: var(--color-accent);
+  font-size: 12.5px;
+  cursor: pointer;
+  padding: 4px;
+  margin-top: 2px;
+}
+
+/* Add/edit form modal */
+
+.wallet-editor__body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.wallet-editor__row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.wallet-editor__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.wallet-editor__field span {
+  font-weight: var(--weight-medium);
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-size: 11px;
+}
+
+.wallet-editor__field input,
+.wallet-editor__field select,
+.wallet-editor__field textarea {
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: var(--border-hairline);
+  background: #fff;
+  font-size: 13px;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.wallet-editor__field textarea {
+  resize: vertical;
+  min-height: 56px;
+}
+
+.wallet-editor__art-row {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.wallet-editor__art-preview {
+  width: 64px;
+  height: 64px;
+  border-radius: 12px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  color: #fff;
+  font-size: 22px;
+  font-weight: var(--weight-medium);
+}
+
+.wallet-editor__art-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.wallet-editor__art-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+}
+
+.wallet-editor__swatches {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.wallet-editor__swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+}
+
+.wallet-editor__swatch.is-selected {
+  border-color: var(--color-ink);
+}
+
+.wallet-editor__error {
+  font-size: 12.5px;
+  color: #B3432B;
+}

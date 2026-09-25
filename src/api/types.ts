@@ -354,6 +354,30 @@ export interface QuickLinksResponse {
   links: QuickLink[];
 }
 
+// ---- Wallet (loyalty/membership/pass/gift cards — see
+// worker/migrations/0045_wallet.sql for why this is its own flat table) ----
+
+export type WalletBarcodeType = 'code128' | 'qr' | 'upc' | 'ean13' | 'none';
+
+export interface WalletCard {
+  id: string;
+  name: string;
+  category: string;
+  barcodeType: WalletBarcodeType;
+  barcodeValue: string | null;
+  displayNumber: string | null;
+  pinCode: string | null;
+  balance: string | null;
+  notes: string | null;
+  color: string | null;
+  coverArtKey: string | null;
+  coverArtUrl: string | null;
+  pinned: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ---- Canvas boards (infinite-canvas pinboard) ----
 
 // 'connector' is a freestanding line/arrow object placed via the toolbar
@@ -984,7 +1008,7 @@ export interface NewsSavedArticle {
 
 // ---- Global search (Cmd/Ctrl+K palette) ----
 
-export type SearchGroupKey = 'notes' | 'jots' | 'lists' | 'projects' | 'vault' | 'boards' | 'contacts' | 'journal' | 'meeting_notes' | 'links';
+export type SearchGroupKey = 'notes' | 'jots' | 'lists' | 'projects' | 'vault' | 'wallet' | 'boards' | 'contacts' | 'journal' | 'meeting_notes' | 'links';
 
 export interface SearchResult {
   id: string;

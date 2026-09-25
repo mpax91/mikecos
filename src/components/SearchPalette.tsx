@@ -16,6 +16,7 @@ const GROUP_META: Record<SearchGroupKey, { label: string; icon: string }> = {
   lists: { label: 'Lists', icon: '☑️' },
   projects: { label: 'Projects', icon: '📁' },
   vault: { label: 'Vault', icon: '🗄️' },
+  wallet: { label: 'Wallet', icon: '🎫' },
   boards: { label: 'Boards', icon: '📌' },
   contacts: { label: 'Contacts', icon: '👤' },
   journal: { label: 'Journal', icon: '📔' },
@@ -25,8 +26,8 @@ const GROUP_META: Record<SearchGroupKey, { label: string; icon: string }> = {
 // Render order for results (includes Contacts); CHIP_GROUPS is the
 // narrowing chip row and deliberately leaves Contacts out — see
 // visibleGroups' comment for why it's a separate on/off checkbox instead.
-const GROUP_ORDER: SearchGroupKey[] = ['notes', 'jots', 'lists', 'projects', 'vault', 'boards', 'contacts', 'journal', 'meeting_notes', 'links'];
-const CHIP_GROUPS: SearchGroupKey[] = ['notes', 'jots', 'lists', 'projects', 'vault', 'boards', 'journal', 'meeting_notes', 'links'];
+const GROUP_ORDER: SearchGroupKey[] = ['notes', 'jots', 'lists', 'projects', 'vault', 'wallet', 'boards', 'contacts', 'journal', 'meeting_notes', 'links'];
+const CHIP_GROUPS: SearchGroupKey[] = ['notes', 'jots', 'lists', 'projects', 'vault', 'wallet', 'boards', 'journal', 'meeting_notes', 'links'];
 const DEFAULT_VISIBLE_PER_GROUP = 4;
 
 /** Bolds every case-insensitive occurrence of `query` inside `text` —

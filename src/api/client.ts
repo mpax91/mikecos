@@ -1,5 +1,5 @@
 import type { AuthenticationResponseJSON, PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON, RegistrationResponseJSON } from '@simplewebauthn/browser';
-import type { AuthCredentialSummary, AuthStatus, Bet, BetLeg, BetGameNote, BetPromo, BetPromoStatus, BetScheduleGame, BetTransaction, BetTransactionType, VaultEntryDetail, VaultFact, BriefingResponse, CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, CreditScoreEntry, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitLog, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsSavedArticle, NewsSettings, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, VaultFactLabel, VaultRollupGroup, WeatherResponse, WeekResponse } from './types';
+import type { AuthCredentialSummary, AuthStatus, Bet, BetLeg, BetGameNote, BetPromo, BetPromoStatus, BetScheduleGame, BetTransaction, BetTransactionType, VaultEntryDetail, VaultFact, BriefingResponse, CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, CreditScoreEntry, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitLog, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsSavedArticle, NewsSettings, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, VaultFactLabel, VaultRollupGroup, WalletCard, WeatherResponse, WeekResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -827,6 +827,32 @@ export const api = {
   getVaultRollup: () => request<VaultRollupGroup[]>('/api/vault/facts/rollup'),
 
   getVaultFactLabels: () => request<VaultFactLabel[]>('/api/vault/facts/labels'),
+
+  // ---- Wallet (0045_wallet.sql) — loyalty/membership/pass/gift cards,
+  // its own flat table (see that migration for why). ----
+
+  listWalletCards: () => request<WalletCard[]>('/api/wallet/cards'),
+
+  createWalletCard: (
+    params: Partial<
+      Pick<WalletCard, 'name' | 'category' | 'barcodeType' | 'barcodeValue' | 'displayNumber' | 'pinCode' | 'balance' | 'notes' | 'color' | 'coverArtKey'>
+    >
+  ) => request<WalletCard>('/api/wallet/cards', { method: 'POST', body: JSON.stringify(params) }),
+
+  updateWalletCard: (
+    id: string,
+    patch: Partial<
+      Pick<
+        WalletCard,
+        'name' | 'category' | 'barcodeType' | 'barcodeValue' | 'displayNumber' | 'pinCode' | 'balance' | 'notes' | 'color' | 'coverArtKey' | 'pinned' | 'sortOrder'
+      >
+    >
+  ) => request<WalletCard>(`/api/wallet/cards/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+
+  deleteWalletCard: (id: string) => request<{ ok: true }>(`/api/wallet/cards/${id}`, { method: 'DELETE' }),
+
+  reorderWalletCards: (ordered_ids: string[]) =>
+    request<{ ok: true }>('/api/wallet/cards/reorder', { method: 'POST', body: JSON.stringify({ ordered_ids }) }),
 
   // Generic "facts for this entity id" read — works for a Password card's
   // Custom fields too, not just a top-level Vault entry (see worker's

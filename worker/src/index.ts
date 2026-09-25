@@ -39,6 +39,7 @@ import { HealthParseError, parseHealthWeek } from './health';
 import { FeedParseError, parseFeed } from './news';
 import { authGate, authRouter, resolveOrigin } from './auth';
 import { vaultRouter } from './vault';
+import { walletRouter } from './wallet';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -59,6 +60,7 @@ app.use('*', async (c, next) => {
 app.route('/api/auth', authRouter);
 app.use('/api/*', authGate);
 app.route('/api/vault', vaultRouter);
+app.route('/api/wallet', walletRouter);
 
 // Hono's default unhandled-error response is a bare "Internal Server Error"
 // with no body — fine for not leaking internals to an outside caller, but
@@ -5341,7 +5343,7 @@ app.get('/api/top-news', async (c) => {
 // status lifecycle or folder nesting; see VaultPage's own header comment),
 // and showing its children under a "📁 Projects" chip read as "there's a
 // Project here" when there wasn't one.
-const SEARCH_GROUPS = ['notes', 'jots', 'lists', 'projects', 'vault', 'boards', 'contacts', 'journal', 'meeting_notes', 'links'] as const;
+const SEARCH_GROUPS = ['notes', 'jots', 'lists', 'projects', 'vault', 'wallet', 'boards', 'contacts', 'journal', 'meeting_notes', 'links'] as const;
 type SearchGroup = (typeof SEARCH_GROUPS)[number];
 
 interface SearchResult {
@@ -5398,8 +5400,9 @@ async function runSearch(db: D1Database, q: string, scope: Set<SearchGroup>, inc
   const wantsJournal = scope.has('journal');
   const wantsMeetings = scope.has('meeting_notes');
   const wantsLinks = scope.has('links');
+  const wantsWallet = scope.has('wallet');
 
-  const [entityRows, boardRows, boardItemRows, contactRows, contactNoteRows, journalRows, meetingRows, linkRows] = await Promise.all([
+  const [entityRows, boardRows, boardItemRows, contactRows, contactNoteRows, journalRows, meetingRows, linkRows, walletRows] = await Promise.all([
     wantsEntities
       ? db
           .prepare(
@@ -5447,6 +5450,17 @@ async function runSearch(db: D1Database, q: string, scope: Set<SearchGroup>, inc
       : Promise.resolve({ results: [] as any[] }),
     wantsLinks
       ? db.prepare(`SELECT * FROM quick_links WHERE name LIKE ? OR url LIKE ? ORDER BY updated_at DESC LIMIT 25`).bind(like, like).all<{ id: string; name: string; url: string; updated_at: string }>()
+      : Promise.resolve({ results: [] as any[] }),
+    // Only name/category/notes are searched — never barcode_value,
+    // display_number, pin_code, or balance. A card's scan payload and PIN
+    // are exactly the fields Wallet's security posture keeps out of
+    // anything that isn't the card's own detail view, and that includes
+    // never letting them surface in a search index.
+    wantsWallet
+      ? db
+          .prepare(`SELECT * FROM wallet_cards WHERE name LIKE ? OR category LIKE ? OR notes LIKE ? ORDER BY updated_at DESC LIMIT 25`)
+          .bind(like, like, like)
+          .all<{ id: string; name: string; category: string; notes: string | null; updated_at: string }>()
       : Promise.resolve({ results: [] as any[] }),
   ]);
 
@@ -5628,6 +5642,30 @@ async function runSearch(db: D1Database, q: string, scope: Set<SearchGroup>, inc
     results.push({ id: l.id, kind: 'quick_link', group: 'links', title: l.name || l.url, snippet: score < 60 ? l.url : null, parentTitle: null, path: '/links', openId: null, updatedAt: l.updated_at, score });
   }
 
+  // ---- wallet cards ----
+  // openId is always set (unlike most groups) — Wallet has no per-card
+  // route of its own (same reasoning as Vault notes/Jots), so a match
+  // opens straight to that card's full-screen view via router state on
+  // /wallet, rather than landing on the grid and making Mike find it
+  // again — the whole point of this search integration per his own
+  // framing ("that will probably be a behavior I do too at times").
+  for (const w of walletRows.results ?? []) {
+    const score = matchScore(w.name ?? '', [w.category, w.notes].filter(Boolean).join(' '), q);
+    if (score === 0) continue;
+    results.push({
+      id: w.id,
+      kind: 'wallet_card',
+      group: 'wallet',
+      title: w.name || 'Untitled Card',
+      snippet: score < 60 ? w.category : null,
+      parentTitle: null,
+      path: '/wallet',
+      openId: w.id,
+      updatedAt: w.updated_at,
+      score,
+    });
+  }
+
   // A Vault entry's own row (kind 'vault_entry') and every one of its
   // children share the same destination (/vault/:id — Vault has no
   // per-child route), so when a specific child already matched, the
@@ -5695,7 +5733,7 @@ interface BriefingMeeting {
   related: BriefingRelated[];
 }
 
-const BRIEFING_RELATED_SCOPE = new Set<SearchGroup>(['notes', 'jots', 'lists', 'projects', 'vault', 'boards', 'links', 'meeting_notes']);
+const BRIEFING_RELATED_SCOPE = new Set<SearchGroup>(['notes', 'jots', 'lists', 'projects', 'vault', 'wallet', 'boards', 'links', 'meeting_notes']);
 const BRIEFING_RELATED_LIMIT = 6;
 const UPCOMING_DATE_WINDOW_DAYS = 7;
 const STALE_PROJECT_DAYS = 14;
