@@ -41,6 +41,7 @@ import { authGate, authRouter, resolveOrigin } from './auth';
 import { vaultRouter } from './vault';
 import { walletRouter } from './wallet';
 import { rewardsRouter } from './rewards';
+import { paymentCardsRouter } from './paymentCards';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -63,6 +64,7 @@ app.use('/api/*', authGate);
 app.route('/api/vault', vaultRouter);
 app.route('/api/wallet', walletRouter);
 app.route('/api/rewards', rewardsRouter);
+app.route('/api/payment-cards', paymentCardsRouter);
 
 // Hono's default unhandled-error response is a bare "Internal Server Error"
 // with no body — fine for not leaking internals to an outside caller, but
@@ -5345,7 +5347,7 @@ app.get('/api/top-news', async (c) => {
 // status lifecycle or folder nesting; see VaultPage's own header comment),
 // and showing its children under a "📁 Projects" chip read as "there's a
 // Project here" when there wasn't one.
-const SEARCH_GROUPS = ['notes', 'jots', 'lists', 'projects', 'vault', 'wallet', 'rewards', 'boards', 'contacts', 'journal', 'meeting_notes', 'links'] as const;
+const SEARCH_GROUPS = ['notes', 'jots', 'lists', 'projects', 'vault', 'wallet', 'rewards', 'payment_cards', 'boards', 'contacts', 'journal', 'meeting_notes', 'links'] as const;
 type SearchGroup = (typeof SEARCH_GROUPS)[number];
 
 interface SearchResult {
@@ -5404,8 +5406,9 @@ async function runSearch(db: D1Database, q: string, scope: Set<SearchGroup>, inc
   const wantsLinks = scope.has('links');
   const wantsWallet = scope.has('wallet');
   const wantsRewards = scope.has('rewards');
+  const wantsPaymentCards = scope.has('payment_cards');
 
-  const [entityRows, boardRows, boardItemRows, contactRows, contactNoteRows, journalRows, meetingRows, linkRows, walletRows, rewardsCardRows, rewardsBonusRows, rewardsPerkRows] = await Promise.all([
+  const [entityRows, boardRows, boardItemRows, contactRows, contactNoteRows, journalRows, meetingRows, linkRows, walletRows, rewardsCardRows, rewardsBonusRows, rewardsPerkRows, paymentCardRows] = await Promise.all([
     wantsEntities
       ? db
           .prepare(
@@ -5478,6 +5481,17 @@ async function runSearch(db: D1Database, q: string, scope: Set<SearchGroup>, inc
       : Promise.resolve({ results: [] as any[] }),
     wantsRewards
       ? db.prepare(`SELECT card_id, label, description FROM rewards_perks`).all<{ card_id: string; label: string; description: string | null }>()
+      : Promise.resolve({ results: [] as any[] }),
+    // Payment Cards — nickname/network/issuer only, on purpose. Never
+    // last4, expiry, or (obviously) the encrypted number/CVV: same
+    // security posture as Wallet's own search indexing (see that comment
+    // above), just a notch more conservative since these are real
+    // payment instruments.
+    wantsPaymentCards
+      ? db
+          .prepare(`SELECT id, nickname, network, issuer, updated_at FROM payment_cards WHERE active = 1 AND (nickname LIKE ? OR network LIKE ? OR issuer LIKE ?)`)
+          .bind(like, like, like)
+          .all<{ id: string; nickname: string; network: string | null; issuer: string | null; updated_at: string }>()
       : Promise.resolve({ results: [] as any[] }),
   ]);
 
@@ -5709,6 +5723,24 @@ async function runSearch(db: D1Database, q: string, scope: Set<SearchGroup>, inc
     });
   }
 
+  // ---- payment cards ----
+  for (const pc of paymentCardRows.results ?? []) {
+    const score = matchScore(pc.nickname ?? '', [pc.network, pc.issuer].filter(Boolean).join(' '), q);
+    if (score === 0) continue;
+    results.push({
+      id: pc.id,
+      kind: 'payment_card',
+      group: 'payment_cards',
+      title: pc.nickname || 'Untitled Card',
+      snippet: score < 60 ? [pc.network, pc.issuer].filter(Boolean).join(' · ') || null : null,
+      parentTitle: null,
+      path: '/wallet?tab=payment',
+      openId: pc.id,
+      updatedAt: pc.updated_at,
+      score,
+    });
+  }
+
   // A Vault entry's own row (kind 'vault_entry') and every one of its
   // children share the same destination (/vault/:id — Vault has no
   // per-child route), so when a specific child already matched, the
@@ -5776,7 +5808,7 @@ interface BriefingMeeting {
   related: BriefingRelated[];
 }
 
-const BRIEFING_RELATED_SCOPE = new Set<SearchGroup>(['notes', 'jots', 'lists', 'projects', 'vault', 'wallet', 'rewards', 'boards', 'links', 'meeting_notes']);
+const BRIEFING_RELATED_SCOPE = new Set<SearchGroup>(['notes', 'jots', 'lists', 'projects', 'vault', 'wallet', 'rewards', 'payment_cards', 'boards', 'links', 'meeting_notes']);
 const BRIEFING_RELATED_LIMIT = 6;
 const UPCOMING_DATE_WINDOW_DAYS = 7;
 const STALE_PROJECT_DAYS = 14;

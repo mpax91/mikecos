@@ -55,6 +55,7 @@ const GROUP_ICON: Record<string, string> = {
   vault: '🗄️',
   wallet: '🎫',
   rewards: '💳',
+  payment_cards: '🏦',
   boards: '📌',
   contacts: '👤',
   journal: '📔',

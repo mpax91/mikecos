@@ -11653,3 +11653,39 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   box-sizing: border-box;
   min-width: 0;
 }
+
+/* ---- Payment Card detail — number/CVV reveal block ---- */
+
+.payment-detail__secure {
+  border: var(--border-hairline);
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--color-sidebar);
+}
+
+.payment-detail__secure-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13.5px;
+}
+
+.payment-detail__secure-row > span:first-child {
+  color: var(--color-muted);
+}
+
+.payment-detail__secure-value {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.payment-detail__secure-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}

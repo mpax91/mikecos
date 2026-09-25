@@ -1,5 +1,5 @@
 import type { AuthenticationResponseJSON, PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON, RegistrationResponseJSON } from '@simplewebauthn/browser';
-import type { AuthCredentialSummary, AuthStatus, Bet, BetLeg, BetGameNote, BetPromo, BetPromoStatus, BetScheduleGame, BetTransaction, BetTransactionType, VaultEntryDetail, VaultFact, BriefingResponse, CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, CreditScoreEntry, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitLog, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsSavedArticle, NewsSettings, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, VaultFactLabel, VaultRollupGroup, WalletCard, WalletCardFact, WalletCategory, RewardsCard, RewardsBonus, RewardsPerk, WeatherResponse, WeekResponse } from './types';
+import type { AuthCredentialSummary, AuthStatus, Bet, BetLeg, BetGameNote, BetPromo, BetPromoStatus, BetScheduleGame, BetTransaction, BetTransactionType, VaultEntryDetail, VaultFact, BriefingResponse, CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, CreditScoreEntry, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitLog, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsSavedArticle, NewsSettings, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, VaultFactLabel, VaultRollupGroup, WalletCard, WalletCardFact, WalletCategory, RewardsCard, RewardsBonus, RewardsPerk, PaymentCard, PaymentCardSecrets, WeatherResponse, WeekResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -50,6 +50,12 @@ function resolveWalletCard(card: WalletCard): WalletCard {
 // Same fix, same reason, for Rewards cards' cover art.
 function resolveRewardsCard(card: RewardsCard): RewardsCard {
   return card.coverArtUrl && !/^https?:\/\//i.test(card.coverArtUrl) ? { ...card, coverArtUrl: `${API_BASE}${card.coverArtUrl}` } : card;
+}
+
+// Same fix, front and back, for Payment Cards.
+function resolvePaymentCard(card: PaymentCard): PaymentCard {
+  const withFront = card.coverArtUrl && !/^https?:\/\//i.test(card.coverArtUrl) ? { ...card, coverArtUrl: `${API_BASE}${card.coverArtUrl}` } : card;
+  return withFront.backArtUrl && !/^https?:\/\//i.test(withFront.backArtUrl) ? { ...withFront, backArtUrl: `${API_BASE}${withFront.backArtUrl}` } : withFront;
 }
 
 export const api = {
@@ -926,6 +932,56 @@ export const api = {
     request<RewardsPerk>(`/api/rewards/perks/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
 
   deleteRewardsPerk: (id: string) => request<{ ok: true }>(`/api/rewards/perks/${id}`, { method: 'DELETE' }),
+
+  // ---- Payment Cards (0049_payment_cards.sql) — Wallet Phase 3, a secure
+  // credit/debit vault. Its own table family (see that migration for why),
+  // linked to (never duplicating) a RewardsCard when a card is flagged
+  // reward-worthy. ----
+
+  listPaymentCards: () => request<PaymentCard[]>('/api/payment-cards/cards').then((cards) => cards.map(resolvePaymentCard)),
+
+  createPaymentCard: (
+    params: Partial<
+      Pick<
+        PaymentCard,
+        'nickname' | 'cardType' | 'network' | 'issuer' | 'last4' | 'nameOnCard' | 'expiryMonth' | 'expiryYear' | 'billingZip' | 'color' | 'coverArtKey' | 'backArtKey' | 'notes' | 'rewardWorthy'
+      >
+    > & { number?: string | null; cvv?: string | null; rewardsCardId?: string | null }
+  ) => request<PaymentCard>('/api/payment-cards/cards', { method: 'POST', body: JSON.stringify(params) }).then(resolvePaymentCard),
+
+  updatePaymentCard: (
+    id: string,
+    patch: Partial<
+      Pick<
+        PaymentCard,
+        | 'nickname'
+        | 'cardType'
+        | 'network'
+        | 'issuer'
+        | 'last4'
+        | 'nameOnCard'
+        | 'expiryMonth'
+        | 'expiryYear'
+        | 'billingZip'
+        | 'color'
+        | 'coverArtKey'
+        | 'backArtKey'
+        | 'notes'
+        | 'rewardWorthy'
+        | 'active'
+        | 'sortOrder'
+      >
+    > & { number?: string | null; cvv?: string | null; rewardsCardId?: string | null }
+  ) => request<PaymentCard>(`/api/payment-cards/cards/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }).then(resolvePaymentCard),
+
+  deletePaymentCard: (id: string) => request<{ ok: true }>(`/api/payment-cards/cards/${id}`, { method: 'DELETE' }),
+
+  reorderPaymentCards: (ordered_ids: string[]) =>
+    request<{ ok: true }>('/api/payment-cards/cards/reorder', { method: 'POST', body: JSON.stringify({ ordered_ids }) }),
+
+  // The only call that ever returns a decrypted number/CVV — fire it on an
+  // explicit tap, never eagerly.
+  revealPaymentCard: (id: string) => request<PaymentCardSecrets>(`/api/payment-cards/cards/${id}/reveal`),
 
   // Generic "facts for this entity id" read — works for a Password card's
   // Custom fields too, not just a top-level Vault entry (see worker's

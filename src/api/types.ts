@@ -446,6 +446,46 @@ export interface RewardsCard {
   perks: RewardsPerk[];
 }
 
+// ---- Payment Cards (Wallet Phase 3 — a secure credit/debit card vault.
+// See worker/migrations/0049_payment_cards.sql for the schema and the
+// linking-not-duplicating design with RewardsCard above.) ----
+
+export type PaymentCardType = 'credit' | 'debit';
+
+export interface PaymentCard {
+  id: string;
+  nickname: string;
+  cardType: PaymentCardType;
+  network: string | null;
+  issuer: string | null;
+  last4: string | null;
+  nameOnCard: string | null;
+  expiryMonth: number | null;
+  expiryYear: number | null;
+  /** Never the actual number — only whether one is on file. The real value
+   * comes from api.revealPaymentCard(), fetched on an explicit tap. */
+  hasNumber: boolean;
+  hasCvv: boolean;
+  billingZip: string | null;
+  color: string | null;
+  coverArtKey: string | null;
+  coverArtUrl: string | null;
+  backArtKey: string | null;
+  backArtUrl: string | null;
+  notes: string | null;
+  rewardWorthy: boolean;
+  rewardsCardId: string | null;
+  active: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PaymentCardSecrets {
+  number: string | null;
+  cvv: string | null;
+}
+
 // ---- Canvas boards (infinite-canvas pinboard) ----
 
 // 'connector' is a freestanding line/arrow object placed via the toolbar
@@ -1076,7 +1116,7 @@ export interface NewsSavedArticle {
 
 // ---- Global search (Cmd/Ctrl+K palette) ----
 
-export type SearchGroupKey = 'notes' | 'jots' | 'lists' | 'projects' | 'vault' | 'wallet' | 'rewards' | 'boards' | 'contacts' | 'journal' | 'meeting_notes' | 'links';
+export type SearchGroupKey = 'notes' | 'jots' | 'lists' | 'projects' | 'vault' | 'wallet' | 'rewards' | 'payment_cards' | 'boards' | 'contacts' | 'journal' | 'meeting_notes' | 'links';
 
 export interface SearchResult {
   id: string;

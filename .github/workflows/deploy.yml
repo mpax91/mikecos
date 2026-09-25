@@ -89,6 +89,22 @@ jobs:
           if [ -n "$GOOGLE_ICS_URL_SHARED" ]; then
             printf '%s' "$GOOGLE_ICS_URL_SHARED" | npx wrangler secret put GOOGLE_ICS_URL_SHARED
           fi
+      - name: Set Payment Cards encryption key
+        # AES-256-GCM key for Wallet Part 3 (payment_cards.number_enc/
+        # cvv_enc — see worker/src/cryptoField.ts). Generate one with
+        # `openssl rand -base64 32` and add it as the PAYMENT_CARD_ENC_KEY
+        # repo secret; until then this step just skips, and Payment Cards'
+        # number/CVV fields return a clear 500 instead of saving.
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PAYMENT_CARD_ENC_KEY: ${{ secrets.PAYMENT_CARD_ENC_KEY }}
+        run: |
+          if [ -z "$PAYMENT_CARD_ENC_KEY" ]; then
+            echo "PAYMENT_CARD_ENC_KEY not set — skipping (Payment Cards' number/CVV fields won't save until this repo secret is added)."
+            exit 0
+          fi
+          printf '%s' "$PAYMENT_CARD_ENC_KEY" | npx wrangler secret put PAYMENT_CARD_ENC_KEY
 
   deploy-pages:
     runs-on: ubuntu-latest

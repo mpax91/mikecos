@@ -302,6 +302,15 @@ export interface Env {
   // CORS to echo back one specific origin with credentials enabled, which
   // isn't possible with "*" — see worker/src/auth.ts's resolveOrigin().
   ALLOWED_ORIGINS: string;
+  // AES-256-GCM key (base64, decodes to exactly 32 bytes — `openssl rand
+  // -base64 32`) for Payment Cards' number/CVV fields. A Worker secret,
+  // never committed, set via `wrangler secret put PAYMENT_CARD_ENC_KEY` (or
+  // the deploy workflow's own step, when the GitHub secret of the same
+  // name is set) — see worker/src/cryptoField.ts. Optional at the type
+  // level because a fresh environment that hasn't set it yet should still
+  // deploy; paymentCards.ts fails those specific requests with a clear
+  // error rather than the whole Worker failing to boot.
+  PAYMENT_CARD_ENC_KEY?: string;
 }
 
 // ---- News (RSS reader) — raw D1 row shapes; see

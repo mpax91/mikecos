@@ -3,7 +3,7 @@ import JsBarcode from 'jsbarcode';
 import { QRCodeSVG } from 'qrcode.react';
 import { api } from '../api/client';
 import type { WalletCard, WalletCardFact } from '../api/types';
-import { useSwipe } from '../utils/useSwipe';
+import { CardImageLightbox } from './CardImageLightbox';
 
 const JSBARCODE_FORMAT: Record<string, string> = {
   code128: 'CODE128',
@@ -188,49 +188,8 @@ export function WalletBarcodeView({ card, onClose, onEdit }: { card: WalletCard;
         </button>
       </div>
 
-      {lightboxSide && <CardImageLightbox card={card} side={lightboxSide} onSide={setLightboxSide} onClose={() => setLightboxSide(null)} />}
-    </div>
-  );
-}
-
-/** Tap the card art to see it full-size, and — when a back photo exists —
- * swipe (or use the dots) to flip between front and back, the same way
- * flipping a physical card over works. Front-only cards just show the one
- * image large with no swipe affordance. */
-function CardImageLightbox({
-  card,
-  side,
-  onSide,
-  onClose,
-}: {
-  card: WalletCard;
-  side: 'front' | 'back';
-  onSide: (side: 'front' | 'back') => void;
-  onClose: () => void;
-}) {
-  const hasBack = !!card.backArtUrl;
-  const src = side === 'back' && card.backArtUrl ? card.backArtUrl : card.coverArtUrl;
-  const swipe = useSwipe({
-    onSwipeLeft: () => hasBack && onSide('front'),
-    onSwipeRight: () => hasBack && onSide('back'),
-  });
-
-  return (
-    <div className="wallet-lightbox" onClick={onClose}>
-      <button type="button" className="wallet-lightbox__close" onClick={onClose} aria-label="Close">
-        ✕
-      </button>
-      <div className="wallet-lightbox__image-wrap" onClick={(e) => e.stopPropagation()} {...swipe}>
-        {src && <img src={src} alt="" />}
-      </div>
-      {hasBack && (
-        <>
-          <div className="wallet-lightbox__hint">Swipe to flip</div>
-          <div className="wallet-lightbox__dots" onClick={(e) => e.stopPropagation()}>
-            <button type="button" className={`wallet-lightbox__dot${side === 'front' ? ' is-active' : ''}`} onClick={() => onSide('front')} aria-label="Front" />
-            <button type="button" className={`wallet-lightbox__dot${side === 'back' ? ' is-active' : ''}`} onClick={() => onSide('back')} aria-label="Back" />
-          </div>
-        </>
+      {lightboxSide && (
+        <CardImageLightbox frontUrl={card.coverArtUrl} backUrl={card.backArtUrl} side={lightboxSide} onSide={setLightboxSide} onClose={() => setLightboxSide(null)} />
       )}
     </div>
   );
