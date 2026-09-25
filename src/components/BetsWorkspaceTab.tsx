@@ -175,11 +175,21 @@ function bestOddsColumns(entry: BoardEntry, cols: string[]): Set<string> {
 
 function NotesModal({
   entry,
+  columns,
+  onCellCommit,
   onClose,
   onSave,
   onRemove,
 }: {
   entry: BoardEntry;
+  /** The value columns worth exposing here — the day's tipper roster for
+   * a regular game, SPORTSBOOK_COLUMNS for a pinned Best Bet. Editable
+   * right in this modal (see the section below) — the table's own columns
+   * are hidden on narrow screens (see .bets-workspace__table-wrap's mobile
+   * rule), and this is the only other place a tip/line can be entered from
+   * a phone. */
+  columns: string[];
+  onCellCommit: (entry: BoardEntry, source: string, value: string) => void;
   onClose: () => void;
   onSave: (note: string) => Promise<void>;
   onRemove: (() => Promise<void>) | null;
@@ -209,7 +219,11 @@ function NotesModal({
     }
   }
 
-  const cellEntries = [...entry.cells.entries()].filter(([, v]) => v.trim());
+  // Anything with a saved value but no longer among the current column
+  // list (a tipper column renamed/removed since) still shown read-only
+  // below, so stray data isn't silently hidden — everything else in
+  // `columns` gets a real editable input, filled in or not.
+  const strayEntries = [...entry.cells.entries()].filter(([label, v]) => v.trim() && !columns.includes(label));
 
   return (
     <Modal title={entry.matchup} onClose={onClose}>
@@ -220,11 +234,24 @@ function NotesModal({
           </div>
         )}
         {entry.startTime && <div className="bets-workspace__modal-kickoff">{formatKickoff(entry.startTime)}</div>}
-        {cellEntries.length > 0 && (
+        {columns.length > 0 && (
           <div className="bets-workspace__modal-cells">
-            <span className="bets-form__field-label">Entered values</span>
+            <span className="bets-form__field-label">Tips / lines</span>
             <div className="bets-workspace__modal-cells-grid">
-              {cellEntries.map(([label, value]) => (
+              {columns.map((col) => (
+                <label key={col} className="bets-workspace__modal-cell bets-workspace__modal-cell--input">
+                  <span className="bets-workspace__modal-cell-label">{col}</span>
+                  <CellInput value={entry.cells.get(col) ?? ''} onCommit={(v) => onCellCommit(entry, col, v)} />
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
+        {strayEntries.length > 0 && (
+          <div className="bets-workspace__modal-cells">
+            <span className="bets-form__field-label">Other saved values</span>
+            <div className="bets-workspace__modal-cells-grid">
+              {strayEntries.map(([label, value]) => (
                 <div key={label} className="bets-workspace__modal-cell">
                   <span className="bets-workspace__modal-cell-label">{label}</span>
                   <span className="bets-workspace__modal-cell-value">{value}</span>
@@ -877,7 +904,7 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
               <thead>
                 <tr>
                   <th />
-                  <th>Sport</th>
+                  <th className="bets-workspace__sport-th">Sport</th>
                   <th className="bets-workspace__game-th">Game</th>
                   <th className="bets-workspace__time-th">Time</th>
                   {SPORTSBOOK_COLUMNS.map((col) => (
@@ -936,6 +963,12 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
       {notesFor && (
         <NotesModal
           entry={notesFor}
+          // Union of both tables' columns (tipper + sportsbook) — a pinned
+          // game can show in both, and either set of values is worth
+          // reaching from here since this modal is the only tip-entry path
+          // on a phone (see the comment on NotesModal's `columns` prop).
+          columns={[...columns, ...SPORTSBOOK_COLUMNS]}
+          onCellCommit={handleCellCommit}
           onClose={() => setNotesFor(null)}
           onSave={(note) => handleNotesSave(notesFor, note)}
           onRemove={notesFor.noteId ? () => handleRemove(notesFor) : null}

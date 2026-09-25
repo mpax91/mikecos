@@ -7,7 +7,6 @@ import { TaskDetailModal } from '../components/TaskDetailModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { BlankLine } from '../components/BlankLine';
 import { WeatherWidget } from '../components/WeatherWidget';
-import { InboxWidget } from '../components/InboxWidget';
 import { getHolidays } from '../utils/holidays';
 import { buildMeetingNoteTitle, meetingHasEnded } from '../utils/meetingNotes';
 import { useReportTabMeta } from '../contexts/TabsContext';
@@ -440,20 +439,6 @@ export function TodayPage() {
                 Overdue ({overdue.length})
               </div>
               <div className="today-page__list today-page__list--ruled task-list card">{overdue.map((task) => renderRow(task))}</div>
-            </div>
-          )}
-
-          {/* Real-time, not tied to whichever date is being viewed — same
-              reasoning as Top Stories above: only rendered on the actual
-              current day, since "what's sitting in my inbox right now"
-              attached to a past/future date would be misleading. This is
-              the same InboxWidget as its own full page (Now → Inbox in the
-              sidebar) — a lighter at-a-glance copy here, same relationship
-              Today's own "Top Stories" has to the full News page. */}
-          {isToday && (
-            <div className="today-page__section">
-              <div className="today-page__section-title">Inbox</div>
-              <InboxWidget />
             </div>
           )}
 

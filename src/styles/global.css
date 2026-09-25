@@ -1590,11 +1590,53 @@ a {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  transition: color 150ms ease;
 }
 
 .task-row__title.is-done {
   color: var(--color-muted);
   text-decoration: line-through;
+}
+
+/* Checking a task off used to remove it from its list the instant the
+   click landed — the row was just gone before you could register the
+   click did anything. TaskRow now holds a completed row in place for one
+   beat (see its `completing` state) and plays this out instead: a quick
+   checkbox pop, then the whole row eases down and away. */
+.task-row.is-completing {
+  animation: task-row-complete 380ms ease forwards;
+  pointer-events: none;
+}
+
+@keyframes task-row-complete {
+  0% {
+    opacity: 1;
+    transform: scale(1) translateX(0);
+  }
+  35% {
+    opacity: 1;
+    transform: scale(1.005) translateX(0);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.97) translateX(6px);
+  }
+}
+
+.task-row.is-completing .task-row__checkbox {
+  animation: task-row-checkbox-pop 280ms ease;
+}
+
+@keyframes task-row-checkbox-pop {
+  0% {
+    transform: scale(1);
+  }
+  45% {
+    transform: scale(1.4);
+  }
+  100% {
+    transform: scale(1);
+  }
 }
 
 .task-row__title.is-placeholder {
@@ -2187,6 +2229,25 @@ a {
   font-size: 12.5px;
   color: var(--color-muted);
   margin: 0 0 10px;
+}
+
+.shelf-view-modal__text {
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--color-ink);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.shelf-view-modal__image {
+  display: block;
+  width: 100%;
+  max-height: 60vh;
+  object-fit: contain;
+  border-radius: var(--radius-card);
+  background: var(--color-sidebar);
 }
 
 .meeting-note-modal__textarea {
@@ -8631,6 +8692,28 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   word-break: break-word;
 }
 
+/* The Tips/lines grid reuses CellInput (built for a snug table cell, hence
+   its own padding/min-width) inside this card-style label instead — undo
+   that table-cell chrome so it just sits as plain text-entry inside the
+   card. */
+.bets-workspace__modal-cell--input .bets-workspace__cell-input {
+  min-width: 0;
+  width: 100%;
+  padding: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.bets-workspace__modal-cell--input .bets-workspace__cell-input:hover {
+  background: transparent;
+}
+
+.bets-workspace__modal-cell--input .bets-workspace__cell-input:focus {
+  box-shadow: none;
+  border-color: transparent;
+  background: transparent;
+}
+
 .bets-workspace__cell-wrap {
   position: relative;
   display: flex;
@@ -8744,9 +8827,44 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
     text-overflow: clip;
   }
 
+  /* table-layout: fixed takes its column widths from the header row, so
+     Game only actually gets the freed-up space once the pin/time/notes
+     header cells are pinned down to something narrow too — width: auto on
+     .bets-workspace__matchup-cell alone still left those three splitting
+     the remainder roughly evenly with Game, which is what kept wrapping
+     it to two lines even with the value columns hidden. */
+  .bets-workspace__table thead th:first-child {
+    width: 22px;
+  }
+
+  .bets-workspace__pin-cell {
+    width: 22px;
+  }
+
+  .bets-workspace__table th.bets-workspace__time-th {
+    width: 40px;
+  }
+
+  .bets-workspace__table th.bets-workspace__sport-th,
+  .bets-workspace__sport-cell {
+    width: 34px;
+    font-size: 9px;
+    padding: 4px 2px;
+  }
+
   .bets-workspace__time-cell {
-    width: 52px;
+    width: 40px;
     font-size: 10px;
+    padding: 4px 4px;
+  }
+
+  .bets-workspace__table thead th:last-child {
+    width: 36px;
+  }
+
+  .bets-workspace__notes-cell {
+    width: 36px;
+    padding: 4px 4px;
   }
 }
 
@@ -9528,8 +9646,19 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 6px;
   align-self: flex-start;
+}
+
+/* Mark-read/Save were sized for the whole app's default icon button (a
+   ~23px box) — fine on touch, where the coarse-pointer rule below already
+   widens the hit area, but on desktop a mouse click a couple pixels off
+   that box lands on the card underneath instead and opens the article,
+   which reads as "the mark-read button doesn't work." Give these two a
+   bigger hit target on every pointer type, not just coarse ones. */
+.news-article-card__actions .btn--icon {
+  min-width: 32px;
+  min-height: 32px;
 }
 
 .news-article-card__actions--saved {

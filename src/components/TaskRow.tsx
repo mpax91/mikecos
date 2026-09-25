@@ -139,20 +139,49 @@ export function TaskRow({
   const dueDate = entity.due_date;
   const due = dueDate ? formatDueDate(dueDate) : null;
 
+  // Checking a task off used to call onToggle synchronously, which most
+  // callers answer by yanking the row out of their list state instantly —
+  // felt like the click hadn't registered before the row was just gone.
+  // Holding it here for one short animation (see .task-row.is-completing)
+  // before actually notifying the parent gives it a beat to read as "done"
+  // rather than "vanished". Unchecking (already-done -> not done) skips
+  // this — that's a correction, not a completion, and reads fine instant.
+  const [completing, setCompleting] = useState(false);
+  const completeTimeoutRef = useRef<number | null>(null);
+  useEffect(() => {
+    return () => {
+      if (completeTimeoutRef.current != null) window.clearTimeout(completeTimeoutRef.current);
+    };
+  }, []);
+
+  function handleToggle() {
+    if (isDone) {
+      onToggle(entity);
+      return;
+    }
+    setCompleting(true);
+    completeTimeoutRef.current = window.setTimeout(() => {
+      onToggle(entity);
+    }, 340);
+  }
+
+  const showDone = isDone || completing;
+
   return (
     <div>
       <div
-        className={`task-row${isPinned ? ' is-pinned' : ''}${isSubtask ? ' task-row--subtask' : ''}`}
+        className={`task-row${isPinned ? ' is-pinned' : ''}${isSubtask ? ' task-row--subtask' : ''}${completing ? ' is-completing' : ''}`}
         onClick={() => onOpen(entity)}
       >
         <input
           type="checkbox"
-          checked={isDone}
-          onChange={() => onToggle(entity)}
+          checked={showDone}
+          onChange={handleToggle}
           onClick={(e) => e.stopPropagation()}
+          disabled={completing}
           className="task-row__checkbox"
         />
-        <span className={`task-row__title${isDone ? ' is-done' : ''}${!entity.title ? ' is-placeholder' : ''}`}>
+        <span className={`task-row__title${showDone ? ' is-done' : ''}${!entity.title ? ' is-placeholder' : ''}`}>
           {entity.title || 'Untitled Task'}
         </span>
         {projectTag && (
@@ -170,7 +199,7 @@ export function TaskRow({
             even compacted. */}
         {due && (
           <span
-            className={`task-row__due task-row__due--${isDone ? 'done' : due.kind}`}
+            className={`task-row__due task-row__due--${showDone ? 'done' : due.kind}`}
             title={dueDate ?? undefined}
           >
             📅 {due.label}

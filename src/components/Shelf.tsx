@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
 import type { FileMeta, ShelfItem, ShelfLinkContent, ShelfTextContent } from '../api/types';
 import { KebabMenu } from './KebabMenu';
+import { Modal } from './Modal';
 import { Toast } from './Toast';
 import { formatRelativeTime } from '../utils/formatRelativeTime';
 
@@ -86,12 +87,14 @@ function ShelfDropTile({ onFiles, onText }: { onFiles: (files: File[]) => void; 
 function ShelfTile({
   item,
   onCopy,
+  onView,
   onTogglePin,
   onGraduate,
   onDelete,
 }: {
   item: ShelfItem;
   onCopy: (item: ShelfItem) => void;
+  onView: (item: ShelfItem) => void;
   onTogglePin: (item: ShelfItem) => void;
   onGraduate: (item: ShelfItem) => void;
   onDelete: (item: ShelfItem) => void;
@@ -99,6 +102,13 @@ function ShelfTile({
   const isPinned = item.pinned === 1;
   const isDownloadable = item.type === 'image' || item.type === 'file';
   const menu = [
+    // Tapping the tile body copies it (fast, one-handed) — but a tile only
+    // shows 3 clamped lines, so a longer snippet has no way to be read in
+    // full without copying it somewhere else first. This opens it in a
+    // modal instead — the tile's kebab already works fine as a tap target
+    // on mobile (unlike the hover-only ✕), so it's the one place this can
+    // live without adding another always-visible icon to a 152×108 tile.
+    { label: 'View', onClick: () => onView(item) },
     // Same convention as EntityCard's file-download item: a dedicated,
     // called-out Download action, since clicking the tile body only copies
     // (an image's copy path may fall back to copying its URL rather than
@@ -169,6 +179,54 @@ function ShelfTile({
   );
 }
 
+/** Full-size read-only preview for a tile whose snippet got clamped —
+ * see ShelfTile's "View" menu item. Copy is repeated here too, so opening
+ * a tile just to read it doesn't lose the one-tap-copy convenience the
+ * tile body itself offers. */
+function ShelfViewModal({ item, onClose, onCopy }: { item: ShelfItem; onClose: () => void; onCopy: (item: ShelfItem) => void }) {
+  let title = 'Shelf item';
+  let body: React.ReactNode;
+
+  if (item.type === 'text') {
+    const meta = JSON.parse(item.content) as ShelfTextContent;
+    title = 'Text';
+    body = <div className="shelf-view-modal__text">{meta.text}</div>;
+  } else if (item.type === 'link') {
+    const meta = JSON.parse(item.content) as ShelfLinkContent;
+    title = meta.title || meta.domain || 'Link';
+    body = (
+      <div className="shelf-view-modal__text">
+        <a href={meta.url} target="_blank" rel="noopener noreferrer">
+          {meta.url}
+        </a>
+      </div>
+    );
+  } else {
+    const meta = JSON.parse(item.content) as FileMeta;
+    const isImage = item.type === 'image' || isImageMime(meta.mime_type);
+    title = meta.filename;
+    body = isImage ? (
+      <img className="shelf-view-modal__image" src={api.fileUrl(meta.r2_key)} alt={meta.filename} />
+    ) : (
+      <div className="shelf-view-modal__text">{meta.filename}</div>
+    );
+  }
+
+  return (
+    <Modal title={title} onClose={onClose}>
+      {body}
+      <div className="modal__actions">
+        <button type="button" className="btn btn--ghost" onClick={onClose}>
+          Close
+        </button>
+        <button type="button" className="btn" onClick={() => onCopy(item)}>
+          Copy
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 /** The Shelf — a drop zone sitting above the Jot cards on the Jots page:
  * paste (or drag, or type) a snippet/screenshot/link/file and it shows up
  * as a small disposable tile, no title or editor required. Same idea as
@@ -182,6 +240,7 @@ function ShelfTile({
 export function Shelf({ composerOpen, onGraduated }: { composerOpen: boolean; onGraduated?: () => void }) {
   const [items, setItems] = useState<ShelfItem[] | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [viewing, setViewing] = useState<ShelfItem | null>(null);
 
   const load = useCallback(() => {
     api.listShelf().then(setItems).catch(() => {});
@@ -309,6 +368,7 @@ export function Shelf({ composerOpen, onGraduated }: { composerOpen: boolean; on
             key={item.id}
             item={item}
             onCopy={handleCopy}
+            onView={setViewing}
             onTogglePin={handleTogglePin}
             onGraduate={handleGraduate}
             onDelete={handleDelete}
@@ -317,6 +377,16 @@ export function Shelf({ composerOpen, onGraduated }: { composerOpen: boolean; on
       </div>
 
       {toast && <Toast message={toast} onDismiss={() => setToast(null)} />}
+      {viewing && (
+        <ShelfViewModal
+          item={viewing}
+          onClose={() => setViewing(null)}
+          onCopy={(item) => {
+            handleCopy(item);
+            setViewing(null);
+          }}
+        />
+      )}
     </div>
   );
 }
