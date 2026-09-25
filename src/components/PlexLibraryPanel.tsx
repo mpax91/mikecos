@@ -6,6 +6,27 @@ import { formatRelativeTime } from '../utils/formatRelativeTime';
 
 const CONTAINER_TYPES = new Set(['show', 'season', 'artist', 'album']);
 
+// Search results get grouped into these sections rather than one flat
+// alphabetical grid — a Plex-wide search can span every media type at
+// once, and "Office" returning three TV shows, a movie, and forty
+// episodes as one undifferentiated grid buries the shows Mike actually
+// wants under everything that merely mentions them. Order deliberately
+// puts the "top level" browsable things first (what you'd pick from a
+// library root) and their children after (what you'd only get to by
+// drilling in) — seasons are included for completeness even though a
+// season rarely has a distinctive enough title to match a search.
+const PLEX_SEARCH_SECTIONS: { type: string; label: string }[] = [
+  { type: 'movie', label: 'Movies' },
+  { type: 'show', label: 'TV Shows' },
+  { type: 'artist', label: 'Artists' },
+  { type: 'album', label: 'Albums' },
+  { type: 'season', label: 'Seasons' },
+  { type: 'episode', label: 'Episodes' },
+  { type: 'track', label: 'Songs' },
+  { type: 'item', label: 'Other' },
+];
+const SEARCH_SECTION_PAGE_SIZE = 12;
+
 function formatDuration(ms: number | null): string | null {
   if (!ms) return null;
   const totalMin = Math.round(ms / 60000);
@@ -29,6 +50,7 @@ export function PlexLibraryPanel() {
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [detail, setDetail] = useState<PlexItemDetail | null>(null);
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -69,6 +91,7 @@ export function PlexLibraryPanel() {
       // one is currently selected — Mike wants "do I have this anywhere"
       // rather than having to remember which tab something lives under.
       api.listPlexItems({ q: debouncedQuery }).then(setItems).catch((e) => setError(String(e)));
+      setExpandedSections(new Set());
       return;
     }
     if (!libraryId) return;
@@ -117,6 +140,22 @@ export function PlexLibraryPanel() {
     setBreadcrumb(breadcrumb.slice(0, index + 1));
   }
 
+  function toggleSection(type: string) {
+    setExpandedSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(type)) next.delete(type);
+      else next.add(type);
+      return next;
+    });
+  }
+
+  // Only built (and only rendered) while searching — plain library
+  // browsing stays one flat grid, same as always, since there's nothing
+  // to disambiguate when Mike's already inside one library/level.
+  const searchSections = debouncedQuery
+    ? PLEX_SEARCH_SECTIONS.map((s) => ({ ...s, items: (items ?? []).filter((i) => i.type === s.type) })).filter((s) => s.items.length > 0)
+    : [];
+
   // A large library syncs in several bounded chunks rather than one big
   // pass (see worker/src/plexSync.ts) — poll until the endpoint reports
   // done, showing progress in between so a long sync doesn't look stuck.
@@ -148,6 +187,27 @@ export function PlexLibraryPanel() {
   }
 
   const activeLibrary = libraries?.find((l) => l.id === libraryId) ?? null;
+
+  function renderPlexTile(item: PlexItem) {
+    return (
+      <button type="button" key={item.id} className="plex-tile" onClick={() => openItem(item)}>
+        <div className="plex-tile__art">
+          {item.thumbUrl ? <img src={api.plexThumbUrl(item.id)} alt="" loading="lazy" /> : <span className="plex-tile__art-empty">{item.title.slice(0, 1)}</span>}
+          {!item.matched && (item.type === 'movie' || item.type === 'show' || item.type === 'episode') && (
+            <span className="plex-tile__flag" title="Not matched to metadata">!</span>
+          )}
+        </div>
+        <div className="plex-tile__title">
+          {item.type === 'episode' && item.seasonNumber != null && item.episodeNumber != null
+            ? `${String(item.seasonNumber).padStart(2, '0')}×${String(item.episodeNumber).padStart(2, '0')} — ${item.title}`
+            : item.title}
+        </div>
+        {(item.year || debouncedQuery) && (
+          <div className="plex-tile__meta">{debouncedQuery ? libraries?.find((l) => l.id === item.libraryId)?.title ?? '' : item.year}</div>
+        )}
+      </button>
+    );
+  }
 
   return (
     <div>
@@ -203,29 +263,28 @@ export function PlexLibraryPanel() {
             <div className="empty-state">Loading…</div>
           ) : items.length === 0 ? (
             <div className="empty-state">Nothing here.</div>
-          ) : (
-            <div className="plex-grid">
-              {items.map((item) => (
-                <button type="button" key={item.id} className="plex-tile" onClick={() => openItem(item)}>
-                  <div className="plex-tile__art">
-                    {item.thumbUrl ? <img src={api.plexThumbUrl(item.id)} alt="" loading="lazy" /> : <span className="plex-tile__art-empty">{item.title.slice(0, 1)}</span>}
-                    {!item.matched && (item.type === 'movie' || item.type === 'show' || item.type === 'episode') && (
-                      <span className="plex-tile__flag" title="Not matched to metadata">!</span>
+          ) : debouncedQuery ? (
+            <div className="plex-search-sections">
+              {searchSections.map((section) => {
+                const isExpanded = expandedSections.has(section.type);
+                const shown = isExpanded ? section.items : section.items.slice(0, SEARCH_SECTION_PAGE_SIZE);
+                return (
+                  <div className="plex-search-section" key={section.type}>
+                    <div className="plex-search-section__title">
+                      {section.label} <span className="plex-search-section__count">{section.items.length}</span>
+                    </div>
+                    <div className="plex-grid">{shown.map((item) => renderPlexTile(item))}</div>
+                    {section.items.length > SEARCH_SECTION_PAGE_SIZE && !isExpanded && (
+                      <button type="button" className="wallet-editor__manage-link" onClick={() => toggleSection(section.type)}>
+                        See {section.items.length - SEARCH_SECTION_PAGE_SIZE} more {section.label.toLowerCase()}
+                      </button>
                     )}
                   </div>
-                  <div className="plex-tile__title">
-                    {item.type === 'episode' && item.seasonNumber != null && item.episodeNumber != null
-                      ? `${String(item.seasonNumber).padStart(2, '0')}×${String(item.episodeNumber).padStart(2, '0')} — ${item.title}`
-                      : item.title}
-                  </div>
-                  {(item.year || debouncedQuery) && (
-                    <div className="plex-tile__meta">
-                      {debouncedQuery ? libraries?.find((l) => l.id === item.libraryId)?.title ?? '' : item.year}
-                    </div>
-                  )}
-                </button>
-              ))}
+                );
+              })}
             </div>
+          ) : (
+            <div className="plex-grid">{items.map((item) => renderPlexTile(item))}</div>
           )}
         </>
       )}

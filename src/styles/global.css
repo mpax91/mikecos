@@ -11810,6 +11810,34 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   gap: 12px;
 }
 
+/* ---- Plex search results grouped by media type ---- */
+
+.plex-search-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.plex-search-section__title {
+  font-size: 13px;
+  font-weight: var(--weight-medium);
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 10px;
+}
+
+.plex-search-section__count {
+  font-weight: var(--weight-regular);
+  color: var(--color-muted);
+  opacity: 0.7;
+}
+
+.plex-search-section .wallet-editor__manage-link {
+  display: inline-block;
+  margin-top: 8px;
+}
+
 .plex-tile {
   display: flex;
   flex-direction: column;
