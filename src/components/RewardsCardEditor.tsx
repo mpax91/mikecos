@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { api } from '../api/client';
 import type { RewardsBonusKind, RewardsCard } from '../api/types';
+import { currentQuarter, describeRotatingWindow, quarterDateRange } from '../utils/rewards';
 
 const SWATCHES = ['#3B5BA9', '#2F6F5E', '#8A5A3B', '#6B4C9A', '#3D7EA6', '#9A4C5F', '#4C6B4C', '#7A5C2E', '#B8632F', '#5C6B8A'];
 
@@ -216,10 +217,20 @@ export function RewardsCardEditor({
   );
 }
 
+// Most rotating bonuses (Bank of America's picked category, Discover it,
+// Chase Freedom) run on plain calendar quarters, so that's the default,
+// fast entry path. A card whose rotation doesn't follow the calendar (the
+// Amazon Prime Visa's own promo windows, which move on Amazon's schedule)
+// still needs real start/end dates — "Custom dates" switches to that.
+type DateMode = 'quarter' | 'custom';
+
 function BonusesEditor({ card, onChanged }: { card: RewardsCard; onChanged: (card: RewardsCard) => void }) {
   const [category, setCategory] = useState('');
   const [rate, setRate] = useState('');
   const [kind, setKind] = useState<RewardsBonusKind>('fixed');
+  const [dateMode, setDateMode] = useState<DateMode>('quarter');
+  const [quarter, setQuarter] = useState<1 | 2 | 3 | 4>(currentQuarter());
+  const [year, setYear] = useState(new Date().getFullYear());
   const [startsOn, setStartsOn] = useState('');
   const [endsOn, setEndsOn] = useState('');
   const [saving, setSaving] = useState(false);
@@ -228,14 +239,15 @@ function BonusesEditor({ card, onChanged }: { card: RewardsCard; onChanged: (car
     const cat = category.trim();
     const r = parseFloat(rate);
     if (!cat || !r) return;
+    const range = kind === 'rotating' && dateMode === 'quarter' ? quarterDateRange(quarter, year) : null;
     setSaving(true);
     try {
       const bonus = await api.createRewardsBonus(card.id, {
         category: cat,
         rate: r,
         kind,
-        startsOn: kind === 'rotating' ? startsOn || null : null,
-        endsOn: kind === 'rotating' ? endsOn || null : null,
+        startsOn: kind === 'rotating' ? (range ? range.startsOn : startsOn || null) : null,
+        endsOn: kind === 'rotating' ? (range ? range.endsOn : endsOn || null) : null,
       });
       onChanged({ ...card, bonuses: [...card.bonuses, bonus] });
       setCategory('');
@@ -263,7 +275,7 @@ function BonusesEditor({ card, onChanged }: { card: RewardsCard; onChanged: (car
                 <strong>{b.rate}%</strong> · {b.category}
                 {b.kind === 'rotating' && (
                   <span className="wallet-editor__row-item-tag">
-                    rotating{b.startsOn ? ` · ${b.startsOn} – ${b.endsOn ?? '?'}` : ''}
+                    rotating{describeRotatingWindow(b.startsOn, b.endsOn) ? ` · ${describeRotatingWindow(b.startsOn, b.endsOn)}` : ''}
                   </span>
                 )}
               </span>
@@ -281,7 +293,18 @@ function BonusesEditor({ card, onChanged }: { card: RewardsCard; onChanged: (car
           <option value="fixed">Fixed</option>
           <option value="rotating">Rotating</option>
         </select>
-        {kind === 'rotating' && (
+        {kind === 'rotating' && dateMode === 'quarter' && (
+          <>
+            <select value={quarter} onChange={(e) => setQuarter(Number(e.target.value) as 1 | 2 | 3 | 4)} style={{ flex: 1 }}>
+              <option value={1}>Q1</option>
+              <option value={2}>Q2</option>
+              <option value={3}>Q3</option>
+              <option value={4}>Q4</option>
+            </select>
+            <input type="number" value={year} onChange={(e) => setYear(Number(e.target.value) || year)} style={{ flex: 1 }} />
+          </>
+        )}
+        {kind === 'rotating' && dateMode === 'custom' && (
           <>
             <input type="date" value={startsOn} onChange={(e) => setStartsOn(e.target.value)} style={{ flex: 1 }} />
             <input type="date" value={endsOn} onChange={(e) => setEndsOn(e.target.value)} style={{ flex: 1 }} />
@@ -291,6 +314,15 @@ function BonusesEditor({ card, onChanged }: { card: RewardsCard; onChanged: (car
           Add
         </button>
       </div>
+      {kind === 'rotating' && (
+        <button
+          type="button"
+          className="wallet-editor__manage-link"
+          onClick={() => setDateMode((m) => (m === 'quarter' ? 'custom' : 'quarter'))}
+        >
+          {dateMode === 'quarter' ? "Not a calendar quarter? Use custom dates" : 'Use a calendar quarter instead'}
+        </button>
+      )}
     </div>
   );
 }

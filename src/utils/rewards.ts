@@ -23,6 +23,42 @@ export function cardsForThisQuarter(cards: RewardsCard[]): RewardsCard[] {
   return cards.filter((c) => c.active && (c.alwaysCarry || c.bonuses.some((b) => b.kind === 'rotating' && isBonusActiveToday(b))));
 }
 
+// ---- Quarter helpers for the rotating-bonus editor. Most rotating
+// categories (Bank of America's picked-category, Discover it, Chase
+// Freedom) run on plain calendar quarters, so the editor offers "Q1–Q4 of
+// <year>" as the fast path — but a card whose rotation doesn't follow the
+// calendar (the Amazon Prime Visa's own promo windows, which move on
+// Amazon's schedule, not a quarter boundary) still needs real start/end
+// dates, so that option stays available too. Either way the stored data
+// is just startsOn/endsOn as YYYY-MM-DD — isBonusActiveToday and
+// cardsForThisQuarter above don't know or care which path produced them. */
+export function currentQuarter(date = new Date()): 1 | 2 | 3 | 4 {
+  return (Math.floor(date.getMonth() / 3) + 1) as 1 | 2 | 3 | 4;
+}
+
+export function quarterDateRange(quarter: 1 | 2 | 3 | 4, year: number): { startsOn: string; endsOn: string } {
+  const startMonth = (quarter - 1) * 3; // 0-indexed
+  const endMonth = startMonth + 2;
+  const startsOn = `${year}-${String(startMonth + 1).padStart(2, '0')}-01`;
+  const lastDay = new Date(year, endMonth + 1, 0).getDate(); // day 0 of next month = last day of endMonth
+  const endsOn = `${year}-${String(endMonth + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+  return { startsOn, endsOn };
+}
+
+// For display: if a rotating bonus's stored dates exactly match a full
+// calendar quarter, show "Q3 2026" instead of the raw range — friendlier
+// for the common case, while a non-quarter-aligned window (Amazon-style)
+// still shows its real dates since it won't match any quarter exactly.
+export function describeRotatingWindow(startsOn: string | null, endsOn: string | null): string | null {
+  if (!startsOn || !endsOn) return null;
+  const year = parseInt(startsOn.slice(0, 4), 10);
+  for (const q of [1, 2, 3, 4] as const) {
+    const range = quarterDateRange(q, year);
+    if (range.startsOn === startsOn && range.endsOn === endsOn) return `Q${q} ${year}`;
+  }
+  return `${startsOn} – ${endsOn}`;
+}
+
 export interface RewardsMatch {
   card: RewardsCard;
   bonus: RewardsBonus | null;

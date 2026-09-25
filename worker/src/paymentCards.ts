@@ -5,6 +5,28 @@ import { decryptField, encryptField } from './cryptoField';
 const now = () => new Date().toISOString();
 const uid = () => crypto.randomUUID();
 
+// Duplicates an R2 object under a fresh key, rather than pointing both
+// rows at the same key — a payment card and its linked Rewards card each
+// own their art independently (deleting/replacing one's cover shouldn't
+// silently break the other's). Used only at the moment a Rewards card is
+// first created from a reward-worthy payment card, so Mike doesn't have
+// to upload the same image twice. Best-effort: any failure (object
+// missing, R2 hiccup) just leaves the new card without art rather than
+// blocking its creation.
+async function copyR2Object(env: Env, sourceKey: string): Promise<string | null> {
+  try {
+    const obj = await env.FILES.get(sourceKey);
+    if (!obj) return null;
+    const buf = await obj.arrayBuffer();
+    const contentType = obj.httpMetadata?.contentType ?? 'application/octet-stream';
+    const newKey = `${uid()}-${sourceKey.replace(/^[^-]*-/, '') || 'cover'}`;
+    await env.FILES.put(newKey, buf, { httpMetadata: { contentType } });
+    return newKey;
+  } catch {
+    return null;
+  }
+}
+
 /** Wallet Part 3 — a secure Payment Cards vault (credit + debit; see
  * migrations/0049_payment_cards.sql for the schema and the linking
  * design). Mounted at /api/payment-cards. */
@@ -79,16 +101,24 @@ paymentCardsRouter.get('/cards', async (c) => {
 // ever called when the caller didn't already point at an existing Rewards
 // card, so an already-catalogued reward card (Mike's existing ~15) is
 // never duplicated — the frontend is expected to offer "link to an
-// existing card" first and only fall through to creating a new one.
-async function createLinkedRewardsCard(c: { env: Env }, seed: { nickname: string; network: string | null; last4: string | null }): Promise<string> {
+// existing card" first and only fall through to creating a new one. If
+// the payment card already has cover art, it's duplicated onto the new
+// Rewards card too (see copyR2Object) so Mike doesn't have to upload the
+// same image twice — a one-time carryover at creation only; the two
+// cards' art is independent from then on.
+async function createLinkedRewardsCard(
+  c: { env: Env },
+  seed: { nickname: string; network: string | null; last4: string | null; coverArtKey: string | null }
+): Promise<string> {
   const maxPos = await c.env.DB.prepare('SELECT COALESCE(MAX(sort_order), -1) as m FROM rewards_cards').first<{ m: number }>();
   const id = uid();
   const ts = now();
+  const coverArtKey = seed.coverArtKey ? await copyR2Object(c.env, seed.coverArtKey) : null;
   await c.env.DB.prepare(
     `INSERT INTO rewards_cards (id, nickname, network, last4, base_rate, annual_fee, always_carry, active, color, cover_art_key, notes, sort_order, created_at, updated_at)
-     VALUES (?, ?, ?, ?, 1.0, NULL, 0, 1, NULL, NULL, NULL, ?, ?, ?)`
+     VALUES (?, ?, ?, ?, 1.0, NULL, 0, 1, NULL, ?, NULL, ?, ?, ?)`
   )
-    .bind(id, seed.nickname, seed.network, seed.last4, (maxPos?.m ?? -1) + 1, ts, ts)
+    .bind(id, seed.nickname, seed.network, seed.last4, coverArtKey, (maxPos?.m ?? -1) + 1, ts, ts)
     .run();
   return id;
 }
@@ -107,7 +137,7 @@ interface RewardLinkInput {
  *  - rewardWorthy omitted, rewardsCardId given -> re-link without
  *    otherwise touching the flag (lets an already reward-worthy card be
  *    pointed at a different Rewards entry) */
-async function resolveRewardsLink(c: { env: Env }, input: RewardLinkInput, existingRewardsCardId: string | null, seed: { nickname: string; network: string | null; last4: string | null }): Promise<string | null> {
+async function resolveRewardsLink(c: { env: Env }, input: RewardLinkInput, existingRewardsCardId: string | null, seed: { nickname: string; network: string | null; last4: string | null; coverArtKey: string | null }): Promise<string | null> {
   if (input.rewardWorthy === false) return null;
   // An explicit id means "link to this existing Rewards card" — the
   // frontend only ever sends this when Mike picked one from the "link to
@@ -161,7 +191,12 @@ paymentCardsRouter.post('/cards', async (c) => {
     return c.json({ error: err instanceof Error ? err.message : 'encryption failed' }, 500);
   }
 
-  const rewardsCardId = await resolveRewardsLink(c, body, null, { nickname, network: body.network?.trim() || null, last4: body.last4?.trim() || null });
+  const rewardsCardId = await resolveRewardsLink(c, body, null, {
+    nickname,
+    network: body.network?.trim() || null,
+    last4: body.last4?.trim() || null,
+    coverArtKey: body.coverArtKey || null,
+  });
 
   const maxPos = await c.env.DB.prepare('SELECT COALESCE(MAX(sort_order), -1) as m FROM payment_cards').first<{ m: number }>();
   const id = uid();
@@ -277,6 +312,7 @@ paymentCardsRouter.patch('/cards/:id', async (c) => {
       nickname: body.nickname?.trim() || existing.nickname,
       network: body.network !== undefined ? body.network?.trim() || null : existing.network,
       last4: body.last4 !== undefined ? body.last4?.trim() || null : existing.last4,
+      coverArtKey: body.coverArtKey !== undefined ? body.coverArtKey || null : existing.cover_art_key,
     });
     if (body.rewardWorthy !== undefined) set('reward_worthy', body.rewardWorthy ? 1 : 0);
     set('rewards_card_id', nextLink);
