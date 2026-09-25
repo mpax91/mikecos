@@ -10850,27 +10850,26 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   flex: 1;
 }
 
+/* Standard ID-card proportions (~241:152, the same ratio as a physical
+   credit/loyalty card) rather than an arbitrary banner shape — the intent
+   is a real photo/screenshot of the physical card's face, full-bleed, so
+   the tile reads instantly as "that card" the way a wallet's plastic does.
+   The name/category sit in their own elements below the art (not overlaid
+   on it), per Mike's requirement that nothing get written over the image. */
 .wallet-tile__art {
   width: 100%;
-  aspect-ratio: 5 / 3;
+  aspect-ratio: 241 / 152;
   border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  padding: 10px;
-  box-sizing: border-box;
 }
 
-/* Cover art is treated as a logo/mark, not a full-bleed banner — contained
-   and centered rather than cropped to fill, so an arbitrary uploaded image
-   (most of which are square-ish app-icon-style logos, not 5:3 banners)
-   never gets its edges cut off. See WalletCardEditor's upload hint for the
-   spec this is designed around. */
 .wallet-tile__art-img {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .wallet-tile__art-icon {
@@ -10944,19 +10943,24 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   align-items: center;
   gap: 4px;
   text-align: center;
+  width: 100%;
+  min-width: 0;
 }
 
 .wallet-barcode-view__logo {
-  width: 44px;
-  height: 44px;
-  border-radius: 10px;
+  width: 76px;
+  aspect-ratio: 241 / 152;
+  border-radius: 6px;
   object-fit: cover;
   margin-bottom: 4px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
 }
 
 .wallet-barcode-view__name {
   font-size: 17px;
   font-weight: var(--weight-medium);
+  overflow-wrap: anywhere;
+  max-width: 100%;
 }
 
 .wallet-barcode-view__category {
@@ -11009,6 +11013,10 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 
 .wallet-barcode-view__notes {
   width: 100%;
+  /* Flex items default to min-width: auto, which refuses to shrink below
+     the text's intrinsic content width — that's what was letting long
+     notes spill out past the card's right edge instead of wrapping. */
+  min-width: 0;
   border-top: 1px solid #eee5d2;
   padding-top: 8px;
 }
@@ -11027,6 +11035,9 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   font-size: 13px;
   color: #14120e;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-width: 100%;
   margin-top: 8px;
   line-height: 1.5;
   text-align: left;
@@ -11127,9 +11138,9 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 }
 
 .wallet-editor__art-preview {
-  width: 64px;
-  height: 64px;
-  border-radius: 12px;
+  width: 108px;
+  aspect-ratio: 241 / 152;
+  border-radius: 8px;
   flex-shrink: 0;
   display: flex;
   align-items: center;

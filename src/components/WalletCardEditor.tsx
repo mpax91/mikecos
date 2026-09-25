@@ -8,24 +8,42 @@ import type { WalletBarcodeType, WalletCard, WalletCategory } from '../api/types
 // migration's comment) so a one-off card is never blocked either way.
 const FALLBACK_CATEGORIES = ['Retail', 'Other'];
 
-const BARCODE_TYPES: { value: WalletBarcodeType; label: string; hint: string }[] = [
-  {
-    value: 'code128',
-    label: 'Barcode (Code 128)',
-    hint: 'The safe default — handles letters and numbers of any length. Use this whenever you\'re not sure, or the number has letters in it.',
-  },
-  { value: 'upc', label: 'Barcode (UPC-A)', hint: 'Exactly 12 digits, no letters — the standard US retail/grocery barcode.' },
-  { value: 'ean13', label: 'Barcode (EAN-13)', hint: 'Exactly 13 digits, no letters — UPC-A\'s international cousin.' },
-  { value: 'qr', label: 'QR code', hint: 'For the square pixel-grid codes, not the classic striped bars.' },
+// Mike doesn't (and shouldn't have to) know Code128 from UPC-A from EAN-13
+// to add a card — those are rendering details, not a decision he should be
+// asked to make. He picks one of these three; detectBarcodeFormat below
+// works out the actual symbology from the digits he types.
+type CodeKind = 'barcode' | 'qr' | 'none';
+const CODE_KINDS: { value: CodeKind; label: string; hint: string }[] = [
+  { value: 'barcode', label: 'Barcode', hint: 'The classic striped lines. We’ll figure out the exact format from the number itself — just paste or type it in.' },
+  { value: 'qr', label: 'QR code', hint: 'The square pixel-grid code, not the striped bars.' },
   { value: 'none', label: 'No scannable code', hint: 'The card is only ever checked by number or by hand.' },
 ];
+
+function codeKindOf(barcodeType: WalletBarcodeType): CodeKind {
+  if (barcodeType === 'qr') return 'qr';
+  if (barcodeType === 'none') return 'none';
+  return 'barcode';
+}
+
+// UPC-A is always exactly 12 digits, EAN-13 always exactly 13 — no letters,
+// no separators — so counting digits after stripping spaces/dashes is a
+// reliable, silent way to pick between them. Anything else (letters, a
+// different length, dashes that don't strip to a clean 12/13) falls back to
+// Code128, which is the most permissive format and handles almost every
+// membership/loyalty number in practice.
+function detectBarcodeFormat(value: string): WalletBarcodeType {
+  const digitsOnly = value.replace(/[\s-]/g, '');
+  if (/^\d{12}$/.test(digitsOnly)) return 'upc';
+  if (/^\d{13}$/.test(digitsOnly)) return 'ean13';
+  return 'code128';
+}
 
 const SWATCHES = ['#3B5BA9', '#2F6F5E', '#8A5A3B', '#6B4C9A', '#3D7EA6', '#9A4C5F', '#4C6B4C', '#7A5C2E', '#B8632F', '#5C6B8A'];
 
 type FormState = {
   name: string;
   category: string;
-  barcodeType: WalletBarcodeType;
+  codeKind: CodeKind;
   barcodeValue: string;
   displayNumber: string;
   pinCode: string;
@@ -39,7 +57,7 @@ function toForm(card: WalletCard | null): FormState {
   return {
     name: card?.name ?? '',
     category: card?.category ?? 'Retail',
-    barcodeType: card?.barcodeType ?? 'code128',
+    codeKind: codeKindOf(card?.barcodeType ?? 'code128'),
     barcodeValue: card?.barcodeValue ?? '',
     displayNumber: card?.displayNumber ?? '',
     pinCode: card?.pinCode ?? '',
@@ -104,10 +122,13 @@ export function WalletCardEditor({
     }
     setSaving(true);
     setError(null);
+    const trimmedValue = form.barcodeValue.trim();
+    const barcodeType: WalletBarcodeType =
+      form.codeKind === 'qr' ? 'qr' : form.codeKind === 'none' ? 'none' : trimmedValue ? detectBarcodeFormat(trimmedValue) : 'code128';
     const payload = {
       name,
       category: form.category.trim() || 'Other',
-      barcodeType: form.barcodeType,
+      barcodeType,
       barcodeValue: form.barcodeValue.trim() || null,
       displayNumber: form.displayNumber.trim() || null,
       pinCode: form.pinCode.trim() || null,
@@ -153,9 +174,9 @@ export function WalletCardEditor({
                 </button>
               )}
               <div className="wallet-editor__hint">
-                A square logo works best — around 500×500px, PNG with a transparent background if you have one. It's
-                shown small (as a shrunk-to-fit mark, not a cropped banner), so a simple brand mark reads better than a
-                busy photo.
+                Works best as a photo or screenshot of the actual card's face, cropped to just the card — standard
+                card proportions (about 241×152px or any size in that ~8:5 ratio). It fills the tile edge-to-edge, so
+                crop tight; the name is shown separately below the art, not on top of it.
               </div>
               <div className="wallet-editor__swatches">
                 {SWATCHES.map((sw) => (
@@ -179,7 +200,13 @@ export function WalletCardEditor({
 
           <label className="wallet-editor__field">
             <span>Category</span>
-            <input value={form.category} onChange={(e) => set('category', e.target.value)} list="wallet-category-presets" placeholder="Retail, Grocery, Parks & Recreation…" />
+            <input
+              value={form.category}
+              onChange={(e) => set('category', e.target.value)}
+              onFocus={(e) => e.target.select()}
+              list="wallet-category-presets"
+              placeholder="Retail, Grocery, Parks & Recreation…"
+            />
             <datalist id="wallet-category-presets">
               {categoryNames.map((c) => (
                 <option key={c} value={c} />
@@ -200,22 +227,22 @@ export function WalletCardEditor({
           <div className="wallet-editor__row">
             <label className="wallet-editor__field">
               <span>Code type</span>
-              <select value={form.barcodeType} onChange={(e) => set('barcodeType', e.target.value as WalletBarcodeType)}>
-                {BARCODE_TYPES.map((t) => (
+              <select value={form.codeKind} onChange={(e) => set('codeKind', e.target.value as CodeKind)}>
+                {CODE_KINDS.map((t) => (
                   <option key={t.value} value={t.value}>
                     {t.label}
                   </option>
                 ))}
               </select>
             </label>
-            {form.barcodeType !== 'none' && (
+            {form.codeKind !== 'none' && (
               <label className="wallet-editor__field">
                 <span>Code value</span>
                 <input value={form.barcodeValue} onChange={(e) => set('barcodeValue', e.target.value)} placeholder="What the scanner reads" />
               </label>
             )}
           </div>
-          <div className="wallet-editor__hint">{BARCODE_TYPES.find((t) => t.value === form.barcodeType)?.hint}</div>
+          <div className="wallet-editor__hint">{CODE_KINDS.find((t) => t.value === form.codeKind)?.hint}</div>
 
           <label className="wallet-editor__field">
             <span>Display number (optional)</span>
