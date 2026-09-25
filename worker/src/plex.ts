@@ -17,8 +17,22 @@ interface LibraryRow {
   synced_at: string | null;
 }
 
+// The count shown is computed live from plex_items rather than trusted
+// from plex_libraries.item_count — that column only gets its final write
+// once a library's sync chunk loop runs all the way to completion (see
+// plexSync.ts's finishCurrentLibrary), so an interrupted sync (subrequest
+// cap, a D1 write-quota outage, a closed browser tab mid-poll) can leave
+// it stuck at a stale value — 0, typically — even though the items
+// themselves synced in fine. A live COUNT can't drift from reality the
+// same way; idx_plex_items_library keeps it cheap at this data scale.
 plexRouter.get('/libraries', async (c) => {
-  const { results } = await c.env.DB.prepare('SELECT * FROM plex_libraries ORDER BY title COLLATE NOCASE ASC').all<LibraryRow>();
+  const { results } = await c.env.DB.prepare(
+    `SELECT l.id, l.title, l.library_type, l.synced_at, COUNT(i.id) as item_count
+     FROM plex_libraries l
+     LEFT JOIN plex_items i ON i.library_id = l.id
+     GROUP BY l.id
+     ORDER BY l.title COLLATE NOCASE ASC`
+  ).all<LibraryRow>();
   return c.json(
     (results ?? []).map((r) => ({ id: r.id, title: r.title, libraryType: r.library_type, itemCount: r.item_count, syncedAt: r.synced_at }))
   );
