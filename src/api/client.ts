@@ -168,11 +168,15 @@ export const api = {
     }),
 
   /** Global search (Cmd/Ctrl+K palette). `scope` empty/omitted searches
-   * every group; pass a subset to narrow (combinable, e.g. ['jots','notes']). */
-  search: (q: string, scope: SearchGroupKey[] = [], includeArchived = false) => {
+   * every group; pass a subset to narrow (combinable, e.g. ['jots','notes']).
+   * `includePlex` is a separate opt-in flag rather than just adding 'plex'
+   * to scope — plex_items can be huge, so the backend only runs that query
+   * when this is explicitly true, not on every keystroke by default. */
+  search: (q: string, scope: SearchGroupKey[] = [], includeArchived = false, includePlex = false) => {
     const params = new URLSearchParams({ q });
     if (scope.length) params.set('scope', scope.join(','));
     if (includeArchived) params.set('archived', '1');
+    if (includePlex) params.set('plex', '1');
     return request<SearchResponse>(`/api/search?${params.toString()}`);
   },
 
@@ -1018,11 +1022,17 @@ export const api = {
 
   listPlexLibraries: () => request<PlexLibrary[]>('/api/plex/libraries'),
 
-  listPlexItems: (params: { libraryId?: string; parentId?: string; q?: string }) => {
+  listPlexItems: (params: { libraryId?: string; parentId?: string; q?: string; type?: string }) => {
     const qs = new URLSearchParams();
     if (params.libraryId) qs.set('libraryId', params.libraryId);
     if (params.parentId) qs.set('parentId', params.parentId);
     if (params.q) qs.set('q', params.q);
+    // Flattens a library's root listing straight to one item type instead
+    // of the usual top-level grouping (e.g. Audiobooks: straight to book
+    // titles ("album"s in Plex's own model) rather than authors first —
+    // see PlexLibraryPanel. Ignored by the backend outside the root
+    // (libraryId set, no parentId) case.
+    if (params.type) qs.set('type', params.type);
     return request<PlexItem[]>(`/api/plex/items?${qs.toString()}`);
   },
 

@@ -1130,7 +1130,7 @@ export interface NewsSavedArticle {
 
 // ---- Global search (Cmd/Ctrl+K palette) ----
 
-export type SearchGroupKey = 'notes' | 'jots' | 'lists' | 'projects' | 'vault' | 'wallet' | 'rewards' | 'payment_cards' | 'boards' | 'contacts' | 'journal' | 'meeting_notes' | 'links';
+export type SearchGroupKey = 'notes' | 'jots' | 'lists' | 'projects' | 'vault' | 'wallet' | 'rewards' | 'payment_cards' | 'boards' | 'contacts' | 'journal' | 'meeting_notes' | 'links' | 'plex';
 
 export interface SearchResult {
   id: string;

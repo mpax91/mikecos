@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { api } from '../api/client';
 import type { PlexItem, PlexItemDetail, PlexLibrary } from '../api/types';
 import { formatRelativeTime } from '../utils/formatRelativeTime';
@@ -19,6 +20,7 @@ function formatDuration(ms: number | null): string | null {
  * on purpose (see the Plex feature discussion this came out of — Mike
  * wanted "do I have this" and "what's wrong with it", not a player). */
 export function PlexLibraryPanel() {
+  const location = useLocation();
   const [libraries, setLibraries] = useState<PlexLibrary[] | null>(null);
   const [libraryId, setLibraryId] = useState<string | null>(null);
   const [parentId, setParentId] = useState<string | null>(null);
@@ -46,6 +48,16 @@ export function PlexLibraryPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Landed here from a global search result (see SearchPalette/runSearch —
+  // 'plex' results carry the item's own id as openId) — jump straight to
+  // that item's detail modal rather than making Mike re-find it by browsing.
+  useEffect(() => {
+    const openId = (location.state as { openId?: string } | null)?.openId;
+    if (!openId) return;
+    api.getPlexItem(openId).then(setDetail).catch((e) => setError(String(e)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state]);
+
   useEffect(() => {
     const t = window.setTimeout(() => setDebouncedQuery(query.trim()), 250);
     return () => window.clearTimeout(t);
@@ -53,12 +65,24 @@ export function PlexLibraryPanel() {
 
   useEffect(() => {
     if (debouncedQuery) {
-      api.listPlexItems({ q: debouncedQuery, libraryId: libraryId ?? undefined }).then(setItems).catch((e) => setError(String(e)));
+      // Deliberately searches across every library, not just whichever
+      // one is currently selected — Mike wants "do I have this anywhere"
+      // rather than having to remember which tab something lives under.
+      api.listPlexItems({ q: debouncedQuery }).then(setItems).catch((e) => setError(String(e)));
       return;
     }
     if (!libraryId) return;
-    api.listPlexItems({ libraryId, parentId: parentId ?? undefined }).then(setItems).catch((e) => setError(String(e)));
-  }, [libraryId, parentId, debouncedQuery]);
+    // Audiobooks in Plex is structured like Music (author > book > chapter
+    // tracks), so the normal root level would show authors first. Mike
+    // reaches for the book title far more often, so at the root of a
+    // library actually named "Audiobooks" this flattens straight to book
+    // ("album") level instead — see the `type` param on listPlexItems.
+    const isAudiobooks = !parentId && libraries?.find((l) => l.id === libraryId)?.title.trim().toLowerCase() === 'audiobooks';
+    api
+      .listPlexItems({ libraryId, parentId: parentId ?? undefined, type: isAudiobooks ? 'album' : undefined })
+      .then(setItems)
+      .catch((e) => setError(String(e)));
+  }, [libraryId, parentId, debouncedQuery, libraries]);
 
   function selectLibrary(id: string) {
     setLibraryId(id);
@@ -69,8 +93,14 @@ export function PlexLibraryPanel() {
 
   function openItem(item: PlexItem) {
     if (CONTAINER_TYPES.has(item.type)) {
+      // A result clicked from a global search can belong to a different
+      // library than whatever's currently selected — switch to it so the
+      // breadcrumb and subsequent browsing stay correctly scoped, rather
+      // than silently querying the old library for this item's children.
+      const switchingLibrary = item.libraryId !== libraryId;
+      setLibraryId(item.libraryId);
       setParentId(item.id);
-      setBreadcrumb((prev) => [...prev, { id: item.id, title: item.title }]);
+      setBreadcrumb((prev) => [...(switchingLibrary ? [] : prev), { id: item.id, title: item.title }]);
       setQuery('');
       return;
     }
@@ -166,7 +196,7 @@ export function PlexLibraryPanel() {
                 </span>
               ))}
             </div>
-            <input className="plex-search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search this library…" />
+            <input className="plex-search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search all libraries…" />
           </div>
 
           {!items ? (
@@ -188,7 +218,11 @@ export function PlexLibraryPanel() {
                       ? `${String(item.seasonNumber).padStart(2, '0')}×${String(item.episodeNumber).padStart(2, '0')} — ${item.title}`
                       : item.title}
                   </div>
-                  {item.year && <div className="plex-tile__meta">{item.year}</div>}
+                  {(item.year || debouncedQuery) && (
+                    <div className="plex-tile__meta">
+                      {debouncedQuery ? libraries?.find((l) => l.id === item.libraryId)?.title ?? '' : item.year}
+                    </div>
+                  )}
                 </button>
               ))}
             </div>

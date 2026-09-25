@@ -115,10 +115,16 @@ plexRouter.get('/items', async (c) => {
   }
 
   if (!libraryId) return c.json({ error: 'libraryId or parentId or q is required' }, 400);
+  // `type` flattens the root listing to one item type instead of the
+  // usual top level (e.g. Audiobooks defaults to book titles — "album" in
+  // Plex's own model — rather than authors first; see PlexLibraryPanel).
+  const flattenType = c.req.query('type');
   const { results } = await c.env.DB.prepare(
-    `SELECT * FROM plex_items WHERE library_id = ? AND parent_id IS NULL ORDER BY sort_title COLLATE NOCASE ASC, title COLLATE NOCASE ASC`
+    flattenType
+      ? `SELECT * FROM plex_items WHERE library_id = ? AND type = ? ORDER BY sort_title COLLATE NOCASE ASC, title COLLATE NOCASE ASC`
+      : `SELECT * FROM plex_items WHERE library_id = ? AND parent_id IS NULL ORDER BY sort_title COLLATE NOCASE ASC, title COLLATE NOCASE ASC`
   )
-    .bind(libraryId)
+    .bind(...(flattenType ? [libraryId, flattenType] : [libraryId]))
     .all<ItemRow>();
   return c.json((results ?? []).map(itemJson));
 });
