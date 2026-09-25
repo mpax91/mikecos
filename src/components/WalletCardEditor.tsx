@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
-import type { WalletBarcodeType, WalletCard, WalletCategory } from '../api/types';
+import { VaultFactsTable } from './VaultFactsTable';
+import type { WalletBarcodeType, WalletCard, WalletCardFact, WalletCategory } from '../api/types';
 
 // Used only if Settings' category list (0046_wallet_categories.sql) hasn't
 // loaded yet — the field is always free text regardless (see that
@@ -51,6 +52,7 @@ type FormState = {
   notes: string;
   color: string | null;
   coverArtKey: string | null;
+  backArtKey: string | null;
 };
 
 function toForm(card: WalletCard | null): FormState {
@@ -65,12 +67,18 @@ function toForm(card: WalletCard | null): FormState {
     notes: card?.notes ?? '',
     color: card?.color ?? null,
     coverArtKey: card?.coverArtKey ?? null,
+    backArtKey: card?.backArtKey ?? null,
   };
 }
 
-/** Add/edit modal for a single Wallet card. One flat form — no wizard, no
- * required fields beyond a name — because the fastest way to kill "just
- * type your 15 cards in" is to make each one take a minute. */
+/** Add/edit modal for a single Wallet card. Front/back image, the core
+ * fields, and Notes all save in one shot — but Details (structured facts;
+ * see WalletCardFact) is a child table, so it needs a real card id to
+ * attach to. A brand-new card therefore unlocks Details the moment the
+ * first Save succeeds, exactly the same "save core fields, then the
+ * per-row sections" shape RewardsCardEditor already uses for bonuses/
+ * perks — editing an existing card, everything is unlocked from the
+ * start. */
 export function WalletCardEditor({
   card,
   onClose,
@@ -82,15 +90,21 @@ export function WalletCardEditor({
   onSaved: (card: WalletCard) => void;
 }) {
   const navigate = useNavigate();
+  const [saved, setSaved] = useState<WalletCard | null>(card);
   const [form, setForm] = useState<FormState>(() => toForm(card));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [uploadingArt, setUploadingArt] = useState(false);
+  const [uploadingFront, setUploadingFront] = useState(false);
+  const [uploadingBack, setUploadingBack] = useState(false);
   const [categories, setCategories] = useState<WalletCategory[]>([]);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [facts, setFacts] = useState<WalletCardFact[]>([]);
+  const frontInputRef = useRef<HTMLInputElement>(null);
+  const backInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     api.listWalletCategories().then(setCategories).catch(() => {});
+    if (card) api.listWalletCardFacts(card.id).then(setFacts).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const categoryNames = categories.length ? categories.map((c) => c.name) : FALLBACK_CATEGORIES;
@@ -99,18 +113,19 @@ export function WalletCardEditor({
     setForm((f) => ({ ...f, [key]: value }));
   }
 
-  async function handleCoverArtPick(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleImagePick(side: 'front' | 'back', e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
-    setUploadingArt(true);
+    const setUploading = side === 'front' ? setUploadingFront : setUploadingBack;
+    setUploading(true);
     try {
       const res = await api.uploadInline(file);
-      set('coverArtKey', res.r2_key);
+      set(side === 'front' ? 'coverArtKey' : 'backArtKey', res.r2_key);
     } catch {
       setError("Couldn't upload that image — try again.");
     } finally {
-      setUploadingArt(false);
+      setUploading(false);
     }
   }
 
@@ -136,17 +151,21 @@ export function WalletCardEditor({
       notes: form.notes.trim() || null,
       color: form.color,
       coverArtKey: form.coverArtKey,
+      backArtKey: form.backArtKey,
     };
     try {
-      const saved = card ? await api.updateWalletCard(card.id, payload) : await api.createWalletCard(payload);
-      onSaved(saved);
+      const result = saved ? await api.updateWalletCard(saved.id, payload) : await api.createWalletCard(payload);
+      setSaved(result);
+      onSaved(result);
     } catch {
       setError("Couldn't save — try again.");
+    } finally {
       setSaving(false);
     }
   }
 
-  const previewUrl = form.coverArtKey ? api.fileUrl(form.coverArtKey) : null;
+  const frontPreview = form.coverArtKey ? api.fileUrl(form.coverArtKey) : null;
+  const backPreview = form.backArtKey ? api.fileUrl(form.backArtKey) : null;
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -159,38 +178,56 @@ export function WalletCardEditor({
         </div>
 
         <div className="wallet-editor__body">
-          <div className="wallet-editor__art-row">
-            <div className="wallet-editor__art-preview" style={{ background: previewUrl ? undefined : form.color || '#8A7B5E' }}>
-              {previewUrl ? <img src={previewUrl} alt="" /> : <span>{form.name.slice(0, 1).toUpperCase() || '🎫'}</span>}
-            </div>
-            <div className="wallet-editor__art-controls">
-              <input ref={fileInputRef} type="file" accept="image/*" onChange={handleCoverArtPick} style={{ display: 'none' }} />
-              <button type="button" className="btn btn--ghost" onClick={() => fileInputRef.current?.click()} disabled={uploadingArt}>
-                {uploadingArt ? 'Uploading…' : form.coverArtKey ? 'Replace cover art' : 'Upload cover art'}
-              </button>
-              {form.coverArtKey && (
-                <button type="button" className="btn btn--ghost" onClick={() => set('coverArtKey', null)}>
-                  Remove
+          <div className="wallet-editor__images-row">
+            <div className="wallet-editor__image-slot">
+              <div className="wallet-editor__art-preview" style={{ background: frontPreview ? undefined : form.color || '#8A7B5E' }}>
+                {frontPreview ? <img src={frontPreview} alt="" /> : <span>{form.name.slice(0, 1).toUpperCase() || '🎫'}</span>}
+              </div>
+              <input ref={frontInputRef} type="file" accept="image/*" onChange={(e) => handleImagePick('front', e)} style={{ display: 'none' }} />
+              <div className="wallet-editor__image-actions">
+                <button type="button" className="btn btn--ghost" onClick={() => frontInputRef.current?.click()} disabled={uploadingFront}>
+                  {uploadingFront ? 'Uploading…' : form.coverArtKey ? 'Replace front' : 'Upload front'}
                 </button>
-              )}
-              <div className="wallet-editor__hint">
-                Works best as a photo or screenshot of the actual card's face, cropped to just the card — standard
-                card proportions (about 241×152px or any size in that ~8:5 ratio). It fills the tile edge-to-edge, so
-                crop tight; the name is shown separately below the art, not on top of it.
-              </div>
-              <div className="wallet-editor__swatches">
-                {SWATCHES.map((sw) => (
-                  <button
-                    key={sw}
-                    type="button"
-                    className={`wallet-editor__swatch${form.color === sw ? ' is-selected' : ''}`}
-                    style={{ background: sw }}
-                    onClick={() => set('color', form.color === sw ? null : sw)}
-                    aria-label={`Use ${sw} as the fallback tile color`}
-                  />
-                ))}
+                {form.coverArtKey && (
+                  <button type="button" className="btn btn--ghost" onClick={() => set('coverArtKey', null)}>
+                    Remove
+                  </button>
+                )}
               </div>
             </div>
+            <div className="wallet-editor__image-slot">
+              <div className="wallet-editor__art-preview wallet-editor__art-preview--back" style={{ background: backPreview ? undefined : '#e4dcc7' }}>
+                {backPreview ? <img src={backPreview} alt="" /> : <span className="wallet-editor__art-preview-empty">Back (optional)</span>}
+              </div>
+              <input ref={backInputRef} type="file" accept="image/*" onChange={(e) => handleImagePick('back', e)} style={{ display: 'none' }} />
+              <div className="wallet-editor__image-actions">
+                <button type="button" className="btn btn--ghost" onClick={() => backInputRef.current?.click()} disabled={uploadingBack}>
+                  {uploadingBack ? 'Uploading…' : form.backArtKey ? 'Replace back' : 'Upload back'}
+                </button>
+                {form.backArtKey && (
+                  <button type="button" className="btn btn--ghost" onClick={() => set('backArtKey', null)}>
+                    Remove
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="wallet-editor__hint">
+            The front photo becomes the card's cover art — crop tight to just the card, standard proportions (about
+            241×152px, or any size in that ~8:5 ratio). Add a back photo too if the card has anything worth seeing
+            there (terms, a second barcode, a signature panel) — you can flip between them when viewing the card.
+          </div>
+          <div className="wallet-editor__swatches">
+            {SWATCHES.map((sw) => (
+              <button
+                key={sw}
+                type="button"
+                className={`wallet-editor__swatch${form.color === sw ? ' is-selected' : ''}`}
+                style={{ background: sw }}
+                onClick={() => set('color', form.color === sw ? null : sw)}
+                aria-label={`Use ${sw} as the fallback tile color`}
+              />
+            ))}
           </div>
 
           <label className="wallet-editor__field">
@@ -292,14 +329,45 @@ export function WalletCardEditor({
           </label>
 
           {error && <div className="wallet-editor__error">{error}</div>}
+
+          <div className="modal__actions" style={{ paddingTop: 0 }}>
+            <button type="button" className="btn" onClick={handleSave} disabled={saving}>
+              {saving ? 'Saving…' : saved ? 'Save changes' : 'Save & continue'}
+            </button>
+          </div>
+
+          {saved ? (
+            <div className="wallet-editor__subsection">
+              <div className="wallet-editor__subsection-title">Details</div>
+              <div className="wallet-editor__hint" style={{ marginBottom: 2 }}>
+                Expiration date, member ID #, anything worth its own labeled field rather than a line in Notes.
+              </div>
+              <VaultFactsTable
+                facts={facts}
+                onAdd={(label, value) => {
+                  api.createWalletCardFact(saved.id, label, value).then((f) => setFacts((prev) => [...prev, f]));
+                }}
+                onUpdate={(fact, patch) => {
+                  api.updateWalletCardFact(fact.id, patch).then((f) => setFacts((prev) => prev.map((x) => (x.id === f.id ? f : x))));
+                }}
+                onDelete={(fact) => {
+                  api.deleteWalletCardFact(fact.id).then(() => setFacts((prev) => prev.filter((x) => x.id !== fact.id)));
+                }}
+                onReorder={(orderedIds) => {
+                  const byId = new Map(facts.map((f) => [f.id, f]));
+                  setFacts(orderedIds.map((id, i) => ({ ...byId.get(id)!, position: i })));
+                  api.reorderWalletCardFacts(saved.id, orderedIds);
+                }}
+              />
+            </div>
+          ) : (
+            <div className="wallet-editor__hint">Save the card above to start adding structured details.</div>
+          )}
         </div>
 
         <div className="modal__actions">
           <button type="button" className="btn btn--ghost" onClick={onClose}>
-            Cancel
-          </button>
-          <button type="button" className="btn" onClick={handleSave} disabled={saving}>
-            {saving ? 'Saving…' : 'Save'}
+            {saved ? 'Done' : 'Cancel'}
           </button>
         </div>
       </div>

@@ -11208,6 +11208,173 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   text-decoration: underline;
 }
 
+/* ---- Front/back image pair (editor) ---- */
+
+.wallet-editor__images-row {
+  display: flex;
+  gap: 14px;
+}
+
+.wallet-editor__image-slot {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.wallet-editor__art-preview--back {
+  color: var(--color-muted);
+}
+
+.wallet-editor__art-preview-empty {
+  font-size: 11px;
+  text-align: center;
+  padding: 0 8px;
+  line-height: 1.4;
+}
+
+.wallet-editor__image-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* ---- Card detail — image lightbox (front/back swipe) ---- */
+
+.wallet-barcode-view__logo-btn {
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: zoom-in;
+  flex-shrink: 0;
+}
+
+.wallet-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(20, 18, 14, 0.92);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  touch-action: none;
+}
+
+.wallet-lightbox__close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.wallet-lightbox__image-wrap {
+  width: min(86vw, 480px);
+  aspect-ratio: 241 / 152;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  cursor: grab;
+}
+
+.wallet-lightbox__image-wrap img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  pointer-events: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.wallet-lightbox__hint {
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 12.5px;
+}
+
+.wallet-lightbox__dots {
+  display: flex;
+  gap: 6px;
+}
+
+.wallet-lightbox__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.35);
+  padding: 0;
+  cursor: pointer;
+}
+
+.wallet-lightbox__dot.is-active {
+  background: #fff;
+}
+
+/* ---- Card detail — Details (structured facts), read-only ---- */
+
+.wallet-barcode-view__details {
+  width: 100%;
+  min-width: 0;
+  border-top: 1px solid #eee5d2;
+  padding-top: 8px;
+}
+
+.wallet-barcode-view__details-toggle {
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 12.5px;
+  font-weight: var(--weight-medium);
+  color: var(--color-ink);
+  cursor: pointer;
+}
+
+.wallet-barcode-view__details-rows {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.wallet-barcode-view__details-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 5px 0;
+  font-size: 13px;
+}
+
+.wallet-barcode-view__details-row > span:first-child {
+  color: var(--color-muted);
+  flex-shrink: 0;
+}
+
+.wallet-barcode-view__details-row > span:last-child {
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.wallet-barcode-view__details-copy {
+  border: none;
+  background: none;
+  color: var(--color-muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0 0 0 6px;
+  flex-shrink: 0;
+}
+
 /* ---- Wallet page header tabs (My Cards / Rewards) ---- */
 
 .wallet-page__tabs {

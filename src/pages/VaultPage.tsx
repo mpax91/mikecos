@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
-import type { Entity, VaultEntryDetail, VaultFact } from '../api/types';
+import type { Entity, VaultEntryDetail } from '../api/types';
 import { EntityCard } from '../components/EntityCard';
 import { NewFileTile, NewPasswordTile } from '../components/NewItemTiles';
 import { Section } from '../components/Section';
-import { VaultFactsTable } from '../components/VaultFactsTable';
+import { VaultFactsTable, type FactLike } from '../components/VaultFactsTable';
 import { VaultLinkRow } from '../components/VaultLinkRow';
 import { VaultNoteRow } from '../components/VaultNoteRow';
 import { VaultNoteModal } from '../components/VaultNoteModal';
@@ -135,12 +135,12 @@ export function VaultPage() {
     setDetail((prev) => (prev ? { ...prev, facts: [...prev.facts, fact] } : prev));
   }
 
-  async function updateFact(fact: VaultFact, patch: { label?: string; value?: string }) {
+  async function updateFact(fact: FactLike, patch: { label?: string; value?: string }) {
     const updated = await api.updateVaultFact(fact.id, { label: patch.label, value: patch.value ?? undefined });
     setDetail((prev) => (prev ? { ...prev, facts: prev.facts.map((f) => (f.id === fact.id ? updated : f)) } : prev));
   }
 
-  async function deleteFact(fact: VaultFact) {
+  async function deleteFact(fact: FactLike) {
     setDetail((prev) => (prev ? { ...prev, facts: prev.facts.filter((f) => f.id !== fact.id) } : prev));
     await api.deleteVaultFact(fact.id);
   }

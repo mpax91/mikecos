@@ -1,6 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
-import type { VaultFact, VaultFactLabel } from '../api/types';
+import type { VaultFactLabel } from '../api/types';
+
+// Loose enough to also cover WalletCardFact (see wallet.ts's factJson,
+// which deliberately emits the same `entry_id`/label/value/position shape
+// so this table is reusable there unmodified) — the component only ever
+// touches these fields, never anything Vault-entry-specific.
+export interface FactLike {
+  id: string;
+  label: string;
+  value: string | null;
+  position: number;
+}
 
 /** Single inline grey completion (not a dropdown of several matches — see
  * the ghost-text-vs-search-bar discussion this was built from) ranked by
@@ -90,10 +101,10 @@ export function VaultFactsTable({
   onDelete,
   onReorder,
 }: {
-  facts: VaultFact[];
+  facts: FactLike[];
   onAdd: (label: string, value: string) => void;
-  onUpdate: (fact: VaultFact, patch: { label?: string; value?: string }) => void;
-  onDelete: (fact: VaultFact) => void;
+  onUpdate: (fact: FactLike, patch: { label?: string; value?: string }) => void;
+  onDelete: (fact: FactLike) => void;
   onReorder: (orderedIds: string[]) => void;
   }) {
   const [adding, setAdding] = useState(false);
@@ -122,7 +133,7 @@ export function VaultFactsTable({
     setAdding(false);
   }
 
-  function copy(fact: VaultFact) {
+  function copy(fact: FactLike) {
     if (!fact.value) return;
     navigator.clipboard.writeText(fact.value).then(() => {
       setCopiedId(fact.id);
@@ -130,7 +141,7 @@ export function VaultFactsTable({
     });
   }
 
-  function move(fact: VaultFact, direction: -1 | 1) {
+  function move(fact: FactLike, direction: -1 | 1) {
     const idx = facts.findIndex((f) => f.id === fact.id);
     const swapWith = idx + direction;
     if (idx === -1 || swapWith < 0 || swapWith >= facts.length) return;
@@ -203,11 +214,11 @@ function FactRow({
   onMoveUp,
   onMoveDown,
 }: {
-  fact: VaultFact;
+  fact: FactLike;
   copied: boolean;
   onCopy: () => void;
-  onUpdate: (fact: VaultFact, patch: { label?: string; value?: string }) => void;
-  onDelete: (fact: VaultFact) => void;
+  onUpdate: (fact: FactLike, patch: { label?: string; value?: string }) => void;
+  onDelete: (fact: FactLike) => void;
   onMoveUp?: () => void;
   onMoveDown?: () => void;
 }) {

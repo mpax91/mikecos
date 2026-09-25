@@ -378,10 +378,27 @@ export interface WalletCard {
   color: string | null;
   coverArtKey: string | null;
   coverArtUrl: string | null;
+  backArtKey: string | null;
+  backArtUrl: string | null;
   pinned: boolean;
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
+}
+
+/** A structured "Details" row on a Wallet card — expiration date, member
+ * ID #, anything worth a labeled field rather than a line of Notes prose.
+ * Same table shape as VaultFact (see worker/migrations/0048_wallet_card_
+ * facts.sql and wallet.ts's factJson) on purpose: `entry_id` here is
+ * actually the card id, kept under that name so the same VaultFactsTable
+ * component works unmodified for both. */
+export interface WalletCardFact {
+  id: string;
+  entry_id: string;
+  label: string;
+  value: string | null;
+  position: number;
+  created_at: string;
 }
 
 // ---- Rewards (credit-card rewards optimizer — Wallet Phase 2. See

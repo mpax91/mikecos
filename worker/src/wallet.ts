@@ -28,12 +28,28 @@ interface WalletCardRow {
   color: string | null;
   cover_art_key: string | null;
   cover_art_mime: string | null;
+  back_art_key: string | null;
   pinned: number;
   sort_order: number;
   created_at: string;
   updated_at: string;
 }
 
+interface WalletCardFactRow {
+  id: string;
+  card_id: string;
+  label: string;
+  value: string | null;
+  position: number;
+  created_at: string;
+}
+
+function factJson(row: WalletCardFactRow) {
+  return { id: row.id, entry_id: row.card_id, label: row.label, value: row.value, position: row.position, created_at: row.created_at };
+}
+
+// "cover art" (0045) IS the card's front image — the editor now also
+// offers a back image alongside it, so both are surfaced here the same way.
 function cardJson(row: WalletCardRow) {
   return {
     id: row.id,
@@ -48,6 +64,8 @@ function cardJson(row: WalletCardRow) {
     color: row.color,
     coverArtKey: row.cover_art_key,
     coverArtUrl: row.cover_art_key ? `/api/files/${row.cover_art_key}` : null,
+    backArtKey: row.back_art_key,
+    backArtUrl: row.back_art_key ? `/api/files/${row.back_art_key}` : null,
     pinned: row.pinned === 1,
     sortOrder: row.sort_order,
     createdAt: row.created_at,
@@ -79,6 +97,7 @@ walletRouter.post('/cards', async (c) => {
     color?: string | null;
     coverArtKey?: string | null;
     coverArtMime?: string | null;
+    backArtKey?: string | null;
   }>().catch(() => ({}) as Record<string, never>);
   const name = body.name?.trim();
   if (!name) return c.json({ error: 'name is required' }, 400);
@@ -89,8 +108,8 @@ walletRouter.post('/cards', async (c) => {
   const id = uid();
   const ts = now();
   await c.env.DB.prepare(
-    `INSERT INTO wallet_cards (id, name, category, barcode_type, barcode_value, display_number, pin_code, balance, notes, color, cover_art_key, cover_art_mime, pinned, sort_order, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`
+    `INSERT INTO wallet_cards (id, name, category, barcode_type, barcode_value, display_number, pin_code, balance, notes, color, cover_art_key, cover_art_mime, back_art_key, pinned, sort_order, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`
   )
     .bind(
       id,
@@ -105,6 +124,7 @@ walletRouter.post('/cards', async (c) => {
       body.color || null,
       body.coverArtKey || null,
       body.coverArtMime || null,
+      body.backArtKey || null,
       (maxPos?.m ?? -1) + 1,
       ts,
       ts
@@ -130,6 +150,7 @@ walletRouter.patch('/cards/:id', async (c) => {
       color: string | null;
       coverArtKey: string | null;
       coverArtMime: string | null;
+      backArtKey: string | null;
       pinned: boolean;
       sortOrder: number;
     }>
@@ -137,11 +158,14 @@ walletRouter.patch('/cards/:id', async (c) => {
   const existing = await c.env.DB.prepare('SELECT * FROM wallet_cards WHERE id = ?').bind(id).first<WalletCardRow>();
   if (!existing) return c.json({ error: 'not found' }, 404);
 
-  // Replacing (or clearing) cover art deletes the old R2 object so orphans
-  // don't accumulate — same cleanup vault.ts's entry-delete does for file
-  // attachments.
+  // Replacing (or clearing) either image deletes the old R2 object so
+  // orphans don't accumulate — same cleanup vault.ts's entry-delete does
+  // for file attachments.
   if (body.coverArtKey !== undefined && existing.cover_art_key && existing.cover_art_key !== body.coverArtKey) {
     await c.env.FILES.delete(existing.cover_art_key).catch(() => {});
+  }
+  if (body.backArtKey !== undefined && existing.back_art_key && existing.back_art_key !== body.backArtKey) {
+    await c.env.FILES.delete(existing.back_art_key).catch(() => {});
   }
 
   const fields: string[] = [];
@@ -161,6 +185,7 @@ walletRouter.patch('/cards/:id', async (c) => {
   if (body.color !== undefined) set('color', body.color || null);
   if (body.coverArtKey !== undefined) set('cover_art_key', body.coverArtKey || null);
   if (body.coverArtMime !== undefined) set('cover_art_mime', body.coverArtMime || null);
+  if (body.backArtKey !== undefined) set('back_art_key', body.backArtKey || null);
   if (body.pinned !== undefined) set('pinned', body.pinned ? 1 : 0);
   if (body.sortOrder !== undefined) set('sort_order', body.sortOrder);
 
@@ -176,10 +201,18 @@ walletRouter.patch('/cards/:id', async (c) => {
 
 walletRouter.delete('/cards/:id', async (c) => {
   const id = c.req.param('id');
-  const existing = await c.env.DB.prepare('SELECT cover_art_key FROM wallet_cards WHERE id = ?').bind(id).first<{ cover_art_key: string | null }>();
+  const existing = await c.env.DB.prepare('SELECT cover_art_key, back_art_key FROM wallet_cards WHERE id = ?')
+    .bind(id)
+    .first<{ cover_art_key: string | null; back_art_key: string | null }>();
   if (!existing) return c.json({ error: 'not found' }, 404);
   if (existing.cover_art_key) await c.env.FILES.delete(existing.cover_art_key).catch(() => {});
-  await c.env.DB.prepare('DELETE FROM wallet_cards WHERE id = ?').bind(id).run();
+  if (existing.back_art_key) await c.env.FILES.delete(existing.back_art_key).catch(() => {});
+  // Explicit child cleanup rather than relying on cascade — same reasoning
+  // as vault.ts's entry delete and rewards.ts's card delete.
+  await c.env.DB.batch([
+    c.env.DB.prepare('DELETE FROM wallet_card_facts WHERE card_id = ?').bind(id),
+    c.env.DB.prepare('DELETE FROM wallet_cards WHERE id = ?').bind(id),
+  ]);
   return c.json({ ok: true });
 });
 
@@ -191,6 +224,82 @@ walletRouter.post('/cards/reorder', async (c) => {
     c.env.DB.prepare('UPDATE wallet_cards SET sort_order = ?, updated_at = ? WHERE id = ?').bind(index, ts, cardId)
   );
   await c.env.DB.batch(stmts);
+  return c.json({ ok: true });
+});
+
+// ---- Details (0048_wallet_card_facts.sql) — a plain label/value list per
+// card, same shape and same reasoning as Vault's quick facts: no field
+// registry to set up first, just "add a detail" with two text boxes
+// (expiration date, member ID #, whatever the card actually needs). Its
+// own table rather than reusing vault_facts — see that migration's
+// comment. factJson emits `entry_id` (not `card_id`) on purpose: the
+// frontend's existing Vault facts UI is reused unmodified, and it reads
+// facts by that shape. ----
+
+walletRouter.get('/cards/:id/facts', async (c) => {
+  const { results } = await c.env.DB.prepare('SELECT * FROM wallet_card_facts WHERE card_id = ? ORDER BY position ASC').bind(c.req.param('id')).all<WalletCardFactRow>();
+  return c.json((results ?? []).map(factJson));
+});
+
+walletRouter.post('/cards/:id/facts', async (c) => {
+  const cardId = c.req.param('id');
+  const card = await c.env.DB.prepare('SELECT id FROM wallet_cards WHERE id = ?').bind(cardId).first();
+  if (!card) return c.json({ error: 'card not found' }, 404);
+  const body = await c.req.json<{ label?: string; value?: string | null }>();
+  const label = (body.label ?? '').trim();
+  if (!label) return c.json({ error: 'label is required' }, 400);
+  const maxPos = await c.env.DB.prepare('SELECT COALESCE(MAX(position), -1) as m FROM wallet_card_facts WHERE card_id = ?').bind(cardId).first<{ m: number }>();
+  const id = uid();
+  await c.env.DB.prepare('INSERT INTO wallet_card_facts (id, card_id, label, value, position, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+    .bind(id, cardId, label, body.value?.trim() || null, (maxPos?.m ?? -1) + 1, now())
+    .run();
+  await c.env.DB.prepare('UPDATE wallet_cards SET updated_at = ? WHERE id = ?').bind(now(), cardId).run();
+  const row = await c.env.DB.prepare('SELECT * FROM wallet_card_facts WHERE id = ?').bind(id).first<WalletCardFactRow>();
+  return c.json(factJson(row!), 201);
+});
+
+walletRouter.post('/cards/:id/facts/reorder', async (c) => {
+  const cardId = c.req.param('id');
+  const body = await c.req.json<{ ordered_ids?: string[] }>();
+  if (!body.ordered_ids?.length) return c.json({ error: 'ordered_ids required' }, 400);
+  const stmts = body.ordered_ids.map((factId, index) =>
+    c.env.DB.prepare('UPDATE wallet_card_facts SET position = ? WHERE id = ? AND card_id = ?').bind(index, factId, cardId)
+  );
+  await c.env.DB.batch(stmts);
+  return c.json({ ok: true });
+});
+
+walletRouter.patch('/facts/:id', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json<{ label?: string; value?: string | null }>();
+  const existing = await c.env.DB.prepare('SELECT card_id FROM wallet_card_facts WHERE id = ?').bind(id).first<{ card_id: string }>();
+  if (!existing) return c.json({ error: 'not found' }, 404);
+  const fields: string[] = [];
+  const values: unknown[] = [];
+  if (body.label !== undefined) {
+    const label = body.label.trim();
+    if (!label) return c.json({ error: 'label cannot be empty' }, 400);
+    fields.push('label = ?');
+    values.push(label);
+  }
+  if (body.value !== undefined) {
+    fields.push('value = ?');
+    values.push(body.value?.trim() || null);
+  }
+  if (fields.length) {
+    values.push(id);
+    await c.env.DB.prepare(`UPDATE wallet_card_facts SET ${fields.join(', ')} WHERE id = ?`).bind(...values).run();
+    await c.env.DB.prepare('UPDATE wallet_cards SET updated_at = ? WHERE id = ?').bind(now(), existing.card_id).run();
+  }
+  const row = await c.env.DB.prepare('SELECT * FROM wallet_card_facts WHERE id = ?').bind(id).first<WalletCardFactRow>();
+  return c.json(factJson(row!));
+});
+
+walletRouter.delete('/facts/:id', async (c) => {
+  const id = c.req.param('id');
+  const existing = await c.env.DB.prepare('SELECT card_id FROM wallet_card_facts WHERE id = ?').bind(id).first<{ card_id: string }>();
+  await c.env.DB.prepare('DELETE FROM wallet_card_facts WHERE id = ?').bind(id).run();
+  if (existing) await c.env.DB.prepare('UPDATE wallet_cards SET updated_at = ? WHERE id = ?').bind(now(), existing.card_id).run();
   return c.json({ ok: true });
 });
 

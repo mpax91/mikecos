@@ -80,13 +80,16 @@ export function WalletMyCardsPanel() {
     setDeleting(null);
   }
 
+  // Doesn't close the editor — a brand-new card's first save just unlocks
+  // its Details section in place (see WalletCardEditor's own comment), so
+  // closing here would immediately hide what the save just unlocked.
   function handleSaved(card: WalletCard) {
     setCards((prev) => {
       if (!prev) return prev;
       const exists = prev.some((c) => c.id === card.id);
       return exists ? prev.map((c) => (c.id === card.id ? card : c)) : [...prev, card];
     });
-    setEditing(null);
+    setEditing((prev) => (prev && prev !== 'new' && prev.id === card.id ? card : prev === 'new' ? card : prev));
   }
 
   if (error) return <div className="empty-state">Couldn't load Wallet: {error}</div>;

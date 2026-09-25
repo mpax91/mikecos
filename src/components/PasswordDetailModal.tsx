@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { api, normalizeUrl } from '../api/client';
 import type { Entity, VaultFact } from '../api/types';
 import { Modal } from './Modal';
-import { VaultFactsTable } from './VaultFactsTable';
+import { VaultFactsTable, type FactLike } from './VaultFactsTable';
 
 function EyeIcon({ open }: { open: boolean }) {
   return open ? (
@@ -96,12 +96,12 @@ export function PasswordDetailModal({
     setFacts((prev) => [...prev, fact]);
   }
 
-  async function updateFact(fact: VaultFact, patch: { label?: string; value?: string }) {
+  async function updateFact(fact: FactLike, patch: { label?: string; value?: string }) {
     const updated = await api.updateVaultFact(fact.id, { label: patch.label, value: patch.value ?? undefined });
     setFacts((prev) => prev.map((f) => (f.id === fact.id ? updated : f)));
   }
 
-  async function deleteFact(fact: VaultFact) {
+  async function deleteFact(fact: FactLike) {
     setFacts((prev) => prev.filter((f) => f.id !== fact.id));
     await api.deleteVaultFact(fact.id);
   }

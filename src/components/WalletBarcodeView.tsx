@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import JsBarcode from 'jsbarcode';
 import { QRCodeSVG } from 'qrcode.react';
-import type { WalletCard } from '../api/types';
+import { api } from '../api/client';
+import type { WalletCard, WalletCardFact } from '../api/types';
+import { useSwipe } from '../utils/useSwipe';
 
 const JSBARCODE_FORMAT: Record<string, string> = {
   code128: 'CODE128',
@@ -22,8 +24,16 @@ export function WalletBarcodeView({ card, onClose, onEdit }: { card: WalletCard;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [pinRevealed, setPinRevealed] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [facts, setFacts] = useState<WalletCardFact[]>([]);
   const [copied, setCopied] = useState(false);
+  const [copiedFactId, setCopiedFactId] = useState<string | null>(null);
+  const [lightboxSide, setLightboxSide] = useState<'front' | 'back' | null>(null);
   const [wakeLockSupported] = useState(() => typeof navigator !== 'undefined' && 'wakeLock' in navigator);
+
+  useEffect(() => {
+    api.listWalletCardFacts(card.id).then(setFacts).catch(() => {});
+  }, [card.id]);
 
   useEffect(() => {
     let sentinel: WakeLockSentinel | null = null;
@@ -76,6 +86,14 @@ export function WalletBarcodeView({ card, onClose, onEdit }: { card: WalletCard;
     });
   }
 
+  function copyFact(fact: WalletCardFact) {
+    if (!fact.value) return;
+    navigator.clipboard.writeText(fact.value).then(() => {
+      setCopiedFactId(fact.id);
+      setTimeout(() => setCopiedFactId((id) => (id === fact.id ? null : id)), 1300);
+    });
+  }
+
   return (
     <div className="wallet-barcode-view" onClick={onClose}>
       <div className="wallet-barcode-view__card" onClick={(e) => e.stopPropagation()}>
@@ -84,7 +102,11 @@ export function WalletBarcodeView({ card, onClose, onEdit }: { card: WalletCard;
         </button>
 
         <div className="wallet-barcode-view__header">
-          {card.coverArtUrl && <img src={card.coverArtUrl} alt="" className="wallet-barcode-view__logo" />}
+          {card.coverArtUrl && (
+            <button type="button" className="wallet-barcode-view__logo-btn" onClick={() => setLightboxSide('front')} aria-label="View card image larger">
+              <img src={card.coverArtUrl} alt="" className="wallet-barcode-view__logo" />
+            </button>
+          )}
           <div className="wallet-barcode-view__name">{card.name}</div>
           <div className="wallet-barcode-view__category">{card.category}</div>
         </div>
@@ -127,6 +149,31 @@ export function WalletBarcodeView({ card, onClose, onEdit }: { card: WalletCard;
           </div>
         )}
 
+        {facts.length > 0 && (
+          <div className="wallet-barcode-view__details">
+            <button type="button" className="wallet-barcode-view__details-toggle" onClick={() => setDetailsOpen((v) => !v)}>
+              {detailsOpen ? '▾' : '▸'} Details
+            </button>
+            {detailsOpen && (
+              <div className="wallet-barcode-view__details-rows">
+                {facts.map((f) => (
+                  <div key={f.id} className="wallet-barcode-view__details-row">
+                    <span>{f.label}</span>
+                    <span>
+                      {f.value || '—'}
+                      {f.value && (
+                        <button type="button" className="wallet-barcode-view__details-copy" onClick={() => copyFact(f)} aria-label={`Copy ${f.label}`}>
+                          {copiedFactId === f.id ? '✓' : '⧉'}
+                        </button>
+                      )}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {card.notes && (
           <div className="wallet-barcode-view__notes">
             <button type="button" className="wallet-barcode-view__notes-toggle" onClick={() => setNotesOpen((v) => !v)}>
@@ -140,6 +187,51 @@ export function WalletBarcodeView({ card, onClose, onEdit }: { card: WalletCard;
           Edit card
         </button>
       </div>
+
+      {lightboxSide && <CardImageLightbox card={card} side={lightboxSide} onSide={setLightboxSide} onClose={() => setLightboxSide(null)} />}
+    </div>
+  );
+}
+
+/** Tap the card art to see it full-size, and — when a back photo exists —
+ * swipe (or use the dots) to flip between front and back, the same way
+ * flipping a physical card over works. Front-only cards just show the one
+ * image large with no swipe affordance. */
+function CardImageLightbox({
+  card,
+  side,
+  onSide,
+  onClose,
+}: {
+  card: WalletCard;
+  side: 'front' | 'back';
+  onSide: (side: 'front' | 'back') => void;
+  onClose: () => void;
+}) {
+  const hasBack = !!card.backArtUrl;
+  const src = side === 'back' && card.backArtUrl ? card.backArtUrl : card.coverArtUrl;
+  const swipe = useSwipe({
+    onSwipeLeft: () => hasBack && onSide('front'),
+    onSwipeRight: () => hasBack && onSide('back'),
+  });
+
+  return (
+    <div className="wallet-lightbox" onClick={onClose}>
+      <button type="button" className="wallet-lightbox__close" onClick={onClose} aria-label="Close">
+        ✕
+      </button>
+      <div className="wallet-lightbox__image-wrap" onClick={(e) => e.stopPropagation()} {...swipe}>
+        {src && <img src={src} alt="" />}
+      </div>
+      {hasBack && (
+        <>
+          <div className="wallet-lightbox__hint">Swipe to flip</div>
+          <div className="wallet-lightbox__dots" onClick={(e) => e.stopPropagation()}>
+            <button type="button" className={`wallet-lightbox__dot${side === 'front' ? ' is-active' : ''}`} onClick={() => onSide('front')} aria-label="Front" />
+            <button type="button" className={`wallet-lightbox__dot${side === 'back' ? ' is-active' : ''}`} onClick={() => onSide('back')} aria-label="Back" />
+          </div>
+        </>
+      )}
     </div>
   );
 }

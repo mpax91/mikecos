@@ -1,5 +1,5 @@
 import type { AuthenticationResponseJSON, PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON, RegistrationResponseJSON } from '@simplewebauthn/browser';
-import type { AuthCredentialSummary, AuthStatus, Bet, BetLeg, BetGameNote, BetPromo, BetPromoStatus, BetScheduleGame, BetTransaction, BetTransactionType, VaultEntryDetail, VaultFact, BriefingResponse, CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, CreditScoreEntry, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitLog, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsSavedArticle, NewsSettings, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, VaultFactLabel, VaultRollupGroup, WalletCard, WalletCategory, RewardsCard, RewardsBonus, RewardsPerk, WeatherResponse, WeekResponse } from './types';
+import type { AuthCredentialSummary, AuthStatus, Bet, BetLeg, BetGameNote, BetPromo, BetPromoStatus, BetScheduleGame, BetTransaction, BetTransactionType, VaultEntryDetail, VaultFact, BriefingResponse, CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, CreditScoreEntry, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitLog, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsSavedArticle, NewsSettings, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, VaultFactLabel, VaultRollupGroup, WalletCard, WalletCardFact, WalletCategory, RewardsCard, RewardsBonus, RewardsPerk, WeatherResponse, WeekResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -43,7 +43,8 @@ export function normalizeUrl(url: string): string {
 // runs through this so components can put coverArtUrl straight into an
 // <img src>, the same way uploadInline's `url` is already resolved below.
 function resolveWalletCard(card: WalletCard): WalletCard {
-  return card.coverArtUrl && !/^https?:\/\//i.test(card.coverArtUrl) ? { ...card, coverArtUrl: `${API_BASE}${card.coverArtUrl}` } : card;
+  const withFront = card.coverArtUrl && !/^https?:\/\//i.test(card.coverArtUrl) ? { ...card, coverArtUrl: `${API_BASE}${card.coverArtUrl}` } : card;
+  return withFront.backArtUrl && !/^https?:\/\//i.test(withFront.backArtUrl) ? { ...withFront, backArtUrl: `${API_BASE}${withFront.backArtUrl}` } : withFront;
 }
 
 // Same fix, same reason, for Rewards cards' cover art.
@@ -849,7 +850,7 @@ export const api = {
 
   createWalletCard: (
     params: Partial<
-      Pick<WalletCard, 'name' | 'category' | 'barcodeType' | 'barcodeValue' | 'displayNumber' | 'pinCode' | 'balance' | 'notes' | 'color' | 'coverArtKey'>
+      Pick<WalletCard, 'name' | 'category' | 'barcodeType' | 'barcodeValue' | 'displayNumber' | 'pinCode' | 'balance' | 'notes' | 'color' | 'coverArtKey' | 'backArtKey'>
     >
   ) => request<WalletCard>('/api/wallet/cards', { method: 'POST', body: JSON.stringify(params) }).then(resolveWalletCard),
 
@@ -858,7 +859,7 @@ export const api = {
     patch: Partial<
       Pick<
         WalletCard,
-        'name' | 'category' | 'barcodeType' | 'barcodeValue' | 'displayNumber' | 'pinCode' | 'balance' | 'notes' | 'color' | 'coverArtKey' | 'pinned' | 'sortOrder'
+        'name' | 'category' | 'barcodeType' | 'barcodeValue' | 'displayNumber' | 'pinCode' | 'balance' | 'notes' | 'color' | 'coverArtKey' | 'backArtKey' | 'pinned' | 'sortOrder'
       >
     >
   ) => request<WalletCard>(`/api/wallet/cards/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }).then(resolveWalletCard),
@@ -867,6 +868,21 @@ export const api = {
 
   reorderWalletCards: (ordered_ids: string[]) =>
     request<{ ok: true }>('/api/wallet/cards/reorder', { method: 'POST', body: JSON.stringify({ ordered_ids }) }),
+
+  // "Details" — structured facts on a card, same shape as Vault's quick
+  // facts (see WalletCardFact's own comment for why entry_id = card id).
+  listWalletCardFacts: (cardId: string) => request<WalletCardFact[]>(`/api/wallet/cards/${cardId}/facts`),
+
+  createWalletCardFact: (cardId: string, label: string, value: string) =>
+    request<WalletCardFact>(`/api/wallet/cards/${cardId}/facts`, { method: 'POST', body: JSON.stringify({ label, value }) }),
+
+  updateWalletCardFact: (id: string, patch: { label?: string; value?: string }) =>
+    request<WalletCardFact>(`/api/wallet/facts/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+
+  deleteWalletCardFact: (id: string) => request<{ ok: true }>(`/api/wallet/facts/${id}`, { method: 'DELETE' }),
+
+  reorderWalletCardFacts: (cardId: string, ordered_ids: string[]) =>
+    request<{ ok: true }>(`/api/wallet/cards/${cardId}/facts/reorder`, { method: 'POST', body: JSON.stringify({ ordered_ids }) }),
 
   listWalletCategories: () => request<WalletCategory[]>('/api/wallet/categories'),
 
