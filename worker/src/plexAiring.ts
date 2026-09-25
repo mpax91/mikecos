@@ -158,3 +158,118 @@ export async function runPlexAiringCheck(env: Env): Promise<AiringCheckResult> {
   const resolvedCount = await env.DB.prepare(`SELECT COUNT(*) as n FROM plex_tvmaze_shows WHERE tvmaze_id IS NOT NULL`).first<{ n: number }>();
   return { showsResolved: resolvedCount?.n ?? 0, newlyFlagged };
 }
+
+// ---- Full-history scan — manually triggered, not nightly ----
+//
+// The nightly check above only ever asks "what aired in the last few
+// days", which is intentionally cheap but blind to older gaps — a show
+// added to the library after being missing a season from three years ago
+// would never get flagged by it. This walks each show's *entire* TVMaze
+// episode list instead of a recent-day window, which is actually fewer
+// TVMaze calls per show (one full list vs. one call per lookback day) but
+// touches a lot more episodes overall, so — same reasoning as the Plex
+// library sync itself — it's chunked and resumable rather than one big
+// pass, to stay under Cloudflare's per-invocation subrequest cap on a
+// library with a lot of shows/seasons. State persists in
+// plex_airing_scan_state (see migrations/0053) as a JSON blob between
+// chunks; the caller (the "Scan full history" button) keeps calling until
+// `done`.
+
+const SCAN_SUBREQUEST_BUDGET_PER_CHUNK = 150;
+
+interface AiringScanState {
+  queue: { showItemId: string; showTitle: string; tvmazeId: number }[];
+  showsScanned: number;
+  showsTotal: number;
+  newlyFlagged: number;
+}
+
+async function loadScanState(env: Env): Promise<AiringScanState | null> {
+  const row = await env.DB.prepare(`SELECT state_json FROM plex_airing_scan_state WHERE id = 1`).first<{ state_json: string }>();
+  return row ? (JSON.parse(row.state_json) as AiringScanState) : null;
+}
+
+async function saveScanState(env: Env, state: AiringScanState): Promise<void> {
+  await env.DB.prepare(
+    `INSERT INTO plex_airing_scan_state (id, state_json, updated_at) VALUES (1, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET state_json = excluded.state_json, updated_at = excluded.updated_at`
+  )
+    .bind(JSON.stringify(state), new Date().toISOString())
+    .run();
+}
+
+async function clearScanState(env: Env): Promise<void> {
+  await env.DB.prepare(`DELETE FROM plex_airing_scan_state WHERE id = 1`).run();
+}
+
+export interface AiringScanChunkResult {
+  done: boolean;
+  progress: { showsScanned: number; showsTotal: number; newlyFlagged: number };
+  summary?: { showsScanned: number; newlyFlagged: number };
+}
+
+export async function runFullHistoryScanChunk(env: Env): Promise<AiringScanChunkResult> {
+  let state = await loadScanState(env);
+
+  if (!state) {
+    // Fresh run: make sure every show's TVMaze id is as up to date as
+    // possible first, and clear out anything already fixed since the last
+    // check — same housekeeping the nightly job does — then queue up
+    // every show that has a resolved TVMaze id.
+    await resolveTvmazeShowIds(env);
+    await reconcileMissingEpisodes(env);
+    const { results: shows } = await env.DB.prepare(
+      `SELECT s.id as show_item_id, s.title as show_title, t.tvmaze_id
+       FROM plex_items s
+       JOIN plex_tvmaze_shows t ON t.show_item_id = s.id
+       WHERE s.type = 'show' AND t.tvmaze_id IS NOT NULL`
+    ).all<{ show_item_id: string; show_title: string; tvmaze_id: number }>();
+    const queue = (shows ?? []).map((s) => ({ showItemId: s.show_item_id, showTitle: s.show_title, tvmazeId: s.tvmaze_id }));
+    state = { queue, showsScanned: 0, showsTotal: queue.length, newlyFlagged: 0 };
+  }
+
+  const today = dateStr(new Date());
+  let spent = 0;
+
+  while (state.queue.length > 0 && spent < SCAN_SUBREQUEST_BUDGET_PER_CHUNK) {
+    const show = state.queue.shift()!;
+    let episodes: TvmazeEpisode[] | null = null;
+    try {
+      episodes = await tvmazeGet<TvmazeEpisode[]>(`/shows/${show.tvmazeId}/episodes`);
+    } catch {
+      // Transient TVMaze failure — this show just gets skipped this scan;
+      // it's picked up fresh on the next "Scan full history" run.
+      state.showsScanned++;
+      spent++;
+      continue;
+    }
+    spent++;
+    for (const ep of episodes ?? []) {
+      if (!ep.airdate || ep.airdate > today) continue; // unaired/TBA — nothing to flag yet
+      if (await hasEpisode(env, show.showItemId, ep.season, ep.number)) {
+        spent++;
+        continue;
+      }
+      spent++;
+      const inserted = await env.DB.prepare(
+        `INSERT INTO plex_missing_episodes (id, show_item_id, show_title, season_number, episode_number, episode_name, aired_on, detected_at, dismissed)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
+         ON CONFLICT(show_item_id, season_number, episode_number) DO NOTHING`
+      )
+        .bind(crypto.randomUUID(), show.showItemId, show.showTitle, ep.season, ep.number, ep.name || null, ep.airdate, new Date().toISOString())
+        .run();
+      spent++;
+      if (inserted.meta.changes > 0) state.newlyFlagged++;
+    }
+    state.showsScanned++;
+  }
+
+  if (state.queue.length === 0) {
+    const summary = { showsScanned: state.showsScanned, newlyFlagged: state.newlyFlagged };
+    await clearScanState(env);
+    return { done: true, progress: { ...summary, showsTotal: state.showsTotal }, summary };
+  }
+
+  await saveScanState(env, state);
+  return { done: false, progress: { showsScanned: state.showsScanned, showsTotal: state.showsTotal, newlyFlagged: state.newlyFlagged } };
+}

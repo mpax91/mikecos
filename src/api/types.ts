@@ -1566,3 +1566,13 @@ export interface PlexAiringCheckResult {
   showsResolved: number;
   newlyFlagged: number;
 }
+
+// One bounded chunk of the manually-triggered full-history scan (see
+// worker/src/plexAiring.ts's header comment above runFullHistoryScanChunk
+// for why this one's chunked and the nightly check above isn't). The
+// caller keeps calling the endpoint until `done` is true.
+export interface PlexAiringScanChunkResult {
+  done: boolean;
+  progress: { showsScanned: number; showsTotal: number; newlyFlagged: number };
+  summary?: { showsScanned: number; newlyFlagged: number };
+}

@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Env } from './types';
 import { runPlexSyncChunk, PlexNotConfiguredError } from './plexSync';
-import { runPlexAiringCheck } from './plexAiring';
+import { runPlexAiringCheck, runFullHistoryScanChunk } from './plexAiring';
 
 /** Plex library mirror — browse/search the synced catalogue, surface
  * metadata gaps, and manage aired-but-missing episode flags. See
@@ -183,6 +183,20 @@ plexRouter.post('/airing-check', async (c) => {
   } catch (err) {
     if (err instanceof PlexNotConfiguredError) return c.json({ error: err.message }, 503);
     return c.json({ error: err instanceof Error ? err.message : 'airing check failed' }, 500);
+  }
+});
+
+// POST /airing-scan — one bounded chunk of the manually-triggered full-
+// history scan (see plexAiring.ts's header comment above
+// runFullHistoryScanChunk for why this one's chunked and the nightly
+// check above isn't). The "Scan full history" button keeps calling this
+// until the response says `done`, same polling shape as "Sync now".
+plexRouter.post('/airing-scan', async (c) => {
+  try {
+    const result = await runFullHistoryScanChunk(c.env);
+    return c.json(result);
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : 'full history scan failed' }, 500);
   }
 });
 

@@ -18,6 +18,8 @@ export function PlexAiringPanel() {
   const [error, setError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
   const [checkMessage, setCheckMessage] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const [scanMessage, setScanMessage] = useState<string | null>(null);
 
   function load() {
     api.listPlexMissingEpisodes().then(setEpisodes).catch((e) => setError(String(e)));
@@ -53,6 +55,39 @@ export function PlexAiringPanel() {
     }
   }
 
+  // A full-history scan walks every show's *entire* TVMaze episode list
+  // (not just the last few days), so a large library takes several
+  // bounded chunks — same polling shape as the Plex library sync itself
+  // (see PlexLibraryPanel's handleSync). Manually triggered only: this is
+  // for "I just added a bunch of stuff, make sure nothing's missing", not
+  // a nightly job, since it's a lot more TVMaze/D1 work than the cheap
+  // recent-days check above.
+  async function handleFullScan() {
+    setScanning(true);
+    setScanMessage('Starting full history scan…');
+    setError(null);
+    try {
+      for (;;) {
+        const chunk = await api.scanPlexAiringHistoryChunk();
+        if (chunk.done) {
+          const { showsScanned, newlyFlagged } = chunk.summary ?? chunk.progress;
+          setScanMessage(
+            `Scanned the full history of ${showsScanned.toLocaleString()} show${showsScanned === 1 ? '' : 's'} — ` +
+              (newlyFlagged > 0 ? `found ${newlyFlagged.toLocaleString()} missing episode${newlyFlagged === 1 ? '' : 's'}.` : 'nothing missing.')
+          );
+          break;
+        }
+        const { showsScanned, showsTotal } = chunk.progress;
+        setScanMessage(`Scanning full history… show ${Math.min(showsScanned + 1, showsTotal)} of ${showsTotal}`);
+      }
+      load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message.replace(/^API \d+:\s*/, '') : "Couldn't scan — try again.");
+    } finally {
+      setScanning(false);
+    }
+  }
+
   return (
     <div>
       <div className="wallet-page__toolbar">
@@ -63,9 +98,13 @@ export function PlexAiringPanel() {
         <button type="button" className="btn" onClick={handleCheck} disabled={checking}>
           {checking ? 'Checking…' : 'Check now'}
         </button>
+        <button type="button" className="btn" onClick={handleFullScan} disabled={scanning} title="Checks every show's entire episode history, not just the last few days — slower, run it after adding a batch of stuff to Plex.">
+          {scanning ? 'Scanning…' : 'Scan full history'}
+        </button>
       </div>
 
       {checkMessage && <div className="wallet-editor__hint" style={{ marginBottom: 8 }}>{checkMessage}</div>}
+      {scanMessage && <div className="wallet-editor__hint" style={{ marginBottom: 8 }}>{scanMessage}</div>}
       {error && <div className="wallet-editor__error" style={{ marginBottom: 8 }}>{error}</div>}
 
       {!episodes ? (
