@@ -34,6 +34,7 @@ interface RewardsBonusRow {
   kind: string;
   starts_on: string | null;
   ends_on: string | null;
+  keywords: string | null;
   sort_order: number;
   created_at: string;
 }
@@ -48,7 +49,7 @@ interface RewardsPerkRow {
 }
 
 function bonusJson(row: RewardsBonusRow) {
-  return { id: row.id, cardId: row.card_id, category: row.category, rate: row.rate, kind: row.kind, startsOn: row.starts_on, endsOn: row.ends_on, sortOrder: row.sort_order };
+  return { id: row.id, cardId: row.card_id, category: row.category, rate: row.rate, kind: row.kind, startsOn: row.starts_on, endsOn: row.ends_on, keywords: row.keywords, sortOrder: row.sort_order };
 }
 
 function perkJson(row: RewardsPerkRow) {
@@ -216,7 +217,7 @@ rewardsRouter.post('/cards/:cardId/bonuses', async (c) => {
   const cardId = c.req.param('cardId');
   const card = await c.env.DB.prepare('SELECT id FROM rewards_cards WHERE id = ?').bind(cardId).first();
   if (!card) return c.json({ error: 'card not found' }, 404);
-  const body = await c.req.json<{ category?: string; rate?: number; kind?: string; startsOn?: string | null; endsOn?: string | null }>();
+  const body = await c.req.json<{ category?: string; rate?: number; kind?: string; startsOn?: string | null; endsOn?: string | null; keywords?: string | null }>();
   const category = body.category?.trim();
   if (!category) return c.json({ error: 'category is required' }, 400);
   if (typeof body.rate !== 'number') return c.json({ error: 'rate is required' }, 400);
@@ -225,9 +226,20 @@ rewardsRouter.post('/cards/:cardId/bonuses', async (c) => {
   const maxPos = await c.env.DB.prepare('SELECT COALESCE(MAX(sort_order), -1) as m FROM rewards_bonuses WHERE card_id = ?').bind(cardId).first<{ m: number }>();
   const id = uid();
   await c.env.DB.prepare(
-    `INSERT INTO rewards_bonuses (id, card_id, category, rate, kind, starts_on, ends_on, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO rewards_bonuses (id, card_id, category, rate, kind, starts_on, ends_on, keywords, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
-    .bind(id, cardId, category, body.rate, kind, kind === 'rotating' ? body.startsOn || null : null, kind === 'rotating' ? body.endsOn || null : null, (maxPos?.m ?? -1) + 1, now())
+    .bind(
+      id,
+      cardId,
+      category,
+      body.rate,
+      kind,
+      kind === 'rotating' ? body.startsOn || null : null,
+      kind === 'rotating' ? body.endsOn || null : null,
+      body.keywords?.trim() || null,
+      (maxPos?.m ?? -1) + 1,
+      now()
+    )
     .run();
   await c.env.DB.prepare('UPDATE rewards_cards SET updated_at = ? WHERE id = ?').bind(now(), cardId).run();
 
@@ -239,7 +251,7 @@ rewardsRouter.patch('/bonuses/:id', async (c) => {
   const id = c.req.param('id');
   const existing = await c.env.DB.prepare('SELECT * FROM rewards_bonuses WHERE id = ?').bind(id).first<RewardsBonusRow>();
   if (!existing) return c.json({ error: 'not found' }, 404);
-  const body = await c.req.json<Partial<{ category: string; rate: number; kind: string; startsOn: string | null; endsOn: string | null }>>();
+  const body = await c.req.json<Partial<{ category: string; rate: number; kind: string; startsOn: string | null; endsOn: string | null; keywords: string | null }>>();
 
   const fields: string[] = [];
   const values: unknown[] = [];
@@ -249,6 +261,7 @@ rewardsRouter.patch('/bonuses/:id', async (c) => {
   };
   if (body.category !== undefined) set('category', body.category.trim() || existing.category);
   if (body.rate !== undefined) set('rate', body.rate);
+  if (body.keywords !== undefined) set('keywords', body.keywords?.trim() || null);
   const nextKind = body.kind !== undefined ? (body.kind === 'rotating' ? 'rotating' : 'fixed') : existing.kind;
   if (body.kind !== undefined) set('kind', nextKind);
   if (body.startsOn !== undefined) set('starts_on', nextKind === 'rotating' ? body.startsOn || null : null);

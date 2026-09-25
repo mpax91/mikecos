@@ -13,14 +13,73 @@ export function isBonusActiveToday(bonus: RewardsBonus): boolean {
   return bonus.startsOn <= today && today <= bonus.endsOn;
 }
 
+/** The card that wins by default whenever nothing more specific applies —
+ * the highest flat base rate among active cards (Mike's Wells Fargo Active
+ * Cash at a flat 2%, for instance). Every category row and every Find
+ * result falls back to this when no bonus beats it, and it's always
+ * included in cardsToCarry below since it's meant to live in the wallet
+ * at all times, not just during a specific quarter. */
+export function defaultFlatRateCard(cards: RewardsCard[]): RewardsCard | null {
+  const active = cards.filter((c) => c.active);
+  if (active.length === 0) return null;
+  return active.reduce((best, c) => (c.baseRate > best.baseRate ? c : best));
+}
+
 /** Cards worth actually carrying right now: anything Mike has manually
- * flagged "always carry," plus any card whose rotating bonus is active
- * today. This is the deliberately honest version of "the few cards that
- * cover all my bases" — a curated flag plus real dates, not a computed
- * optimization over spend Mike never tracked (quarterly caps are
- * explicitly ignored, per his own call). */
-export function cardsForThisQuarter(cards: RewardsCard[]): RewardsCard[] {
-  return cards.filter((c) => c.active && (c.alwaysCarry || c.bonuses.some((b) => b.kind === 'rotating' && isBonusActiveToday(b))));
+ * flagged "always carry," the single default flat-rate card (see
+ * defaultFlatRateCard — it's his everyday fallback, so it belongs in the
+ * physical wallet regardless of quarter), plus any card whose rotating
+ * bonus is active today. This is the deliberately honest version of "the
+ * few cards that cover all my bases" — curated flags plus real dates and
+ * one computed default, not an optimization over spend Mike never tracked
+ * (quarterly caps are explicitly ignored, per his own call). */
+export function cardsToCarry(cards: RewardsCard[]): RewardsCard[] {
+  const flat = defaultFlatRateCard(cards);
+  return cards.filter(
+    (c) => c.active && (c.alwaysCarry || c.id === flat?.id || c.bonuses.some((b) => b.kind === 'rotating' && isBonusActiveToday(b)))
+  );
+}
+
+// The everyday categories worth always showing a "best card" answer for,
+// even before any card actually has a bonus in them — gas, dining, and
+// groceries are staples Mike spends on many times a month and wants a
+// standing answer for, not just whatever happens to be on a card already.
+export const STAPLE_CATEGORIES = ['Gas', 'Dining', 'Groceries', 'Travel', 'Drugstores', 'Streaming'];
+
+/** Every category worth a "best card" row on the main screen: the staples
+ * above, plus every distinct bonus category (fixed or rotating, active or
+ * not) across all active cards — so a card's own "Home Improvement" bonus
+ * shows up automatically without Mike having to also declare it a staple.
+ * Deduped case-insensitively, keeping whichever casing was seen first. */
+export function everydayCategories(cards: RewardsCard[]): string[] {
+  const seen = new Map<string, string>();
+  for (const cat of STAPLE_CATEGORIES) seen.set(cat.toLowerCase(), cat);
+  for (const card of cards) {
+    if (!card.active) continue;
+    for (const b of card.bonuses) {
+      const key = b.category.trim().toLowerCase();
+      if (key && !seen.has(key)) seen.set(key, b.category.trim());
+    }
+  }
+  return Array.from(seen.values());
+}
+
+/** A rotating bonus whose window has fully lapsed with nothing queued up
+ * to replace it — the "Q3 ended, Q4 hasn't been set yet" state. A bonus
+ * that's merely upcoming (starts in the future) doesn't count; only when
+ * every one of a card's rotating windows ends in the past does the card
+ * need attention. A card with no rotating bonuses at all (a flat-rate
+ * card like Wells Fargo Active Cash) never needs this — it has nothing to
+ * rotate. */
+export function needsQuarterUpdate(card: RewardsCard): boolean {
+  const rotating = card.bonuses.filter((b) => b.kind === 'rotating' && b.startsOn && b.endsOn);
+  if (rotating.length === 0) return false;
+  const today = new Date().toISOString().slice(0, 10);
+  return !rotating.some((b) => b.endsOn! >= today);
+}
+
+export function cardsNeedingQuarterUpdate(cards: RewardsCard[]): RewardsCard[] {
+  return cards.filter((c) => c.active && needsQuarterUpdate(c));
 }
 
 // ---- Quarter helpers for the rotating-bonus editor. Most rotating
@@ -65,19 +124,47 @@ export interface RewardsMatch {
   rate: number;
 }
 
-/** Ranks every active card for a free-text category query. A card's best
- * applicable rate wins: an active bonus whose category text contains the
- * query beats the card's flat base rate. Substring matching (not a fixed
- * picklist) on purpose — issuer rotating-category names are often
- * idiosyncratic phrases ("Wholesale clubs & select streaming services"),
- * not a clean taxonomy Mike should have to learn. */
+// Alphanumeric-only, lowercased — for comparing a typed merchant name
+// ("Rhoback.com") against a stored keyword ("rhoback") regardless of
+// punctuation either side happens to have.
+function normalizeForMatch(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+/** Does this bonus apply to a free-text query — either a category name
+ * ("groceries") or a merchant someone actually shops at ("Rhoback.com")?
+ * Category matching stays plain substring (issuer category names are
+ * often idiosyncratic phrases, not a clean taxonomy Mike should have to
+ * learn). Keyword matching is looser on purpose: Mike's own merchant
+ * aliases ("amazon, rhoback, etsy") are short single words, and a typed
+ * query often carries extra punctuation (".com") or is itself a substring
+ * of what he stored, so it checks containment both directions on
+ * alphanumeric-only text. */
+function bonusMatchesQuery(bonus: RewardsBonus, rawQuery: string, normQuery: string): boolean {
+  if (bonus.category.toLowerCase().includes(rawQuery)) return true;
+  if (!bonus.keywords) return false;
+  return bonus.keywords
+    .split(',')
+    .map((k) => normalizeForMatch(k))
+    .filter(Boolean)
+    .some((k) => normQuery.includes(k) || k.includes(normQuery));
+}
+
+/** Ranks every active card for a free-text query — a category ("dining")
+ * or a merchant ("Home Depot", "Rhoback.com"). A card's best applicable
+ * rate wins: an active bonus that matches (by category text or a stored
+ * merchant keyword — see bonusMatchesQuery) beats the card's flat base
+ * rate. A card with no match at all still shows up at its base rate, so
+ * the ranking always surfaces the honest fallback (e.g. a flat 2% card)
+ * rather than only cards with a specific bonus. */
 export function findBestCardsFor(cards: RewardsCard[], query: string): RewardsMatch[] {
-  const q = query.trim().toLowerCase();
-  if (!q) return [];
+  const rawQuery = query.trim().toLowerCase();
+  if (!rawQuery) return [];
+  const normQuery = normalizeForMatch(rawQuery);
   const matches: RewardsMatch[] = [];
   for (const card of cards) {
     if (!card.active) continue;
-    const applicable = card.bonuses.filter((b) => isBonusActiveToday(b) && b.category.toLowerCase().includes(q));
+    const applicable = card.bonuses.filter((b) => isBonusActiveToday(b) && bonusMatchesQuery(b, rawQuery, normQuery));
     if (applicable.length > 0) {
       const best = applicable.reduce((a, b) => (b.rate > a.rate ? b : a));
       matches.push({ card, bonus: best, rate: best.rate });
@@ -86,4 +173,11 @@ export function findBestCardsFor(cards: RewardsCard[], query: string): RewardsMa
     }
   }
   return matches.sort((a, b) => b.rate - a.rate);
+}
+
+/** The single best card for one known category — same ranking as
+ * findBestCardsFor, just the top result, for the main screen's
+ * category-by-category reference table. */
+export function bestCardForCategory(cards: RewardsCard[], category: string): RewardsMatch | null {
+  return findBestCardsFor(cards, category)[0] ?? null;
 }

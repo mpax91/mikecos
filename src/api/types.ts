@@ -429,6 +429,9 @@ export interface RewardsBonus {
   kind: RewardsBonusKind;
   startsOn: string | null;
   endsOn: string | null;
+  /** Optional comma-separated merchant/search aliases (e.g. "amazon, rhoback, etsy")
+   * so Find can match a merchant name that shares no text with the category itself. */
+  keywords: string | null;
   sortOrder: number;
 }
 

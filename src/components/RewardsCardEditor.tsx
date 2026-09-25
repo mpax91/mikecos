@@ -233,6 +233,7 @@ function BonusesEditor({ card, onChanged }: { card: RewardsCard; onChanged: (car
   const [year, setYear] = useState(new Date().getFullYear());
   const [startsOn, setStartsOn] = useState('');
   const [endsOn, setEndsOn] = useState('');
+  const [keywords, setKeywords] = useState('');
   const [saving, setSaving] = useState(false);
 
   async function addBonus() {
@@ -248,12 +249,14 @@ function BonusesEditor({ card, onChanged }: { card: RewardsCard; onChanged: (car
         kind,
         startsOn: kind === 'rotating' ? (range ? range.startsOn : startsOn || null) : null,
         endsOn: kind === 'rotating' ? (range ? range.endsOn : endsOn || null) : null,
+        keywords: keywords.trim() || null,
       });
       onChanged({ ...card, bonuses: [...card.bonuses, bonus] });
       setCategory('');
       setRate('');
       setStartsOn('');
       setEndsOn('');
+      setKeywords('');
     } finally {
       setSaving(false);
     }
@@ -278,6 +281,7 @@ function BonusesEditor({ card, onChanged }: { card: RewardsCard; onChanged: (car
                     rotating{describeRotatingWindow(b.startsOn, b.endsOn) ? ` · ${describeRotatingWindow(b.startsOn, b.endsOn)}` : ''}
                   </span>
                 )}
+                {b.keywords && <span className="wallet-editor__row-item-tag">merchants: {b.keywords}</span>}
               </span>
               <button type="button" className="wallet-editor__row-item-remove" onClick={() => removeBonus(b.id)} aria-label="Remove">
                 ×
@@ -313,6 +317,17 @@ function BonusesEditor({ card, onChanged }: { card: RewardsCard; onChanged: (car
         <button type="button" className="btn btn--ghost" onClick={addBonus} disabled={saving || !category.trim() || !rate}>
           Add
         </button>
+      </div>
+      <div className="wallet-editor__add-row">
+        <input
+          value={keywords}
+          onChange={(e) => setKeywords(e.target.value)}
+          placeholder="Merchants this covers (optional) — e.g. amazon, rhoback, etsy"
+          style={{ flex: 1 }}
+        />
+      </div>
+      <div className="wallet-editor__hint" style={{ marginTop: -4 }}>
+        Lets Find match a merchant you type ("Rhoback.com") even when it doesn't share the category's own wording.
       </div>
       {kind === 'rotating' && (
         <button
