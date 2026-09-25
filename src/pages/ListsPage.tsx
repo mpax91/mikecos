@@ -104,7 +104,7 @@ export function ListsPage() {
         <SortableGrid
           items={active}
           onReorder={handleReorder}
-          className="project-card-list"
+          className="list-card-grid"
           renderItem={(l) => (
             <ListCard
               key={l.id}
@@ -120,7 +120,7 @@ export function ListsPage() {
 
       {archived.length > 0 && (
         <Section title="Archived" count={archived.length} defaultExpanded={false}>
-          <div className="project-card-list">
+          <div className="list-card-grid">
             {archived.map((l) => (
               <ListCard
                 key={l.id}

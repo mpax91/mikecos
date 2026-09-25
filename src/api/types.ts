@@ -112,6 +112,9 @@ export interface EntityDetail {
 export interface ListItem extends Entity {
   open_count: number;
   done_count: number;
+  /** First few open item titles, in list order — lets the card render an
+   * actual checklist preview instead of just a count. */
+  preview_items: string[];
 }
 
 /** A task as returned by GET /api/today — the same Entity, plus its

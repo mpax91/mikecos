@@ -2487,7 +2487,20 @@ app.get('/api/lists', async (c) => {
   const withCounts = await Promise.all(
     (results ?? []).map(async (list) => {
       const counts = await listItemCounts(c.env.DB, list.id);
-      return { ...list, open_count: counts?.open_count ?? 0, done_count: counts?.done_count ?? 0 };
+      // A handful of open item titles, in list order — this is what makes a
+      // List's card actually read as a list at a glance instead of just a
+      // title-and-count row indistinguishable from a Project card.
+      const { results: previewRows } = await c.env.DB.prepare(
+        `SELECT title FROM entities WHERE parent_id = ? AND type = 'task' AND status != 'done' ORDER BY position ASC, created_at ASC LIMIT 6`
+      )
+        .bind(list.id)
+        .all<{ title: string }>();
+      return {
+        ...list,
+        open_count: counts?.open_count ?? 0,
+        done_count: counts?.done_count ?? 0,
+        preview_items: (previewRows ?? []).map((r) => r.title || 'Untitled'),
+      };
     })
   );
   return c.json(withCounts);
