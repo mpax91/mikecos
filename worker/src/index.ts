@@ -46,6 +46,7 @@ import { paymentCardsRouter } from './paymentCards';
 import { plexRouter } from './plex';
 import { runPlexAiringCheck } from './plexAiring';
 import { emailRouter, syncAllAccounts } from './email';
+import { bookmarksRouter } from './bookmarks';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -71,6 +72,7 @@ app.route('/api/rewards', rewardsRouter);
 app.route('/api/payment-cards', paymentCardsRouter);
 app.route('/api/plex', plexRouter);
 app.route('/api/email', emailRouter);
+app.route('/api/bookmarks', bookmarksRouter);
 
 // Hono's default unhandled-error response is a bare "Internal Server Error"
 // with no body — fine for not leaking internals to an outside caller, but

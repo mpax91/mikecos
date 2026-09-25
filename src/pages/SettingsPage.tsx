@@ -6,6 +6,7 @@ import { CalendarsPanel } from './settings/CalendarsPanel';
 import { ContactImportPanel } from './settings/ContactImportPanel';
 import { UploadPanel } from './settings/UploadPanel';
 import { QuickLinksPanel } from './settings/QuickLinksPanel';
+import { BookmarksImportPanel } from './settings/BookmarksImportPanel';
 import { WalletCategoriesPanel } from './settings/WalletCategoriesPanel';
 import { SecurityPanel } from './settings/SecurityPanel';
 import { NewsFeedsPanel } from './settings/NewsFeedsPanel';
@@ -80,7 +81,12 @@ export function SettingsPage() {
           {active === 'upload' && <UploadPanel />}
           {active === 'recurring' && <RecurringTasksPanel />}
           {active === 'calendars' && <CalendarsPanel />}
-          {active === 'links' && <QuickLinksPanel />}
+          {active === 'links' && (
+            <>
+              <QuickLinksPanel />
+              <BookmarksImportPanel />
+            </>
+          )}
           {active === 'wallet' && <WalletCategoriesPanel />}
           {active === 'email-accounts' && <EmailAccountsPanel />}
           {active === 'rewards-merchants' && <RewardsMerchantsPanel />}

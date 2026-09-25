@@ -357,6 +357,32 @@ export interface QuickLinksResponse {
   links: QuickLink[];
 }
 
+// ---- Bookmarks — a periodic, manual mirror of a Chrome bookmarks export
+// (see worker/migrations/0060_bookmarks.sql). `url` is null for a folder
+// node. Every import fully replaces the tree; `lastImportedAt` is when
+// that last happened. ----
+
+export interface BookmarkNode {
+  id: string;
+  type: 'folder' | 'link';
+  title: string;
+  url: string | null;
+  children: BookmarkNode[];
+}
+
+export interface BookmarksResponse {
+  nodes: BookmarkNode[];
+  linkCount: number;
+  folderCount: number;
+  lastImportedAt: string | null;
+}
+
+export interface BookmarksImportResult {
+  folderCount: number;
+  linkCount: number;
+  importedAt: string;
+}
+
 // ---- Wallet (loyalty/membership/pass/gift cards — see
 // worker/migrations/0045_wallet.sql for why this is its own flat table) ----
 
