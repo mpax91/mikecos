@@ -303,7 +303,12 @@ paymentCardsRouter.delete('/cards/:id', async (c) => {
   if (!existing) return c.json({ error: 'not found' }, 404);
   if (existing.cover_art_key) await c.env.FILES.delete(existing.cover_art_key).catch(() => {});
   if (existing.back_art_key) await c.env.FILES.delete(existing.back_art_key).catch(() => {});
-  await c.env.DB.prepare('DELETE FROM payment_cards WHERE id = ?').bind(id).run();
+  // Explicit child cleanup rather than relying on cascade — same reasoning
+  // as wallet.ts's card delete and rewards.ts's card delete.
+  await c.env.DB.batch([
+    c.env.DB.prepare('DELETE FROM payment_card_facts WHERE card_id = ?').bind(id),
+    c.env.DB.prepare('DELETE FROM payment_cards WHERE id = ?').bind(id),
+  ]);
   return c.json({ ok: true });
 });
 
@@ -332,4 +337,92 @@ paymentCardsRouter.get('/cards/:id/reveal', async (c) => {
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : 'decryption failed' }, 500);
   }
+});
+
+// ---- Details (0050_payment_card_facts.sql) — a plain label/value list per
+// card, same shape as Wallet's own card facts and Vault's quick facts: no
+// field registry, just "add a detail" for whatever a particular card needs
+// (a phone number to report it lost, a member ID #, anything that isn't
+// one of the fixed fields above). factJson emits `entry_id` (not
+// `card_id`) on purpose — the frontend's existing Vault facts UI is reused
+// unmodified, and it reads facts by that shape. ----
+
+interface PaymentCardFactRow {
+  id: string;
+  card_id: string;
+  label: string;
+  value: string | null;
+  position: number;
+  created_at: string;
+}
+
+function factJson(row: PaymentCardFactRow) {
+  return { id: row.id, entry_id: row.card_id, label: row.label, value: row.value, position: row.position, created_at: row.created_at };
+}
+
+paymentCardsRouter.get('/cards/:id/facts', async (c) => {
+  const { results } = await c.env.DB.prepare('SELECT * FROM payment_card_facts WHERE card_id = ? ORDER BY position ASC').bind(c.req.param('id')).all<PaymentCardFactRow>();
+  return c.json((results ?? []).map(factJson));
+});
+
+paymentCardsRouter.post('/cards/:id/facts', async (c) => {
+  const cardId = c.req.param('id');
+  const card = await c.env.DB.prepare('SELECT id FROM payment_cards WHERE id = ?').bind(cardId).first();
+  if (!card) return c.json({ error: 'card not found' }, 404);
+  const body = await c.req.json<{ label?: string; value?: string | null }>();
+  const label = (body.label ?? '').trim();
+  if (!label) return c.json({ error: 'label is required' }, 400);
+  const maxPos = await c.env.DB.prepare('SELECT COALESCE(MAX(position), -1) as m FROM payment_card_facts WHERE card_id = ?').bind(cardId).first<{ m: number }>();
+  const id = uid();
+  await c.env.DB.prepare('INSERT INTO payment_card_facts (id, card_id, label, value, position, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+    .bind(id, cardId, label, body.value?.trim() || null, (maxPos?.m ?? -1) + 1, now())
+    .run();
+  await c.env.DB.prepare('UPDATE payment_cards SET updated_at = ? WHERE id = ?').bind(now(), cardId).run();
+  const row = await c.env.DB.prepare('SELECT * FROM payment_card_facts WHERE id = ?').bind(id).first<PaymentCardFactRow>();
+  return c.json(factJson(row!), 201);
+});
+
+paymentCardsRouter.post('/cards/:id/facts/reorder', async (c) => {
+  const cardId = c.req.param('id');
+  const body = await c.req.json<{ ordered_ids?: string[] }>();
+  if (!body.ordered_ids?.length) return c.json({ error: 'ordered_ids required' }, 400);
+  const stmts = body.ordered_ids.map((factId, index) =>
+    c.env.DB.prepare('UPDATE payment_card_facts SET position = ? WHERE id = ? AND card_id = ?').bind(index, factId, cardId)
+  );
+  await c.env.DB.batch(stmts);
+  return c.json({ ok: true });
+});
+
+paymentCardsRouter.patch('/facts/:id', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json<{ label?: string; value?: string | null }>();
+  const existing = await c.env.DB.prepare('SELECT card_id FROM payment_card_facts WHERE id = ?').bind(id).first<{ card_id: string }>();
+  if (!existing) return c.json({ error: 'not found' }, 404);
+  const fields: string[] = [];
+  const values: unknown[] = [];
+  if (body.label !== undefined) {
+    const label = body.label.trim();
+    if (!label) return c.json({ error: 'label cannot be empty' }, 400);
+    fields.push('label = ?');
+    values.push(label);
+  }
+  if (body.value !== undefined) {
+    fields.push('value = ?');
+    values.push(body.value?.trim() || null);
+  }
+  if (fields.length) {
+    values.push(id);
+    await c.env.DB.prepare(`UPDATE payment_card_facts SET ${fields.join(', ')} WHERE id = ?`).bind(...values).run();
+    await c.env.DB.prepare('UPDATE payment_cards SET updated_at = ? WHERE id = ?').bind(now(), existing.card_id).run();
+  }
+  const row = await c.env.DB.prepare('SELECT * FROM payment_card_facts WHERE id = ?').bind(id).first<PaymentCardFactRow>();
+  return c.json(factJson(row!));
+});
+
+paymentCardsRouter.delete('/facts/:id', async (c) => {
+  const id = c.req.param('id');
+  const existing = await c.env.DB.prepare('SELECT card_id FROM payment_card_facts WHERE id = ?').bind(id).first<{ card_id: string }>();
+  await c.env.DB.prepare('DELETE FROM payment_card_facts WHERE id = ?').bind(id).run();
+  if (existing) await c.env.DB.prepare('UPDATE payment_cards SET updated_at = ? WHERE id = ?').bind(now(), existing.card_id).run();
+  return c.json({ ok: true });
 });

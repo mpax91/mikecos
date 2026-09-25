@@ -1,5 +1,5 @@
 import type { AuthenticationResponseJSON, PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON, RegistrationResponseJSON } from '@simplewebauthn/browser';
-import type { AuthCredentialSummary, AuthStatus, Bet, BetLeg, BetGameNote, BetPromo, BetPromoStatus, BetScheduleGame, BetTransaction, BetTransactionType, VaultEntryDetail, VaultFact, BriefingResponse, CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, CreditScoreEntry, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitLog, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsSavedArticle, NewsSettings, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, VaultFactLabel, VaultRollupGroup, WalletCard, WalletCardFact, WalletCategory, RewardsCard, RewardsBonus, RewardsPerk, PaymentCard, PaymentCardSecrets, WeatherResponse, WeekResponse } from './types';
+import type { AuthCredentialSummary, AuthStatus, Bet, BetLeg, BetGameNote, BetPromo, BetPromoStatus, BetScheduleGame, BetTransaction, BetTransactionType, VaultEntryDetail, VaultFact, BriefingResponse, CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, CreditScoreEntry, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitLog, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsSavedArticle, NewsSettings, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, VaultFactLabel, VaultRollupGroup, WalletCard, WalletCardFact, WalletCategory, RewardsCard, RewardsBonus, RewardsPerk, PaymentCard, PaymentCardFact, PaymentCardSecrets, WeatherResponse, WeekResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -982,6 +982,22 @@ export const api = {
   // The only call that ever returns a decrypted number/CVV — fire it on an
   // explicit tap, never eagerly.
   revealPaymentCard: (id: string) => request<PaymentCardSecrets>(`/api/payment-cards/cards/${id}/reveal`),
+
+  // "Details" — structured facts on a payment card, same shape as
+  // Wallet's own (see PaymentCardFact's own comment for why entry_id =
+  // card id).
+  listPaymentCardFacts: (cardId: string) => request<PaymentCardFact[]>(`/api/payment-cards/cards/${cardId}/facts`),
+
+  createPaymentCardFact: (cardId: string, label: string, value: string) =>
+    request<PaymentCardFact>(`/api/payment-cards/cards/${cardId}/facts`, { method: 'POST', body: JSON.stringify({ label, value }) }),
+
+  updatePaymentCardFact: (id: string, patch: { label?: string; value?: string }) =>
+    request<PaymentCardFact>(`/api/payment-cards/facts/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+
+  deletePaymentCardFact: (id: string) => request<{ ok: true }>(`/api/payment-cards/facts/${id}`, { method: 'DELETE' }),
+
+  reorderPaymentCardFacts: (cardId: string, ordered_ids: string[]) =>
+    request<{ ok: true }>(`/api/payment-cards/cards/${cardId}/facts/reorder`, { method: 'POST', body: JSON.stringify({ ordered_ids }) }),
 
   // Generic "facts for this entity id" read — works for a Password card's
   // Custom fields too, not just a top-level Vault entry (see worker's

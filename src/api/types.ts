@@ -401,6 +401,20 @@ export interface WalletCardFact {
   created_at: string;
 }
 
+// Same shape and same "entry_id is actually the card id" trick as
+// WalletCardFact above (see worker/migrations/0050_payment_card_facts.sql
+// and paymentCards.ts's factJson) — kept as its own type rather than
+// reused so Payment Cards' facts stay a distinct concept from Wallet's,
+// even though the wire shape happens to match.
+export interface PaymentCardFact {
+  id: string;
+  entry_id: string;
+  label: string;
+  value: string | null;
+  position: number;
+  created_at: string;
+}
+
 // ---- Rewards (credit-card rewards optimizer — Wallet Phase 2. See
 // worker/migrations/0047_rewards.sql for why this is a separate table
 // family from wallet_cards above.) ----

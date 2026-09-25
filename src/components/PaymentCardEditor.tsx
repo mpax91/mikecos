@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
-import type { PaymentCard, PaymentCardType, RewardsCard } from '../api/types';
+import { VaultFactsTable } from './VaultFactsTable';
+import type { PaymentCard, PaymentCardFact, PaymentCardType, RewardsCard } from '../api/types';
 
 const SWATCHES = ['#3B5BA9', '#2F6F5E', '#8A5A3B', '#6B4C9A', '#3D7EA6', '#9A4C5F', '#4C6B4C', '#7A5C2E', '#B8632F', '#5C6B8A'];
 
@@ -62,7 +63,11 @@ function errorMessage(err: unknown, fallback: string): string {
  * it shows "on file" and lets Mike replace or clear it, same shape as the
  * cover-art upload's "Replace"/"Remove". Flagging a card reward-worthy
  * links it to a Rewards card rather than ever creating a second entry for
- * something Mike already catalogued there. */
+ * something Mike already catalogued there. Details (structured facts,
+ * same idea as Vault/Wallet) is a child table, so — same "save core
+ * fields, then unlock the per-row section" shape WalletCardEditor and
+ * RewardsCardEditor already use — it only unlocks once the card has a
+ * real id, which for a brand-new card means the first Save. */
 export function PaymentCardEditor({
   card,
   onClose,
@@ -73,6 +78,7 @@ export function PaymentCardEditor({
   onClose: () => void;
   onSaved: (card: PaymentCard) => void;
 }) {
+  const [saved, setSaved] = useState<PaymentCard | null>(card);
   const [form, setForm] = useState<FormState>(() => toForm(card));
   // The network select's own value: one of NETWORKS, or 'Other' when the
   // card's stored network (if any) isn't one of the major ones — in which
@@ -87,6 +93,7 @@ export function PaymentCardEditor({
   const [rewardsChoice, setRewardsChoice] = useState<string>(card?.rewardsCardId ?? 'new');
   const [rewardsCards, setRewardsCards] = useState<RewardsCard[]>([]);
   const [otherPaymentCards, setOtherPaymentCards] = useState<PaymentCard[]>([]);
+  const [facts, setFacts] = useState<PaymentCardFact[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [uploadingFront, setUploadingFront] = useState(false);
@@ -99,6 +106,7 @@ export function PaymentCardEditor({
       setRewardsCards(rewards);
       setOtherPaymentCards(payments.filter((p) => p.id !== card?.id));
     });
+    if (card) api.listPaymentCardFacts(card.id).then(setFacts).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -170,9 +178,17 @@ export function PaymentCardEditor({
     if (rewardWorthy && rewardsChoice !== 'new') payload.rewardsCardId = rewardsChoice;
 
     try {
-      const result = card ? await api.updatePaymentCard(card.id, payload) : await api.createPaymentCard(payload);
+      const result = saved ? await api.updatePaymentCard(saved.id, payload) : await api.createPaymentCard(payload);
+      setSaved(result);
       onSaved(result);
-      onClose();
+      // Number/CVV are write-only — once a save lands, clear the typed
+      // inputs and any pending "remove" flag so the fields fall back to
+      // reflecting the new saved state ("on file" / not) rather than
+      // holding onto what was just submitted.
+      setNumberInput('');
+      setCvvInput('');
+      setClearNumber(false);
+      setClearCvv(false);
     } catch (err) {
       setError(errorMessage(err, "Couldn't save — try again."));
     } finally {
@@ -293,17 +309,17 @@ export function PaymentCardEditor({
             </div>
             <div className="wallet-editor__row">
               <label className="wallet-editor__field">
-                <span>Card number{card?.hasNumber ? ' — on file' : ' (optional)'}</span>
+                <span>Card number{saved?.hasNumber ? ' — on file' : ' (optional)'}</span>
                 <input
                   value={numberInput}
                   onChange={(e) => {
                     setNumberInput(e.target.value);
                     if (e.target.value) setClearNumber(false);
                   }}
-                  placeholder={card?.hasNumber && !clearNumber ? '•••• •••• •••• ••••' : 'Enter the full number'}
+                  placeholder={saved?.hasNumber && !clearNumber ? '•••• •••• •••• ••••' : 'Enter the full number'}
                   inputMode="numeric"
                 />
-                {card?.hasNumber && !clearNumber && !numberInput && (
+                {saved?.hasNumber && !clearNumber && !numberInput && (
                   <button type="button" className="wallet-editor__manage-link" onClick={() => setClearNumber(true)}>
                     Remove number on file
                   </button>
@@ -313,22 +329,22 @@ export function PaymentCardEditor({
                   // Last 4 is never typed by hand — shown here read-only,
                   // derived from whatever number is being saved (a freshly
                   // typed one, or the one already on file).
-                  const shown = numberInput.trim() ? numberInput.replace(/\D/g, '').slice(-4) : clearNumber ? '' : card?.last4;
+                  const shown = numberInput.trim() ? numberInput.replace(/\D/g, '').slice(-4) : clearNumber ? '' : saved?.last4;
                   return shown ? <div className="wallet-editor__hint">Shows as last 4: {shown}</div> : null;
                 })()}
               </label>
               <label className="wallet-editor__field">
-                <span>CVV{card?.hasCvv ? ' — on file' : ' (optional)'}</span>
+                <span>CVV{saved?.hasCvv ? ' — on file' : ' (optional)'}</span>
                 <input
                   value={cvvInput}
                   onChange={(e) => {
                     setCvvInput(e.target.value.replace(/\D/g, '').slice(0, 4));
                     if (e.target.value) setClearCvv(false);
                   }}
-                  placeholder={card?.hasCvv && !clearCvv ? '•••' : 'Enter CVV'}
+                  placeholder={saved?.hasCvv && !clearCvv ? '•••' : 'Enter CVV'}
                   inputMode="numeric"
                 />
-                {card?.hasCvv && !clearCvv && !cvvInput && (
+                {saved?.hasCvv && !clearCvv && !cvvInput && (
                   <button type="button" className="wallet-editor__manage-link" onClick={() => setClearCvv(true)}>
                     Remove CVV on file
                   </button>
@@ -367,12 +383,13 @@ export function PaymentCardEditor({
           </div>
 
           <div className="wallet-editor__subsection">
+            <div className="wallet-editor__subsection-title">Rewards</div>
             <label className="wallet-editor__checkbox-field">
               <input type="checkbox" checked={rewardWorthy} onChange={(e) => setRewardWorthy(e.target.checked)} />
               <span>This card earns rewards</span>
             </label>
             {rewardWorthy && (
-              <label className="wallet-editor__field" style={{ marginTop: 4 }}>
+              <label className="wallet-editor__field">
                 <span>Rewards card</span>
                 <select value={rewardsChoice} onChange={(e) => setRewardsChoice(e.target.value)}>
                   <option value="new">+ Create a new Rewards card</option>
@@ -391,20 +408,54 @@ export function PaymentCardEditor({
             )}
           </div>
 
+          <div className="wallet-editor__subsection">
+            <div className="wallet-editor__subsection-title">Details</div>
+            {saved ? (
+              <>
+                <div className="wallet-editor__hint" style={{ marginBottom: 2 }}>
+                  Anything else worth its own labeled field — member ID #, a phone number to report it lost,
+                  whatever this particular card needs.
+                </div>
+                <VaultFactsTable
+                  facts={facts}
+                  onAdd={(label, value) => {
+                    api.createPaymentCardFact(saved.id, label, value).then((f) => setFacts((prev) => [...prev, f]));
+                  }}
+                  onUpdate={(fact, patch) => {
+                    api.updatePaymentCardFact(fact.id, patch).then((f) => setFacts((prev) => prev.map((x) => (x.id === f.id ? f : x))));
+                  }}
+                  onDelete={(fact) => {
+                    api.deletePaymentCardFact(fact.id).then(() => setFacts((prev) => prev.filter((x) => x.id !== fact.id)));
+                  }}
+                  onReorder={(orderedIds) => {
+                    const byId = new Map(facts.map((f) => [f.id, f]));
+                    setFacts(orderedIds.map((id, i) => ({ ...byId.get(id)!, position: i })));
+                    api.reorderPaymentCardFacts(saved.id, orderedIds);
+                  }}
+                />
+              </>
+            ) : (
+              <div className="wallet-editor__hint">Save the card below to start adding structured details.</div>
+            )}
+          </div>
+
           <label className="wallet-editor__field">
             <span>Notes (optional)</span>
             <textarea value={form.notes} onChange={(e) => set('notes', e.target.value)} placeholder="Anything else worth remembering about this card." rows={3} />
           </label>
 
           {error && <div className="wallet-editor__error">{error}</div>}
+
+          <div className="modal__actions" style={{ paddingTop: 0 }}>
+            <button type="button" className="btn" onClick={handleSave} disabled={saving}>
+              {saving ? 'Saving…' : saved ? 'Save changes' : 'Save & continue'}
+            </button>
+          </div>
         </div>
 
         <div className="modal__actions">
           <button type="button" className="btn btn--ghost" onClick={onClose}>
-            Cancel
-          </button>
-          <button type="button" className="btn" onClick={handleSave} disabled={saving}>
-            {saving ? 'Saving…' : 'Save'}
+            {saved ? 'Done' : 'Cancel'}
           </button>
         </div>
       </div>
