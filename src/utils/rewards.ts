@@ -25,19 +25,49 @@ export function defaultFlatRateCard(cards: RewardsCard[]): RewardsCard | null {
   return active.reduce((best, c) => (c.baseRate > best.baseRate ? c : best));
 }
 
-/** Cards worth actually carrying right now: anything Mike has manually
- * flagged "always carry," the single default flat-rate card (see
- * defaultFlatRateCard — it's his everyday fallback, so it belongs in the
- * physical wallet regardless of quarter), plus any card whose rotating
- * bonus is active today. This is the deliberately honest version of "the
- * few cards that cover all my bases" — curated flags plus real dates and
- * one computed default, not an optimization over spend Mike never tracked
- * (quarterly caps are explicitly ignored, per his own call). */
+// The three everyday categories Mike actually swipes many times a month
+// and wants an answer for every time — as opposed to STAPLE_CATEGORIES
+// below, which is the broader list the reference table shows. Only these
+// three drive which cards make it into the physical wallet by default.
+export const MAJOR_CATEGORIES = ['Dining', 'Gas', 'Groceries'];
+
+/** Cards worth actually carrying, as few as possible: the single default
+ * flat-rate card (the floor — see defaultFlatRateCard) always makes the
+ * list, since it's the fallback for everything else. On top of that, only
+ * the single best card for each of the 3 major categories gets added —
+ * and only when it actually beats the default; if nothing beats 2%, the
+ * default already has it covered and no extra card is worth carrying for
+ * it. One card winning two categories (a card at 5% on both Dining and
+ * Gas this quarter, say) only gets added once. Beyond the 3 majors, any
+ * card with its own currently-active rotating bonus that beats the
+ * default also earns a slot — Mike's own "if another category pops up,
+ * we can consider it" case. A manual "Always Carry" flag is a deliberate
+ * override on top of all of this (perks/points reasons the cashback math
+ * alone wouldn't capture), never a replacement for it. */
 export function cardsToCarry(cards: RewardsCard[]): RewardsCard[] {
-  const flat = defaultFlatRateCard(cards);
-  return cards.filter(
-    (c) => c.active && (c.alwaysCarry || c.id === flat?.id || c.bonuses.some((b) => b.kind === 'rotating' && isBonusActiveToday(b)))
-  );
+  const active = cards.filter((c) => c.active);
+  const flat = defaultFlatRateCard(active);
+  if (!flat) return [];
+  const floor = flat.baseRate;
+
+  const keep = new Map<string, RewardsCard>();
+  keep.set(flat.id, flat);
+
+  for (const category of MAJOR_CATEGORIES) {
+    const best = bestCardForCategory(active, category);
+    if (best && best.rate > floor) keep.set(best.card.id, best.card);
+  }
+
+  for (const c of active) {
+    const worthwhileRotatingBonus = c.bonuses.some((b) => b.kind === 'rotating' && isBonusActiveToday(b) && b.rate > floor);
+    if (worthwhileRotatingBonus) keep.set(c.id, c);
+  }
+
+  for (const c of active) {
+    if (c.alwaysCarry) keep.set(c.id, c);
+  }
+
+  return Array.from(keep.values());
 }
 
 // The everyday categories worth always showing a "best card" answer for,

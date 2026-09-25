@@ -6,7 +6,7 @@ import { RewardsCardTile } from './RewardsCardTile';
 import { RewardsCardDetail } from './RewardsCardDetail';
 import { RewardsCardEditor } from './RewardsCardEditor';
 import { ConfirmModal } from './ConfirmModal';
-import { cardsToCarry, cardsNeedingQuarterUpdate, everydayCategories, bestCardForCategory, findBestCardsFor, describeRotatingWindow, type RewardsMatch } from '../utils/rewards';
+import { cardsToCarry, cardsNeedingQuarterUpdate, everydayCategories, bestCardForCategory, defaultFlatRateCard, findBestCardsFor, describeRotatingWindow, type RewardsMatch } from '../utils/rewards';
 
 const QUICK_CHIPS = ['Dining', 'Gas', 'Groceries', 'Travel', 'Drugstores', 'Streaming'];
 
@@ -83,12 +83,17 @@ export function RewardsPanel() {
   const activeCards = useMemo(() => (cards ?? []).filter((c) => c.active), [cards]);
   const carry = useMemo(() => cardsToCarry(activeCards), [activeCards]);
   const needsUpdate = useMemo(() => cardsNeedingQuarterUpdate(activeCards), [activeCards]);
+  // Only worth a row here when it actually beats the default flat-rate
+  // card's own rate — the default already covers every category at that
+  // floor (2% on Wells Fargo Active Cash, say), so a category where
+  // nothing beats it isn't an answer worth surfacing, it's just noise.
+  const floorRate = useMemo(() => defaultFlatRateCard(activeCards)?.baseRate ?? 0, [activeCards]);
   const categoryBests = useMemo(
     () =>
       everydayCategories(activeCards)
         .map((category) => ({ category, match: bestCardForCategory(activeCards, category) }))
-        .filter((row): row is { category: string; match: RewardsMatch } => !!row.match),
-    [activeCards]
+        .filter((row): row is { category: string; match: RewardsMatch } => !!row.match && row.match.rate > floorRate),
+    [activeCards, floorRate]
   );
   const findResults = useMemo(() => findBestCardsFor(activeCards, findQuery), [activeCards, findQuery]);
 
@@ -146,9 +151,13 @@ export function RewardsPanel() {
           </div>
 
           <div className="wallet-page__section">
-            <div className="wallet-page__section-title">Best card by category</div>
+            <div className="wallet-page__section-title">Worth switching for</div>
             {categoryBests.length === 0 ? (
-              <div className="empty-state">Add a card's base rate to see category recommendations.</div>
+              <div className="empty-state">
+                {floorRate > 0
+                  ? `Nothing beats your ${floorRate}% default right now — every category's covered by whatever's in your wallet already.`
+                  : "Add a card's base rate to see category recommendations."}
+              </div>
             ) : (
               <ul className="rewards-find__results">
                 {categoryBests.map(({ category, match }) => (
