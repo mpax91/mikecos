@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
-import type { RewardsCard } from '../api/types';
+import type { RewardsCard, RewardsMerchant } from '../api/types';
 import { RewardsCardTile } from './RewardsCardTile';
 import { RewardsCardDetail } from './RewardsCardDetail';
 import { RewardsCardEditor } from './RewardsCardEditor';
@@ -14,6 +14,9 @@ import {
   bestCardForCategory,
   defaultFlatRateCard,
   findBestCardsFor,
+  findRelevantPerks,
+  findMatchingOffers,
+  resolveMerchant,
   onlineEligibleCards,
   describeRotatingWindow,
   type RewardsMatch,
@@ -48,9 +51,15 @@ export function RewardsPanel() {
   const [deleting, setDeleting] = useState<RewardsCard | null>(null);
   const [importing, setImporting] = useState(false);
   const [findQuery, setFindQuery] = useState('');
+  const [merchants, setMerchants] = useState<RewardsMerchant[]>([]);
+  const [teachOpen, setTeachOpen] = useState(false);
+  const [teachCategory, setTeachCategory] = useState('');
+  const [teachSaving, setTeachSaving] = useState(false);
+  const [teachError, setTeachError] = useState<string | null>(null);
 
   const load = useCallback(() => {
     api.listRewardsCards().then(setCards).catch((e) => setError(String(e)));
+    api.listRewardsMerchants().then(setMerchants).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -111,16 +120,63 @@ export function RewardsPanel() {
   // table: a 1% card is never the right answer when the default already
   // covers everything at 2%, so it's just noise in a ranked list.
   const findResults = useMemo(
-    () => findBestCardsFor(activeCards, findQuery).filter((m) => m.rate >= floorRate),
-    [activeCards, findQuery, floorRate]
+    () => findBestCardsFor(activeCards, findQuery, { merchants }).filter((m) => m.rate >= floorRate),
+    [activeCards, findQuery, floorRate, merchants]
   );
-  // Find deliberately doesn't try to know whether "Rhoback.com" is an
-  // online store — Mike doesn't want a maintained merchant database. So
-  // instead, whenever there's a query, it also surfaces any card whose
-  // best trick is an online-only bonus (Amazon.com, "Online Shopping,"
-  // Chase Travel) as a standing "if this is online" suggestion, regardless
-  // of whether the query text matched it directly.
+  // Whenever the raw query itself doesn't hit a category/keyword directly,
+  // the merchant directory (0058) resolves "Rhoback" -> "Online Shopping",
+  // "Fios"/"T-Mobile" -> "Phone/Wireless", etc. — shown as a small
+  // "recognized as ..." line so Mike knows why results are what they are,
+  // and it's also what a completely unrecognized query (no resolution, no
+  // direct match at all) uses to decide whether to offer the quick "teach
+  // MikeOS this merchant" add below.
+  const resolvedMerchant = useMemo(() => {
+    const raw = findQuery.trim().toLowerCase();
+    if (!raw) return null;
+    const norm = raw.replace(/[^a-z0-9]+/g, '');
+    return resolveMerchant(merchants, norm);
+  }, [findQuery, merchants]);
+  // Find deliberately doesn't try to know every e-commerce site on its
+  // own — instead, whenever there's a query, it also surfaces any card
+  // whose best trick is an online-only bonus (Amazon.com, "Online
+  // Shopping," Chase Travel) as a standing "if this is online" suggestion,
+  // regardless of whether the query text (or a merchant-directory
+  // resolution) matched it directly.
   const onlineCards = useMemo(() => onlineEligibleCards(activeCards), [activeCards]);
+  // Perks (rental car insurance, phone protection...) and manually-noted
+  // bank-portal offers (Chase/Amex/Discover) relevant to this query — see
+  // findRelevantPerks/findMatchingOffers in utils/rewards.ts. Neither
+  // depends on any bonus matching at all, since a perk or a targeted deal
+  // can be the actual answer even when no card earns extra cashback here.
+  const relevantPerks = useMemo(() => findRelevantPerks(activeCards, findQuery, merchants), [activeCards, findQuery, merchants]);
+  const matchingOffers = useMemo(() => findMatchingOffers(activeCards, findQuery), [activeCards, findQuery]);
+  // Nothing at all recognized this query — no bonus/keyword hit strong
+  // enough to beat the floor, no merchant-directory resolution, no perk,
+  // no offer. That's the moment to offer teaching MikeOS what it is,
+  // right where the gap was just felt, rather than routing Mike to a
+  // separate settings screen to add it.
+  const nothingRecognized = useMemo(
+    () => findQuery.trim().length > 0 && findResults.every((m) => m.bonus === null) && !resolvedMerchant && relevantPerks.length === 0 && matchingOffers.length === 0,
+    [findQuery, findResults, resolvedMerchant, relevantPerks, matchingOffers]
+  );
+
+  async function handleTeach() {
+    const name = findQuery.trim();
+    const category = teachCategory.trim();
+    if (!name || !category) return;
+    setTeachSaving(true);
+    setTeachError(null);
+    try {
+      const created = await api.createRewardsMerchant({ name, aliases: null, category, notes: null });
+      setMerchants((prev) => [...prev, created]);
+      setTeachOpen(false);
+      setTeachCategory('');
+    } catch (e) {
+      setTeachError(String(e));
+    } finally {
+      setTeachSaving(false);
+    }
+  }
 
   if (error) return <div className="empty-state">Couldn't load Rewards: {error}</div>;
   if (!cards) return <div className="empty-state">Loading…</div>;
@@ -244,6 +300,12 @@ export function RewardsPanel() {
             <div className="empty-state">Type what you're buying (or a merchant name), or tap a category above.</div>
           ) : (
             <>
+              {resolvedMerchant && (
+                <div className="rewards-find__recognized">
+                  Recognized "{findQuery.trim()}" as <strong>{resolvedMerchant.category}</strong>
+                </div>
+              )}
+
               <ul className="rewards-find__results">
                 {findResults.map((match) => (
                   <RewardsMatchRow
@@ -284,6 +346,79 @@ export function RewardsPanel() {
                   </ul>
                 </div>
               )}
+
+              {relevantPerks.length > 0 && (
+                <div className="rewards-find__online">
+                  <div className="rewards-find__online-title">Relevant perks (not cashback)</div>
+                  <ul className="rewards-find__results">
+                    {relevantPerks.map(({ card, perk }) => (
+                      <li key={perk.id} className="rewards-find__perk-row" onClick={() => setOpenCard(card)}>
+                        <div className="rewards-find__perk-icon">✓</div>
+                        <div>
+                          <div className="rewards-find__result-name">
+                            {perk.label} <span className="rewards-find__perk-card">— {card.nickname}</span>
+                          </div>
+                          {perk.description && <div className="rewards-find__result-reason">{perk.description}</div>}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {matchingOffers.length > 0 && (
+                <div className="rewards-find__online">
+                  <div className="rewards-find__online-title">Card offers you've noted</div>
+                  <ul className="rewards-find__results">
+                    {matchingOffers.map(({ card, offer }) => (
+                      <li key={offer.id} className="rewards-find__perk-row" onClick={() => setOpenCard(card)}>
+                        <div className="rewards-find__perk-icon">🎟</div>
+                        <div>
+                          <div className="rewards-find__result-name">
+                            {offer.merchant} <span className="rewards-find__perk-card">— {card.nickname}</span>
+                          </div>
+                          <div className="rewards-find__result-reason">
+                            {offer.description}
+                            {offer.expiresOn && ` · expires ${offer.expiresOn}`}
+                          </div>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {nothingRecognized && (
+                <div className="rewards-find__teach">
+                  {!teachOpen ? (
+                    <button type="button" className="btn btn--ghost" onClick={() => setTeachOpen(true)}>
+                      Teach MikeOS what "{findQuery.trim()}" is
+                    </button>
+                  ) : (
+                    <div className="rewards-find__teach-form">
+                      <div className="rewards-find__teach-label">
+                        "{findQuery.trim()}" is a... <span className="settings-page__section-hint" style={{ margin: 0 }}>(category name, e.g. "Online Shopping", "Phone/Wireless", "Car Rental")</span>
+                      </div>
+                      <div className="rewards-find__teach-row">
+                        <input
+                          autoFocus
+                          value={teachCategory}
+                          onChange={(e) => setTeachCategory(e.target.value)}
+                          placeholder="Category"
+                          onKeyDown={(e) => e.key === 'Enter' && handleTeach()}
+                        />
+                        <button type="button" className="btn" onClick={handleTeach} disabled={!teachCategory.trim() || teachSaving}>
+                          {teachSaving ? 'Saving…' : 'Save'}
+                        </button>
+                        <button type="button" className="btn btn--ghost" onClick={() => setTeachOpen(false)}>
+                          Cancel
+                        </button>
+                      </div>
+                      {teachError && <div className="settings-page__rrule-error">{teachError}</div>}
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           )}
         </div>
@@ -307,6 +442,7 @@ export function RewardsPanel() {
             setEditing(openCard);
             setOpenCard(null);
           }}
+          onChanged={handleSaved}
         />
       )}
 

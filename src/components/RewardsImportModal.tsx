@@ -46,8 +46,11 @@ export function RewardsImportModal({ onClose, onImported }: { onClose: () => voi
     try {
       const payload = JSON.parse(text);
       const cards = Array.isArray(payload) ? payload : payload.cards;
-      if (!Array.isArray(cards)) throw new Error('Expected a top-level "cards" array (or a bare array of cards).');
-      const res = await api.importRewardsCards({ cards });
+      const merchants = Array.isArray(payload) ? undefined : payload.merchants;
+      if (!Array.isArray(cards) && !Array.isArray(merchants)) {
+        throw new Error('Expected a top-level "cards" array, a "merchants" array, or both (or a bare array of cards).');
+      }
+      const res = await api.importRewardsCards({ cards, merchants });
       setResult(res);
       onImported();
     } catch (e) {
@@ -95,7 +98,8 @@ export function RewardsImportModal({ onClose, onImported }: { onClose: () => voi
         <div className="rewards-import__result">
           <div>
             {result.created} card{result.created === 1 ? '' : 's'} created, {result.updated} updated, {result.bonusesWritten} bonus rows written
-            {result.perksWritten > 0 ? `, ${result.perksWritten} perks written` : ''}.
+            {result.perksWritten > 0 ? `, ${result.perksWritten} perks written` : ''}
+            {result.merchantsWritten > 0 ? `, ${result.merchantsWritten} merchants written` : ''}.
           </div>
           {result.errors.length > 0 && (
             <ul className="rewards-import__errors">

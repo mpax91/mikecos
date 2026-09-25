@@ -12342,3 +12342,95 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   font-size: 12px;
   color: var(--color-muted);
 }
+
+/* ---- Rewards Find: merchant recognition, perks, offers, teach ---- */
+
+.rewards-find__recognized {
+  font-size: 12.5px;
+  color: var(--color-muted);
+  margin-top: 12px;
+}
+
+.rewards-find__perk-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  border: var(--border-hairline);
+  border-radius: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+  background: var(--color-card-bg);
+}
+
+.rewards-find__perk-row:hover {
+  box-shadow: 0 2px 8px rgba(46, 42, 34, 0.08);
+}
+
+.rewards-find__perk-icon {
+  font-size: 14px;
+  color: var(--color-accent);
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.rewards-find__perk-card {
+  font-weight: var(--weight-regular);
+  color: var(--color-muted);
+}
+
+.rewards-find__teach {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: var(--border-hairline);
+}
+
+.rewards-find__teach-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rewards-find__teach-label {
+  font-size: 13px;
+  color: var(--color-ink);
+}
+
+.rewards-find__teach-row {
+  display: flex;
+  gap: 8px;
+}
+
+.rewards-find__teach-row input {
+  flex: 1;
+}
+
+/* ---- Rewards card detail: card offers ---- */
+
+.rewards-detail__offer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.rewards-detail__add-offer-trigger {
+  border: none;
+  background: transparent;
+  color: var(--color-accent);
+  font-size: 12.5px;
+  cursor: pointer;
+  padding: 4px 0;
+  margin-top: 4px;
+}
+
+.rewards-detail__add-offer-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.rewards-detail__add-offer-form input {
+  width: 100%;
+  box-sizing: border-box;
+}

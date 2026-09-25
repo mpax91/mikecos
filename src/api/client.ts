@@ -1,5 +1,5 @@
 import type { AuthenticationResponseJSON, PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON, RegistrationResponseJSON } from '@simplewebauthn/browser';
-import type { AuthCredentialSummary, AuthStatus, Bet, BetLeg, BetGameNote, BetPromo, BetPromoStatus, BetScheduleGame, BetTransaction, BetTransactionType, VaultEntryDetail, VaultFact, BriefingResponse, CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, CreditScoreEntry, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitDirection, HabitEvent, HabitLog, HabitSummary, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsSavedArticle, NewsSettings, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, VaultFactLabel, VaultRollupGroup, WalletCard, WalletCardFact, WalletCategory, RewardsCard, RewardsBonus, RewardsPerk, RewardsImportResult, PaymentCard, PaymentCardFact, PaymentCardSecrets, PlexLibrary, PlexItem, PlexItemDetail, PlexIssue, PlexMissingEpisode, PlexSyncChunkResult, PlexAiringCheckResult, PlexAiringScanChunkResult, WeatherResponse, WeekResponse } from './types';
+import type { AuthCredentialSummary, AuthStatus, Bet, BetLeg, BetGameNote, BetPromo, BetPromoStatus, BetScheduleGame, BetTransaction, BetTransactionType, VaultEntryDetail, VaultFact, BriefingResponse, CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, CreditScoreEntry, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitDirection, HabitEvent, HabitLog, HabitSummary, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsSavedArticle, NewsSettings, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, VaultFactLabel, VaultRollupGroup, WalletCard, WalletCardFact, WalletCategory, RewardsCard, RewardsBonus, RewardsPerk, RewardsImportResult, RewardsMerchant, RewardsOffer, PaymentCard, PaymentCardFact, PaymentCardSecrets, PlexLibrary, PlexItem, PlexItemDetail, PlexIssue, PlexMissingEpisode, PlexSyncChunkResult, PlexAiringCheckResult, PlexAiringScanChunkResult, WeatherResponse, WeekResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -937,9 +937,9 @@ export const api = {
 
   deleteRewardsCard: (id: string) => request<{ ok: true }>(`/api/rewards/cards/${id}`, { method: 'DELETE' }),
 
-  exportRewardsCards: () => request<{ generatedAt: string; cards: unknown[] }>('/api/rewards/export'),
+  exportRewardsCards: () => request<{ generatedAt: string; cards: unknown[]; merchants: unknown[] }>('/api/rewards/export'),
 
-  importRewardsCards: (payload: { cards: unknown[] }) =>
+  importRewardsCards: (payload: { cards?: unknown[]; merchants?: unknown[] }) =>
     request<RewardsImportResult>('/api/rewards/import', { method: 'POST', body: JSON.stringify(payload) }),
 
   createRewardsBonus: (cardId: string, params: Pick<RewardsBonus, 'category' | 'rate' | 'kind' | 'startsOn' | 'endsOn' | 'keywords' | 'onlineOnly'>) =>
@@ -950,13 +950,28 @@ export const api = {
 
   deleteRewardsBonus: (id: string) => request<{ ok: true }>(`/api/rewards/bonuses/${id}`, { method: 'DELETE' }),
 
-  createRewardsPerk: (cardId: string, params: Pick<RewardsPerk, 'label' | 'description'>) =>
+  createRewardsPerk: (cardId: string, params: Pick<RewardsPerk, 'label' | 'description' | 'category'>) =>
     request<RewardsPerk>(`/api/rewards/cards/${cardId}/perks`, { method: 'POST', body: JSON.stringify(params) }),
 
-  updateRewardsPerk: (id: string, patch: Partial<Pick<RewardsPerk, 'label' | 'description'>>) =>
+  updateRewardsPerk: (id: string, patch: Partial<Pick<RewardsPerk, 'label' | 'description' | 'category'>>) =>
     request<RewardsPerk>(`/api/rewards/perks/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
 
   deleteRewardsPerk: (id: string) => request<{ ok: true }>(`/api/rewards/perks/${id}`, { method: 'DELETE' }),
+
+  listRewardsMerchants: () => request<RewardsMerchant[]>('/api/rewards/merchants'),
+
+  createRewardsMerchant: (params: Pick<RewardsMerchant, 'name' | 'aliases' | 'category' | 'notes'>) =>
+    request<RewardsMerchant>('/api/rewards/merchants', { method: 'POST', body: JSON.stringify(params) }),
+
+  updateRewardsMerchant: (id: string, patch: Partial<Pick<RewardsMerchant, 'name' | 'aliases' | 'category' | 'notes'>>) =>
+    request<RewardsMerchant>(`/api/rewards/merchants/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+
+  deleteRewardsMerchant: (id: string) => request<{ ok: true }>(`/api/rewards/merchants/${id}`, { method: 'DELETE' }),
+
+  createRewardsOffer: (cardId: string, params: Pick<RewardsOffer, 'merchant' | 'description' | 'expiresOn'>) =>
+    request<RewardsOffer>(`/api/rewards/cards/${cardId}/offers`, { method: 'POST', body: JSON.stringify(params) }),
+
+  deleteRewardsOffer: (id: string) => request<{ ok: true }>(`/api/rewards/offers/${id}`, { method: 'DELETE' }),
 
   // ---- Payment Cards (0049_payment_cards.sql) — Wallet Phase 3, a secure
   // credit/debit vault. Its own table family (see that migration for why),

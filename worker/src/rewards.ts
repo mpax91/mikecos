@@ -46,7 +46,27 @@ interface RewardsPerkRow {
   card_id: string;
   label: string;
   description: string | null;
+  category: string | null;
   sort_order: number;
+  created_at: string;
+}
+
+interface RewardsMerchantRow {
+  id: string;
+  name: string;
+  aliases: string | null;
+  category: string;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface RewardsOfferRow {
+  id: string;
+  card_id: string;
+  merchant: string;
+  description: string;
+  expires_on: string | null;
   created_at: string;
 }
 
@@ -66,10 +86,18 @@ function bonusJson(row: RewardsBonusRow) {
 }
 
 function perkJson(row: RewardsPerkRow) {
-  return { id: row.id, cardId: row.card_id, label: row.label, description: row.description, sortOrder: row.sort_order };
+  return { id: row.id, cardId: row.card_id, label: row.label, description: row.description, category: row.category, sortOrder: row.sort_order };
 }
 
-function cardJson(row: RewardsCardRow, bonuses: RewardsBonusRow[], perks: RewardsPerkRow[]) {
+function merchantJson(row: RewardsMerchantRow) {
+  return { id: row.id, name: row.name, aliases: row.aliases, category: row.category, notes: row.notes };
+}
+
+function offerJson(row: RewardsOfferRow) {
+  return { id: row.id, cardId: row.card_id, merchant: row.merchant, description: row.description, expiresOn: row.expires_on };
+}
+
+function cardJson(row: RewardsCardRow, bonuses: RewardsBonusRow[], perks: RewardsPerkRow[], offers: RewardsOfferRow[] = []) {
   return {
     id: row.id,
     nickname: row.nickname,
@@ -89,22 +117,25 @@ function cardJson(row: RewardsCardRow, bonuses: RewardsBonusRow[], perks: Reward
     updatedAt: row.updated_at,
     bonuses: bonuses.filter((b) => b.card_id === row.id).sort((a, b) => a.sort_order - b.sort_order).map(bonusJson),
     perks: perks.filter((p) => p.card_id === row.id).sort((a, b) => a.sort_order - b.sort_order).map(perkJson),
+    offers: offers.filter((o) => o.card_id === row.id).map(offerJson),
   };
 }
 
-// GET /api/rewards/cards — every card with its bonuses/perks nested, one
-// round trip. Fine at this app's scale (~15 cards, a handful of rows each)
-// and matches how Wallet's own page fetches everything once and works
-// client-side from there.
+// GET /api/rewards/cards — every card with its bonuses/perks/offers
+// nested, one round trip. Fine at this app's scale (~15 cards, a handful
+// of rows each) and matches how Wallet's own page fetches everything once
+// and works client-side from there.
 rewardsRouter.get('/cards', async (c) => {
-  const [cards, bonuses, perks] = await Promise.all([
+  const [cards, bonuses, perks, offers] = await Promise.all([
     c.env.DB.prepare('SELECT * FROM rewards_cards ORDER BY sort_order ASC, nickname COLLATE NOCASE ASC').all<RewardsCardRow>(),
     c.env.DB.prepare('SELECT * FROM rewards_bonuses').all<RewardsBonusRow>(),
     c.env.DB.prepare('SELECT * FROM rewards_perks').all<RewardsPerkRow>(),
+    c.env.DB.prepare("SELECT * FROM rewards_offers WHERE expires_on IS NULL OR expires_on >= date('now')").all<RewardsOfferRow>(),
   ]);
   const bonusRows = bonuses.results ?? [];
   const perkRows = perks.results ?? [];
-  return c.json((cards.results ?? []).map((row) => cardJson(row, bonusRows, perkRows)));
+  const offerRows = offers.results ?? [];
+  return c.json((cards.results ?? []).map((row) => cardJson(row, bonusRows, perkRows, offerRows)));
 });
 
 rewardsRouter.post('/cards', async (c) => {
@@ -204,12 +235,13 @@ rewardsRouter.patch('/cards/:id', async (c) => {
     await c.env.DB.prepare(`UPDATE rewards_cards SET ${fields.join(', ')} WHERE id = ?`).bind(...values).run();
   }
 
-  const [row, bonuses, perks] = await Promise.all([
+  const [row, bonuses, perks, offers] = await Promise.all([
     c.env.DB.prepare('SELECT * FROM rewards_cards WHERE id = ?').bind(id).first<RewardsCardRow>(),
     c.env.DB.prepare('SELECT * FROM rewards_bonuses WHERE card_id = ?').bind(id).all<RewardsBonusRow>(),
     c.env.DB.prepare('SELECT * FROM rewards_perks WHERE card_id = ?').bind(id).all<RewardsPerkRow>(),
+    c.env.DB.prepare("SELECT * FROM rewards_offers WHERE card_id = ? AND (expires_on IS NULL OR expires_on >= date('now'))").bind(id).all<RewardsOfferRow>(),
   ]);
-  return c.json(cardJson(row!, bonuses.results ?? [], perks.results ?? []));
+  return c.json(cardJson(row!, bonuses.results ?? [], perks.results ?? [], offers.results ?? []));
 });
 
 // Explicit child cleanup rather than relying on `ON DELETE CASCADE` being
@@ -224,6 +256,7 @@ rewardsRouter.delete('/cards/:id', async (c) => {
   await c.env.DB.batch([
     c.env.DB.prepare('DELETE FROM rewards_bonuses WHERE card_id = ?').bind(id),
     c.env.DB.prepare('DELETE FROM rewards_perks WHERE card_id = ?').bind(id),
+    c.env.DB.prepare('DELETE FROM rewards_offers WHERE card_id = ?').bind(id),
     c.env.DB.prepare('DELETE FROM rewards_cards WHERE id = ?').bind(id),
   ]);
   return c.json({ ok: true });
@@ -326,14 +359,14 @@ rewardsRouter.post('/cards/:cardId/perks', async (c) => {
   const cardId = c.req.param('cardId');
   const card = await c.env.DB.prepare('SELECT id FROM rewards_cards WHERE id = ?').bind(cardId).first();
   if (!card) return c.json({ error: 'card not found' }, 404);
-  const body = await c.req.json<{ label?: string; description?: string | null }>();
+  const body = await c.req.json<{ label?: string; description?: string | null; category?: string | null }>();
   const label = body.label?.trim();
   if (!label) return c.json({ error: 'label is required' }, 400);
 
   const maxPos = await c.env.DB.prepare('SELECT COALESCE(MAX(sort_order), -1) as m FROM rewards_perks WHERE card_id = ?').bind(cardId).first<{ m: number }>();
   const id = uid();
-  await c.env.DB.prepare('INSERT INTO rewards_perks (id, card_id, label, description, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-    .bind(id, cardId, label, body.description?.trim() || null, (maxPos?.m ?? -1) + 1, now())
+  await c.env.DB.prepare('INSERT INTO rewards_perks (id, card_id, label, description, category, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .bind(id, cardId, label, body.description?.trim() || null, body.category?.trim() || null, (maxPos?.m ?? -1) + 1, now())
     .run();
   await c.env.DB.prepare('UPDATE rewards_cards SET updated_at = ? WHERE id = ?').bind(now(), cardId).run();
 
@@ -345,7 +378,7 @@ rewardsRouter.patch('/perks/:id', async (c) => {
   const id = c.req.param('id');
   const existing = await c.env.DB.prepare('SELECT * FROM rewards_perks WHERE id = ?').bind(id).first<RewardsPerkRow>();
   if (!existing) return c.json({ error: 'not found' }, 404);
-  const body = await c.req.json<Partial<{ label: string; description: string | null }>>();
+  const body = await c.req.json<Partial<{ label: string; description: string | null; category: string | null }>>();
 
   const fields: string[] = [];
   const values: unknown[] = [];
@@ -358,6 +391,10 @@ rewardsRouter.patch('/perks/:id', async (c) => {
   if (body.description !== undefined) {
     fields.push('description = ?');
     values.push(body.description?.trim() || null);
+  }
+  if (body.category !== undefined) {
+    fields.push('category = ?');
+    values.push(body.category?.trim() || null);
   }
   if (fields.length) {
     values.push(id);
@@ -407,6 +444,7 @@ interface ImportBonus {
 interface ImportPerk {
   label: string;
   description?: string | null;
+  category?: string | null;
 }
 interface ImportCard {
   importKey: string;
@@ -417,19 +455,29 @@ interface ImportCard {
   bonuses?: ImportBonus[];
   perks?: ImportPerk[];
 }
+interface ImportMerchant {
+  name: string;
+  aliases?: string | null;
+  category: string;
+  notes?: string | null;
+}
 
 // GET /api/rewards/export — the starting context for that quarterly
 // project: every card already on file, keyed by import_key, with its
-// current bonuses/perks, so the research prompt can say "here's what's
-// currently recorded" and hand back a diff rather than starting blind. No
-// personal fields beyond last4 (useful for the project to distinguish two
-// cards from the same issuer) — nothing sensitive leaves the app either
-// way, since this only ever gets pasted into Mike's own Claude project.
+// current bonuses/perks, plus the whole merchant directory, so the
+// research prompt can say "here's what's currently recorded" and hand
+// back a diff rather than starting blind. No personal fields beyond last4
+// (useful for the project to distinguish two cards from the same issuer)
+// — nothing sensitive leaves the app either way, since this only ever
+// gets pasted into Mike's own Claude project. Offers are deliberately
+// left out — they're personalized bank-portal deals with no public page
+// to research, see 0058_rewards_merchant_intelligence.sql.
 rewardsRouter.get('/export', async (c) => {
-  const [cards, bonuses, perks] = await Promise.all([
+  const [cards, bonuses, perks, merchants] = await Promise.all([
     c.env.DB.prepare('SELECT * FROM rewards_cards WHERE active = 1 ORDER BY sort_order ASC, nickname COLLATE NOCASE ASC').all<RewardsCardRow>(),
     c.env.DB.prepare('SELECT * FROM rewards_bonuses').all<RewardsBonusRow>(),
     c.env.DB.prepare('SELECT * FROM rewards_perks').all<RewardsPerkRow>(),
+    c.env.DB.prepare('SELECT * FROM rewards_merchants ORDER BY name COLLATE NOCASE ASC').all<RewardsMerchantRow>(),
   ]);
   const bonusRows = bonuses.results ?? [];
   const perkRows = perks.results ?? [];
@@ -447,20 +495,23 @@ rewardsRouter.get('/export', async (c) => {
     perks: perkRows
       .filter((p) => p.card_id === row.id)
       .sort((a, b) => a.sort_order - b.sort_order)
-      .map((p) => ({ label: p.label, description: p.description })),
+      .map((p) => ({ label: p.label, description: p.description, category: p.category })),
   }));
-  return c.json({ generatedAt: now(), cards: out });
+  const merchantsOut = (merchants.results ?? []).map((m) => ({ name: m.name, aliases: m.aliases, category: m.category, notes: m.notes }));
+  return c.json({ generatedAt: now(), cards: out, merchants: merchantsOut });
 });
 
 rewardsRouter.post('/import', async (c) => {
-  const body = await c.req.json<{ cards?: ImportCard[] }>().catch(() => ({}) as { cards?: ImportCard[] });
-  const cards = body.cards;
-  if (!Array.isArray(cards) || cards.length === 0) return c.json({ error: 'cards array is required' }, 400);
+  const body = await c.req.json<{ cards?: ImportCard[]; merchants?: ImportMerchant[] }>().catch(() => ({}) as { cards?: ImportCard[]; merchants?: ImportMerchant[] });
+  const cards = body.cards ?? [];
+  const merchants = body.merchants ?? [];
+  if (cards.length === 0 && merchants.length === 0) return c.json({ error: 'a cards and/or merchants array is required' }, 400);
 
   let created = 0;
   let updated = 0;
   let bonusesWritten = 0;
   let perksWritten = 0;
+  let merchantsWritten = 0;
   const errors: string[] = [];
   const seenKeys: string[] = [];
 
@@ -518,16 +569,132 @@ rewardsRouter.post('/import', async (c) => {
       await c.env.DB.prepare('DELETE FROM rewards_perks WHERE card_id = ?').bind(cardId).run();
       for (const [pi, p] of card.perks.entries()) {
         if (!p.label?.trim()) continue;
-        await c.env.DB.prepare('INSERT INTO rewards_perks (id, card_id, label, description, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-          .bind(uid(), cardId, p.label.trim(), p.description?.trim() || null, pi, ts)
+        await c.env.DB.prepare('INSERT INTO rewards_perks (id, card_id, label, description, category, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+          .bind(uid(), cardId, p.label.trim(), p.description?.trim() || null, p.category?.trim() || null, pi, ts)
           .run();
         perksWritten++;
       }
     }
   }
 
-  const { results: allImported } = await c.env.DB.prepare('SELECT nickname, import_key FROM rewards_cards WHERE import_key IS NOT NULL').all<{ nickname: string; import_key: string }>();
-  const unmatched = (allImported ?? []).filter((r) => !seenKeys.includes(r.import_key)).map((r) => ({ nickname: r.nickname, importKey: r.import_key }));
+  // Merchants upsert by name (case-insensitive) rather than a dedicated
+  // key — there's no "rename" concern the way there is for a card (Mike
+  // wouldn't rename "Rhoback" to something else), so the display name
+  // itself is a stable enough identity.
+  for (const m of merchants) {
+    const name = m.name?.trim();
+    const category = m.category?.trim();
+    if (!name || !category) {
+      errors.push(`merchants: "${m.name ?? '(unnamed)'}" needs both a name and a category — skipped.`);
+      continue;
+    }
+    const ts = now();
+    const existingMerchant = await c.env.DB.prepare('SELECT id FROM rewards_merchants WHERE name = ? COLLATE NOCASE').bind(name).first<{ id: string }>();
+    if (existingMerchant) {
+      await c.env.DB.prepare('UPDATE rewards_merchants SET aliases = ?, category = ?, notes = ?, updated_at = ? WHERE id = ?')
+        .bind(m.aliases?.trim() || null, category, m.notes?.trim() || null, ts, existingMerchant.id)
+        .run();
+    } else {
+      await c.env.DB.prepare('INSERT INTO rewards_merchants (id, name, aliases, category, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .bind(uid(), name, m.aliases?.trim() || null, category, m.notes?.trim() || null, ts, ts)
+        .run();
+    }
+    merchantsWritten++;
+  }
 
-  return c.json({ created, updated, bonusesWritten, perksWritten, errors, unmatchedExisting: unmatched });
+  let unmatched: { nickname: string; importKey: string }[] = [];
+  if (cards.length > 0) {
+    const { results: allImported } = await c.env.DB.prepare('SELECT nickname, import_key FROM rewards_cards WHERE import_key IS NOT NULL').all<{ nickname: string; import_key: string }>();
+    unmatched = (allImported ?? []).filter((r) => !seenKeys.includes(r.import_key)).map((r) => ({ nickname: r.nickname, importKey: r.import_key }));
+  }
+
+  return c.json({ created, updated, bonusesWritten, perksWritten, merchantsWritten, errors, unmatchedExisting: unmatched });
+});
+
+// ---- Merchants (name/alias -> category directory, 0058) ----
+
+rewardsRouter.get('/merchants', async (c) => {
+  const { results } = await c.env.DB.prepare('SELECT * FROM rewards_merchants ORDER BY name COLLATE NOCASE ASC').all<RewardsMerchantRow>();
+  return c.json((results ?? []).map(merchantJson));
+});
+
+rewardsRouter.post('/merchants', async (c) => {
+  const body = await c.req.json<{ name?: string; aliases?: string | null; category?: string; notes?: string | null }>();
+  const name = body.name?.trim();
+  const category = body.category?.trim();
+  if (!name) return c.json({ error: 'name is required' }, 400);
+  if (!category) return c.json({ error: 'category is required' }, 400);
+  const id = uid();
+  const ts = now();
+  await c.env.DB.prepare('INSERT INTO rewards_merchants (id, name, aliases, category, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .bind(id, name, body.aliases?.trim() || null, category, body.notes?.trim() || null, ts, ts)
+    .run();
+  const row = await c.env.DB.prepare('SELECT * FROM rewards_merchants WHERE id = ?').bind(id).first<RewardsMerchantRow>();
+  return c.json(merchantJson(row!), 201);
+});
+
+rewardsRouter.patch('/merchants/:id', async (c) => {
+  const id = c.req.param('id');
+  const existing = await c.env.DB.prepare('SELECT id FROM rewards_merchants WHERE id = ?').bind(id).first();
+  if (!existing) return c.json({ error: 'not found' }, 404);
+  const body = await c.req.json<Partial<{ name: string; aliases: string | null; category: string; notes: string | null }>>();
+
+  const fields: string[] = [];
+  const values: unknown[] = [];
+  if (body.name !== undefined) {
+    if (!body.name.trim()) return c.json({ error: 'name cannot be empty' }, 400);
+    fields.push('name = ?');
+    values.push(body.name.trim());
+  }
+  if (body.aliases !== undefined) {
+    fields.push('aliases = ?');
+    values.push(body.aliases?.trim() || null);
+  }
+  if (body.category !== undefined) {
+    if (!body.category.trim()) return c.json({ error: 'category cannot be empty' }, 400);
+    fields.push('category = ?');
+    values.push(body.category.trim());
+  }
+  if (body.notes !== undefined) {
+    fields.push('notes = ?');
+    values.push(body.notes?.trim() || null);
+  }
+  if (fields.length) {
+    fields.push('updated_at = ?');
+    values.push(now(), id);
+    await c.env.DB.prepare(`UPDATE rewards_merchants SET ${fields.join(', ')} WHERE id = ?`).bind(...values).run();
+  }
+  const row = await c.env.DB.prepare('SELECT * FROM rewards_merchants WHERE id = ?').bind(id).first<RewardsMerchantRow>();
+  return c.json(merchantJson(row!));
+});
+
+rewardsRouter.delete('/merchants/:id', async (c) => {
+  const id = c.req.param('id');
+  await c.env.DB.prepare('DELETE FROM rewards_merchants WHERE id = ?').bind(id).run();
+  return c.json({ ok: true });
+});
+
+// ---- Offers (manual, per-card bank-portal deals, 0058) ----
+
+rewardsRouter.post('/cards/:cardId/offers', async (c) => {
+  const cardId = c.req.param('cardId');
+  const card = await c.env.DB.prepare('SELECT id FROM rewards_cards WHERE id = ?').bind(cardId).first();
+  if (!card) return c.json({ error: 'card not found' }, 404);
+  const body = await c.req.json<{ merchant?: string; description?: string; expiresOn?: string | null }>();
+  const merchant = body.merchant?.trim();
+  const description = body.description?.trim();
+  if (!merchant) return c.json({ error: 'merchant is required' }, 400);
+  if (!description) return c.json({ error: 'description is required' }, 400);
+  const id = uid();
+  await c.env.DB.prepare('INSERT INTO rewards_offers (id, card_id, merchant, description, expires_on, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+    .bind(id, cardId, merchant, description, body.expiresOn || null, now())
+    .run();
+  const row = await c.env.DB.prepare('SELECT * FROM rewards_offers WHERE id = ?').bind(id).first<RewardsOfferRow>();
+  return c.json(offerJson(row!), 201);
+});
+
+rewardsRouter.delete('/offers/:id', async (c) => {
+  const id = c.req.param('id');
+  await c.env.DB.prepare('DELETE FROM rewards_offers WHERE id = ?').bind(id).run();
+  return c.json({ ok: true });
 });

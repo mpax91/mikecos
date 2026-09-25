@@ -1,3 +1,5 @@
+import { useState } from 'react';
+import { api } from '../api/client';
 import type { RewardsCard } from '../api/types';
 import { isBonusActiveToday, describeRotatingWindow } from '../utils/rewards';
 
@@ -18,13 +20,59 @@ function shortRotatingLabel(startsOn: string | null, endsOn: string | null): str
  * rotating bonuses are called out above the rest of the rate table so "is
  * this card doing anything special this quarter" never requires reading
  * dates. */
-export function RewardsCardDetail({ card, onClose, onEdit }: { card: RewardsCard; onClose: () => void; onEdit: () => void }) {
+export function RewardsCardDetail({
+  card,
+  onClose,
+  onEdit,
+  onChanged,
+}: {
+  card: RewardsCard;
+  onClose: () => void;
+  onEdit: () => void;
+  /** Called after an offer is added/removed here, so the parent's card
+   * list (and Find's "card offers you've noted" section) stays in sync
+   * without needing a full reload. Optional since not every caller cares. */
+  onChanged?: (card: RewardsCard) => void;
+}) {
+  const [offers, setOffers] = useState(card.offers);
+  const [addingOffer, setAddingOffer] = useState(false);
+  const [offerMerchant, setOfferMerchant] = useState('');
+  const [offerDescription, setOfferDescription] = useState('');
+  const [offerExpires, setOfferExpires] = useState('');
+  const [offerSaving, setOfferSaving] = useState(false);
+
   const sortedBonuses = [...card.bonuses].sort((a, b) => {
     const aActive = isBonusActiveToday(a);
     const bActive = isBonusActiveToday(b);
     if (aActive !== bActive) return aActive ? -1 : 1;
     return b.rate - a.rate;
   });
+
+  async function addOffer() {
+    const merchant = offerMerchant.trim();
+    const description = offerDescription.trim();
+    if (!merchant || !description) return;
+    setOfferSaving(true);
+    try {
+      const offer = await api.createRewardsOffer(card.id, { merchant, description, expiresOn: offerExpires || null });
+      const next = [...offers, offer];
+      setOffers(next);
+      onChanged?.({ ...card, offers: next });
+      setOfferMerchant('');
+      setOfferDescription('');
+      setOfferExpires('');
+      setAddingOffer(false);
+    } finally {
+      setOfferSaving(false);
+    }
+  }
+
+  async function removeOffer(id: string) {
+    const next = offers.filter((o) => o.id !== id);
+    setOffers(next);
+    onChanged?.({ ...card, offers: next });
+    await api.deleteRewardsOffer(id);
+  }
 
   return (
     <div className="wallet-barcode-view" onClick={onClose}>
@@ -77,6 +125,44 @@ export function RewardsCardDetail({ card, onClose, onEdit }: { card: RewardsCard
             </ul>
           </div>
         )}
+
+        <div className="rewards-detail__perks">
+          <div className="rewards-detail__perks-title">Card offers you've noted</div>
+          {offers.length > 0 && (
+            <ul className="rewards-detail__perks-list">
+              {offers.map((o) => (
+                <li key={o.id} className="rewards-detail__offer-row">
+                  <span>
+                    <strong>{o.merchant}</strong> — {o.description}
+                    {o.expiresOn && ` (expires ${o.expiresOn})`}
+                  </span>
+                  <button type="button" className="wallet-editor__row-item-remove" onClick={() => removeOffer(o.id)} aria-label="Remove">
+                    ×
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {!addingOffer ? (
+            <button type="button" className="rewards-detail__add-offer-trigger" onClick={() => setAddingOffer(true)}>
+              + Note a portal offer (Chase Offers, Amex Offers, etc.)
+            </button>
+          ) : (
+            <div className="rewards-detail__add-offer-form" onClick={(e) => e.stopPropagation()}>
+              <input value={offerMerchant} onChange={(e) => setOfferMerchant(e.target.value)} placeholder="Merchant (e.g. Grubhub)" />
+              <input value={offerDescription} onChange={(e) => setOfferDescription(e.target.value)} placeholder="Offer (e.g. $10 off $25)" />
+              <input type="date" value={offerExpires} onChange={(e) => setOfferExpires(e.target.value)} />
+              <div className="modal__actions">
+                <button type="button" className="btn btn--ghost" onClick={() => setAddingOffer(false)}>
+                  Cancel
+                </button>
+                <button type="button" className="btn" onClick={addOffer} disabled={offerSaving || !offerMerchant.trim() || !offerDescription.trim()}>
+                  {offerSaving ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
 
         {card.annualFee != null && (
           <div className="wallet-barcode-view__extra">

@@ -446,7 +446,37 @@ export interface RewardsPerk {
   cardId: string;
   label: string;
   description: string | null;
+  /** Free text spend category this perk applies to (e.g. "Car Rental",
+   * "Phone/Wireless") — matched the same substring way as a bonus's own
+   * category, so Find can surface "use this card, it has rental car
+   * insurance" even with no cashback category involved. Null for a perk
+   * with no natural spend category (an intro APR, purchase protection
+   * that applies everywhere). */
+  category: string | null;
   sortOrder: number;
+}
+
+/** A name/alias -> spend category directory (0058_rewards_merchant_intelligence.sql)
+ * — what lets Find understand "Rhoback" means Online Shopping or "Fios"
+ * means Phone/Wireless without Mike typing keywords onto every bonus
+ * himself. */
+export interface RewardsMerchant {
+  id: string;
+  name: string;
+  aliases: string | null;
+  category: string;
+  notes: string | null;
+}
+
+/** A personalized, time-limited bank-portal deal (Chase Offers, Amex
+ * Offers, Discover Deals) — manually noted, since these sit behind Mike's
+ * own login and no research project can discover them. */
+export interface RewardsOffer {
+  id: string;
+  cardId: string;
+  merchant: string;
+  description: string;
+  expiresOn: string | null;
 }
 
 export interface RewardsCard {
@@ -471,6 +501,7 @@ export interface RewardsCard {
   updatedAt: string;
   bonuses: RewardsBonus[];
   perks: RewardsPerk[];
+  offers: RewardsOffer[];
 }
 
 export interface RewardsImportResult {
@@ -478,6 +509,7 @@ export interface RewardsImportResult {
   updated: number;
   bonusesWritten: number;
   perksWritten: number;
+  merchantsWritten: number;
   errors: string[];
   unmatchedExisting: { nickname: string; importKey: string }[];
 }

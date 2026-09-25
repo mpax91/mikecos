@@ -365,6 +365,7 @@ function BonusesEditor({ card, onChanged }: { card: RewardsCard; onChanged: (car
 function PerksEditor({ card, onChanged }: { card: RewardsCard; onChanged: (card: RewardsCard) => void }) {
   const [label, setLabel] = useState('');
   const [description, setDescription] = useState('');
+  const [category, setCategory] = useState('');
   const [saving, setSaving] = useState(false);
 
   async function addPerk() {
@@ -372,10 +373,11 @@ function PerksEditor({ card, onChanged }: { card: RewardsCard; onChanged: (card:
     if (!l) return;
     setSaving(true);
     try {
-      const perk = await api.createRewardsPerk(card.id, { label: l, description: description.trim() || null });
+      const perk = await api.createRewardsPerk(card.id, { label: l, description: description.trim() || null, category: category.trim() || null });
       onChanged({ ...card, perks: [...card.perks, perk] });
       setLabel('');
       setDescription('');
+      setCategory('');
     } finally {
       setSaving(false);
     }
@@ -397,6 +399,7 @@ function PerksEditor({ card, onChanged }: { card: RewardsCard; onChanged: (card:
               <span className="wallet-editor__row-item-main">
                 <strong>{p.label}</strong>
                 {p.description ? ` — ${p.description}` : ''}
+                {p.category ? ` (${p.category})` : ''}
               </span>
               <button type="button" className="wallet-editor__row-item-remove" onClick={() => removePerk(p.id)} aria-label="Remove">
                 ×
@@ -408,6 +411,12 @@ function PerksEditor({ card, onChanged }: { card: RewardsCard; onChanged: (card:
       <div className="wallet-editor__add-row">
         <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Perk (e.g. Cell phone protection)" style={{ flex: 1 }} />
         <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Detail (optional)" style={{ flex: 2 }} />
+        <input
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+          placeholder="Spend category (optional, e.g. Phone/Wireless)"
+          style={{ flex: 1 }}
+        />
         <button type="button" className="btn btn--ghost" onClick={addPerk} disabled={saving || !label.trim()}>
           Add
         </button>

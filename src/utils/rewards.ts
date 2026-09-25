@@ -1,4 +1,4 @@
-import type { RewardsBonus, RewardsCard } from '../api/types';
+import type { RewardsBonus, RewardsCard, RewardsMerchant, RewardsOffer, RewardsPerk } from '../api/types';
 
 /** A rotating bonus counts as "active" only when today falls inside its own
  * start/end dates — no separate quarter/calendar concept anywhere else in
@@ -209,12 +209,36 @@ export interface FindOptions {
    * the category table leave this off, since both are meant to answer
    * "what's my best card for X," online or not. */
   excludeOnlineOnly?: boolean;
+  /** The merchant directory (0058_rewards_merchant_intelligence.sql) —
+   * when a query doesn't hit a category/keyword directly, this resolves
+   * "Rhoback" to "Online Shopping" (etc.) first, then matches again
+   * against the resolved category, so an unrecognized merchant name isn't
+   * a dead end. Omit to skip resolution entirely (bonusMatchesQuery's
+   * plain category/keyword match only). */
+  merchants?: RewardsMerchant[];
 }
 
-/** Ranks every active card for a free-text query — a category ("dining")
- * or a merchant ("Home Depot", "Rhoback.com"). A card's best applicable
- * rate wins: an active bonus that matches (by category text or a stored
- * merchant keyword — see bonusMatchesQuery) beats the card's flat base
+/** Looks up a free-text query against the merchant directory — name or
+ * any comma-separated alias, matched loosely the same way keyword
+ * matching is (alphanumeric-only, either-direction containment), so
+ * "Rhoback.com" matches a merchant stored as "Rhoback" and vice versa.
+ * Returns the first match; the directory is small enough (personal scale)
+ * that "first" is fine rather than needing a best-match ranking. */
+export function resolveMerchant(merchants: RewardsMerchant[] | undefined, normQuery: string): RewardsMerchant | null {
+  if (!merchants || !normQuery) return null;
+  for (const m of merchants) {
+    const names = [m.name, ...(m.aliases ? m.aliases.split(',') : [])].map(normalizeForMatch).filter(Boolean);
+    if (names.some((n) => normQuery.includes(n) || n.includes(normQuery))) return m;
+  }
+  return null;
+}
+
+/** Ranks every active card for a free-text query — a category ("dining"),
+ * a merchant with its own keyword ("Home Depot"), or, via the merchant
+ * directory, a merchant MikeOS has never been told about directly
+ * ("Rhoback" resolving to "Online Shopping"). A card's best applicable
+ * rate wins: an active bonus that matches (by category text, a stored
+ * keyword, or the resolved merchant category) beats the card's flat base
  * rate. A card with no match at all still shows up at its base rate, so
  * the ranking always surfaces the honest fallback (e.g. a flat 2% card)
  * rather than only cards with a specific bonus. */
@@ -222,12 +246,17 @@ export function findBestCardsFor(cards: RewardsCard[], query: string, opts: Find
   const rawQuery = query.trim().toLowerCase();
   if (!rawQuery) return [];
   const normQuery = normalizeForMatch(rawQuery);
+  const merchant = resolveMerchant(opts.merchants, normQuery);
+  const resolvedCategory = merchant ? merchant.category.trim().toLowerCase() : null;
   const matches: RewardsMatch[] = [];
   for (const card of cards) {
     if (!card.active) continue;
-    const applicable = card.bonuses.filter(
-      (b) => isBonusActiveToday(b) && bonusMatchesQuery(b, rawQuery, normQuery) && !(opts.excludeOnlineOnly && b.onlineOnly)
-    );
+    const applicable = card.bonuses.filter((b) => {
+      if (!isBonusActiveToday(b)) return false;
+      if (opts.excludeOnlineOnly && b.onlineOnly) return false;
+      if (bonusMatchesQuery(b, rawQuery, normQuery)) return true;
+      return resolvedCategory !== null && b.category.toLowerCase().includes(resolvedCategory);
+    });
     if (applicable.length > 0) {
       const best = applicable.reduce((a, b) => (b.rate > a.rate ? b : a));
       matches.push({ card, bonus: best, rate: best.rate });
@@ -245,13 +274,70 @@ export function bestCardForCategory(cards: RewardsCard[], category: string, opts
   return findBestCardsFor(cards, category, opts)[0] ?? null;
 }
 
+export interface RewardsPerkMatch {
+  card: RewardsCard;
+  perk: RewardsPerk;
+}
+
+/** Perks (fixed benefits, not a cashback rate) relevant to a free-text
+ * query — a card with rental car damage-waiver coverage surfacing for
+ * "car rental" or "hertz" (via the merchant directory), a cell-phone
+ * protection perk surfacing for "t-mobile" or "fios", regardless of
+ * whether any bonus category also matched. Matched against the perk's own
+ * `category` field (see RewardsPerk.category) the same substring way a
+ * bonus category is, using both the raw query and the merchant-resolved
+ * category so an unrecognized merchant name still finds its perks. */
+export function findRelevantPerks(cards: RewardsCard[], query: string, merchants?: RewardsMerchant[]): RewardsPerkMatch[] {
+  const rawQuery = query.trim().toLowerCase();
+  if (!rawQuery) return [];
+  const normQuery = normalizeForMatch(rawQuery);
+  const merchant = resolveMerchant(merchants, normQuery);
+  const resolvedCategory = merchant ? merchant.category.trim().toLowerCase() : null;
+  const out: RewardsPerkMatch[] = [];
+  for (const card of cards) {
+    if (!card.active) continue;
+    for (const perk of card.perks) {
+      if (!perk.category) continue;
+      const cat = perk.category.toLowerCase();
+      if (cat.includes(rawQuery) || rawQuery.includes(cat) || (resolvedCategory !== null && cat.includes(resolvedCategory))) {
+        out.push({ card, perk });
+      }
+    }
+  }
+  return out;
+}
+
+export interface RewardsOfferMatch {
+  card: RewardsCard;
+  offer: RewardsOffer;
+}
+
+/** Manually-noted bank-portal offers (Chase Offers/Amex Offers/Discover
+ * Deals — see RewardsOffer) whose merchant matches a free-text query.
+ * Plain keyword-style matching, same normalizeForMatch treatment as
+ * everything else here — these are personal one-off notes, not something
+ * a merchant-category resolution needs to reach into. */
+export function findMatchingOffers(cards: RewardsCard[], query: string): RewardsOfferMatch[] {
+  const normQuery = normalizeForMatch(query);
+  if (!normQuery) return [];
+  const out: RewardsOfferMatch[] = [];
+  for (const card of cards) {
+    if (!card.active) continue;
+    for (const offer of card.offers) {
+      const normMerchant = normalizeForMatch(offer.merchant);
+      if (normMerchant.includes(normQuery) || normQuery.includes(normMerchant)) out.push({ card, offer });
+    }
+  }
+  return out;
+}
+
 /** Cards whose best applicable answer right now is specifically an
  * online-only bonus (Amazon.com, "Online Shopping," Chase Travel) — Find's
- * "if this is an online purchase" callout. Deliberately not merchant-
- * specific (Mike doesn't want to maintain a database of every e-commerce
- * site): whenever the query doesn't hit a more specific match, this is the
- * generic fallback for "well, it's probably online, so use this instead
- * of your everyday default." */
+ * "if this is an online purchase" callout. Not merchant-specific on its
+ * own; whenever the query doesn't hit a more specific match (directly, or
+ * via the merchant directory resolving it to an online category first),
+ * this is the generic fallback for "well, it's probably online, so use
+ * this instead of your everyday default." */
 export function onlineEligibleCards(cards: RewardsCard[]): RewardsMatch[] {
   const matches: RewardsMatch[] = [];
   for (const card of cards) {

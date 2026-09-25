@@ -64,10 +64,41 @@ MikeOS's `/api/rewards/import` endpoint is what actually applies the result.
    that lets an update land on the existing card instead of creating a
    duplicate. Only invent a new key for a card genuinely new to the list.
 
-7. **Flag anything uncertain in plain conversation before finalizing the
-   JSON** — a foreign transaction fee you couldn't confirm, an annual fee that
-   seems to have changed, a card that may have been discontinued or replaced by
-   the issuer. Don't silently guess; ask or note it and let Mike decide.
+7. **Tag every perk with the spend category it applies to**, not just a label —
+   a rental-car damage waiver gets `"category": "Car Rental"`, cell phone
+   protection gets `"category": "Phone/Wireless"`, baggage delay/loss insurance
+   gets `"category": "Airfare"`, streaming credits get `"category": "Streaming
+   Services"`. This is what lets Find surface "use this card, it has rental car
+   insurance" for a query like "hertz" or "car rental" even when no card earns
+   extra cashback on it — a perk with no real spend category (an intro APR,
+   general purchase protection) just leaves `category` out.
+
+8. **Extend the merchant directory** with every brand/merchant name you had to
+   research or recognize along the way that Mike might plausibly type into
+   Find — not just the ones tied to a specific card's bonus. This is the actual
+   point of this step: MikeOS's Find only knows a category exists if either a
+   bonus row or this directory says so, so "Rhoback is an online clothing
+   brand," "Fios and T-Mobile are both Phone/Wireless," "YouTube Premium is a
+   Streaming Service," "Hertz/Avis/Enterprise are Car Rental," "Delta/United/
+   generic 'airfare' are Airfare" all belong here, tied to whatever category
+   name a card in the file actually uses (or a sensible category name even if
+   no card currently covers it — better to have the recognition ready for when
+   one does). Check MikeOS's export for the merchant directory already on file
+   (returned alongside cards) and extend it rather than starting over; reuse an
+   existing category name exactly when one already fits.
+
+9. **Card-linked portal offers (Chase Offers, Amex Offers, Discover Deals —
+   "$10 off $25 at Grubhub") are out of scope for this project.** They're
+   personalized to Mike's account and change weekly, sitting behind his own
+   login on each issuer's site — there's no public page to research them from,
+   so don't try to guess or fabricate one. Mike adds these himself, one at a
+   time, right in MikeOS (the card detail view, or Find's own prompt) the
+   moment he happens to notice one.
+
+10. **Flag anything uncertain in plain conversation before finalizing the
+    JSON** — a foreign transaction fee you couldn't confirm, an annual fee that
+    seems to have changed, a card that may have been discontinued or replaced
+    by the issuer. Don't silently guess; ask or note it and let Mike decide.
 
 ## Output format
 
@@ -102,7 +133,7 @@ exactly like this:
       "annualFee": 0,
       "bonuses": [],
       "perks": [
-        { "label": "Cell phone protection", "description": "Up to $600, when the bill is paid with this card" }
+        { "label": "Cell phone protection", "description": "Up to $600, when the bill is paid with this card", "category": "Phone/Wireless" }
       ]
     },
     {
@@ -115,7 +146,31 @@ exactly like this:
         { "category": "Restaurants & PayPal", "rate": 5, "kind": "rotating", "startsOn": "2026-10-01", "endsOn": "2026-12-31", "onlineOnly": false, "keywords": "restaurants, dining, paypal" }
       ],
       "perks": []
+    },
+    {
+      "importKey": "chase-sapphire-preferred",
+      "nickname": "Chase Sapphire Preferred",
+      "network": "Visa",
+      "baseRate": 1,
+      "annualFee": 95,
+      "bonuses": [
+        { "category": "Dining", "rate": 3, "kind": "fixed", "onlineOnly": false, "keywords": "dining, restaurants, takeout" },
+        { "category": "Travel", "rate": 2, "kind": "fixed", "onlineOnly": false, "keywords": "airfare, hotels, car rental, travel" }
+      ],
+      "perks": [
+        { "label": "Trip cancellation/interruption insurance", "category": "Airfare" },
+        { "label": "Baggage delay insurance", "category": "Airfare" },
+        { "label": "Auto rental collision damage waiver", "category": "Car Rental" }
+      ]
     }
+  ],
+  "merchants": [
+    { "name": "Rhoback", "aliases": "rhoback.com", "category": "Online Shopping" },
+    { "name": "Fios", "aliases": "verizon fios", "category": "Phone/Wireless" },
+    { "name": "T-Mobile", "aliases": "t mobile, tmobile", "category": "Phone/Wireless" },
+    { "name": "YouTube Premium", "aliases": "youtube, youtube tv", "category": "Streaming Services" },
+    { "name": "Hertz", "aliases": "avis, enterprise, budget, national car rental", "category": "Car Rental" },
+    { "name": "Grubhub", "aliases": "seamless", "category": "Dining" }
   ]
 }
 ```
@@ -127,13 +182,22 @@ Field notes:
   dates; a fixed row should omit them entirely.
 - `rate` is a plain number, e.g. `5` for 5%, not `0.05` or `"5%"`.
 - `bonuses` and `perks` can both be empty arrays — never omit them.
+- A perk's `category` is optional — include it whenever the perk maps to a
+  real spend category (see step 7); leave it out for a perk that doesn't.
 - Everything under a card is the **complete current picture** for that card,
   not a diff — MikeOS replaces all of that card's bonus/perk rows with exactly
   what's in this file each time it's imported, so leave out a category here and
   it's gone from MikeOS after import, even if a past import had it.
+- `merchants` is additive, not a diff either, but per-entry: each name is
+  upserted (matched case-insensitively), so it's fine — expected, even — for
+  most of the list to repeat what MikeOS already has on file plus whatever new
+  ones this run turned up. It's a top-level array, a sibling of `cards`, not
+  nested inside any one card.
 - Never include `last4`, `alwaysCarry`, `active`, `color`, `notes`, or any field
   about how Mike personally uses the card — those are his own curation inside
   MikeOS and this file never touches them, whether or not they're included.
+- Never include an `offers` field — see step 9; that's Mike's own manual entry
+  in the app, not something this file carries.
 
 ## Cadence
 
