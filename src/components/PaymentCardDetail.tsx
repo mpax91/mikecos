@@ -1,13 +1,14 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import type { PaymentCard } from '../api/types';
+import type { PaymentCard, PaymentCardFact } from '../api/types';
 import { CardImageLightbox } from './CardImageLightbox';
 
 /** View modal for a single Payment Card. The number and CVV are never
  * fetched until Mike explicitly taps "Reveal" — GET /cards/:id/reveal is
  * the only call in the app that ever returns them decrypted, and even
  * then only into this component's own state, never logged or cached
- * beyond this view being open. */
+ * beyond this view being open. Details (structured facts) renders the
+ * same collapsible way WalletBarcodeView already does. */
 export function PaymentCardDetail({ card, onClose, onEdit }: { card: PaymentCard; onClose: () => void; onEdit: () => void }) {
   const [revealed, setRevealed] = useState<{ number: string | null; cvv: string | null } | null>(null);
   const [revealing, setRevealing] = useState(false);
@@ -15,6 +16,21 @@ export function PaymentCardDetail({ card, onClose, onEdit }: { card: PaymentCard
   const [shown, setShown] = useState(false);
   const [copied, setCopied] = useState<'number' | 'cvv' | null>(null);
   const [lightboxSide, setLightboxSide] = useState<'front' | 'back' | null>(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [facts, setFacts] = useState<PaymentCardFact[]>([]);
+  const [copiedFactId, setCopiedFactId] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.listPaymentCardFacts(card.id).then(setFacts).catch(() => {});
+  }, [card.id]);
+
+  function copyFact(fact: PaymentCardFact) {
+    if (!fact.value) return;
+    navigator.clipboard.writeText(fact.value).then(() => {
+      setCopiedFactId(fact.id);
+      setTimeout(() => setCopiedFactId((id) => (id === fact.id ? null : id)), 1300);
+    });
+  }
 
   async function reveal() {
     if (revealed) {
@@ -115,6 +131,31 @@ export function PaymentCardDetail({ card, onClose, onEdit }: { card: PaymentCard
               <div className="wallet-barcode-view__extra-row">
                 <span>Billing ZIP</span>
                 <span>{card.billingZip}</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {facts.length > 0 && (
+          <div className="wallet-barcode-view__details">
+            <button type="button" className="wallet-barcode-view__details-toggle" onClick={() => setDetailsOpen((v) => !v)}>
+              {detailsOpen ? '▾' : '▸'} Details
+            </button>
+            {detailsOpen && (
+              <div className="wallet-barcode-view__details-rows">
+                {facts.map((f) => (
+                  <div key={f.id} className="wallet-barcode-view__details-row">
+                    <span>{f.label}</span>
+                    <span>
+                      {f.value || '—'}
+                      {f.value && (
+                        <button type="button" className="wallet-barcode-view__details-copy" onClick={() => copyFact(f)} aria-label={`Copy ${f.label}`}>
+                          {copiedFactId === f.id ? '✓' : '⧉'}
+                        </button>
+                      )}
+                    </span>
+                  </div>
+                ))}
               </div>
             )}
           </div>

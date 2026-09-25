@@ -11569,8 +11569,23 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 .wallet-editor__checkbox-field {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 8px;
   font-size: 13px;
+  width: fit-content;
+  padding: 8px 10px;
+  border: var(--border-hairline);
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.wallet-editor__checkbox-field input[type='checkbox'] {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  flex: none;
+  accent-color: var(--color-accent, #3B5BA9);
 }
 
 .wallet-editor__subsection {
