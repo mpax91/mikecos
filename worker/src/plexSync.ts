@@ -197,6 +197,18 @@ export async function syncPlexLibrary(env: Env): Promise<SyncResult> {
     const libraryId = lib.key;
     let itemCount = 0;
 
+    // plex_items.library_id is a foreign key into this table, so the
+    // library row has to exist before any of its items are upserted —
+    // insert/refresh it up front (item_count gets corrected below once
+    // it's known) rather than at the end of the loop like the original
+    // version did, which failed the very first item's FK check.
+    await env.DB.prepare(
+      `INSERT INTO plex_libraries (id, title, library_type, item_count, synced_at) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET title=excluded.title, library_type=excluded.library_type, synced_at=excluded.synced_at`
+    )
+      .bind(libraryId, lib.title, lib.type, 0, syncedAt)
+      .run();
+
     if (lib.type === 'show') {
       const shows = await fetchAllPaged(env, `/library/sections/${libraryId}/all`);
       const showRows = shows.map((s) => toRow(s, libraryId, null, syncedAt));
@@ -298,12 +310,10 @@ export async function syncPlexLibrary(env: Env): Promise<SyncResult> {
       itemCount += rows.length;
     }
 
-    await env.DB.prepare(
-      `INSERT INTO plex_libraries (id, title, library_type, item_count, synced_at) VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT(id) DO UPDATE SET title=excluded.title, library_type=excluded.library_type, item_count=excluded.item_count, synced_at=excluded.synced_at`
-    )
-      .bind(libraryId, lib.title, lib.type, itemCount, syncedAt)
-      .run();
+    // Now that every item under this library has synced successfully, go
+    // back and fill in the real item_count the upfront insert above
+    // stubbed with 0.
+    await env.DB.prepare(`UPDATE plex_libraries SET item_count = ? WHERE id = ?`).bind(itemCount, libraryId).run();
 
     results.push({ id: libraryId, title: lib.title, itemCount });
     totalItems += itemCount;
