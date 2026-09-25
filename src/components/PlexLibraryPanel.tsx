@@ -87,13 +87,27 @@ export function PlexLibraryPanel() {
     setBreadcrumb(breadcrumb.slice(0, index + 1));
   }
 
+  // A large library syncs in several bounded chunks rather than one big
+  // pass (see worker/src/plexSync.ts) — poll until the endpoint reports
+  // done, showing progress in between so a long sync doesn't look stuck.
   async function handleSync() {
     setSyncing(true);
-    setSyncMessage(null);
+    setSyncMessage('Starting sync…');
     setError(null);
     try {
-      const result = await api.syncPlexLibrary();
-      setSyncMessage(`Synced ${result.totalItems.toLocaleString()} items across ${result.libraries.length} librar${result.libraries.length === 1 ? 'y' : 'ies'}.`);
+      for (;;) {
+        const chunk = await api.syncPlexLibraryChunk();
+        if (chunk.done) {
+          const total = chunk.summary?.totalItems ?? chunk.progress.itemsSoFar;
+          const libCount = chunk.summary?.libraries.length ?? chunk.progress.librariesTotal;
+          setSyncMessage(`Synced ${total.toLocaleString()} items across ${libCount} librar${libCount === 1 ? 'y' : 'ies'}.`);
+          break;
+        }
+        const { library, librariesCompleted, librariesTotal, itemsSoFar } = chunk.progress;
+        setSyncMessage(
+          `Syncing… library ${librariesCompleted + 1} of ${librariesTotal}${library ? ` (${library})` : ''} — ${itemsSoFar.toLocaleString()} items so far`
+        );
+      }
       loadLibraries();
       if (libraryId) api.listPlexItems({ libraryId, parentId: parentId ?? undefined }).then(setItems).catch(() => {});
     } catch (e) {

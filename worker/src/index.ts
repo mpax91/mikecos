@@ -43,7 +43,6 @@ import { walletRouter } from './wallet';
 import { rewardsRouter } from './rewards';
 import { paymentCardsRouter } from './paymentCards';
 import { plexRouter } from './plex';
-import { syncPlexLibrary } from './plexSync';
 import { runPlexAiringCheck } from './plexAiring';
 
 const app = new Hono<{ Bindings: Env }>();
@@ -6816,19 +6815,43 @@ app.delete('/api/bet-game-notes/:id', async (c) => {
 
 app.get('/api/health', (c) => c.json({ ok: true, time: now() }));
 
+// This Worker's own public URL — needed so the nightly cron can re-invoke
+// itself below. Update this if the Worker is ever renamed/redeployed
+// under a different name.
+const WORKER_SELF_URL = 'https://mikeos-api.michaelpalladino.workers.dev';
+
 // Nightly Cron Trigger (see wrangler.toml's [triggers] block) — re-syncs
 // the Plex library mirror, then runs the airing check against the freshly
 // synced data (so a show downloaded yesterday doesn't get flagged as
 // still missing just because the sync hadn't caught up yet). Both steps
-// are individually safe to fail — either can throw (Plex/TVMaze down,
-// PLEX_SERVER_URL not yet configured) without taking the Worker itself
-// down; there's no HTTP response to break, only next run's data staying
-// stale, which the next successful run fixes.
+// are individually safe to fail — either can throw/error (Plex/TVMaze
+// down, PLEX_SERVER_URL not yet configured) without taking the Worker
+// itself down; there's no HTTP response to break, only next run's data
+// staying stale, which the next successful run fixes.
+//
+// The library sync is chunked (see plexSync.ts's header comment) because
+// a full pass over a large library can exceed Cloudflare's per-invocation
+// subrequest cap. A plain in-process loop calling the sync function
+// repeatedly wouldn't help — every fetch/D1 call in that loop would still
+// count against this ONE scheduled invocation's budget. Instead this
+// self-fetches its own /api/plex/sync endpoint in a loop: each self-fetch
+// is a genuinely separate Worker invocation with its own fresh budget,
+// and only costs this invocation a single subrequest per iteration.
+const MAX_SYNC_CHUNKS = 200; // safety valve — real libraries finish in far fewer chunks than this
+
 export default {
   fetch: app.fetch,
   async scheduled(_event: ScheduledController, env: Env) {
     try {
-      await syncPlexLibrary(env);
+      for (let i = 0; i < MAX_SYNC_CHUNKS; i++) {
+        const res = await fetch(`${WORKER_SELF_URL}/api/plex/sync`, { method: 'POST' });
+        if (!res.ok) {
+          console.error('Plex library sync chunk failed', res.status, await res.text());
+          break;
+        }
+        const chunk = await res.json<{ done: boolean }>();
+        if (chunk.done) break;
+      }
     } catch (err) {
       console.error('Plex library sync failed', err);
     }

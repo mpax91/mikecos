@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import type { Env } from './types';
-import { syncPlexLibrary, PlexNotConfiguredError } from './plexSync';
+import { runPlexSyncChunk, PlexNotConfiguredError } from './plexSync';
 import { runPlexAiringCheck } from './plexAiring';
 
 /** Plex library mirror — browse/search the synced catalogue, surface
@@ -140,12 +140,15 @@ plexRouter.get('/thumb/:id', async (c) => {
   return new Response(res.body, { headers: { 'content-type': res.headers.get('content-type') ?? 'image/jpeg', 'cache-control': 'public, max-age=86400' } });
 });
 
-// POST /sync — manual "sync now", same job the nightly Cron Trigger runs
-// (see index.ts's `scheduled` export). Can take a while on a very large
-// library; the button that calls this should say so.
+// POST /sync — one bounded chunk of the library sync, same job the
+// nightly Cron Trigger runs (see index.ts's `scheduled` export). Chunked
+// because a very large library's full sync can exceed Cloudflare's per-
+// invocation subrequest cap in one shot — see plexSync.ts's header
+// comment. The caller (the "Sync now" button, or the cron's own self-
+// fetch loop) keeps calling this until the response says `done`.
 plexRouter.post('/sync', async (c) => {
   try {
-    const result = await syncPlexLibrary(c.env);
+    const result = await runPlexSyncChunk(c.env);
     return c.json(result);
   } catch (err) {
     if (err instanceof PlexNotConfiguredError) return c.json({ error: err.message }, 503);

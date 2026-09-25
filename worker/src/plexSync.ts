@@ -4,7 +4,21 @@ import type { Env } from './types';
  * catalogue into D1 — see migrations/0051_plex.sql for why this is a
  * synced copy rather than live-querying Plex on every page load. Plex's
  * API is JSON when asked nicely (`Accept: application/json`); every
- * response is wrapped in a top-level `MediaContainer`. */
+ * response is wrapped in a top-level `MediaContainer`.
+ *
+ * The sync is CHUNKED and RESUMABLE (migrations/0052_plex_sync_state.sql
+ * holds the one row of progress state) rather than one big pass over the
+ * whole library in a single call. Cloudflare caps how many subrequests
+ * (outbound fetches + D1 calls) a single Worker invocation can make —
+ * Mike's library is large enough (many shows, each needing its own
+ * `/allLeaves` fetch plus several D1 upsert batches) that doing it all in
+ * one invocation hit that cap ("Too many subrequests by single Worker
+ * invocation"). Each call to runPlexSyncChunk() does a bounded amount of
+ * work and saves its place; the caller (the manual "Sync now" button
+ * polling in a loop, or the nightly cron self-fetching its own endpoint —
+ * see index.ts) keeps calling until it reports done. Each such call is a
+ * genuinely separate Worker invocation, so it gets its own fresh
+ * subrequest budget. */
 
 export class PlexNotConfiguredError extends Error {
   constructor() {
@@ -134,13 +148,58 @@ function toRow(m: PlexMetadata, libraryId: string, parentId: string | null, sync
   };
 }
 
+// Derives one row per distinct season (for a show's episodes) or album
+// (for an artist's tracks) seen among a batch of leaf items — Plex's
+// `/allLeaves` never hands seasons/albums back directly, but every leaf
+// names its own container via parentRatingKey/parentTitle/parentIndex.
+function deriveContainerRows(
+  leaves: PlexMetadata[],
+  libraryId: string,
+  containerType: 'season' | 'album',
+  parentId: string,
+  syncedAt: string
+): ItemRow[] {
+  const seen = new Map<string, ItemRow>();
+  for (const leaf of leaves) {
+    if (leaf.parentRatingKey && !seen.has(leaf.parentRatingKey)) {
+      seen.set(leaf.parentRatingKey, {
+        id: leaf.parentRatingKey,
+        library_id: libraryId,
+        parent_id: parentId,
+        type: containerType,
+        title: leaf.parentTitle ?? (containerType === 'season' ? `Season ${leaf.parentIndex ?? '?'}` : 'Unknown album'),
+        sort_title: null,
+        year: containerType === 'album' ? leaf.year ?? null : null,
+        season_number: containerType === 'season' ? leaf.parentIndex ?? null : null,
+        episode_number: null,
+        guid: null,
+        tvdb_id: null,
+        summary: null,
+        genres: null,
+        studio: null,
+        thumb_key: null,
+        file_path: null,
+        duration_ms: null,
+        added_at: null,
+        plex_updated_at: null,
+        synced_at: syncedAt,
+      });
+    }
+  }
+  return [...seen.values()];
+}
+
 const UPSERT_SQL = `INSERT INTO plex_items (id, library_id, parent_id, type, title, sort_title, year, season_number, episode_number, guid, tvdb_id, summary, genres, studio, thumb_key, file_path, duration_ms, added_at, plex_updated_at, synced_at)
   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT(id) DO UPDATE SET library_id=excluded.library_id, parent_id=excluded.parent_id, type=excluded.type, title=excluded.title, sort_title=excluded.sort_title, year=excluded.year, season_number=excluded.season_number, episode_number=excluded.episode_number, guid=excluded.guid, tvdb_id=excluded.tvdb_id, summary=excluded.summary, genres=excluded.genres, studio=excluded.studio, thumb_key=excluded.thumb_key, file_path=excluded.file_path, duration_ms=excluded.duration_ms, added_at=excluded.added_at, plex_updated_at=excluded.plex_updated_at, synced_at=excluded.synced_at`;
 
 const BATCH_SIZE = 50; // D1's own per-batch statement ceiling has headroom above this; kept modest so one slow batch doesn't dominate a sync
 
-async function upsertRows(env: Env, rows: ItemRow[]): Promise<void> {
+// Upserts `rows` and returns how many D1 `.batch()` calls it made — each
+// one counts as a subrequest against the invocation's budget, so the
+// caller can track spend against SUBREQUEST_BUDGET_PER_CHUNK.
+async function upsertRows(env: Env, rows: ItemRow[]): Promise<number> {
+  let batches = 0;
   for (let i = 0; i < rows.length; i += BATCH_SIZE) {
     const chunk = rows.slice(i, i + BATCH_SIZE);
     await env.DB.batch(
@@ -151,19 +210,213 @@ async function upsertRows(env: Env, rows: ItemRow[]): Promise<void> {
         )
       )
     );
+    batches++;
   }
+  return batches;
 }
 
 const PAGE_SIZE = 200;
 
-// Fetches every item under a section's flat `/all` (movies, or any
-// section type MikeOS doesn't have special hierarchy handling for), one
-// page at a time.
-async function fetchAllPaged(env: Env, path: string): Promise<PlexMetadata[]> {
+// ---- Resumable state (migrations/0052_plex_sync_state.sql, singleton row id=1) ----
+
+interface QueuedLibrary {
+  key: string;
+  title: string;
+  type: string;
+}
+
+interface FinishedLibrary {
+  id: string;
+  title: string;
+  itemCount: number;
+}
+
+interface SyncState {
+  status: 'running' | 'done' | 'error';
+  queue: QueuedLibrary[]; // libraries not yet started
+  current: QueuedLibrary | null; // library in progress, if any
+  currentItemCount: number;
+  pendingParents: string[] | null; // show/artist ratingKeys still needing an /allLeaves fetch, for a show/artist library
+  flatStart: number | null; // pagination cursor for a movie-shaped library
+  librariesTotal: number;
+  results: FinishedLibrary[];
+  errorMessage?: string;
+}
+
+async function loadState(env: Env): Promise<SyncState | null> {
+  const row = await env.DB.prepare('SELECT state_json FROM plex_sync_state WHERE id = 1').first<{ state_json: string }>();
+  return row ? (JSON.parse(row.state_json) as SyncState) : null;
+}
+
+async function saveState(env: Env, state: SyncState): Promise<void> {
+  const now = new Date().toISOString();
+  await env.DB.prepare(
+    `INSERT INTO plex_sync_state (id, state_json, updated_at) VALUES (1, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET state_json = excluded.state_json, updated_at = excluded.updated_at`
+  )
+    .bind(JSON.stringify(state), now)
+    .run();
+}
+
+export interface SyncResult {
+  libraries: FinishedLibrary[];
+  totalItems: number;
+}
+
+export interface SyncChunkResult {
+  done: boolean;
+  progress: { library: string | null; librariesCompleted: number; librariesTotal: number; itemsSoFar: number };
+  summary?: SyncResult;
+}
+
+// Stay well under Cloudflare's per-invocation subrequest cap (1000 on
+// Workers Paid, 50 on the free plan) while still making real progress
+// each chunk — counts every Plex fetch and every D1 `.batch()` call.
+const SUBREQUEST_BUDGET_PER_CHUNK = 150;
+
+/** Does one bounded slice of the full Plex library sync and returns
+ * whether it's done. Safe to call repeatedly (including as the very
+ * first call, which initializes fresh state) until `done` comes back
+ * true — see the file header for why this is chunked at all. */
+export async function runPlexSyncChunk(env: Env): Promise<SyncChunkResult> {
+  let state = await loadState(env);
+  const syncedAt = new Date().toISOString();
+  let spent = 0; // subrequests made so far this chunk
+
+  if (!state || state.status !== 'running') {
+    const sections = await plexFetch<{ key: string; title: string; type: string }>(env, '/library/sections');
+    spent++;
+    const libs = (sections.MediaContainer.Directory ?? []).map((l) => ({ key: l.key, title: l.title, type: l.type }));
+    state = {
+      status: 'running',
+      queue: libs,
+      current: null,
+      currentItemCount: 0,
+      pendingParents: null,
+      flatStart: null,
+      librariesTotal: libs.length,
+      results: [],
+    };
+  }
+
+  while (spent < SUBREQUEST_BUDGET_PER_CHUNK) {
+    if (!state.current) {
+      const next = state.queue.shift();
+      if (!next) {
+        state.status = 'done';
+        await saveState(env, state);
+        return {
+          done: true,
+          progress: { library: null, librariesCompleted: state.results.length, librariesTotal: state.librariesTotal, itemsSoFar: totalItems(state) },
+          summary: { libraries: state.results, totalItems: totalItems(state) },
+        };
+      }
+      state.current = next;
+      state.currentItemCount = 0;
+
+      // plex_items.library_id is a foreign key into plex_libraries, so
+      // this row has to exist before any item under it is upserted.
+      await env.DB.prepare(
+        `INSERT INTO plex_libraries (id, title, library_type, item_count, synced_at) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET title=excluded.title, library_type=excluded.library_type, synced_at=excluded.synced_at`
+      )
+        .bind(next.key, next.title, next.type, 0, syncedAt)
+        .run();
+      spent++;
+
+      if (next.type === 'show' || next.type === 'artist') {
+        const parents = await fetchAllPagedCounted(env, `/library/sections/${next.key}/all`, () => spent++);
+        const rows = parents.map((p) => toRow(p, next.key, null, syncedAt));
+        spent += await upsertRows(env, rows);
+        state.currentItemCount += rows.length;
+        state.pendingParents = parents.map((p) => p.ratingKey);
+        state.flatStart = null;
+      } else {
+        state.pendingParents = null;
+        state.flatStart = 0;
+      }
+    }
+
+    const current = state.current;
+
+    if (current.type === 'show' || current.type === 'artist') {
+      if (!state.pendingParents || state.pendingParents.length === 0) {
+        await finishCurrentLibrary(env, state);
+        continue;
+      }
+      const ratingKey = state.pendingParents.shift()!;
+      const leaves = await plexFetch<PlexMetadata>(env, `/library/metadata/${ratingKey}/allLeaves`);
+      spent++;
+      const children = leaves.MediaContainer.Metadata ?? [];
+      if (children.length > 0) {
+        const containerType = current.type === 'show' ? 'season' : 'album';
+        const containerRows = deriveContainerRows(children, current.key, containerType, ratingKey, syncedAt);
+        spent += await upsertRows(env, containerRows);
+        const childRows = children.map((ch) => toRow(ch, current.key, ch.parentRatingKey ?? null, syncedAt));
+        spent += await upsertRows(env, childRows);
+        state.currentItemCount += containerRows.length + childRows.length;
+      }
+    } else {
+      // Movies, and anything else Plex reports (photo libraries, or a
+      // podcast/audiobook section under whatever type string this Plex
+      // version uses) — synced flat, one page at a time so a huge flat
+      // library also respects the chunk budget.
+      const start = state.flatStart ?? 0;
+      const page = await plexFetch<PlexMetadata>(env, `/library/sections/${current.key}/all`, {
+        'X-Plex-Container-Start': start,
+        'X-Plex-Container-Size': PAGE_SIZE,
+      });
+      spent++;
+      const items = page.MediaContainer.Metadata ?? [];
+      if (items.length > 0) {
+        const rows = items.map((it) => toRow(it, current.key, null, syncedAt));
+        spent += await upsertRows(env, rows);
+        state.currentItemCount += rows.length;
+      }
+      const total = page.MediaContainer.totalSize ?? page.MediaContainer.size ?? items.length;
+      state.flatStart = start + items.length;
+      if (items.length === 0 || state.flatStart >= total) {
+        await finishCurrentLibrary(env, state);
+      }
+    }
+  }
+
+  await saveState(env, state);
+  return {
+    done: false,
+    progress: {
+      library: state.current?.title ?? null,
+      librariesCompleted: state.results.length,
+      librariesTotal: state.librariesTotal,
+      itemsSoFar: totalItems(state),
+    },
+  };
+}
+
+function totalItems(state: SyncState): number {
+  return state.results.reduce((sum, r) => sum + r.itemCount, 0) + state.currentItemCount;
+}
+
+async function finishCurrentLibrary(env: Env, state: SyncState): Promise<void> {
+  if (!state.current) return;
+  await env.DB.prepare(`UPDATE plex_libraries SET item_count = ? WHERE id = ?`).bind(state.currentItemCount, state.current.key).run();
+  state.results.push({ id: state.current.key, title: state.current.title, itemCount: state.currentItemCount });
+  state.current = null;
+  state.pendingParents = null;
+  state.flatStart = null;
+}
+
+// Same paging shape as the old fetchAllPaged, but reports each fetch to
+// the caller's subrequest counter — used only for a show/artist
+// library's initial /all listing (the shows/artists themselves, not
+// their episodes/tracks), which is comparatively cheap even for a very
+// large library since it's just titles, not full hierarchies.
+async function fetchAllPagedCounted(env: Env, path: string, onFetch: () => void): Promise<PlexMetadata[]> {
   const out: PlexMetadata[] = [];
   let start = 0;
   for (;;) {
     const page = await plexFetch<PlexMetadata>(env, path, { 'X-Plex-Container-Start': start, 'X-Plex-Container-Size': PAGE_SIZE });
+    onFetch();
     const items = page.MediaContainer.Metadata ?? [];
     out.push(...items);
     const total = page.MediaContainer.totalSize ?? page.MediaContainer.size ?? items.length;
@@ -171,153 +424,4 @@ async function fetchAllPaged(env: Env, path: string): Promise<PlexMetadata[]> {
     if (items.length === 0 || start >= total) break;
   }
   return out;
-}
-
-export interface SyncResult {
-  libraries: { id: string; title: string; itemCount: number }[];
-  totalItems: number;
-}
-
-/** Full re-sync of every Plex library section. Movie-shaped (and any
- * section MikeOS doesn't recognize) libraries sync as a single flat
- * `/all` pull. Show libraries sync shows via `/all`, then every episode
- * for each show in one call via `/allLeaves` (far cheaper than walking
- * season-by-season) — seasons are derived from the episodes themselves
- * rather than fetched separately. Music libraries mirror that shape one
- * level down: artists via `/all`, tracks (and derived albums) via
- * `/allLeaves` per artist. */
-export async function syncPlexLibrary(env: Env): Promise<SyncResult> {
-  const syncedAt = new Date().toISOString();
-  const sections = await plexFetch<{ key: string; title: string; type: string }>(env, '/library/sections');
-  const libraries = sections.MediaContainer.Directory ?? [];
-  const results: SyncResult['libraries'] = [];
-  let totalItems = 0;
-
-  for (const lib of libraries) {
-    const libraryId = lib.key;
-    let itemCount = 0;
-
-    // plex_items.library_id is a foreign key into this table, so the
-    // library row has to exist before any of its items are upserted —
-    // insert/refresh it up front (item_count gets corrected below once
-    // it's known) rather than at the end of the loop like the original
-    // version did, which failed the very first item's FK check.
-    await env.DB.prepare(
-      `INSERT INTO plex_libraries (id, title, library_type, item_count, synced_at) VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT(id) DO UPDATE SET title=excluded.title, library_type=excluded.library_type, synced_at=excluded.synced_at`
-    )
-      .bind(libraryId, lib.title, lib.type, 0, syncedAt)
-      .run();
-
-    if (lib.type === 'show') {
-      const shows = await fetchAllPaged(env, `/library/sections/${libraryId}/all`);
-      const showRows = shows.map((s) => toRow(s, libraryId, null, syncedAt));
-      await upsertRows(env, showRows);
-      itemCount += showRows.length;
-
-      for (const show of shows) {
-        const leaves = await plexFetch<PlexMetadata>(env, `/library/metadata/${show.ratingKey}/allLeaves`);
-        const episodes = leaves.MediaContainer.Metadata ?? [];
-        if (episodes.length === 0) continue;
-
-        // Derive one season row per distinct parentRatingKey seen among
-        // this show's episodes — Plex never hands seasons back directly
-        // from allLeaves, but every episode names its own season.
-        const seasonsSeen = new Map<string, ItemRow>();
-        for (const ep of episodes) {
-          if (ep.parentRatingKey && !seasonsSeen.has(ep.parentRatingKey)) {
-            seasonsSeen.set(ep.parentRatingKey, {
-              id: ep.parentRatingKey,
-              library_id: libraryId,
-              parent_id: show.ratingKey,
-              type: 'season',
-              title: ep.parentTitle ?? `Season ${ep.parentIndex ?? '?'}`,
-              sort_title: null,
-              year: null,
-              season_number: ep.parentIndex ?? null,
-              episode_number: null,
-              guid: null,
-              tvdb_id: null,
-              summary: null,
-              genres: null,
-              studio: null,
-              thumb_key: null,
-              file_path: null,
-              duration_ms: null,
-              added_at: null,
-              plex_updated_at: null,
-              synced_at: syncedAt,
-            });
-          }
-        }
-        await upsertRows(env, [...seasonsSeen.values()]);
-        const episodeRows = episodes.map((ep) => toRow(ep, libraryId, ep.parentRatingKey ?? null, syncedAt));
-        await upsertRows(env, episodeRows);
-        itemCount += seasonsSeen.size + episodeRows.length;
-      }
-    } else if (lib.type === 'artist') {
-      const artists = await fetchAllPaged(env, `/library/sections/${libraryId}/all`);
-      const artistRows = artists.map((a) => toRow(a, libraryId, null, syncedAt));
-      await upsertRows(env, artistRows);
-      itemCount += artistRows.length;
-
-      for (const artist of artists) {
-        const leaves = await plexFetch<PlexMetadata>(env, `/library/metadata/${artist.ratingKey}/allLeaves`);
-        const tracks = leaves.MediaContainer.Metadata ?? [];
-        if (tracks.length === 0) continue;
-
-        const albumsSeen = new Map<string, ItemRow>();
-        for (const tr of tracks) {
-          if (tr.parentRatingKey && !albumsSeen.has(tr.parentRatingKey)) {
-            albumsSeen.set(tr.parentRatingKey, {
-              id: tr.parentRatingKey,
-              library_id: libraryId,
-              parent_id: artist.ratingKey,
-              type: 'album',
-              title: tr.parentTitle ?? 'Unknown album',
-              sort_title: null,
-              year: tr.year ?? null,
-              season_number: null,
-              episode_number: null,
-              guid: null,
-              tvdb_id: null,
-              summary: null,
-              genres: null,
-              studio: null,
-              thumb_key: null,
-              file_path: null,
-              duration_ms: null,
-              added_at: null,
-              plex_updated_at: null,
-              synced_at: syncedAt,
-            });
-          }
-        }
-        await upsertRows(env, [...albumsSeen.values()]);
-        const trackRows = tracks.map((tr) => toRow(tr, libraryId, tr.parentRatingKey ?? null, syncedAt));
-        await upsertRows(env, trackRows);
-        itemCount += albumsSeen.size + trackRows.length;
-      }
-    } else {
-      // Movies, and anything else Plex reports (photo libraries, or a
-      // podcast/audiobook section under whatever type string this Plex
-      // version uses) — synced flat. If a particular library type turns
-      // out to need its own hierarchy handling once real data is seen,
-      // it gets its own branch above the same way show/artist did.
-      const items = await fetchAllPaged(env, `/library/sections/${libraryId}/all`);
-      const rows = items.map((it) => toRow(it, libraryId, null, syncedAt));
-      await upsertRows(env, rows);
-      itemCount += rows.length;
-    }
-
-    // Now that every item under this library has synced successfully, go
-    // back and fill in the real item_count the upfront insert above
-    // stubbed with 0.
-    await env.DB.prepare(`UPDATE plex_libraries SET item_count = ? WHERE id = ?`).bind(itemCount, libraryId).run();
-
-    results.push({ id: libraryId, title: lib.title, itemCount });
-    totalItems += itemCount;
-  }
-
-  return { libraries: results, totalItems };
 }

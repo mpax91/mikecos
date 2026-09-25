@@ -1553,6 +1553,15 @@ export interface PlexSyncResult {
   totalItems: number;
 }
 
+// One bounded chunk of the sync — a large library takes several of these
+// (see worker/src/plexSync.ts's header comment on why it's chunked at
+// all). The caller keeps calling the endpoint until `done` is true.
+export interface PlexSyncChunkResult {
+  done: boolean;
+  progress: { library: string | null; librariesCompleted: number; librariesTotal: number; itemsSoFar: number };
+  summary?: PlexSyncResult;
+}
+
 export interface PlexAiringCheckResult {
   showsResolved: number;
   newlyFlagged: number;
