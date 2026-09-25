@@ -1676,3 +1676,67 @@ export interface PlexAiringScanChunkResult {
   progress: { showsScanned: number; showsTotal: number; newlyFlagged: number };
   summary?: { showsScanned: number; newlyFlagged: number };
 }
+
+// ---- Inbox — a live status board over real IMAP mailboxes, not a built-in
+// mail client. See worker/migrations/0059_email_inbox.sql and
+// worker/src/email.ts for the schema/sync-engine rationale.
+
+export interface EmailAccount {
+  id: string;
+  label: string;
+  email: string;
+  imap_host: string;
+  imap_port: number;
+  smtp_host: string;
+  smtp_port: number;
+  icon: string;
+  color: string;
+  position: number;
+  active: number;
+  last_synced_at: string | null;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** An EmailAccount plus its unread/unprocessed counts, as returned by
+ * GET /api/email/inbox — the account-tab strip's badge counts. */
+export interface EmailAccountWithCounts extends EmailAccount {
+  newCount: number;
+  needsProcessingCount: number;
+}
+
+export interface EmailMessage {
+  id: string;
+  account_id: string;
+  gm_msgid: string;
+  gm_thrid: string | null;
+  uid: number;
+  message_id_header: string | null;
+  subject: string;
+  from_name: string | null;
+  from_email: string | null;
+  snippet: string | null;
+  received_at: string;
+  is_read: number;
+  in_inbox: number;
+  processed_at: string | null;
+  converted_to_entity_id: string | null;
+  first_seen_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EmailInboxFeed {
+  accounts: EmailAccountWithCounts[];
+  newItems: EmailMessage[];
+  needsProcessing: EmailMessage[];
+}
+
+export interface EmailPeekResult extends EmailMessage {
+  body: string;
+}
+
+export interface EmailSyncResult {
+  results: { id: string; ok: boolean; error?: string }[];
+}

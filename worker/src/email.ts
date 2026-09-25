@@ -1,0 +1,587 @@
+import { Hono } from 'hono';
+import type { Env } from './types';
+import { encryptField, decryptField, EncryptionNotConfiguredError } from './cryptoField';
+import { ImapClient, parseHeaderBlock } from './imapClient';
+import { sendMail } from './smtpClient';
+
+const now = () => new Date().toISOString();
+const uid = () => crypto.randomUUID();
+
+/** Inbox — a live status board over Mike's real Gmail inboxes (IMAP), not a
+ * built-in mail client. See imapClient.ts/smtpClient.ts for the protocol
+ * layer and worker/migrations/0059_email_inbox.sql for the schema
+ * rationale. Mounted at /api/email. Cron-driven sync lives in
+ * syncAllAccounts, called from index.ts's `scheduled` export. */
+export const emailRouter = new Hono<{ Bindings: Env }>();
+
+interface EmailAccountRow {
+  id: string;
+  label: string;
+  email: string;
+  app_password_enc: string;
+  imap_host: string;
+  imap_port: number;
+  smtp_host: string;
+  smtp_port: number;
+  icon: string;
+  color: string;
+  position: number;
+  active: number;
+  last_synced_at: string | null;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface EmailMessageRow {
+  id: string;
+  account_id: string;
+  gm_msgid: string;
+  gm_thrid: string | null;
+  uid: number;
+  message_id_header: string | null;
+  subject: string;
+  from_name: string | null;
+  from_email: string | null;
+  snippet: string | null;
+  received_at: string;
+  is_read: number;
+  in_inbox: number;
+  processed_at: string | null;
+  converted_to_entity_id: string | null;
+  first_seen_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+function accountJson(row: EmailAccountRow) {
+  // app_password_enc deliberately never leaves the server — once set, the
+  // Settings UI can only overwrite it, never read it back.
+  const { app_password_enc: _enc, ...rest } = row;
+  return rest;
+}
+
+// ---- Accounts (Settings → Email Accounts) ----
+
+emailRouter.get('/accounts', async (c) => {
+  const { results } = await c.env.DB.prepare('SELECT * FROM email_accounts ORDER BY position ASC, created_at ASC').all<EmailAccountRow>();
+  return c.json((results ?? []).map(accountJson));
+});
+
+emailRouter.post('/accounts', async (c) => {
+  const body = await c.req.json<{
+    label: string;
+    email: string;
+    appPassword: string;
+    icon?: string;
+    color?: string;
+    imapHost?: string;
+    imapPort?: number;
+    smtpHost?: string;
+    smtpPort?: number;
+  }>();
+  if (!body.label?.trim() || !body.email?.trim() || !body.appPassword?.trim()) {
+    return c.json({ error: 'label, email, and appPassword are required' }, 400);
+  }
+  let enc: string;
+  try {
+    enc = await encryptField(c.env, body.appPassword.trim(), 'EMAIL_ACCOUNT_ENC_KEY');
+  } catch (err) {
+    if (err instanceof EncryptionNotConfiguredError) return c.json({ error: err.message }, 500);
+    throw err;
+  }
+
+  const maxPos = await c.env.DB.prepare('SELECT COALESCE(MAX(position), -1) as m FROM email_accounts').first<{ m: number }>();
+  const id = uid();
+  const ts = now();
+  await c.env.DB.prepare(
+    `INSERT INTO email_accounts (id, label, email, app_password_enc, imap_host, imap_port, smtp_host, smtp_port, icon, color, position, active, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`
+  )
+    .bind(
+      id,
+      body.label.trim(),
+      body.email.trim(),
+      enc,
+      body.imapHost?.trim() || 'imap.gmail.com',
+      body.imapPort ?? 993,
+      body.smtpHost?.trim() || 'smtp.gmail.com',
+      body.smtpPort ?? 465,
+      body.icon?.trim() || '📧',
+      body.color?.trim() || '#2F4A3C',
+      (maxPos?.m ?? -1) + 1,
+      ts,
+      ts
+    )
+    .run();
+  const row = await c.env.DB.prepare('SELECT * FROM email_accounts WHERE id = ?').bind(id).first<EmailAccountRow>();
+  return c.json(accountJson(row!), 201);
+});
+
+emailRouter.patch('/accounts/:id', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json<{
+    label?: string;
+    email?: string;
+    appPassword?: string;
+    icon?: string;
+    color?: string;
+    active?: boolean;
+    imapHost?: string;
+    imapPort?: number;
+    smtpHost?: string;
+    smtpPort?: number;
+    position?: number;
+  }>();
+  const existing = await c.env.DB.prepare('SELECT * FROM email_accounts WHERE id = ?').bind(id).first<EmailAccountRow>();
+  if (!existing) return c.json({ error: 'not found' }, 404);
+
+  const fields: string[] = [];
+  const values: unknown[] = [];
+  const set = (col: string, val: unknown) => {
+    fields.push(`${col} = ?`);
+    values.push(val);
+  };
+  if (body.label !== undefined) set('label', body.label.trim());
+  if (body.email !== undefined) set('email', body.email.trim());
+  if (body.icon !== undefined) set('icon', body.icon.trim());
+  if (body.color !== undefined) set('color', body.color.trim());
+  if (body.active !== undefined) set('active', body.active ? 1 : 0);
+  if (body.imapHost !== undefined) set('imap_host', body.imapHost.trim());
+  if (body.imapPort !== undefined) set('imap_port', body.imapPort);
+  if (body.smtpHost !== undefined) set('smtp_host', body.smtpHost.trim());
+  if (body.smtpPort !== undefined) set('smtp_port', body.smtpPort);
+  if (body.position !== undefined) set('position', body.position);
+  if (body.appPassword?.trim()) {
+    try {
+      set('app_password_enc', await encryptField(c.env, body.appPassword.trim(), 'EMAIL_ACCOUNT_ENC_KEY'));
+    } catch (err) {
+      if (err instanceof EncryptionNotConfiguredError) return c.json({ error: err.message }, 500);
+      throw err;
+    }
+  }
+  if (fields.length === 0) return c.json(accountJson(existing));
+
+  set('updated_at', now());
+  await c.env.DB.prepare(`UPDATE email_accounts SET ${fields.join(', ')} WHERE id = ?`)
+    .bind(...values, id)
+    .run();
+  const row = await c.env.DB.prepare('SELECT * FROM email_accounts WHERE id = ?').bind(id).first<EmailAccountRow>();
+  return c.json(accountJson(row!));
+});
+
+emailRouter.delete('/accounts/:id', async (c) => {
+  const id = c.req.param('id');
+  await c.env.DB.batch([
+    c.env.DB.prepare('DELETE FROM email_pending_actions WHERE account_id = ?').bind(id),
+    c.env.DB.prepare('DELETE FROM email_messages WHERE account_id = ?').bind(id),
+    c.env.DB.prepare('DELETE FROM email_accounts WHERE id = ?').bind(id),
+  ]);
+  return c.json({ ok: true });
+});
+
+// Connects and logs in only — for a "Test Connection" button in Settings,
+// so a typo'd app password surfaces immediately instead of silently
+// failing on the next cron tick.
+emailRouter.post('/accounts/:id/test', async (c) => {
+  const id = c.req.param('id');
+  const account = await c.env.DB.prepare('SELECT * FROM email_accounts WHERE id = ?').bind(id).first<EmailAccountRow>();
+  if (!account) return c.json({ error: 'not found' }, 404);
+  try {
+    const pass = await decryptField(c.env, account.app_password_enc, 'EMAIL_ACCOUNT_ENC_KEY');
+    const client = new ImapClient();
+    await client.connect(account.imap_host, account.imap_port);
+    await client.login(account.email, pass);
+    await client.selectInbox();
+    await client.logout();
+    await c.env.DB.prepare('UPDATE email_accounts SET last_error = NULL, updated_at = ? WHERE id = ?').bind(now(), id).run();
+    return c.json({ ok: true });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    await c.env.DB.prepare('UPDATE email_accounts SET last_error = ?, updated_at = ? WHERE id = ?').bind(message, now(), id).run();
+    return c.json({ ok: false, error: message }, 200);
+  }
+});
+
+// Manual "Sync now" — the same sync a cron tick runs, callable on demand
+// from Settings or the Inbox feed's own refresh button.
+emailRouter.post('/sync', async (c) => {
+  const results = await syncAllAccounts(c.env);
+  return c.json({ results });
+});
+
+// ---- Feed (Today → Inbox) ----
+
+emailRouter.get('/inbox', async (c) => {
+  const accountId = c.req.query('account_id');
+  const accounts = (
+    await c.env.DB.prepare('SELECT * FROM email_accounts WHERE active = 1 ORDER BY position ASC, created_at ASC').all<EmailAccountRow>()
+  ).results ?? [];
+
+  const scoped = accountId ? accounts.filter((a) => a.id === accountId) : accounts;
+  const ids = scoped.map((a) => a.id);
+  if (ids.length === 0) return c.json({ accounts: [], newItems: [], needsProcessing: [] });
+
+  const placeholders = ids.map(() => '?').join(',');
+  const newItems = (
+    await c.env.DB.prepare(
+      `SELECT * FROM email_messages WHERE account_id IN (${placeholders}) AND in_inbox = 1 AND is_read = 0 ORDER BY received_at DESC`
+    )
+      .bind(...ids)
+      .all<EmailMessageRow>()
+  ).results ?? [];
+  const needsProcessing = (
+    await c.env.DB.prepare(
+      `SELECT * FROM email_messages WHERE account_id IN (${placeholders}) AND in_inbox = 1 AND is_read = 1 AND processed_at IS NULL ORDER BY received_at ASC`
+    )
+      .bind(...ids)
+      .all<EmailMessageRow>()
+  ).results ?? [];
+
+  // Counts for every active account (not just the scoped one) so the tab
+  // strip can show a badge on each account regardless of which is selected.
+  const counts = await Promise.all(
+    accounts.map(async (a) => {
+      const row = await c.env.DB.prepare(
+        `SELECT
+           SUM(CASE WHEN in_inbox = 1 AND is_read = 0 THEN 1 ELSE 0 END) as new_count,
+           SUM(CASE WHEN in_inbox = 1 AND is_read = 1 AND processed_at IS NULL THEN 1 ELSE 0 END) as needs_processing_count
+         FROM email_messages WHERE account_id = ?`
+      )
+        .bind(a.id)
+        .first<{ new_count: number; needs_processing_count: number }>();
+      return { ...accountJson(a), newCount: row?.new_count ?? 0, needsProcessingCount: row?.needs_processing_count ?? 0 };
+    })
+  );
+
+  return c.json({ accounts: counts, newItems, needsProcessing });
+});
+
+async function getMessageWithAccount(env: Env, id: string) {
+  const message = await env.DB.prepare('SELECT * FROM email_messages WHERE id = ?').bind(id).first<EmailMessageRow>();
+  if (!message) return null;
+  const account = await env.DB.prepare('SELECT * FROM email_accounts WHERE id = ?').bind(message.account_id).first<EmailAccountRow>();
+  if (!account) return null;
+  return { message, account };
+}
+
+// Archiving is instant in MikeOS (this update) and queued for the real
+// mailbox (applied on the next sync tick, which is already connecting to
+// every account anyway — see applyPendingActions). "Archived" and
+// "processed" are the same action from Mike's side.
+emailRouter.post('/messages/:id/archive', async (c) => {
+  const id = c.req.param('id');
+  const found = await getMessageWithAccount(c.env, id);
+  if (!found) return c.json({ error: 'not found' }, 404);
+  const ts = now();
+  await c.env.DB.batch([
+    c.env.DB.prepare('UPDATE email_messages SET in_inbox = 0, processed_at = ?, updated_at = ? WHERE id = ?').bind(ts, ts, id),
+    c.env.DB.prepare('INSERT INTO email_pending_actions (id, account_id, message_id, action, created_at) VALUES (?, ?, ?, ?, ?)').bind(
+      uid(),
+      found.message.account_id,
+      id,
+      'archive',
+      ts
+    ),
+  ]);
+  return c.json({ ok: true });
+});
+
+// Peek — fetches the full text live (bodies aren't cached in D1, see
+// migration's header comment) and marks \Seen on the real mailbox in the
+// same connection, plus flips is_read locally. A live IMAP round trip per
+// peek (roughly a second, dominated by the TLS handshake), which is fine
+// for an on-demand single-message action.
+emailRouter.post('/messages/:id/peek', async (c) => {
+  const id = c.req.param('id');
+  const found = await getMessageWithAccount(c.env, id);
+  if (!found) return c.json({ error: 'not found' }, 404);
+  const { message, account } = found;
+
+  let body = '';
+  try {
+    const pass = await decryptField(c.env, account.app_password_enc, 'EMAIL_ACCOUNT_ENC_KEY');
+    const client = new ImapClient();
+    await client.connect(account.imap_host, account.imap_port);
+    await client.login(account.email, pass);
+    await client.selectInbox();
+    body = await client.fetchFullText(message.uid);
+    if (!message.is_read) await client.setSeen(message.uid, true);
+    await client.logout();
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 502);
+  }
+
+  await c.env.DB.prepare('UPDATE email_messages SET is_read = 1, updated_at = ? WHERE id = ?').bind(now(), id).run();
+  return c.json({ ...message, is_read: 1, body });
+});
+
+// Turns an email into a real MikeOS entity — the replacement for Gmail's
+// snooze (see the design discussion this was built from): instead of
+// hiding the email and reshowing it later, it becomes a real task/note
+// (optionally nested under a project via parentId) and the email itself
+// gets archived, same as any other processed message.
+emailRouter.post('/messages/:id/convert', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json<{ as: 'task' | 'note'; parentId?: string | null; dueDate?: string | null }>();
+  if (body.as !== 'task' && body.as !== 'note') return c.json({ error: 'as must be "task" or "note"' }, 400);
+  const found = await getMessageWithAccount(c.env, id);
+  if (!found) return c.json({ error: 'not found' }, 404);
+  const { message } = found;
+
+  const entityId = uid();
+  const ts = now();
+  const title = message.subject || 'Untitled';
+  const byline = message.from_name || message.from_email ? `From: ${message.from_name ?? ''} <${message.from_email ?? ''}>` : '';
+  const bodyText = [byline, '', message.snippet ?? ''].filter(Boolean).join('\n');
+
+  if (body.as === 'task') {
+    const isTopLevel = !body.parentId;
+    const maxPos = await c.env.DB.prepare(
+      isTopLevel
+        ? `SELECT COALESCE(MAX(position), -1) as m FROM entities WHERE parent_id IS NULL AND type = 'task'`
+        : 'SELECT COALESCE(MAX(position), -1) as m FROM entities WHERE parent_id = ?'
+    )
+      .bind(...(isTopLevel ? [] : [body.parentId]))
+      .first<{ m: number }>();
+    await c.env.DB.prepare(
+      `INSERT INTO entities (id, type, title, content, parent_id, is_top_level, status, position, due_date, last_touched, created_at, updated_at)
+       VALUES (?, 'task', ?, NULL, ?, ?, 'open', ?, ?, ?, ?, ?)`
+    )
+      .bind(entityId, title, body.parentId ?? null, isTopLevel ? 1 : 0, (maxPos?.m ?? -1) + 1, body.dueDate ?? null, ts, ts, ts)
+      .run();
+  } else {
+    const isTopLevel = !body.parentId;
+    const maxPos = await c.env.DB.prepare(
+      isTopLevel ? 'SELECT COALESCE(MAX(position), -1) as m FROM entities WHERE parent_id IS NULL AND type = \'note\'' : 'SELECT COALESCE(MAX(position), -1) as m FROM entities WHERE parent_id = ?'
+    )
+      .bind(...(isTopLevel ? [] : [body.parentId]))
+      .first<{ m: number }>();
+    const contentJson = JSON.stringify({
+      type: 'doc',
+      content: bodyText.split('\n').map((line) => ({ type: 'paragraph', content: line ? [{ type: 'text', text: line }] : [] })),
+    });
+    await c.env.DB.prepare(
+      `INSERT INTO entities (id, type, title, content, parent_id, is_top_level, status, position, last_touched, created_at, updated_at, search_text)
+       VALUES (?, 'note', ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`
+    )
+      .bind(entityId, title, contentJson, body.parentId ?? null, isTopLevel ? 1 : 0, (maxPos?.m ?? -1) + 1, ts, ts, ts, bodyText)
+      .run();
+  }
+
+  await c.env.DB.batch([
+    c.env.DB.prepare('UPDATE email_messages SET in_inbox = 0, processed_at = ?, converted_to_entity_id = ?, updated_at = ? WHERE id = ?').bind(
+      ts,
+      entityId,
+      ts,
+      id
+    ),
+    c.env.DB.prepare('INSERT INTO email_pending_actions (id, account_id, message_id, action, created_at) VALUES (?, ?, ?, ?, ?)').bind(
+      uid(),
+      found.message.account_id,
+      id,
+      'archive',
+      ts
+    ),
+  ]);
+
+  const entity = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(entityId).first();
+  return c.json({ entity, entityId });
+});
+
+// A deliberately minimal reply — plain text, threaded via In-Reply-To/
+// References so it lands in the same Gmail thread. Not a full compose
+// client (see the design conversation this came out of): no attachments,
+// no CC/BCC, always replies to the original sender.
+emailRouter.post('/messages/:id/reply', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json<{ body: string; archive?: boolean }>();
+  if (!body.body?.trim()) return c.json({ error: 'body is required' }, 400);
+  const found = await getMessageWithAccount(c.env, id);
+  if (!found) return c.json({ error: 'not found' }, 404);
+  const { message, account } = found;
+  if (!message.from_email) return c.json({ error: "This message has no parseable sender address to reply to" }, 400);
+
+  try {
+    const pass = await decryptField(c.env, account.app_password_enc, 'EMAIL_ACCOUNT_ENC_KEY');
+    await sendMail({
+      host: account.smtp_host,
+      port: account.smtp_port,
+      user: account.email,
+      pass,
+      fromEmail: account.email,
+      toEmail: message.from_email,
+      subject: message.subject.toLowerCase().startsWith('re:') ? message.subject : `Re: ${message.subject}`,
+      bodyText: body.body,
+      inReplyTo: message.message_id_header,
+      references: message.message_id_header,
+    });
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 502);
+  }
+
+  if (body.archive) {
+    const ts = now();
+    await c.env.DB.batch([
+      c.env.DB.prepare('UPDATE email_messages SET in_inbox = 0, processed_at = ?, updated_at = ? WHERE id = ?').bind(ts, ts, id),
+      c.env.DB.prepare('INSERT INTO email_pending_actions (id, account_id, message_id, action, created_at) VALUES (?, ?, ?, ?, ?)').bind(
+        uid(),
+        found.message.account_id,
+        id,
+        'archive',
+        ts
+      ),
+    ]);
+  }
+  return c.json({ ok: true });
+});
+
+// ---- Sync engine (cron + manual "Sync now") ----
+
+async function applyPendingActions(env: Env, client: ImapClient, accountId: string): Promise<void> {
+  const { results } = await env.DB.prepare(
+    `SELECT pa.id as action_id, pa.action, pa.message_id, m.uid
+     FROM email_pending_actions pa JOIN email_messages m ON m.id = pa.message_id
+     WHERE pa.account_id = ? AND pa.applied_at IS NULL`
+  )
+    .bind(accountId)
+    .all<{ action_id: string; action: string; message_id: string; uid: number }>();
+
+  for (const row of results ?? []) {
+    try {
+      if (row.action === 'archive') await client.archive(row.uid);
+      else if (row.action === 'mark_read') await client.setSeen(row.uid, true);
+      else if (row.action === 'mark_unread') await client.setSeen(row.uid, false);
+      await env.DB.prepare('UPDATE email_pending_actions SET applied_at = ? WHERE id = ?').bind(now(), row.action_id).run();
+    } catch (err) {
+      // Left unapplied — retried on the next sync tick. One bad action
+      // (e.g. a since-deleted message) shouldn't block the rest of the
+      // queue or this account's inbox sync below.
+      console.error('email pending action failed', accountId, row.action, err);
+    }
+  }
+}
+
+async function syncAccountInbox(env: Env, client: ImapClient, account: EmailAccountRow): Promise<void> {
+  const uids = await client.searchAllUids();
+  const uidSet = uids.join(',');
+  const fetched = await client.fetchMessages(uidSet);
+  const ts = now();
+
+  const seenGmIds = new Set<string>();
+  for (const f of fetched) {
+    if (!f.gmMsgId) continue; // shouldn't happen against Gmail, but skip rather than crash the whole sync
+    seenGmIds.add(f.gmMsgId);
+    const headers = parseHeaderBlock(f.headerBlock);
+    const isSeen = f.flags.includes('\\Seen') ? 1 : 0;
+    const existing = await env.DB.prepare('SELECT * FROM email_messages WHERE account_id = ? AND gm_msgid = ?')
+      .bind(account.id, f.gmMsgId)
+      .first<EmailMessageRow>();
+
+    if (!existing) {
+      await env.DB.prepare(
+        `INSERT INTO email_messages (id, account_id, gm_msgid, gm_thrid, uid, message_id_header, subject, from_name, from_email, snippet, received_at, is_read, in_inbox, first_seen_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`
+      )
+        .bind(
+          uid(),
+          account.id,
+          f.gmMsgId,
+          f.gmThrId,
+          f.uid,
+          headers.messageId,
+          headers.subject || '(no subject)',
+          headers.fromName,
+          headers.fromEmail,
+          cleanSnippet(f.snippet),
+          headers.dateIso ?? ts,
+          isSeen,
+          ts,
+          ts,
+          ts
+        )
+        .run();
+    } else {
+      // A message reappearing after being out of the inbox (unsnoozed, or
+      // manually re-added to Inbox) surfaces as new again — reset
+      // first_seen_at/processed_at so it lands back in "New" rather than
+      // silently staying archived-looking. A message that was already
+      // in_inbox just gets its live fields refreshed.
+      const reappeared = existing.in_inbox === 0;
+      await env.DB.prepare(
+        `UPDATE email_messages SET uid = ?, is_read = ?, in_inbox = 1, first_seen_at = ?, processed_at = ?, updated_at = ? WHERE id = ?`
+      )
+        .bind(f.uid, isSeen, reappeared ? ts : existing.first_seen_at, reappeared ? null : existing.processed_at, ts, existing.id)
+        .run();
+    }
+  }
+
+  // Anything MikeOS still had marked in_inbox=1 for this account that
+  // didn't show up in this poll's fetch has left the real INBOX — archived,
+  // snoozed, or moved by a filter. Mirror that as processed/archived here
+  // too, same as the design this was built from.
+  const stillInInbox = (
+    await env.DB.prepare('SELECT id, gm_msgid FROM email_messages WHERE account_id = ? AND in_inbox = 1').bind(account.id).all<{ id: string; gm_msgid: string }>()
+  ).results ?? [];
+  const droppedIds = stillInInbox.filter((r) => !seenGmIds.has(r.gm_msgid)).map((r) => r.id);
+  if (droppedIds.length > 0) {
+    const placeholders = droppedIds.map(() => '?').join(',');
+    await env.DB.prepare(`UPDATE email_messages SET in_inbox = 0, processed_at = COALESCE(processed_at, ?), updated_at = ? WHERE id IN (${placeholders})`)
+      .bind(ts, ts, ...droppedIds)
+      .run();
+  }
+}
+
+/** BODY[1]'s raw bytes for an HTML/multipart message can include MIME
+ * boundary lines and markup rather than clean text — see imapClient.ts's
+ * header comment. This strips the more common noise (angle-bracket tags, a
+ * lone MIME boundary marker line) so the list-view preview reads
+ * reasonably even when it isn't a clean plain-text part; not a real HTML-
+ * to-text conversion. */
+function cleanSnippet(raw: string): string {
+  const stripped = raw
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/--[-\w=]{10,}/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return stripped.slice(0, 240);
+}
+
+async function syncOneAccount(env: Env, account: EmailAccountRow): Promise<{ id: string; ok: boolean; error?: string }> {
+  let client: ImapClient | null = null;
+  try {
+    const pass = await decryptField(env, account.app_password_enc, 'EMAIL_ACCOUNT_ENC_KEY');
+    client = new ImapClient();
+    await client.connect(account.imap_host, account.imap_port);
+    await client.login(account.email, pass);
+    await client.selectInbox();
+    await applyPendingActions(env, client, account.id);
+    // Re-select — a STORE against Gmail can shift what's visible in the
+    // currently-selected mailbox's cached state; a fresh SELECT keeps the
+    // subsequent SEARCH/FETCH honest rather than relying on IMAP's
+    // untagged-update notifications, which this client doesn't track.
+    await client.selectInbox();
+    await syncAccountInbox(env, client, account);
+    await client.logout();
+    await env.DB.prepare('UPDATE email_accounts SET last_synced_at = ?, last_error = NULL, updated_at = ? WHERE id = ?')
+      .bind(now(), now(), account.id)
+      .run();
+    return { id: account.id, ok: true };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    await env.DB.prepare('UPDATE email_accounts SET last_error = ?, updated_at = ? WHERE id = ?').bind(message, now(), account.id).run();
+    return { id: account.id, ok: false, error: message };
+  }
+}
+
+export async function syncAllAccounts(env: Env): Promise<{ id: string; ok: boolean; error?: string }[]> {
+  const { results } = await env.DB.prepare('SELECT * FROM email_accounts WHERE active = 1').all<EmailAccountRow>();
+  const out: { id: string; ok: boolean; error?: string }[] = [];
+  for (const account of results ?? []) {
+    // Sequential, not Promise.all — each account holds a live TCP socket
+    // for the duration of its sync, and there's no benefit to juggling
+    // several at once for what's realistically 4-5 personal mailboxes.
+    out.push(await syncOneAccount(env, account));
+  }
+  return out;
+}

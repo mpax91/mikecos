@@ -11,6 +11,7 @@ import { SecurityPanel } from './settings/SecurityPanel';
 import { NewsFeedsPanel } from './settings/NewsFeedsPanel';
 import { HabitsPanel } from './settings/HabitsPanel';
 import { RewardsMerchantsPanel } from './settings/RewardsMerchantsPanel';
+import { EmailAccountsPanel } from './settings/EmailAccountsPanel';
 
 interface Category {
   id: string;
@@ -33,6 +34,7 @@ const CATEGORIES: Category[] = [
   { id: 'calendars', label: 'Calendar Integrations', icon: '📅' },
   { id: 'links', label: 'Links', icon: '🔗' },
   { id: 'wallet', label: 'Wallet Categories', icon: '🎫' },
+  { id: 'email-accounts', label: 'Email Accounts', icon: '📥' },
   { id: 'rewards-merchants', label: 'Rewards Merchants', icon: '🏷️' },
   { id: 'habits', label: 'Habits', icon: '📈' },
   { id: 'news-feeds', label: 'News Feeds', icon: '📰' },
@@ -80,6 +82,7 @@ export function SettingsPage() {
           {active === 'calendars' && <CalendarsPanel />}
           {active === 'links' && <QuickLinksPanel />}
           {active === 'wallet' && <WalletCategoriesPanel />}
+          {active === 'email-accounts' && <EmailAccountsPanel />}
           {active === 'rewards-merchants' && <RewardsMerchantsPanel />}
           {active === 'habits' && <HabitsPanel />}
           {active === 'news-feeds' && <NewsFeedsPanel />}

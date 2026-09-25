@@ -105,6 +105,23 @@ jobs:
             exit 0
           fi
           printf '%s' "$PAYMENT_CARD_ENC_KEY" | npx wrangler secret put PAYMENT_CARD_ENC_KEY
+      - name: Set Email encryption key
+        # AES-256-GCM key for Inbox's email_accounts.app_password_enc (see
+        # worker/src/cryptoField.ts). Generate one with `openssl rand
+        # -base64 32` (a fresh key, separate from PAYMENT_CARD_ENC_KEY) and
+        # add it as the EMAIL_ACCOUNT_ENC_KEY repo secret; until then this
+        # step just skips, and adding an Email Account returns a clear 500
+        # instead of saving.
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          EMAIL_ACCOUNT_ENC_KEY: ${{ secrets.EMAIL_ACCOUNT_ENC_KEY }}
+        run: |
+          if [ -z "$EMAIL_ACCOUNT_ENC_KEY" ]; then
+            echo "EMAIL_ACCOUNT_ENC_KEY not set — skipping (Email Accounts won't save until this repo secret is added)."
+            exit 0
+          fi
+          printf '%s' "$EMAIL_ACCOUNT_ENC_KEY" | npx wrangler secret put EMAIL_ACCOUNT_ENC_KEY
       - name: Set Plex secrets
         # The URL Mike's Plex Media Server is reachable at (Remote Access
         # address or a Cloudflare Tunnel hostname) and its X-Plex-Token —

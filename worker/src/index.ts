@@ -45,6 +45,7 @@ import { rewardsRouter } from './rewards';
 import { paymentCardsRouter } from './paymentCards';
 import { plexRouter } from './plex';
 import { runPlexAiringCheck } from './plexAiring';
+import { emailRouter, syncAllAccounts } from './email';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -69,6 +70,7 @@ app.route('/api/wallet', walletRouter);
 app.route('/api/rewards', rewardsRouter);
 app.route('/api/payment-cards', paymentCardsRouter);
 app.route('/api/plex', plexRouter);
+app.route('/api/email', emailRouter);
 
 // Hono's default unhandled-error response is a bare "Internal Server Error"
 // with no body — fine for not leaking internals to an outside caller, but
@@ -7041,9 +7043,27 @@ const WORKER_SELF_URL = 'https://mikeos-api.michaelpalladino.workers.dev';
 // and only costs this invocation a single subrequest per iteration.
 const MAX_SYNC_CHUNKS = 200; // safety valve — real libraries finish in far fewer chunks than this
 
+// Must match wrangler.toml's second `crons` entry exactly — see the
+// `scheduled` export below, which branches on this to tell the two cron
+// schedules apart.
+const EMAIL_SYNC_CRON = '*/2 * * * *';
+
 export default {
   fetch: app.fetch,
-  async scheduled(_event: ScheduledController, env: Env) {
+  async scheduled(event: ScheduledController, env: Env) {
+    // Two cron schedules share this one handler (see wrangler.toml's
+    // `crons` array) — the nightly Plex resync and the every-few-minutes
+    // Inbox sync run on very different cadences, so each checks
+    // event.cron rather than both running on every tick.
+    if (event.cron === EMAIL_SYNC_CRON) {
+      try {
+        await syncAllAccounts(env);
+      } catch (err) {
+        console.error('Email inbox sync failed', err);
+      }
+      return;
+    }
+
     try {
       for (let i = 0; i < MAX_SYNC_CHUNKS; i++) {
         const res = await fetch(`${WORKER_SELF_URL}/api/plex/sync`, { method: 'POST' });

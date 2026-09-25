@@ -1,5 +1,5 @@
 import type { AuthenticationResponseJSON, PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON, RegistrationResponseJSON } from '@simplewebauthn/browser';
-import type { AuthCredentialSummary, AuthStatus, Bet, BetLeg, BetGameNote, BetPromo, BetPromoStatus, BetScheduleGame, BetTransaction, BetTransactionType, VaultEntryDetail, VaultFact, BriefingResponse, CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, CreditScoreEntry, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitDirection, HabitEvent, HabitLog, HabitSummary, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsSavedArticle, NewsSettings, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, VaultFactLabel, VaultRollupGroup, WalletCard, WalletCardFact, WalletCategory, RewardsCard, RewardsBonus, RewardsPerk, RewardsImportResult, RewardsMerchant, RewardsOffer, PaymentCard, PaymentCardFact, PaymentCardSecrets, PlexLibrary, PlexItem, PlexItemDetail, PlexIssue, PlexMissingEpisode, PlexSyncChunkResult, PlexAiringCheckResult, PlexAiringScanChunkResult, WeatherResponse, WeekResponse } from './types';
+import type { AuthCredentialSummary, AuthStatus, Bet, BetLeg, BetGameNote, BetPromo, BetPromoStatus, BetScheduleGame, BetTransaction, BetTransactionType, VaultEntryDetail, VaultFact, BriefingResponse, CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, CreditScoreEntry, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitDirection, HabitEvent, HabitLog, HabitSummary, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsSavedArticle, NewsSettings, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, VaultFactLabel, VaultRollupGroup, WalletCard, WalletCardFact, WalletCategory, RewardsCard, RewardsBonus, RewardsPerk, RewardsImportResult, RewardsMerchant, RewardsOffer, PaymentCard, PaymentCardFact, PaymentCardSecrets, PlexLibrary, PlexItem, PlexItemDetail, PlexIssue, PlexMissingEpisode, PlexSyncChunkResult, PlexAiringCheckResult, PlexAiringScanChunkResult, WeatherResponse, WeekResponse, EmailAccount, EmailInboxFeed, EmailPeekResult, EmailSyncResult } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -1092,4 +1092,56 @@ export const api = {
 
   dismissPlexMissingEpisode: (id: string, dismissed: boolean) =>
     request<PlexMissingEpisode>(`/api/plex/missing-episodes/${id}`, { method: 'PATCH', body: JSON.stringify({ dismissed }) }),
+
+  // ---- Inbox ----
+
+  listEmailAccounts: () => request<EmailAccount[]>('/api/email/accounts'),
+
+  createEmailAccount: (data: {
+    label: string;
+    email: string;
+    appPassword: string;
+    icon?: string;
+    color?: string;
+    imapHost?: string;
+    imapPort?: number;
+    smtpHost?: string;
+    smtpPort?: number;
+  }) => request<EmailAccount>('/api/email/accounts', { method: 'POST', body: JSON.stringify(data) }),
+
+  updateEmailAccount: (
+    id: string,
+    data: Partial<{
+      label: string;
+      email: string;
+      appPassword: string;
+      icon: string;
+      color: string;
+      active: boolean;
+      imapHost: string;
+      imapPort: number;
+      smtpHost: string;
+      smtpPort: number;
+      position: number;
+    }>
+  ) => request<EmailAccount>(`/api/email/accounts/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+
+  deleteEmailAccount: (id: string) => request<{ ok: true }>(`/api/email/accounts/${id}`, { method: 'DELETE' }),
+
+  testEmailAccount: (id: string) => request<{ ok: boolean; error?: string }>(`/api/email/accounts/${id}/test`, { method: 'POST' }),
+
+  syncEmailNow: () => request<EmailSyncResult>('/api/email/sync', { method: 'POST' }),
+
+  getInboxFeed: (accountId?: string) =>
+    request<EmailInboxFeed>(`/api/email/inbox${accountId ? `?account_id=${encodeURIComponent(accountId)}` : ''}`),
+
+  archiveEmail: (id: string) => request<{ ok: true }>(`/api/email/messages/${id}/archive`, { method: 'POST' }),
+
+  peekEmail: (id: string) => request<EmailPeekResult>(`/api/email/messages/${id}/peek`, { method: 'POST' }),
+
+  convertEmail: (id: string, data: { as: 'task' | 'note'; parentId?: string | null; dueDate?: string | null }) =>
+    request<{ entityId: string }>(`/api/email/messages/${id}/convert`, { method: 'POST', body: JSON.stringify(data) }),
+
+  replyToEmail: (id: string, data: { body: string; archive?: boolean }) =>
+    request<{ ok: true }>(`/api/email/messages/${id}/reply`, { method: 'POST', body: JSON.stringify(data) }),
 };

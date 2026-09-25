@@ -12,10 +12,12 @@ binding = "FILES"
 bucket_name = "mikeos-files"
 
 [triggers]
-# Nightly Plex library re-sync + airing check (see index.ts's `scheduled`
-# export) — 9am UTC is ~4-5am Eastern, after the previous night's shows
-# have actually aired and well before Mike's Daily Briefing.
-crons = ["0 9 * * *"]
+# Nightly Plex library re-sync + airing check, plus the Inbox poll (see
+# index.ts's `scheduled` export, which branches on event.cron since both
+# schedules share one handler) — 9am UTC is ~4-5am Eastern, after the
+# previous night's shows have actually aired and well before Mike's Daily
+# Briefing. The Inbox entry must match index.ts's EMAIL_SYNC_CRON exactly.
+crons = ["0 9 * * *", "*/2 * * * *"]
 
 [vars]
 # Comma-separated exact origins the frontend is served from. Required (not

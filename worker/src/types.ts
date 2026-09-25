@@ -333,6 +333,12 @@ export interface Env {
   // plexSync.ts fails those specific requests with a clear error instead.
   PLEX_SERVER_URL?: string;
   PLEX_TOKEN?: string;
+  // AES-256-GCM key (same shape/generation as PAYMENT_CARD_ENC_KEY above)
+  // for Email Accounts' app_password_enc field — see worker/src/imapClient.ts
+  // and worker/src/email.ts. Optional at the type level for the same
+  // reason: a fresh environment should still deploy, and email.ts fails
+  // those specific requests with a clear error instead.
+  EMAIL_ACCOUNT_ENC_KEY?: string;
 }
 
 // ---- News (RSS reader) — raw D1 row shapes; see

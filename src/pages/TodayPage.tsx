@@ -7,6 +7,7 @@ import { TaskDetailModal } from '../components/TaskDetailModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { BlankLine } from '../components/BlankLine';
 import { WeatherWidget } from '../components/WeatherWidget';
+import { InboxWidget } from '../components/InboxWidget';
 import { getHolidays } from '../utils/holidays';
 import { buildMeetingNoteTitle, meetingHasEnded } from '../utils/meetingNotes';
 import { useReportTabMeta } from '../contexts/TabsContext';
@@ -441,6 +442,14 @@ export function TodayPage() {
               <div className="today-page__list today-page__list--ruled task-list card">{overdue.map((task) => renderRow(task))}</div>
             </div>
           )}
+
+          {/* Real-time, not tied to whichever date is being viewed — same
+              reasoning as Top Stories above: only rendered on the actual
+              current day, since "what's sitting in my inbox right now"
+              attached to a past/future date would be misleading. Renders
+              nothing itself (returns null) until at least one account is
+              connected in Settings → Email Accounts. */}
+          {isToday && <InboxWidget />}
 
           {/* Always shown, even with nothing to list — a section that only
               sometimes appears reads as broken/loading rather than "no
