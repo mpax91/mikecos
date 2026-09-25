@@ -137,6 +137,12 @@ function matchIntent(q: string, data: BriefingResponse): string[] | null {
     if (data.insights.staleProjects.length === 0) return ['Every project has had activity recently.'];
     return data.insights.staleProjects.map((p) => `${p.title} — quiet since ${formatShortDate(p.last_touched)}`);
   }
+  if (/(plex|episode|aired|airing)/.test(s)) {
+    if (data.insights.missingEpisodes.length === 0) return ['Nothing outstanding — your library is caught up.'];
+    return data.insights.missingEpisodes.map(
+      (ep) => `🎬 ${ep.show_title} ${String(ep.season_number).padStart(2, '0')}×${String(ep.episode_number).padStart(2, '0')} — aired ${formatShortDate(ep.aired_on)}`
+    );
+  }
   if (/(this week|last week|retrospective|recap)/.test(s)) {
     const r = data.retrospective;
     const lines = [`${r.tasksCompleted} tasks completed this week (${r.tasksCompletedPrevWeek} the week before)`, `Journaled ${r.journalDays}/7 days`];
@@ -320,7 +326,11 @@ export function BriefingModal() {
             </div>
           )}
 
-          {data && (data.insights.overdueCount > 0 || data.insights.upcomingDates.length > 0 || data.insights.staleProjects.length > 0) && (
+          {data &&
+            (data.insights.overdueCount > 0 ||
+              data.insights.upcomingDates.length > 0 ||
+              data.insights.staleProjects.length > 0 ||
+              data.insights.missingEpisodes.length > 0) && (
             <div className="briefing-modal__section">
               <div className="briefing-modal__section-label">Worth a glance</div>
               <ul className="briefing-modal__list briefing-modal__list--insights">
@@ -347,6 +357,14 @@ export function BriefingModal() {
                   <li key={p.id}>
                     <button type="button" className="briefing-modal__link-btn" onClick={() => goTo(`/projects/${p.id}`)}>
                       🕸️ {p.title} — quiet since {daysAgoLabel(p.last_touched.slice(0, 10), date)}
+                    </button>
+                  </li>
+                ))}
+                {data.insights.missingEpisodes.map((ep) => (
+                  <li key={ep.id}>
+                    <button type="button" className="briefing-modal__link-btn" onClick={() => goTo('/plex?tab=airing')}>
+                      🎬 {ep.show_title} {String(ep.season_number).padStart(2, '0')}×{String(ep.episode_number).padStart(2, '0')} — aired{' '}
+                      {daysAgoLabel(ep.aired_on, date)}, not in your library
                     </button>
                   </li>
                 ))}

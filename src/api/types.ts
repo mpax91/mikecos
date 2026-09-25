@@ -1207,6 +1207,15 @@ export interface BriefingTaskRef {
   title: string;
 }
 
+export interface BriefingMissingEpisode {
+  id: string;
+  show_title: string;
+  season_number: number;
+  episode_number: number;
+  episode_name: string | null;
+  aired_on: string;
+}
+
 export interface BriefingInsights {
   overdueCount: number;
   overdueTasks: (BriefingTaskRef & { due_date: string })[];
@@ -1214,6 +1223,7 @@ export interface BriefingInsights {
   dueTodayTasks: BriefingTaskRef[];
   upcomingDates: BriefingUpcomingDate[];
   staleProjects: (BriefingTaskRef & { last_touched: string })[];
+  missingEpisodes: BriefingMissingEpisode[];
 }
 
 export interface BriefingRetrospective {
@@ -1477,4 +1487,73 @@ export interface VaultRollupGroup {
 export interface VaultFactLabel {
   label: string;
   count: number;
+}
+
+// ---- Plex library mirror (worker/migrations/0051_plex.sql) — a synced
+// copy of Mike's Plex catalogue: browsable, flagged for metadata gaps,
+// and cross-checked against TVMaze for aired-but-missing episodes. ----
+
+export type PlexLibraryType = 'movie' | 'show' | 'artist' | 'photo' | string;
+export type PlexItemType = 'movie' | 'show' | 'season' | 'episode' | 'artist' | 'album' | 'track' | 'item';
+
+export interface PlexLibrary {
+  id: string;
+  title: string;
+  libraryType: PlexLibraryType;
+  itemCount: number;
+  syncedAt: string | null;
+}
+
+export interface PlexItem {
+  id: string;
+  libraryId: string;
+  parentId: string | null;
+  type: PlexItemType;
+  title: string;
+  sortTitle: string | null;
+  year: number | null;
+  seasonNumber: number | null;
+  episodeNumber: number | null;
+  matched: boolean;
+  summary: string | null;
+  genres: string[];
+  studio: string | null;
+  thumbUrl: string | null;
+  filePath: string | null;
+  durationMs: number | null;
+  addedAt: string | null;
+  plexUpdatedAt: string | null;
+}
+
+export interface PlexItemDetail extends PlexItem {
+  breadcrumb: { id: string; title: string }[];
+}
+
+export interface PlexIssue {
+  id: string;
+  title: string;
+  type: PlexItemType;
+  issues: string[];
+}
+
+export interface PlexMissingEpisode {
+  id: string;
+  showItemId: string;
+  showTitle: string;
+  seasonNumber: number;
+  episodeNumber: number;
+  episodeName: string | null;
+  airedOn: string;
+  detectedAt: string;
+  dismissed: boolean;
+}
+
+export interface PlexSyncResult {
+  libraries: { id: string; title: string; itemCount: number }[];
+  totalItems: number;
+}
+
+export interface PlexAiringCheckResult {
+  showsResolved: number;
+  newlyFlagged: number;
 }

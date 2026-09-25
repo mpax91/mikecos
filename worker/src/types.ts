@@ -311,6 +311,15 @@ export interface Env {
   // deploy; paymentCards.ts fails those specific requests with a clear
   // error rather than the whole Worker failing to boot.
   PAYMENT_CARD_ENC_KEY?: string;
+  // Plex library mirror (see worker/src/plexSync.ts) — a base URL Mike's
+  // Plex Media Server is reachable at (its own Remote Access address, or a
+  // Cloudflare Tunnel hostname pointed at it — either way, just a URL the
+  // Worker can fetch) and the X-Plex-Token that authenticates against it.
+  // Both Worker secrets, optional at the type level for the same reason
+  // PAYMENT_CARD_ENC_KEY is: a fresh environment should still deploy, and
+  // plexSync.ts fails those specific requests with a clear error instead.
+  PLEX_SERVER_URL?: string;
+  PLEX_TOKEN?: string;
 }
 
 // ---- News (RSS reader) — raw D1 row shapes; see

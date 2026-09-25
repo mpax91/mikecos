@@ -23,6 +23,7 @@ import { LinksPage } from './pages/LinksPage';
 import { VaultPage } from './pages/VaultPage';
 import { VaultRollupsPage } from './pages/VaultRollupsPage';
 import { WalletPage } from './pages/WalletPage';
+import { PlexPage } from './pages/PlexPage';
 import { ListsPage } from './pages/ListsPage';
 import { ListDetail } from './pages/ListDetail';
 import { SearchPalette } from './components/SearchPalette';
@@ -78,6 +79,7 @@ export default function App() {
             <Route path="/vault/rollups" element={<VaultRollupsPage />} />
             <Route path="/vault/:id" element={<VaultPage />} />
             <Route path="/wallet" element={<WalletPage />} />
+            <Route path="/plex" element={<PlexPage />} />
             <Route path="/lists" element={<ListsPage />} />
             <Route path="/lists/:id" element={<ListDetail />} />
             <Route path="/settings" element={<SettingsPage />} />

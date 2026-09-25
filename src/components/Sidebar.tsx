@@ -57,6 +57,7 @@ const SIDEBAR_SECTIONS: NavSectionDef[] = [
     items: [
       { path: '/vault', label: 'Vault', kind: 'vault-list' },
       { path: '/wallet', label: 'Wallet', kind: 'wallet-list' },
+      { path: '/plex', label: 'Plex', kind: 'plex-list' },
       { path: '/links', label: 'Links', kind: 'links' },
       { path: '/contacts', label: 'Contacts', kind: 'contacts-list' },
     ],

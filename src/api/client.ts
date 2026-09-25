@@ -1,5 +1,5 @@
 import type { AuthenticationResponseJSON, PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON, RegistrationResponseJSON } from '@simplewebauthn/browser';
-import type { AuthCredentialSummary, AuthStatus, Bet, BetLeg, BetGameNote, BetPromo, BetPromoStatus, BetScheduleGame, BetTransaction, BetTransactionType, VaultEntryDetail, VaultFact, BriefingResponse, CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, CreditScoreEntry, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitLog, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsSavedArticle, NewsSettings, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, VaultFactLabel, VaultRollupGroup, WalletCard, WalletCardFact, WalletCategory, RewardsCard, RewardsBonus, RewardsPerk, PaymentCard, PaymentCardFact, PaymentCardSecrets, WeatherResponse, WeekResponse } from './types';
+import type { AuthCredentialSummary, AuthStatus, Bet, BetLeg, BetGameNote, BetPromo, BetPromoStatus, BetScheduleGame, BetTransaction, BetTransactionType, VaultEntryDetail, VaultFact, BriefingResponse, CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, CreditScoreEntry, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitLog, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsSavedArticle, NewsSettings, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, VaultFactLabel, VaultRollupGroup, WalletCard, WalletCardFact, WalletCategory, RewardsCard, RewardsBonus, RewardsPerk, PaymentCard, PaymentCardFact, PaymentCardSecrets, PlexLibrary, PlexItem, PlexItemDetail, PlexIssue, PlexMissingEpisode, PlexSyncResult, PlexAiringCheckResult, WeatherResponse, WeekResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -1013,4 +1013,31 @@ export const api = {
 
   updateVaultPassword: (id: string, patch: { title?: string; url?: string; username?: string; password?: string }) =>
     request<Entity>(`/api/vault/passwords/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+
+  // ---- Plex library mirror (0051_plex.sql) ----
+
+  listPlexLibraries: () => request<PlexLibrary[]>('/api/plex/libraries'),
+
+  listPlexItems: (params: { libraryId?: string; parentId?: string; q?: string }) => {
+    const qs = new URLSearchParams();
+    if (params.libraryId) qs.set('libraryId', params.libraryId);
+    if (params.parentId) qs.set('parentId', params.parentId);
+    if (params.q) qs.set('q', params.q);
+    return request<PlexItem[]>(`/api/plex/items?${qs.toString()}`);
+  },
+
+  getPlexItem: (id: string) => request<PlexItemDetail>(`/api/plex/items/${id}`),
+
+  plexThumbUrl: (id: string) => `${API_BASE}/api/plex/thumb/${id}`,
+
+  syncPlexLibrary: () => request<PlexSyncResult>('/api/plex/sync', { method: 'POST' }),
+
+  runPlexAiringCheck: () => request<PlexAiringCheckResult>('/api/plex/airing-check', { method: 'POST' }),
+
+  getPlexIssues: (libraryId: string) => request<PlexIssue[]>(`/api/plex/issues?libraryId=${encodeURIComponent(libraryId)}`),
+
+  listPlexMissingEpisodes: () => request<PlexMissingEpisode[]>('/api/plex/missing-episodes'),
+
+  dismissPlexMissingEpisode: (id: string, dismissed: boolean) =>
+    request<PlexMissingEpisode>(`/api/plex/missing-episodes/${id}`, { method: 'PATCH', body: JSON.stringify({ dismissed }) }),
 };

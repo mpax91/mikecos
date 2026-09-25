@@ -42,6 +42,9 @@ import { vaultRouter } from './vault';
 import { walletRouter } from './wallet';
 import { rewardsRouter } from './rewards';
 import { paymentCardsRouter } from './paymentCards';
+import { plexRouter } from './plex';
+import { syncPlexLibrary } from './plexSync';
+import { runPlexAiringCheck } from './plexAiring';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -65,6 +68,7 @@ app.route('/api/vault', vaultRouter);
 app.route('/api/wallet', walletRouter);
 app.route('/api/rewards', rewardsRouter);
 app.route('/api/payment-cards', paymentCardsRouter);
+app.route('/api/plex', plexRouter);
 
 // Hono's default unhandled-error response is a bare "Internal Server Error"
 // with no body — fine for not leaking internals to an outside caller, but
@@ -5996,6 +6000,15 @@ async function computeBriefing(db: D1Database, date: string) {
 
   upcomingDates.sort((a, b) => a.inDays - b.inDays);
 
+  // Aired-but-missing episodes (see plexAiring.ts) — unlike the nudges
+  // above, this genuinely can't be computed on the fly here: knowing
+  // what aired requires an external TVMaze call per show, which belongs
+  // in the nightly Cron Trigger, not a page load. This just reads the
+  // small table that job maintains.
+  const { results: missingEpisodesRow } = await db
+    .prepare(`SELECT id, show_title, season_number, episode_number, episode_name, aired_on FROM plex_missing_episodes WHERE dismissed = 0 ORDER BY aired_on DESC LIMIT 15`)
+    .all<{ id: string; show_title: string; season_number: number; episode_number: number; episode_name: string | null; aired_on: string }>();
+
   // ---- retrospective: plain aggregation over the trailing week, no
   // generated prose — see the section comment above for why journal
   // content itself is quoted rather than "summarized". ----
@@ -6031,6 +6044,7 @@ async function computeBriefing(db: D1Database, date: string) {
       dueTodayTasks: dueTodayRow.results ?? [],
       upcomingDates,
       staleProjects: staleProjectsRow.results ?? [],
+      missingEpisodes: missingEpisodesRow ?? [],
     },
     retrospective: {
       weekStart,
@@ -6802,4 +6816,26 @@ app.delete('/api/bet-game-notes/:id', async (c) => {
 
 app.get('/api/health', (c) => c.json({ ok: true, time: now() }));
 
-export default app;
+// Nightly Cron Trigger (see wrangler.toml's [triggers] block) — re-syncs
+// the Plex library mirror, then runs the airing check against the freshly
+// synced data (so a show downloaded yesterday doesn't get flagged as
+// still missing just because the sync hadn't caught up yet). Both steps
+// are individually safe to fail — either can throw (Plex/TVMaze down,
+// PLEX_SERVER_URL not yet configured) without taking the Worker itself
+// down; there's no HTTP response to break, only next run's data staying
+// stale, which the next successful run fixes.
+export default {
+  fetch: app.fetch,
+  async scheduled(_event: ScheduledController, env: Env) {
+    try {
+      await syncPlexLibrary(env);
+    } catch (err) {
+      console.error('Plex library sync failed', err);
+    }
+    try {
+      await runPlexAiringCheck(env);
+    } catch (err) {
+      console.error('Plex airing check failed', err);
+    }
+  },
+};

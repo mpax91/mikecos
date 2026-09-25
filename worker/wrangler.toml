@@ -11,6 +11,12 @@ database_id = "d2a93367-a474-4b41-aa2d-a688400e4fb2"
 binding = "FILES"
 bucket_name = "mikeos-files"
 
+[triggers]
+# Nightly Plex library re-sync + airing check (see index.ts's `scheduled`
+# export) — 9am UTC is ~4-5am Eastern, after the previous night's shows
+# have actually aired and well before Mike's Daily Briefing.
+crons = ["0 9 * * *"]
+
 [vars]
 # Comma-separated exact origins the frontend is served from. Required (not
 # "*") because cookie-based sessions need CORS to echo back one specific
