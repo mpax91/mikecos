@@ -1,5 +1,5 @@
 import type { AuthenticationResponseJSON, PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON, RegistrationResponseJSON } from '@simplewebauthn/browser';
-import type { AuthCredentialSummary, AuthStatus, Bet, BetLeg, BetGameNote, BetPromo, BetPromoStatus, BetScheduleGame, BetTransaction, BetTransactionType, VaultEntryDetail, VaultFact, BriefingResponse, CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, CreditScoreEntry, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitLog, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsSavedArticle, NewsSettings, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, VaultFactLabel, VaultRollupGroup, WalletCard, WeatherResponse, WeekResponse } from './types';
+import type { AuthCredentialSummary, AuthStatus, Bet, BetLeg, BetGameNote, BetPromo, BetPromoStatus, BetScheduleGame, BetTransaction, BetTransactionType, VaultEntryDetail, VaultFact, BriefingResponse, CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, CreditScoreEntry, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitLog, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsSavedArticle, NewsSettings, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, VaultFactLabel, VaultRollupGroup, WalletCard, WalletCategory, WeatherResponse, WeekResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -36,6 +36,14 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 export function normalizeUrl(url: string): string {
   const trimmed = url.trim();
   return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
+
+// The worker returns coverArtUrl as a bare `/api/files/:key` path (it has
+// no concept of the frontend's own API_BASE) — every Wallet card response
+// runs through this so components can put coverArtUrl straight into an
+// <img src>, the same way uploadInline's `url` is already resolved below.
+function resolveWalletCard(card: WalletCard): WalletCard {
+  return card.coverArtUrl && !/^https?:\/\//i.test(card.coverArtUrl) ? { ...card, coverArtUrl: `${API_BASE}${card.coverArtUrl}` } : card;
 }
 
 export const api = {
@@ -99,6 +107,7 @@ export const api = {
   },
 
   fileUrl: (key: string, download = false) => `${API_BASE}/api/files/${key}${download ? '?download=1' : ''}`,
+
 
   deleteFileKey: (key: string) => request<{ ok: true }>(`/api/files/${key}`, { method: 'DELETE' }),
 
@@ -831,13 +840,13 @@ export const api = {
   // ---- Wallet (0045_wallet.sql) — loyalty/membership/pass/gift cards,
   // its own flat table (see that migration for why). ----
 
-  listWalletCards: () => request<WalletCard[]>('/api/wallet/cards'),
+  listWalletCards: () => request<WalletCard[]>('/api/wallet/cards').then((cards) => cards.map(resolveWalletCard)),
 
   createWalletCard: (
     params: Partial<
       Pick<WalletCard, 'name' | 'category' | 'barcodeType' | 'barcodeValue' | 'displayNumber' | 'pinCode' | 'balance' | 'notes' | 'color' | 'coverArtKey'>
     >
-  ) => request<WalletCard>('/api/wallet/cards', { method: 'POST', body: JSON.stringify(params) }),
+  ) => request<WalletCard>('/api/wallet/cards', { method: 'POST', body: JSON.stringify(params) }).then(resolveWalletCard),
 
   updateWalletCard: (
     id: string,
@@ -847,12 +856,21 @@ export const api = {
         'name' | 'category' | 'barcodeType' | 'barcodeValue' | 'displayNumber' | 'pinCode' | 'balance' | 'notes' | 'color' | 'coverArtKey' | 'pinned' | 'sortOrder'
       >
     >
-  ) => request<WalletCard>(`/api/wallet/cards/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  ) => request<WalletCard>(`/api/wallet/cards/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }).then(resolveWalletCard),
 
   deleteWalletCard: (id: string) => request<{ ok: true }>(`/api/wallet/cards/${id}`, { method: 'DELETE' }),
 
   reorderWalletCards: (ordered_ids: string[]) =>
     request<{ ok: true }>('/api/wallet/cards/reorder', { method: 'POST', body: JSON.stringify({ ordered_ids }) }),
+
+  listWalletCategories: () => request<WalletCategory[]>('/api/wallet/categories'),
+
+  createWalletCategory: (name: string) => request<WalletCategory>('/api/wallet/categories', { method: 'POST', body: JSON.stringify({ name }) }),
+
+  updateWalletCategory: (id: string, patch: { name?: string; sortOrder?: number }) =>
+    request<WalletCategory>(`/api/wallet/categories/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+
+  deleteWalletCategory: (id: string) => request<{ ok: true }>(`/api/wallet/categories/${id}`, { method: 'DELETE' }),
 
   // Generic "facts for this entity id" read — works for a Password card's
   // Custom fields too, not just a top-level Vault entry (see worker's

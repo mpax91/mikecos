@@ -1,18 +1,23 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
-import type { WalletBarcodeType, WalletCard } from '../api/types';
+import type { WalletBarcodeType, WalletCard, WalletCategory } from '../api/types';
 
-// Starting point, not a fence — the category field stays free text on the
-// backend (see 0045_wallet.sql) specifically so a federal recreation pass
-// or a one-off local shop card is never blocked by a missing preset.
-const CATEGORY_PRESETS = ['Retail', 'Grocery', 'Pharmacy', 'Gym & Fitness', 'Parks & Recreation', 'Membership', 'Gift Card', 'Local Shop', 'Other'];
+// Used only if Settings' category list (0046_wallet_categories.sql) hasn't
+// loaded yet — the field is always free text regardless (see that
+// migration's comment) so a one-off card is never blocked either way.
+const FALLBACK_CATEGORIES = ['Retail', 'Other'];
 
-const BARCODE_TYPES: { value: WalletBarcodeType; label: string }[] = [
-  { value: 'code128', label: 'Barcode (Code 128)' },
-  { value: 'upc', label: 'Barcode (UPC-A)' },
-  { value: 'ean13', label: 'Barcode (EAN-13)' },
-  { value: 'qr', label: 'QR code' },
-  { value: 'none', label: 'No scannable code' },
+const BARCODE_TYPES: { value: WalletBarcodeType; label: string; hint: string }[] = [
+  {
+    value: 'code128',
+    label: 'Barcode (Code 128)',
+    hint: 'The safe default — handles letters and numbers of any length. Use this whenever you\'re not sure, or the number has letters in it.',
+  },
+  { value: 'upc', label: 'Barcode (UPC-A)', hint: 'Exactly 12 digits, no letters — the standard US retail/grocery barcode.' },
+  { value: 'ean13', label: 'Barcode (EAN-13)', hint: 'Exactly 13 digits, no letters — UPC-A\'s international cousin.' },
+  { value: 'qr', label: 'QR code', hint: 'For the square pixel-grid codes, not the classic striped bars.' },
+  { value: 'none', label: 'No scannable code', hint: 'The card is only ever checked by number or by hand.' },
 ];
 
 const SWATCHES = ['#3B5BA9', '#2F6F5E', '#8A5A3B', '#6B4C9A', '#3D7EA6', '#9A4C5F', '#4C6B4C', '#7A5C2E', '#B8632F', '#5C6B8A'];
@@ -58,11 +63,19 @@ export function WalletCardEditor({
   onClose: () => void;
   onSaved: (card: WalletCard) => void;
 }) {
+  const navigate = useNavigate();
   const [form, setForm] = useState<FormState>(() => toForm(card));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [uploadingArt, setUploadingArt] = useState(false);
+  const [categories, setCategories] = useState<WalletCategory[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    api.listWalletCategories().then(setCategories).catch(() => {});
+  }, []);
+
+  const categoryNames = categories.length ? categories.map((c) => c.name) : FALLBACK_CATEGORIES;
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -139,6 +152,11 @@ export function WalletCardEditor({
                   Remove
                 </button>
               )}
+              <div className="wallet-editor__hint">
+                A square logo works best — around 500×500px, PNG with a transparent background if you have one. It's
+                shown small (as a shrunk-to-fit mark, not a cropped banner), so a simple brand mark reads better than a
+                busy photo.
+              </div>
               <div className="wallet-editor__swatches">
                 {SWATCHES.map((sw) => (
                   <button
@@ -163,10 +181,20 @@ export function WalletCardEditor({
             <span>Category</span>
             <input value={form.category} onChange={(e) => set('category', e.target.value)} list="wallet-category-presets" placeholder="Retail, Grocery, Parks & Recreation…" />
             <datalist id="wallet-category-presets">
-              {CATEGORY_PRESETS.map((c) => (
+              {categoryNames.map((c) => (
                 <option key={c} value={c} />
               ))}
             </datalist>
+            <button
+              type="button"
+              className="wallet-editor__manage-link"
+              onClick={() => {
+                onClose();
+                navigate('/settings?cat=wallet');
+              }}
+            >
+              Manage categories in Settings
+            </button>
           </label>
 
           <div className="wallet-editor__row">
@@ -187,6 +215,7 @@ export function WalletCardEditor({
               </label>
             )}
           </div>
+          <div className="wallet-editor__hint">{BARCODE_TYPES.find((t) => t.value === form.barcodeType)?.hint}</div>
 
           <label className="wallet-editor__field">
             <span>Display number (optional)</span>
@@ -210,7 +239,12 @@ export function WalletCardEditor({
 
           <label className="wallet-editor__field">
             <span>Notes (optional)</span>
-            <textarea value={form.notes} onChange={(e) => set('notes', e.target.value)} placeholder="Expiration, terms, anything worth remembering" />
+            <textarea
+              value={form.notes}
+              onChange={(e) => set('notes', e.target.value)}
+              placeholder={'What this covers, restrictions, renewal date — as much as you need.\nMost cards won’t need this; shown collapsed when opened.'}
+              rows={4}
+            />
           </label>
 
           {error && <div className="wallet-editor__error">{error}</div>}

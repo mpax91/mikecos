@@ -10858,12 +10858,19 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  padding: 10px;
+  box-sizing: border-box;
 }
 
+/* Cover art is treated as a logo/mark, not a full-bleed banner — contained
+   and centered rather than cropped to fill, so an arbitrary uploaded image
+   (most of which are square-ish app-icon-style logos, not 5:3 banners)
+   never gets its edges cut off. See WalletCardEditor's upload hint for the
+   spec this is designed around. */
 .wallet-tile__art-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
 }
 
 .wallet-tile__art-icon {
@@ -10976,11 +10983,53 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   padding: 20px 0;
 }
 
+.wallet-barcode-view__number-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .wallet-barcode-view__number {
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
   font-size: 16px;
   letter-spacing: 0.04em;
   font-variant-numeric: tabular-nums;
+}
+
+.wallet-barcode-view__copy {
+  border: 1px solid #e4ddce;
+  background: #fff;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 11.5px;
+  color: #14120e;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.wallet-barcode-view__notes {
+  width: 100%;
+  border-top: 1px solid #eee5d2;
+  padding-top: 8px;
+}
+
+.wallet-barcode-view__notes-toggle {
+  border: none;
+  background: transparent;
+  font-size: 12.5px;
+  font-weight: var(--weight-medium);
+  color: #6b6353;
+  cursor: pointer;
+  padding: 0;
+}
+
+.wallet-barcode-view__notes-body {
+  font-size: 13px;
+  color: #14120e;
+  white-space: pre-wrap;
+  margin-top: 8px;
+  line-height: 1.5;
+  text-align: left;
 }
 
 .wallet-barcode-view__extra {
@@ -11126,4 +11175,24 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 .wallet-editor__error {
   font-size: 12.5px;
   color: #B3432B;
+}
+
+.wallet-editor__hint {
+  font-size: 11.5px;
+  color: var(--color-muted);
+  line-height: 1.45;
+}
+
+.wallet-editor__manage-link {
+  align-self: flex-start;
+  border: none;
+  background: transparent;
+  color: var(--color-accent);
+  font-size: 11.5px;
+  cursor: pointer;
+  padding: 2px 0 0;
+}
+
+.wallet-editor__manage-link:hover {
+  text-decoration: underline;
 }

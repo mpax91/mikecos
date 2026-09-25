@@ -193,3 +193,83 @@ walletRouter.post('/cards/reorder', async (c) => {
   await c.env.DB.batch(stmts);
   return c.json({ ok: true });
 });
+
+// ---- Categories (0046_wallet_categories.sql) — a Settings-managed pick
+// list, not a constraint on wallet_cards.category (see that migration for
+// why). Same shape as quick_links' add/rename/reorder/delete. ----
+
+interface WalletCategoryRow {
+  id: string;
+  name: string;
+  sort_order: number;
+  created_at: string;
+}
+
+function categoryJson(row: WalletCategoryRow) {
+  return { id: row.id, name: row.name, sortOrder: row.sort_order };
+}
+
+const slugify = (name: string) =>
+  name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || uid();
+
+walletRouter.get('/categories', async (c) => {
+  const { results } = await c.env.DB.prepare('SELECT * FROM wallet_categories ORDER BY sort_order ASC, name COLLATE NOCASE ASC').all<WalletCategoryRow>();
+  return c.json((results ?? []).map(categoryJson));
+});
+
+walletRouter.post('/categories', async (c) => {
+  const body = await c.req.json<{ name?: string }>().catch(() => ({}) as Record<string, never>);
+  const name = body.name?.trim();
+  if (!name) return c.json({ error: 'name is required' }, 400);
+  const existing = await c.env.DB.prepare('SELECT id FROM wallet_categories WHERE name = ? COLLATE NOCASE').bind(name).first();
+  if (existing) return c.json({ error: 'a category with that name already exists' }, 409);
+
+  const maxPos = await c.env.DB.prepare('SELECT COALESCE(MAX(sort_order), -1) as m FROM wallet_categories').first<{ m: number }>();
+  let id = slugify(name);
+  // Slug collision (e.g. "Gift Card" already used, someone adds "Gift  Card")
+  // falls back to a random id rather than erroring — the slug is only ever
+  // used as a stable key, never shown.
+  if (await c.env.DB.prepare('SELECT 1 FROM wallet_categories WHERE id = ?').bind(id).first()) id = uid();
+
+  await c.env.DB.prepare('INSERT INTO wallet_categories (id, name, sort_order, created_at) VALUES (?, ?, ?, ?)').bind(id, name, (maxPos?.m ?? -1) + 1, now()).run();
+  const row = await c.env.DB.prepare('SELECT * FROM wallet_categories WHERE id = ?').bind(id).first<WalletCategoryRow>();
+  return c.json(categoryJson(row!), 201);
+});
+
+walletRouter.patch('/categories/:id', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json<{ name?: string; sortOrder?: number }>();
+  const existing = await c.env.DB.prepare('SELECT * FROM wallet_categories WHERE id = ?').bind(id).first<WalletCategoryRow>();
+  if (!existing) return c.json({ error: 'not found' }, 404);
+
+  const fields: string[] = [];
+  const values: unknown[] = [];
+  if (body.name !== undefined) {
+    const name = body.name.trim();
+    if (!name) return c.json({ error: 'name cannot be empty' }, 400);
+    fields.push('name = ?');
+    values.push(name);
+  }
+  if (body.sortOrder !== undefined) {
+    fields.push('sort_order = ?');
+    values.push(body.sortOrder);
+  }
+  if (fields.length) {
+    values.push(id);
+    await c.env.DB.prepare(`UPDATE wallet_categories SET ${fields.join(', ')} WHERE id = ?`).bind(...values).run();
+  }
+  const row = await c.env.DB.prepare('SELECT * FROM wallet_categories WHERE id = ?').bind(id).first<WalletCategoryRow>();
+  return c.json(categoryJson(row!));
+});
+
+// Deleting a category never touches wallet_cards — any card already using
+// this name just keeps that text (see the migration's own comment).
+walletRouter.delete('/categories/:id', async (c) => {
+  const id = c.req.param('id');
+  await c.env.DB.prepare('DELETE FROM wallet_categories WHERE id = ?').bind(id).run();
+  return c.json({ ok: true });
+});

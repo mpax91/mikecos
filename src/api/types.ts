@@ -359,6 +359,12 @@ export interface QuickLinksResponse {
 
 export type WalletBarcodeType = 'code128' | 'qr' | 'upc' | 'ean13' | 'none';
 
+export interface WalletCategory {
+  id: string;
+  name: string;
+  sortOrder: number;
+}
+
 export interface WalletCard {
   id: string;
   name: string;

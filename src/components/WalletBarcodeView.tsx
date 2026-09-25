@@ -21,6 +21,8 @@ const JSBARCODE_FORMAT: Record<string, string> = {
 export function WalletBarcodeView({ card, onClose, onEdit }: { card: WalletCard; onClose: () => void; onEdit: () => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [pinRevealed, setPinRevealed] = useState(false);
+  const [notesOpen, setNotesOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [wakeLockSupported] = useState(() => typeof navigator !== 'undefined' && 'wakeLock' in navigator);
 
   useEffect(() => {
@@ -66,6 +68,14 @@ export function WalletBarcodeView({ card, onClose, onEdit }: { card: WalletCard;
 
   const fallbackNumber = card.displayNumber || card.barcodeValue;
 
+  function copyNumber() {
+    if (!fallbackNumber) return;
+    navigator.clipboard.writeText(fallbackNumber).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1300);
+    });
+  }
+
   return (
     <div className="wallet-barcode-view" onClick={onClose}>
       <div className="wallet-barcode-view__card" onClick={(e) => e.stopPropagation()}>
@@ -89,7 +99,14 @@ export function WalletBarcodeView({ card, onClose, onEdit }: { card: WalletCard;
           )}
         </div>
 
-        {fallbackNumber && <div className="wallet-barcode-view__number">{fallbackNumber}</div>}
+        {fallbackNumber && (
+          <div className="wallet-barcode-view__number-row">
+            <span className="wallet-barcode-view__number">{fallbackNumber}</span>
+            <button type="button" className="wallet-barcode-view__copy" onClick={copyNumber} aria-label="Copy number">
+              {copied ? 'Copied ✓' : 'Copy'}
+            </button>
+          </div>
+        )}
 
         {(card.pinCode || card.balance) && (
           <div className="wallet-barcode-view__extra">
@@ -107,6 +124,15 @@ export function WalletBarcodeView({ card, onClose, onEdit }: { card: WalletCard;
                 </button>
               </div>
             )}
+          </div>
+        )}
+
+        {card.notes && (
+          <div className="wallet-barcode-view__notes">
+            <button type="button" className="wallet-barcode-view__notes-toggle" onClick={() => setNotesOpen((v) => !v)}>
+              {notesOpen ? '▾' : '▸'} Notes
+            </button>
+            {notesOpen && <div className="wallet-barcode-view__notes-body">{card.notes}</div>}
           </div>
         )}
 
