@@ -1,5 +1,16 @@
 import type { RewardsCard } from '../api/types';
-import { isBonusActiveToday } from '../utils/rewards';
+import { isBonusActiveToday, describeRotatingWindow } from '../utils/rewards';
+
+// Quarter-aligned bonuses get the short "(Q3)" form here rather than
+// describeRotatingWindow's own "Q3 2026" — this view is glanceable, and
+// the year is implied by "active now" sitting right next to it. A
+// non-quarter-aligned window (the Amazon Prime Visa's own promo dates)
+// still falls back to its real date range, since it won't match a quarter.
+function shortRotatingLabel(startsOn: string | null, endsOn: string | null): string {
+  const desc = describeRotatingWindow(startsOn, endsOn);
+  if (!desc) return 'rotating';
+  return desc.startsWith('Q') ? `(${desc.split(' ')[0]})` : desc;
+}
 
 /** Full-screen detail for a single Rewards card — the analogue of Wallet's
  * WalletBarcodeView, but there's nothing to scan here, so the emphasis is
@@ -43,7 +54,7 @@ export function RewardsCardDetail({ card, onClose, onEdit }: { card: RewardsCard
                 {b.kind === 'rotating' && (
                   <span className="rewards-detail__rate-dates">
                     {' '}
-                    {b.startsOn && b.endsOn ? `${b.startsOn} – ${b.endsOn}` : 'rotating'}
+                    {shortRotatingLabel(b.startsOn, b.endsOn)}
                     {isBonusActiveToday(b) ? ' · active now' : ''}
                   </span>
                 )}
