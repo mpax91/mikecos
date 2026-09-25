@@ -33,6 +33,7 @@ const SIDEBAR_SECTIONS: NavSectionDef[] = [
     label: 'Now',
     items: [
       { path: '/today', label: 'Today', kind: 'today' },
+      { path: '/inbox', label: 'Inbox', kind: 'inbox' },
       { path: '/news', label: 'News', kind: 'news' },
       { path: '/bets', label: 'Bets', kind: 'bets' },
     ],

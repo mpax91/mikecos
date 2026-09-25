@@ -144,19 +144,30 @@ export function InboxWidget() {
     );
   }
 
-  if (error) return null; // no accounts configured yet, or a load hiccup — Inbox just doesn't show rather than breaking Today
-  if (!feed) return null;
-  if (feed.accounts.length === 0) return null; // nothing connected — see Settings → Email Accounts
+  // Always renders something visible (a loading/error/connect-prompt state,
+  // never a silent null) — an earlier version returned null for all three
+  // of these, which is indistinguishable from "this feature isn't here" and
+  // is exactly what made a genuinely-empty state (no account connected yet)
+  // impossible to tell apart from something being broken. Matches the
+  // house convention other Today sections already follow (see the Meetings
+  // section's own "always shown" comment).
+  if (error) return <div className="empty-state empty-state--section">Couldn't load Inbox: {error}</div>;
+  if (!feed) return <div className="empty-state empty-state--section">Loading…</div>;
+  if (feed.accounts.length === 0) {
+    return (
+      <div className="empty-state empty-state--section">
+        No email accounts connected yet — add one in Settings → Email Accounts.
+      </div>
+    );
+  }
 
   const totalNew = feed.accounts.reduce((sum, a) => sum + a.newCount, 0);
   const totalNeedsProcessing = feed.accounts.reduce((sum, a) => sum + a.needsProcessingCount, 0);
 
   return (
-    <div className="today-page__section">
-      <div className="today-page__section-title">Inbox</div>
-      <div className="inbox-widget card">
-        <div className="inbox-widget__tabs">
-          <button
+    <div className="inbox-widget card">
+      <div className="inbox-widget__tabs">
+        <button
             type="button"
             className={`inbox-widget__tab${activeAccount === null ? ' is-active' : ''}`}
             onClick={() => setActiveAccount(null)}
@@ -197,6 +208,6 @@ export function InboxWidget() {
           </>
         )}
       </div>
-    </div>
   );
 }
+

@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ContextMenu, type ContextMenuItem } from '../components/ContextMenu';
 
-export type TabKind = 'today' | 'projects-list' | 'notes-list' | 'jots-list' | 'settings' | 'project' | 'folder' | 'note' | 'stats' | 'boards-list' | 'board' | 'contacts-list' | 'contact' | 'journal' | 'dashboard' | 'news' | 'links' | 'lists-list' | 'list' | 'vault-list' | 'vault' | 'vault-rollups' | 'wallet-list' | 'bets' | 'plex-list' | 'habits';
+export type TabKind = 'today' | 'projects-list' | 'notes-list' | 'jots-list' | 'settings' | 'project' | 'folder' | 'note' | 'stats' | 'boards-list' | 'board' | 'contacts-list' | 'contact' | 'journal' | 'dashboard' | 'news' | 'links' | 'lists-list' | 'list' | 'vault-list' | 'vault' | 'vault-rollups' | 'wallet-list' | 'bets' | 'plex-list' | 'habits' | 'inbox';
 
 export interface Tab {
   id: string;
@@ -304,5 +304,6 @@ export function tabIcon(kind: TabKind): string {
   if (kind === 'wallet-list') return '🎫';
   if (kind === 'plex-list') return '🎬';
   if (kind === 'habits') return '🎯';
+  if (kind === 'inbox') return '📥';
   return kind === 'notes-list' || kind === 'note' ? '📝' : '📁';
 }
