@@ -44,7 +44,15 @@ function daysAgoLabel(iso: string, today: string): string {
 function inDaysLabel(n: number): string {
   if (n === 0) return 'today';
   if (n === 1) return 'tomorrow';
-  return `in ${n} days`;
+  if (n > 1) return `in ${n} days`;
+  if (n === -1) return 'expired yesterday';
+  return `expired ${-n} days ago`;
+}
+
+function upcomingDateIcon(type: 'birthday' | 'anniversary' | 'card_expiry'): string {
+  if (type === 'birthday') return '🎂';
+  if (type === 'anniversary') return '💍';
+  return '💳';
 }
 
 const GROUP_ICON: Record<string, string> = {
@@ -121,9 +129,9 @@ function matchIntent(q: string, data: BriefingResponse): string[] | null {
     if (data.insights.overdueCount === 0) return ["Nothing overdue — you're caught up."];
     return [`${data.insights.overdueCount} overdue:`, ...data.insights.overdueTasks.map((t) => `• ${t.title}`)];
   }
-  if (/(birthday|anniversary|upcoming date)/.test(s)) {
+  if (/(birthday|anniversary|upcoming date|card expir|expiring card)/.test(s)) {
     if (data.insights.upcomingDates.length === 0) return ['Nothing in the next 7 days.'];
-    return data.insights.upcomingDates.map((d) => `${d.type === 'birthday' ? '🎂' : '💍'} ${d.name} — ${inDaysLabel(d.inDays)}`);
+    return data.insights.upcomingDates.map((d) => `${upcomingDateIcon(d.type)} ${d.name} — ${inDaysLabel(d.inDays)}`);
   }
   if (/(stale|quiet|neglected)/.test(s) && /project/.test(s)) {
     if (data.insights.staleProjects.length === 0) return ['Every project has had activity recently.'];
@@ -325,9 +333,13 @@ export function BriefingModal() {
                   </li>
                 )}
                 {data.insights.upcomingDates.map((d) => (
-                  <li key={`${d.type}-${d.contactId}`}>
-                    <button type="button" className="briefing-modal__link-btn" onClick={() => goTo(`/contacts/${d.contactId}`)}>
-                      {d.type === 'birthday' ? '🎂' : '💍'} {d.name} — {inDaysLabel(d.inDays)}
+                  <li key={`${d.type}-${d.contactId ?? d.cardId}`}>
+                    <button
+                      type="button"
+                      className="briefing-modal__link-btn"
+                      onClick={() => (d.type === 'card_expiry' ? goTo('/wallet?tab=payment', d.cardId) : goTo(`/contacts/${d.contactId}`))}
+                    >
+                      {upcomingDateIcon(d.type)} {d.name} — {inDaysLabel(d.inDays)}
                     </button>
                   </li>
                 ))}

@@ -1181,8 +1181,9 @@ export interface BriefingMeeting {
 }
 
 export interface BriefingUpcomingDate {
-  type: 'birthday' | 'anniversary';
-  contactId: string;
+  type: 'birthday' | 'anniversary' | 'card_expiry';
+  contactId?: string;
+  cardId?: string;
   name: string;
   inDays: number;
 }

@@ -8,12 +8,17 @@ const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);
 const THIS_YEAR = new Date().getFullYear();
 const YEARS = Array.from({ length: 16 }, (_, i) => THIS_YEAR + i);
 
+// The major networks Mike actually carries, plus "Other" so an unusual
+// network (a store card, a foreign network) still has somewhere to go —
+// picking "Other" reveals a free-text field instead of leaving the
+// dropdown unable to represent it.
+const NETWORKS = ['Visa', 'Mastercard', 'American Express', 'Discover'];
+
 type FormState = {
   nickname: string;
   cardType: PaymentCardType;
   network: string;
   issuer: string;
-  last4: string;
   nameOnCard: string;
   expiryMonth: string;
   expiryYear: string;
@@ -30,7 +35,6 @@ function toForm(card: PaymentCard | null): FormState {
     cardType: card?.cardType ?? 'credit',
     network: card?.network ?? '',
     issuer: card?.issuer ?? '',
-    last4: card?.last4 ?? '',
     nameOnCard: card?.nameOnCard ?? '',
     expiryMonth: card?.expiryMonth ? String(card.expiryMonth) : '',
     expiryYear: card?.expiryYear ? String(card.expiryYear) : '',
@@ -40,6 +44,16 @@ function toForm(card: PaymentCard | null): FormState {
     coverArtKey: card?.coverArtKey ?? null,
     backArtKey: card?.backArtKey ?? null,
   };
+}
+
+/** Human error text from client.ts's `request()`, which throws
+ * `Error(\`API ${status}: ${body}\`)` — strip that prefix so the field
+ * shows the server's actual message (e.g. "PAYMENT_CARD_ENC_KEY is not
+ * set…") instead of a generic "try again" that hides what's actually
+ * wrong. */
+function errorMessage(err: unknown, fallback: string): string {
+  if (!(err instanceof Error)) return fallback;
+  return err.message.replace(/^API \d+:\s*/, '') || fallback;
 }
 
 /** Add/edit modal for a Payment Card. The number and CVV are write-only
@@ -60,6 +74,11 @@ export function PaymentCardEditor({
   onSaved: (card: PaymentCard) => void;
 }) {
   const [form, setForm] = useState<FormState>(() => toForm(card));
+  // The network select's own value: one of NETWORKS, or 'Other' when the
+  // card's stored network (if any) isn't one of the major ones — in which
+  // case the free-text field below stays populated with the real value so
+  // nothing is silently dropped by switching to a dropdown.
+  const [networkChoice, setNetworkChoice] = useState<string>(() => (card?.network && NETWORKS.includes(card.network) ? card.network : card?.network ? 'Other' : ''));
   const [numberInput, setNumberInput] = useState('');
   const [cvvInput, setCvvInput] = useState('');
   const [clearNumber, setClearNumber] = useState(false);
@@ -118,12 +137,21 @@ export function PaymentCardEditor({
     }
     setSaving(true);
     setError(null);
+    // last4 is never typed in directly — it's derived from whatever full
+    // number is on file so there's only one place to keep it correct. A
+    // freshly typed number wins; clearing the number clears last4 with it;
+    // otherwise (editing without touching the number) the existing last4
+    // is left as-is by simply not sending the field.
+    let last4: string | null | undefined;
+    if (numberInput.trim()) last4 = numberInput.replace(/\D/g, '').slice(-4) || null;
+    else if (clearNumber) last4 = null;
+    else last4 = undefined;
+
     const payload: Record<string, unknown> = {
       nickname,
       cardType: form.cardType,
-      network: form.network.trim() || null,
+      network: (networkChoice === 'Other' ? form.network : networkChoice).trim() || null,
       issuer: form.issuer.trim() || null,
-      last4: form.last4.trim() || null,
       nameOnCard: form.nameOnCard.trim() || null,
       expiryMonth: form.expiryMonth ? parseInt(form.expiryMonth, 10) : null,
       expiryYear: form.expiryYear ? parseInt(form.expiryYear, 10) : null,
@@ -134,6 +162,7 @@ export function PaymentCardEditor({
       backArtKey: form.backArtKey,
       rewardWorthy,
     };
+    if (last4 !== undefined) payload.last4 = last4;
     if (numberInput.trim()) payload.number = numberInput.trim();
     else if (clearNumber) payload.number = null;
     if (cvvInput.trim()) payload.cvv = cvvInput.trim();
@@ -144,8 +173,8 @@ export function PaymentCardEditor({
       const result = card ? await api.updatePaymentCard(card.id, payload) : await api.createPaymentCard(payload);
       onSaved(result);
       onClose();
-    } catch {
-      setError("Couldn't save — try again.");
+    } catch (err) {
+      setError(errorMessage(err, "Couldn't save — try again."));
     } finally {
       setSaving(false);
     }
@@ -227,20 +256,29 @@ export function PaymentCardEditor({
             </label>
             <label className="wallet-editor__field">
               <span>Network (optional)</span>
-              <input value={form.network} onChange={(e) => set('network', e.target.value)} placeholder="Visa, Mastercard, Amex…" />
+              <select value={networkChoice} onChange={(e) => setNetworkChoice(e.target.value)}>
+                <option value="">—</option>
+                {NETWORKS.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+                <option value="Other">Other…</option>
+              </select>
             </label>
           </div>
 
-          <div className="wallet-editor__row">
+          {networkChoice === 'Other' && (
             <label className="wallet-editor__field">
-              <span>Issuer / bank (optional)</span>
-              <input value={form.issuer} onChange={(e) => set('issuer', e.target.value)} placeholder="Chase, Amex, your credit union…" />
+              <span>Network name</span>
+              <input value={form.network} onChange={(e) => set('network', e.target.value)} placeholder="e.g. store card, foreign network…" autoFocus />
             </label>
-            <label className="wallet-editor__field">
-              <span>Last 4 (optional)</span>
-              <input value={form.last4} onChange={(e) => set('last4', e.target.value.replace(/\D/g, '').slice(0, 4))} placeholder="1234" />
-            </label>
-          </div>
+          )}
+
+          <label className="wallet-editor__field">
+            <span>Issuer / bank (optional)</span>
+            <input value={form.issuer} onChange={(e) => set('issuer', e.target.value)} placeholder="Chase, Amex, your credit union…" />
+          </label>
 
           <label className="wallet-editor__field">
             <span>Name on card (optional)</span>
@@ -271,6 +309,13 @@ export function PaymentCardEditor({
                   </button>
                 )}
                 {clearNumber && <div className="wallet-editor__hint">Will be removed on save.</div>}
+                {(() => {
+                  // Last 4 is never typed by hand — shown here read-only,
+                  // derived from whatever number is being saved (a freshly
+                  // typed one, or the one already on file).
+                  const shown = numberInput.trim() ? numberInput.replace(/\D/g, '').slice(-4) : clearNumber ? '' : card?.last4;
+                  return shown ? <div className="wallet-editor__hint">Shows as last 4: {shown}</div> : null;
+                })()}
               </label>
               <label className="wallet-editor__field">
                 <span>CVV{card?.hasCvv ? ' — on file' : ' (optional)'}</span>

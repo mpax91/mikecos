@@ -5964,7 +5964,7 @@ async function computeBriefing(db: D1Database, date: string) {
     }
     return 999;
   }
-  const upcomingDates: { type: 'birthday' | 'anniversary'; contactId: string; name: string; inDays: number }[] = [];
+  const upcomingDates: { type: 'birthday' | 'anniversary' | 'card_expiry'; contactId?: string; cardId?: string; name: string; inDays: number }[] = [];
   for (const c of dateContacts ?? []) {
     if (c.birthday_month && c.birthday_day) {
       const inDays = daysUntil(c.birthday_month, c.birthday_day);
@@ -5975,6 +5975,25 @@ async function computeBriefing(db: D1Database, date: string) {
       if (inDays <= UPCOMING_DATE_WINDOW_DAYS) upcomingDates.push({ type: 'anniversary', contactId: c.id, name: c.name, inDays });
     }
   }
+
+  // Payment card expirations — unlike birthdays these aren't recurring by
+  // month/day on a fixed calendar cycle, so there's no year-wraparound to
+  // handle: a card's expiry_month/expiry_year names one specific month, and
+  // it expires on that month's last day. Nothing recreates this as a task —
+  // computed here the same on-the-fly way as the rest of this section — and
+  // deliberately has no lower bound on inDays (unlike the 7-day window
+  // above): once a card is expired it should keep nagging every day until
+  // Mike removes/replaces it, not silently drop off after a week.
+  const { results: expiringCards } = await db
+    .prepare(`SELECT id, nickname, expiry_month, expiry_year FROM payment_cards WHERE active = 1 AND expiry_month IS NOT NULL AND expiry_year IS NOT NULL`)
+    .all<{ id: string; nickname: string; expiry_month: number; expiry_year: number }>();
+  for (const card of expiringCards ?? []) {
+    const lastDay = new Date(Date.UTC(card.expiry_year, card.expiry_month, 0)).getUTCDate();
+    const target = Date.UTC(card.expiry_year, card.expiry_month - 1, lastDay);
+    const inDays = Math.round((target - todayUtc) / 86400000);
+    if (inDays <= UPCOMING_DATE_WINDOW_DAYS) upcomingDates.push({ type: 'card_expiry', cardId: card.id, name: card.nickname, inDays });
+  }
+
   upcomingDates.sort((a, b) => a.inDays - b.inDays);
 
   // ---- retrospective: plain aggregation over the trailing week, no
