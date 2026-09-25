@@ -8843,37 +8843,52 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
      the remainder roughly evenly with Game, which is what kept wrapping
      it to two lines even with the value columns hidden. */
   .bets-workspace__table thead th:first-child {
-    width: 22px;
+    width: 26px;
   }
 
   .bets-workspace__pin-cell {
-    width: 22px;
+    width: 26px;
   }
 
   .bets-workspace__table th.bets-workspace__time-th {
-    width: 40px;
+    width: 48px;
   }
 
   .bets-workspace__table th.bets-workspace__sport-th,
   .bets-workspace__sport-cell {
-    width: 34px;
+    width: 38px;
     font-size: 9px;
     padding: 4px 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .bets-workspace__time-cell {
-    width: 40px;
+    width: 48px;
     font-size: 10px;
     padding: 4px 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
+  /* Widened a bit further than the tap target strictly needs — pin/sport/
+     time/notes together are what Game's width is computed as "whatever's
+     left over" from (see the comment above), so giving these a bit more
+     room is also how Game itself gets a bit smaller, on top of fixing the
+     "+ note" overflow below. */
   .bets-workspace__table thead th:last-child {
-    width: 36px;
+    width: 40px;
   }
 
   .bets-workspace__notes-cell {
-    width: 36px;
+    width: 40px;
     padding: 4px 4px;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .bets-workspace__notes-btn {
+    font-size: 13px;
   }
 }
 

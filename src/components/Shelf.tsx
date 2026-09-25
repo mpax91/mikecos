@@ -102,17 +102,15 @@ function ShelfTile({
   const isPinned = item.pinned === 1;
   const isDownloadable = item.type === 'image' || item.type === 'file';
   const menu = [
-    // Tapping the tile body copies it (fast, one-handed) — but a tile only
-    // shows 3 clamped lines, so a longer snippet has no way to be read in
-    // full without copying it somewhere else first. This opens it in a
-    // modal instead — the tile's kebab already works fine as a tap target
-    // on mobile (unlike the hover-only ✕), so it's the one place this can
-    // live without adding another always-visible icon to a 152×108 tile.
-    { label: 'View', onClick: () => onView(item) },
+    // Copy used to be what tapping the tile body did — moved in here (and
+    // the tile body now opens the View modal instead) so a tap always
+    // means "let me see this" rather than silently overwriting whatever's
+    // on the clipboard. Still one tap away, just an explicit one.
+    { label: 'Copy', onClick: () => onCopy(item) },
     // Same convention as EntityCard's file-download item: a dedicated,
-    // called-out Download action, since clicking the tile body only copies
-    // (an image's copy path may fall back to copying its URL rather than
-    // the actual bytes — Download is the one guaranteed way to get the file).
+    // called-out Download action, since Copy's path for an image may fall
+    // back to copying its URL rather than the actual bytes — Download is
+    // the one guaranteed way to get the file.
     ...(isDownloadable
       ? [
           {
@@ -168,7 +166,7 @@ function ShelfTile({
       <button type="button" className="shelf-tile__close" title="Remove" onClick={() => onDelete(item)}>
         ✕
       </button>
-      <div className="shelf-tile__body" onClick={() => onCopy(item)} title="Click to copy">
+      <div className="shelf-tile__body" onClick={() => onView(item)} title="Click to view">
         {body}
       </div>
       <div className="shelf-tile__foot">

@@ -3,6 +3,7 @@ import { api } from '../api/client';
 import type { BetGameNote, BetPromo, BetScheduleGame } from '../api/types';
 import { SPORTS, formatMoney, type SportsbookBalance } from '../utils/bets';
 import { Modal } from './Modal';
+import { useIsMobile } from '../hooks/useIsMobile';
 
 function todayLocalISODash(): string {
   const d = new Date();
@@ -422,6 +423,7 @@ function GameRow({
   onPinToggle: (entry: BoardEntry) => void;
   onOpenNotes: (entry: BoardEntry) => void;
 }) {
+  const isMobile = useIsMobile();
   return (
     <tr className={entry.pinned ? 'is-pinned' : undefined}>
       <td className="bets-workspace__pin-cell">
@@ -455,7 +457,11 @@ function GameRow({
       ))}
       <td className="bets-workspace__notes-cell">
         <button type="button" className={`bets-workspace__notes-btn${entry.note ? ' has-note' : ''}`} onClick={() => onOpenNotes(entry)} title={entry.note || 'Add notes'}>
-          {entry.note ? '📝' : '+ note'}
+          {/* "+ note" doesn't fit the mobile column's narrower width without
+              forcing the whole table wider (nowrap text has a hard minimum
+              width even under table-layout: fixed) — a plain "+" reads fine
+              at that size and the title attribute still says "Add notes". */}
+          {entry.note ? '📝' : isMobile ? '+' : '+ note'}
         </button>
       </td>
     </tr>
