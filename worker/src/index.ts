@@ -5564,8 +5564,17 @@ interface SearchGroupResultRow {
 // so the Daily Briefing's "anything related to this meeting" matching (see
 // computeBriefing below) can call the exact same scored LIKE-matching
 // logic per keyword instead of re-implementing a second search engine.
+// D1's SQLite build rejects any LIKE pattern over a fairly low byte length
+// with "LIKE or GLOB pattern too complex" — a long meeting title (Daily
+// Briefing's related-content matching passes the whole title as one search
+// term) or a long typed query can trip this and 500 the entire request.
+// The pattern itself is capped here rather than the term used for scoring
+// below, so a long query still ranks results by its full text — it just
+// stops asking SQLite to LIKE-match more than a safe prefix of it.
+const MAX_LIKE_PATTERN_TERM_LENGTH = 40;
+
 async function runSearch(db: D1Database, q: string, scope: Set<SearchGroup>, includeArchived: boolean, includePlex: boolean): Promise<SearchGroupResultRow[]> {
-  const like = `%${q}%`;
+  const like = `%${q.slice(0, MAX_LIKE_PATTERN_TERM_LENGTH)}%`;
   const results: SearchResult[] = [];
 
   const wantsEntities = scope.has('notes') || scope.has('jots') || scope.has('lists') || scope.has('projects') || scope.has('vault');
@@ -6032,7 +6041,16 @@ async function findRelatedContent(db: D1Database, keywords: string[]): Promise<B
   for (const kw of keywords) {
     const q = kw.trim();
     if (q.length < 3) continue; // too short to mean anything as a LIKE term
-    const groups = await runSearch(db, q, BRIEFING_RELATED_SCOPE, false, false);
+    // One bad keyword (or a transient D1 error on this particular query)
+    // shouldn't take down the whole briefing — every other section is
+    // independent of this one, so skip and keep going.
+    let groups: SearchGroupResultRow[];
+    try {
+      groups = await runSearch(db, q, BRIEFING_RELATED_SCOPE, false, false);
+    } catch (err) {
+      console.error(`findRelatedContent: search failed for keyword "${q}"`, err);
+      continue;
+    }
     for (const g of groups) {
       for (const r of g.results) {
         const key = `${r.group}:${r.id}`;

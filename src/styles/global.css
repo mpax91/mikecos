@@ -10216,6 +10216,13 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   color: var(--color-muted);
 }
 
+.briefing-modal__hint--error {
+  color: var(--color-danger, #b3261e);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
 .briefing-modal__section-label {
   font-size: 12px;
   font-weight: 600;

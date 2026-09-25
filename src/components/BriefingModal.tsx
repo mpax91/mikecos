@@ -158,6 +158,7 @@ export function BriefingModal() {
   const [date, setDate] = useState(todayLocalISO());
   const [data, setData] = useState<BriefingResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [preppingId, setPreppingId] = useState<string | null>(null);
   const [askQuery, setAskQuery] = useState('');
   const [askAnswer, setAskAnswer] = useState<string[] | null>(null);
@@ -166,9 +167,21 @@ export function BriefingModal() {
 
   const load = useCallback((d: string) => {
     setLoading(true);
+    setLoadError(null);
     api
       .getBriefing(d)
-      .then(setData)
+      .then((res) => {
+        setData(res);
+        setLoadError(null);
+      })
+      .catch((e) => {
+        // A failed fetch used to leave `data` null forever with no
+        // indication anything went wrong — the modal just showed its
+        // header and the always-rendered Ask box, looking "broken" with
+        // no way to tell why. Surface it instead, with a retry.
+        setData(null);
+        setLoadError(String(e?.message ?? e));
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -256,6 +269,15 @@ export function BriefingModal() {
 
         <div className="briefing-modal__body">
           {loading && !data && <div className="briefing-modal__hint">Pulling today together…</div>}
+
+          {!loading && loadError && (
+            <div className="briefing-modal__hint briefing-modal__hint--error">
+              Couldn't load today's briefing: {loadError}
+              <button type="button" className="btn btn--ghost btn--sm" onClick={() => load(date)} style={{ marginLeft: 8 }}>
+                Retry
+              </button>
+            </div>
+          )}
 
           {data && data.meetings.length > 0 && (
             <div className="briefing-modal__section">
