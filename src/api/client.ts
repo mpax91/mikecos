@@ -1,5 +1,5 @@
 import type { AuthenticationResponseJSON, PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON, RegistrationResponseJSON } from '@simplewebauthn/browser';
-import type { AuthCredentialSummary, AuthStatus, Bet, BetLeg, BetGameNote, BetPromo, BetPromoStatus, BetScheduleGame, BetTransaction, BetTransactionType, VaultEntryDetail, VaultFact, BriefingResponse, CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, CreditScoreEntry, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitLog, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsSavedArticle, NewsSettings, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, VaultFactLabel, VaultRollupGroup, WalletCard, WalletCategory, WeatherResponse, WeekResponse } from './types';
+import type { AuthCredentialSummary, AuthStatus, Bet, BetLeg, BetGameNote, BetPromo, BetPromoStatus, BetScheduleGame, BetTransaction, BetTransactionType, VaultEntryDetail, VaultFact, BriefingResponse, CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, CreditScoreEntry, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitLog, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsSavedArticle, NewsSettings, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, VaultFactLabel, VaultRollupGroup, WalletCard, WalletCategory, RewardsCard, RewardsBonus, RewardsPerk, WeatherResponse, WeekResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -43,6 +43,11 @@ export function normalizeUrl(url: string): string {
 // runs through this so components can put coverArtUrl straight into an
 // <img src>, the same way uploadInline's `url` is already resolved below.
 function resolveWalletCard(card: WalletCard): WalletCard {
+  return card.coverArtUrl && !/^https?:\/\//i.test(card.coverArtUrl) ? { ...card, coverArtUrl: `${API_BASE}${card.coverArtUrl}` } : card;
+}
+
+// Same fix, same reason, for Rewards cards' cover art.
+function resolveRewardsCard(card: RewardsCard): RewardsCard {
   return card.coverArtUrl && !/^https?:\/\//i.test(card.coverArtUrl) ? { ...card, coverArtUrl: `${API_BASE}${card.coverArtUrl}` } : card;
 }
 
@@ -871,6 +876,40 @@ export const api = {
     request<WalletCategory>(`/api/wallet/categories/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
 
   deleteWalletCategory: (id: string) => request<{ ok: true }>(`/api/wallet/categories/${id}`, { method: 'DELETE' }),
+
+  // ---- Rewards (0047_rewards.sql) — credit-card rewards optimizer, Wallet
+  // Phase 2. Its own table family (see that migration for why). ----
+
+  listRewardsCards: () => request<RewardsCard[]>('/api/rewards/cards').then((cards) => cards.map(resolveRewardsCard)),
+
+  createRewardsCard: (
+    params: Partial<Pick<RewardsCard, 'nickname' | 'network' | 'last4' | 'baseRate' | 'annualFee' | 'alwaysCarry' | 'color' | 'coverArtKey' | 'notes'>>
+  ) => request<RewardsCard>('/api/rewards/cards', { method: 'POST', body: JSON.stringify(params) }).then(resolveRewardsCard),
+
+  updateRewardsCard: (
+    id: string,
+    patch: Partial<
+      Pick<RewardsCard, 'nickname' | 'network' | 'last4' | 'baseRate' | 'annualFee' | 'alwaysCarry' | 'active' | 'color' | 'coverArtKey' | 'notes' | 'sortOrder'>
+    >
+  ) => request<RewardsCard>(`/api/rewards/cards/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }).then(resolveRewardsCard),
+
+  deleteRewardsCard: (id: string) => request<{ ok: true }>(`/api/rewards/cards/${id}`, { method: 'DELETE' }),
+
+  createRewardsBonus: (cardId: string, params: Pick<RewardsBonus, 'category' | 'rate' | 'kind' | 'startsOn' | 'endsOn'>) =>
+    request<RewardsBonus>(`/api/rewards/cards/${cardId}/bonuses`, { method: 'POST', body: JSON.stringify(params) }),
+
+  updateRewardsBonus: (id: string, patch: Partial<Pick<RewardsBonus, 'category' | 'rate' | 'kind' | 'startsOn' | 'endsOn'>>) =>
+    request<RewardsBonus>(`/api/rewards/bonuses/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+
+  deleteRewardsBonus: (id: string) => request<{ ok: true }>(`/api/rewards/bonuses/${id}`, { method: 'DELETE' }),
+
+  createRewardsPerk: (cardId: string, params: Pick<RewardsPerk, 'label' | 'description'>) =>
+    request<RewardsPerk>(`/api/rewards/cards/${cardId}/perks`, { method: 'POST', body: JSON.stringify(params) }),
+
+  updateRewardsPerk: (id: string, patch: Partial<Pick<RewardsPerk, 'label' | 'description'>>) =>
+    request<RewardsPerk>(`/api/rewards/perks/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+
+  deleteRewardsPerk: (id: string) => request<{ ok: true }>(`/api/rewards/perks/${id}`, { method: 'DELETE' }),
 
   // Generic "facts for this entity id" read — works for a Password card's
   // Custom fields too, not just a top-level Vault entry (see worker's

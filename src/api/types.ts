@@ -384,6 +384,51 @@ export interface WalletCard {
   updatedAt: string;
 }
 
+// ---- Rewards (credit-card rewards optimizer — Wallet Phase 2. See
+// worker/migrations/0047_rewards.sql for why this is a separate table
+// family from wallet_cards above.) ----
+
+export type RewardsBonusKind = 'fixed' | 'rotating';
+
+export interface RewardsBonus {
+  id: string;
+  cardId: string;
+  category: string;
+  rate: number;
+  kind: RewardsBonusKind;
+  startsOn: string | null;
+  endsOn: string | null;
+  sortOrder: number;
+}
+
+export interface RewardsPerk {
+  id: string;
+  cardId: string;
+  label: string;
+  description: string | null;
+  sortOrder: number;
+}
+
+export interface RewardsCard {
+  id: string;
+  nickname: string;
+  network: string | null;
+  last4: string | null;
+  baseRate: number;
+  annualFee: number | null;
+  alwaysCarry: boolean;
+  active: boolean;
+  color: string | null;
+  coverArtKey: string | null;
+  coverArtUrl: string | null;
+  notes: string | null;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+  bonuses: RewardsBonus[];
+  perks: RewardsPerk[];
+}
+
 // ---- Canvas boards (infinite-canvas pinboard) ----
 
 // 'connector' is a freestanding line/arrow object placed via the toolbar
@@ -1014,7 +1059,7 @@ export interface NewsSavedArticle {
 
 // ---- Global search (Cmd/Ctrl+K palette) ----
 
-export type SearchGroupKey = 'notes' | 'jots' | 'lists' | 'projects' | 'vault' | 'wallet' | 'boards' | 'contacts' | 'journal' | 'meeting_notes' | 'links';
+export type SearchGroupKey = 'notes' | 'jots' | 'lists' | 'projects' | 'vault' | 'wallet' | 'rewards' | 'boards' | 'contacts' | 'journal' | 'meeting_notes' | 'links';
 
 export interface SearchResult {
   id: string;

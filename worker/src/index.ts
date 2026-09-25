@@ -40,6 +40,7 @@ import { FeedParseError, parseFeed } from './news';
 import { authGate, authRouter, resolveOrigin } from './auth';
 import { vaultRouter } from './vault';
 import { walletRouter } from './wallet';
+import { rewardsRouter } from './rewards';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -61,6 +62,7 @@ app.route('/api/auth', authRouter);
 app.use('/api/*', authGate);
 app.route('/api/vault', vaultRouter);
 app.route('/api/wallet', walletRouter);
+app.route('/api/rewards', rewardsRouter);
 
 // Hono's default unhandled-error response is a bare "Internal Server Error"
 // with no body — fine for not leaking internals to an outside caller, but
@@ -5343,7 +5345,7 @@ app.get('/api/top-news', async (c) => {
 // status lifecycle or folder nesting; see VaultPage's own header comment),
 // and showing its children under a "📁 Projects" chip read as "there's a
 // Project here" when there wasn't one.
-const SEARCH_GROUPS = ['notes', 'jots', 'lists', 'projects', 'vault', 'wallet', 'boards', 'contacts', 'journal', 'meeting_notes', 'links'] as const;
+const SEARCH_GROUPS = ['notes', 'jots', 'lists', 'projects', 'vault', 'wallet', 'rewards', 'boards', 'contacts', 'journal', 'meeting_notes', 'links'] as const;
 type SearchGroup = (typeof SEARCH_GROUPS)[number];
 
 interface SearchResult {
@@ -5401,8 +5403,9 @@ async function runSearch(db: D1Database, q: string, scope: Set<SearchGroup>, inc
   const wantsMeetings = scope.has('meeting_notes');
   const wantsLinks = scope.has('links');
   const wantsWallet = scope.has('wallet');
+  const wantsRewards = scope.has('rewards');
 
-  const [entityRows, boardRows, boardItemRows, contactRows, contactNoteRows, journalRows, meetingRows, linkRows, walletRows] = await Promise.all([
+  const [entityRows, boardRows, boardItemRows, contactRows, contactNoteRows, journalRows, meetingRows, linkRows, walletRows, rewardsCardRows, rewardsBonusRows, rewardsPerkRows] = await Promise.all([
     wantsEntities
       ? db
           .prepare(
@@ -5461,6 +5464,20 @@ async function runSearch(db: D1Database, q: string, scope: Set<SearchGroup>, inc
           .prepare(`SELECT * FROM wallet_cards WHERE name LIKE ? OR category LIKE ? OR notes LIKE ? ORDER BY updated_at DESC LIMIT 25`)
           .bind(like, like, like)
           .all<{ id: string; name: string; category: string; notes: string | null; updated_at: string }>()
+      : Promise.resolve({ results: [] as any[] }),
+    // Rewards is a ~15-row table — fetched in full (like Contacts) rather
+    // than LIKE-filtered, since a match can live on a card's own nickname,
+    // one of its bonus categories, or a perk label/description, and combining
+    // those into one scoreable blob is easier done in JS than as a SQL OR
+    // across a join.
+    wantsRewards
+      ? db.prepare(`SELECT id, nickname, notes, updated_at FROM rewards_cards WHERE active = 1`).all<{ id: string; nickname: string; notes: string | null; updated_at: string }>()
+      : Promise.resolve({ results: [] as any[] }),
+    wantsRewards
+      ? db.prepare(`SELECT card_id, category FROM rewards_bonuses`).all<{ card_id: string; category: string }>()
+      : Promise.resolve({ results: [] as any[] }),
+    wantsRewards
+      ? db.prepare(`SELECT card_id, label, description FROM rewards_perks`).all<{ card_id: string; label: string; description: string | null }>()
       : Promise.resolve({ results: [] as any[] }),
   ]);
 
@@ -5666,6 +5683,32 @@ async function runSearch(db: D1Database, q: string, scope: Set<SearchGroup>, inc
     });
   }
 
+  // ---- rewards cards ----
+  // Same no-per-route reasoning as Wallet above — a match opens straight to
+  // that card's detail via router state, on /wallet?tab=rewards so it lands
+  // on the Rewards tab rather than My Cards.
+  for (const rc of rewardsCardRows.results ?? []) {
+    const bonusCats = (rewardsBonusRows.results ?? []).filter((b) => b.card_id === rc.id).map((b) => b.category);
+    const perkText = (rewardsPerkRows.results ?? [])
+      .filter((p) => p.card_id === rc.id)
+      .map((p) => [p.label, p.description].filter(Boolean).join(' '));
+    const body = [...bonusCats, ...perkText, rc.notes].filter(Boolean).join(' ');
+    const score = matchScore(rc.nickname ?? '', body || null, q);
+    if (score === 0) continue;
+    results.push({
+      id: rc.id,
+      kind: 'rewards_card',
+      group: 'rewards',
+      title: rc.nickname || 'Untitled Card',
+      snippet: score < 60 && bonusCats.length ? bonusCats.join(', ') : null,
+      parentTitle: null,
+      path: '/wallet?tab=rewards',
+      openId: rc.id,
+      updatedAt: rc.updated_at,
+      score,
+    });
+  }
+
   // A Vault entry's own row (kind 'vault_entry') and every one of its
   // children share the same destination (/vault/:id — Vault has no
   // per-child route), so when a specific child already matched, the
@@ -5733,7 +5776,7 @@ interface BriefingMeeting {
   related: BriefingRelated[];
 }
 
-const BRIEFING_RELATED_SCOPE = new Set<SearchGroup>(['notes', 'jots', 'lists', 'projects', 'vault', 'wallet', 'boards', 'links', 'meeting_notes']);
+const BRIEFING_RELATED_SCOPE = new Set<SearchGroup>(['notes', 'jots', 'lists', 'projects', 'vault', 'wallet', 'rewards', 'boards', 'links', 'meeting_notes']);
 const BRIEFING_RELATED_LIMIT = 6;
 const UPCOMING_DATE_WINDOW_DAYS = 7;
 const STALE_PROJECT_DAYS = 14;
