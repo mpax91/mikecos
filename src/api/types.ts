@@ -463,10 +463,23 @@ export interface RewardsCard {
   coverArtUrl: string | null;
   notes: string | null;
   sortOrder: number;
+  /** Ties this card to the quarterly research-import workflow (see
+   * worker/migrations/0057_rewards_import.sql) — null for a card Mike
+   * added by hand, which an import never touches. */
+  importKey: string | null;
   createdAt: string;
   updatedAt: string;
   bonuses: RewardsBonus[];
   perks: RewardsPerk[];
+}
+
+export interface RewardsImportResult {
+  created: number;
+  updated: number;
+  bonusesWritten: number;
+  perksWritten: number;
+  errors: string[];
+  unmatchedExisting: { nickname: string; importKey: string }[];
 }
 
 // ---- Payment Cards (Wallet Phase 3 — a secure credit/debit card vault.

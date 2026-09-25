@@ -5,6 +5,7 @@ import type { RewardsCard } from '../api/types';
 import { RewardsCardTile } from './RewardsCardTile';
 import { RewardsCardDetail } from './RewardsCardDetail';
 import { RewardsCardEditor } from './RewardsCardEditor';
+import { RewardsImportModal } from './RewardsImportModal';
 import { ConfirmModal } from './ConfirmModal';
 import {
   carryPlan,
@@ -45,6 +46,7 @@ export function RewardsPanel() {
   const [openCard, setOpenCard] = useState<RewardsCard | null>(null);
   const [editing, setEditing] = useState<RewardsCard | null | 'new'>(null);
   const [deleting, setDeleting] = useState<RewardsCard | null>(null);
+  const [importing, setImporting] = useState(false);
   const [findQuery, setFindQuery] = useState('');
 
   const load = useCallback(() => {
@@ -137,9 +139,14 @@ export function RewardsPanel() {
             All Cards
           </button>
         </div>
-        <button type="button" className="btn" onClick={() => setEditing('new')}>
-          + Add Card
-        </button>
+        <div className="rewards-panel__toolbar-actions">
+          <button type="button" className="btn btn--ghost" onClick={() => setImporting(true)}>
+            Import…
+          </button>
+          <button type="button" className="btn" onClick={() => setEditing('new')}>
+            + Add Card
+          </button>
+        </div>
       </div>
 
       {cards.length === 0 && (
@@ -304,6 +311,8 @@ export function RewardsPanel() {
       )}
 
       {editing !== null && <RewardsCardEditor card={editing === 'new' ? null : editing} onClose={() => setEditing(null)} onSaved={handleSaved} />}
+
+      {importing && <RewardsImportModal onClose={() => setImporting(false)} onImported={load} />}
 
       {deleting && (
         <ConfirmModal

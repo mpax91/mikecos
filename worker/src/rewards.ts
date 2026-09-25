@@ -22,6 +22,7 @@ interface RewardsCardRow {
   cover_art_key: string | null;
   notes: string | null;
   sort_order: number;
+  import_key: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -83,6 +84,7 @@ function cardJson(row: RewardsCardRow, bonuses: RewardsBonusRow[], perks: Reward
     coverArtUrl: row.cover_art_key ? `/api/files/${row.cover_art_key}` : null,
     notes: row.notes,
     sortOrder: row.sort_order,
+    importKey: row.import_key,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     bonuses: bonuses.filter((b) => b.card_id === row.id).sort((a, b) => a.sort_order - b.sort_order).map(bonusJson),
@@ -117,6 +119,7 @@ rewardsRouter.post('/cards', async (c) => {
       color?: string | null;
       coverArtKey?: string | null;
       notes?: string | null;
+      importKey?: string | null;
     }>()
     .catch(() => ({}) as Record<string, never>);
   const nickname = body.nickname?.trim();
@@ -126,8 +129,8 @@ rewardsRouter.post('/cards', async (c) => {
   const id = uid();
   const ts = now();
   await c.env.DB.prepare(
-    `INSERT INTO rewards_cards (id, nickname, network, last4, base_rate, annual_fee, always_carry, active, color, cover_art_key, notes, sort_order, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO rewards_cards (id, nickname, network, last4, base_rate, annual_fee, always_carry, active, color, cover_art_key, notes, sort_order, import_key, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)`
   )
     .bind(
       id,
@@ -141,6 +144,7 @@ rewardsRouter.post('/cards', async (c) => {
       body.coverArtKey || null,
       body.notes?.trim() || null,
       (maxPos?.m ?? -1) + 1,
+      body.importKey?.trim() || null,
       ts,
       ts
     )
@@ -165,6 +169,7 @@ rewardsRouter.patch('/cards/:id', async (c) => {
       coverArtKey: string | null;
       notes: string | null;
       sortOrder: number;
+      importKey: string | null;
     }>
   >();
   const existing = await c.env.DB.prepare('SELECT * FROM rewards_cards WHERE id = ?').bind(id).first<RewardsCardRow>();
@@ -191,6 +196,7 @@ rewardsRouter.patch('/cards/:id', async (c) => {
   if (body.coverArtKey !== undefined) set('cover_art_key', body.coverArtKey || null);
   if (body.notes !== undefined) set('notes', body.notes?.trim() || null);
   if (body.sortOrder !== undefined) set('sort_order', body.sortOrder);
+  if (body.importKey !== undefined) set('import_key', body.importKey?.trim() || null);
 
   if (fields.length) {
     fields.push('updated_at = ?');
@@ -368,4 +374,160 @@ rewardsRouter.delete('/perks/:id', async (c) => {
   await c.env.DB.prepare('DELETE FROM rewards_perks WHERE id = ?').bind(id).run();
   if (existing) await c.env.DB.prepare('UPDATE rewards_cards SET updated_at = ? WHERE id = ?').bind(now(), existing.card_id).run();
   return c.json({ ok: true });
+});
+
+// ---- Quarterly research import ----
+// The research itself (current base rate, current bonus categories split
+// per-merchant so online/in-person stays accurate — see the Amazon Prime
+// Visa/Whole Foods discussion this replaced manual upkeep for — and the
+// current quarter's rotating categories) happens outside MikeOS entirely,
+// in a Claude project Mike runs once a quarter against his actual card
+// list (starting from GET /api/rewards/export below). This endpoint just
+// ingests that project's output and reconciles it against what's here.
+//
+// import_key (0057_rewards_import.sql) is the whole matching strategy: a
+// card with a given import_key gets its research-derived fields
+// (nickname/network/baseRate/annualFee) updated and its bonuses/perks
+// fully replaced with this import's version; an import_key not yet seen
+// creates a new card; anything Mike entered by hand with no import_key is
+// never touched by this endpoint at all. Personal fields — last4,
+// alwaysCarry, active, color, coverArtKey, notes, sortOrder — are never
+// written here either, on existing or new cards, since research has no
+// way to know them.
+
+interface ImportBonus {
+  category: string;
+  rate: number;
+  kind?: 'fixed' | 'rotating';
+  startsOn?: string | null;
+  endsOn?: string | null;
+  keywords?: string | null;
+  onlineOnly?: boolean;
+}
+interface ImportPerk {
+  label: string;
+  description?: string | null;
+}
+interface ImportCard {
+  importKey: string;
+  nickname: string;
+  network?: string | null;
+  baseRate?: number;
+  annualFee?: number | null;
+  bonuses?: ImportBonus[];
+  perks?: ImportPerk[];
+}
+
+// GET /api/rewards/export — the starting context for that quarterly
+// project: every card already on file, keyed by import_key, with its
+// current bonuses/perks, so the research prompt can say "here's what's
+// currently recorded" and hand back a diff rather than starting blind. No
+// personal fields beyond last4 (useful for the project to distinguish two
+// cards from the same issuer) — nothing sensitive leaves the app either
+// way, since this only ever gets pasted into Mike's own Claude project.
+rewardsRouter.get('/export', async (c) => {
+  const [cards, bonuses, perks] = await Promise.all([
+    c.env.DB.prepare('SELECT * FROM rewards_cards WHERE active = 1 ORDER BY sort_order ASC, nickname COLLATE NOCASE ASC').all<RewardsCardRow>(),
+    c.env.DB.prepare('SELECT * FROM rewards_bonuses').all<RewardsBonusRow>(),
+    c.env.DB.prepare('SELECT * FROM rewards_perks').all<RewardsPerkRow>(),
+  ]);
+  const bonusRows = bonuses.results ?? [];
+  const perkRows = perks.results ?? [];
+  const out = (cards.results ?? []).map((row) => ({
+    importKey: row.import_key,
+    nickname: row.nickname,
+    network: row.network,
+    last4: row.last4,
+    baseRate: row.base_rate,
+    annualFee: row.annual_fee,
+    bonuses: bonusRows
+      .filter((b) => b.card_id === row.id)
+      .sort((a, b) => a.sort_order - b.sort_order)
+      .map((b) => ({ category: b.category, rate: b.rate, kind: b.kind, startsOn: b.starts_on, endsOn: b.ends_on, keywords: b.keywords, onlineOnly: b.online_only === 1 })),
+    perks: perkRows
+      .filter((p) => p.card_id === row.id)
+      .sort((a, b) => a.sort_order - b.sort_order)
+      .map((p) => ({ label: p.label, description: p.description })),
+  }));
+  return c.json({ generatedAt: now(), cards: out });
+});
+
+rewardsRouter.post('/import', async (c) => {
+  const body = await c.req.json<{ cards?: ImportCard[] }>().catch(() => ({}) as { cards?: ImportCard[] });
+  const cards = body.cards;
+  if (!Array.isArray(cards) || cards.length === 0) return c.json({ error: 'cards array is required' }, 400);
+
+  let created = 0;
+  let updated = 0;
+  let bonusesWritten = 0;
+  let perksWritten = 0;
+  const errors: string[] = [];
+  const seenKeys: string[] = [];
+
+  for (const [i, card] of cards.entries()) {
+    const importKey = card.importKey?.trim();
+    const nickname = card.nickname?.trim();
+    if (!importKey || !nickname) {
+      errors.push(`cards[${i}]: importKey and nickname are both required — skipped.`);
+      continue;
+    }
+    if (!Array.isArray(card.bonuses)) {
+      errors.push(`cards[${i}] (${nickname}): bonuses must be an array (can be empty) — skipped.`);
+      continue;
+    }
+    const badBonus = card.bonuses.find((b) => !b.category?.trim() || typeof b.rate !== 'number');
+    if (badBonus) {
+      errors.push(`cards[${i}] (${nickname}): every bonus needs a category and a numeric rate — skipped.`);
+      continue;
+    }
+    seenKeys.push(importKey);
+
+    const existing = await c.env.DB.prepare('SELECT id FROM rewards_cards WHERE import_key = ?').bind(importKey).first<{ id: string }>();
+    const ts = now();
+    let cardId: string;
+    if (existing) {
+      cardId = existing.id;
+      await c.env.DB.prepare('UPDATE rewards_cards SET nickname = ?, network = ?, base_rate = ?, annual_fee = ?, updated_at = ? WHERE id = ?')
+        .bind(nickname, card.network?.trim() || null, typeof card.baseRate === 'number' ? card.baseRate : 1.0, typeof card.annualFee === 'number' ? card.annualFee : null, ts, cardId)
+        .run();
+      updated++;
+    } else {
+      const maxPos = await c.env.DB.prepare('SELECT COALESCE(MAX(sort_order), -1) as m FROM rewards_cards').first<{ m: number }>();
+      cardId = uid();
+      await c.env.DB.prepare(
+        `INSERT INTO rewards_cards (id, nickname, network, last4, base_rate, annual_fee, always_carry, active, color, cover_art_key, notes, sort_order, import_key, created_at, updated_at)
+         VALUES (?, ?, ?, NULL, ?, ?, 0, 1, NULL, NULL, NULL, ?, ?, ?, ?)`
+      )
+        .bind(cardId, nickname, card.network?.trim() || null, typeof card.baseRate === 'number' ? card.baseRate : 1.0, typeof card.annualFee === 'number' ? card.annualFee : null, (maxPos?.m ?? -1) + 1, importKey, ts, ts)
+        .run();
+      created++;
+    }
+
+    await c.env.DB.prepare('DELETE FROM rewards_bonuses WHERE card_id = ?').bind(cardId).run();
+    for (const [bi, b] of card.bonuses.entries()) {
+      const kind = b.kind === 'rotating' ? 'rotating' : 'fixed';
+      await c.env.DB.prepare(
+        `INSERT INTO rewards_bonuses (id, card_id, category, rate, kind, starts_on, ends_on, keywords, online_only, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+        .bind(uid(), cardId, b.category.trim(), b.rate, kind, kind === 'rotating' ? b.startsOn || null : null, kind === 'rotating' ? b.endsOn || null : null, b.keywords?.trim() || null, b.onlineOnly ? 1 : 0, bi, ts)
+        .run();
+      bonusesWritten++;
+    }
+
+    if (Array.isArray(card.perks)) {
+      await c.env.DB.prepare('DELETE FROM rewards_perks WHERE card_id = ?').bind(cardId).run();
+      for (const [pi, p] of card.perks.entries()) {
+        if (!p.label?.trim()) continue;
+        await c.env.DB.prepare('INSERT INTO rewards_perks (id, card_id, label, description, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+          .bind(uid(), cardId, p.label.trim(), p.description?.trim() || null, pi, ts)
+          .run();
+        perksWritten++;
+      }
+    }
+  }
+
+  const { results: allImported } = await c.env.DB.prepare('SELECT nickname, import_key FROM rewards_cards WHERE import_key IS NOT NULL').all<{ nickname: string; import_key: string }>();
+  const unmatched = (allImported ?? []).filter((r) => !seenKeys.includes(r.import_key)).map((r) => ({ nickname: r.nickname, importKey: r.import_key }));
+
+  return c.json({ created, updated, bonusesWritten, perksWritten, errors, unmatchedExisting: unmatched });
 });

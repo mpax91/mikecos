@@ -12289,3 +12289,56 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 .stats-page__habit-card-compare--bad {
   color: var(--color-danger, #c0392b);
 }
+
+/* ---- Rewards: quarterly import ---- */
+.rewards-panel__toolbar-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.rewards-import__actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.rewards-import__file-btn {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+}
+
+.rewards-import__textarea {
+  width: 100%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  padding: 10px;
+  border: var(--border-hairline);
+  border-radius: 8px;
+  background: var(--color-sidebar);
+  color: var(--color-ink);
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.rewards-import__result {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--color-sidebar);
+  font-size: 13px;
+  color: var(--color-ink);
+}
+
+.rewards-import__errors {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  color: var(--color-danger, #c0392b);
+  font-size: 12px;
+}
+
+.rewards-import__unmatched {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--color-muted);
+}

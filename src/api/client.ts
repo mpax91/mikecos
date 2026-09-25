@@ -1,5 +1,5 @@
 import type { AuthenticationResponseJSON, PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON, RegistrationResponseJSON } from '@simplewebauthn/browser';
-import type { AuthCredentialSummary, AuthStatus, Bet, BetLeg, BetGameNote, BetPromo, BetPromoStatus, BetScheduleGame, BetTransaction, BetTransactionType, VaultEntryDetail, VaultFact, BriefingResponse, CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, CreditScoreEntry, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitDirection, HabitEvent, HabitLog, HabitSummary, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsSavedArticle, NewsSettings, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, VaultFactLabel, VaultRollupGroup, WalletCard, WalletCardFact, WalletCategory, RewardsCard, RewardsBonus, RewardsPerk, PaymentCard, PaymentCardFact, PaymentCardSecrets, PlexLibrary, PlexItem, PlexItemDetail, PlexIssue, PlexMissingEpisode, PlexSyncChunkResult, PlexAiringCheckResult, PlexAiringScanChunkResult, WeatherResponse, WeekResponse } from './types';
+import type { AuthCredentialSummary, AuthStatus, Bet, BetLeg, BetGameNote, BetPromo, BetPromoStatus, BetScheduleGame, BetTransaction, BetTransactionType, VaultEntryDetail, VaultFact, BriefingResponse, CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, CreditScoreEntry, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitDirection, HabitEvent, HabitLog, HabitSummary, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsSavedArticle, NewsSettings, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, VaultFactLabel, VaultRollupGroup, WalletCard, WalletCardFact, WalletCategory, RewardsCard, RewardsBonus, RewardsPerk, RewardsImportResult, PaymentCard, PaymentCardFact, PaymentCardSecrets, PlexLibrary, PlexItem, PlexItemDetail, PlexIssue, PlexMissingEpisode, PlexSyncChunkResult, PlexAiringCheckResult, PlexAiringScanChunkResult, WeatherResponse, WeekResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -922,17 +922,25 @@ export const api = {
   listRewardsCards: () => request<RewardsCard[]>('/api/rewards/cards').then((cards) => cards.map(resolveRewardsCard)),
 
   createRewardsCard: (
-    params: Partial<Pick<RewardsCard, 'nickname' | 'network' | 'last4' | 'baseRate' | 'annualFee' | 'alwaysCarry' | 'color' | 'coverArtKey' | 'notes'>>
+    params: Partial<Pick<RewardsCard, 'nickname' | 'network' | 'last4' | 'baseRate' | 'annualFee' | 'alwaysCarry' | 'color' | 'coverArtKey' | 'notes' | 'importKey'>>
   ) => request<RewardsCard>('/api/rewards/cards', { method: 'POST', body: JSON.stringify(params) }).then(resolveRewardsCard),
 
   updateRewardsCard: (
     id: string,
     patch: Partial<
-      Pick<RewardsCard, 'nickname' | 'network' | 'last4' | 'baseRate' | 'annualFee' | 'alwaysCarry' | 'active' | 'color' | 'coverArtKey' | 'notes' | 'sortOrder'>
+      Pick<
+        RewardsCard,
+        'nickname' | 'network' | 'last4' | 'baseRate' | 'annualFee' | 'alwaysCarry' | 'active' | 'color' | 'coverArtKey' | 'notes' | 'sortOrder' | 'importKey'
+      >
     >
   ) => request<RewardsCard>(`/api/rewards/cards/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }).then(resolveRewardsCard),
 
   deleteRewardsCard: (id: string) => request<{ ok: true }>(`/api/rewards/cards/${id}`, { method: 'DELETE' }),
+
+  exportRewardsCards: () => request<{ generatedAt: string; cards: unknown[] }>('/api/rewards/export'),
+
+  importRewardsCards: (payload: { cards: unknown[] }) =>
+    request<RewardsImportResult>('/api/rewards/import', { method: 'POST', body: JSON.stringify(payload) }),
 
   createRewardsBonus: (cardId: string, params: Pick<RewardsBonus, 'category' | 'rate' | 'kind' | 'startsOn' | 'endsOn' | 'keywords' | 'onlineOnly'>) =>
     request<RewardsBonus>(`/api/rewards/cards/${cardId}/bonuses`, { method: 'POST', body: JSON.stringify(params) }),

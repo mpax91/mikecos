@@ -15,6 +15,7 @@ type CoreForm = {
   color: string | null;
   coverArtKey: string | null;
   notes: string;
+  importKey: string;
 };
 
 function toCoreForm(card: RewardsCard | null): CoreForm {
@@ -28,6 +29,7 @@ function toCoreForm(card: RewardsCard | null): CoreForm {
     color: card?.color ?? null,
     coverArtKey: card?.coverArtKey ?? null,
     notes: card?.notes ?? '',
+    importKey: card?.importKey ?? '',
   };
 }
 
@@ -92,6 +94,7 @@ export function RewardsCardEditor({
       color: form.color,
       coverArtKey: form.coverArtKey,
       notes: form.notes.trim() || null,
+      importKey: form.importKey.trim() || null,
     };
     try {
       const result = saved ? await api.updateRewardsCard(saved.id, payload) : await api.createRewardsCard(payload);
@@ -187,6 +190,15 @@ export function RewardsCardEditor({
           <label className="wallet-editor__field">
             <span>Notes (optional)</span>
             <textarea value={form.notes} onChange={(e) => set('notes', e.target.value)} placeholder="Sign-up bonus terms, redemption quirks, anything worth remembering." rows={3} />
+          </label>
+
+          <label className="wallet-editor__field">
+            <span>Import key (optional)</span>
+            <input
+              value={form.importKey}
+              onChange={(e) => set('importKey', e.target.value)}
+              placeholder="e.g. chase-amazon-prime-visa — links this card to the quarterly research import"
+            />
           </label>
 
           {error && <div className="wallet-editor__error">{error}</div>}
