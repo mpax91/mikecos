@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import type { EmailAccountWithCounts, EmailInboxFeed, EmailMessage } from '../api/types';
 import { formatRelativeTime } from '../utils/formatRelativeTime';
+import { ConfirmModal } from './ConfirmModal';
+import { TrashIcon } from './icons';
 
 /** Today's Inbox section — a live status board over every connected
  * mailbox (see Settings → Email Accounts), Thunderbird-style: an "All"
@@ -19,6 +21,7 @@ export function InboxWidget() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [sendingReplyId, setSendingReplyId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<EmailMessage | null>(null);
 
   function load() {
     api
@@ -56,6 +59,20 @@ export function InboxWidget() {
     try {
       await api.archiveEmail(id);
       if (expandedId === id) setExpandedId(null);
+      load();
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function confirmDelete() {
+    if (!deleting) return;
+    const id = deleting.id;
+    setBusyId(id);
+    try {
+      await api.deleteEmail(id);
+      if (expandedId === id) setExpandedId(null);
+      setDeleting(null);
       load();
     } finally {
       setBusyId(null);
@@ -120,6 +137,15 @@ export function InboxWidget() {
               </button>
               <button type="button" className="btn btn--ghost btn--sm" onClick={() => convert(m.id, 'note')} disabled={busyId === m.id}>
                 📝 Save as Note
+              </button>
+              <button
+                type="button"
+                className="btn btn--ghost btn--sm inbox-widget__delete-btn"
+                onClick={() => setDeleting(m)}
+                disabled={busyId === m.id}
+                title="Delete"
+              >
+                <TrashIcon size={12} /> Delete
               </button>
             </div>
             <div className="inbox-widget__reply">
@@ -211,6 +237,15 @@ export function InboxWidget() {
               </div>
             )}
           </>
+        )}
+
+        {deleting && (
+          <ConfirmModal
+            title="Delete this email?"
+            body={`"${deleting.subject || '(no subject)'}" will move to Trash in Gmail — recoverable there for 30 days, same as deleting it in Gmail itself.`}
+            onConfirm={confirmDelete}
+            onCancel={() => setDeleting(null)}
+          />
         )}
       </div>
   );

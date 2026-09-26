@@ -3,6 +3,7 @@ import type { Env } from './types';
 import { encryptField, decryptField, EncryptionNotConfiguredError } from './cryptoField';
 import { ImapClient, parseHeaderBlock } from './imapClient';
 import { sendMail } from './smtpClient';
+import { parseMimeMessageToText } from './mimeParser';
 
 const now = () => new Date().toISOString();
 const uid = () => crypto.randomUUID();
@@ -379,11 +380,14 @@ emailRouter.post('/messages/:id/archive', async (c) => {
   return c.json({ ok: true });
 });
 
-// Peek — fetches the full text live (bodies aren't cached in D1, see
-// migration's header comment) and marks \Seen on the real mailbox in the
-// same connection, plus flips is_read locally. A live IMAP round trip per
-// peek (roughly a second, dominated by the TLS handshake), which is fine
-// for an on-demand single-message action.
+// Peek — fetches the full raw message live (bodies aren't cached in D1,
+// see migration's header comment), decodes it into clean plain text (see
+// mimeParser.ts — this used to hand back a single fixed MIME part's raw,
+// still-encoded bytes, which is what produced the garbled base64-looking
+// block Mike saw on HTML/multipart mail), and marks \Seen on the real
+// mailbox in the same connection, plus flips is_read locally. A live IMAP
+// round trip per peek (roughly a second, dominated by the TLS handshake),
+// which is fine for an on-demand single-message action.
 emailRouter.post('/messages/:id/peek', async (c) => {
   const id = c.req.param('id');
   const found = await getMessageWithAccount(c.env, id);
@@ -397,7 +401,8 @@ emailRouter.post('/messages/:id/peek', async (c) => {
     await client.connect(account.imap_host, account.imap_port);
     await client.login(account.email, pass);
     await client.selectInbox();
-    body = await client.fetchFullText(message.uid);
+    const raw = await client.fetchRawMessage(message.uid);
+    body = parseMimeMessageToText(raw);
     if (!message.is_read) await client.setSeen(message.uid, true);
     await client.logout();
   } catch (err) {
@@ -406,6 +411,29 @@ emailRouter.post('/messages/:id/peek', async (c) => {
 
   await c.env.DB.prepare('UPDATE email_messages SET is_read = 1, updated_at = ? WHERE id = ?').bind(now(), id).run();
   return c.json({ ...message, is_read: 1, body });
+});
+
+// Real delete — distinct from Archive (which just files it out of Inbox
+// into All Mail). Same instant-locally/queued-for-real-mailbox split as
+// archive: in_inbox flips to 0 right away so it disappears from both New
+// and Needs Processing, and the actual Gmail Trash move happens on the
+// next sync tick via applyPendingActions + ImapClient.trash.
+emailRouter.post('/messages/:id/delete', async (c) => {
+  const id = c.req.param('id');
+  const found = await getMessageWithAccount(c.env, id);
+  if (!found) return c.json({ error: 'not found' }, 404);
+  const ts = now();
+  await c.env.DB.batch([
+    c.env.DB.prepare('UPDATE email_messages SET in_inbox = 0, processed_at = ?, updated_at = ? WHERE id = ?').bind(ts, ts, id),
+    c.env.DB.prepare('INSERT INTO email_pending_actions (id, account_id, message_id, action, created_at) VALUES (?, ?, ?, ?, ?)').bind(
+      uid(),
+      found.message.account_id,
+      id,
+      'trash',
+      ts
+    ),
+  ]);
+  return c.json({ ok: true });
 });
 
 // Turns an email into a real MikeOS entity — the replacement for Gmail's
@@ -542,6 +570,7 @@ async function applyPendingActions(env: Env, client: ImapClient, accountId: stri
   for (const row of results ?? []) {
     try {
       if (row.action === 'archive') await client.archive(row.uid);
+      else if (row.action === 'trash') await client.trash(row.uid);
       else if (row.action === 'mark_read') await client.setSeen(row.uid, true);
       else if (row.action === 'mark_unread') await client.setSeen(row.uid, false);
       await env.DB.prepare('UPDATE email_pending_actions SET applied_at = ? WHERE id = ?').bind(now(), row.action_id).run();

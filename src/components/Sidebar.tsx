@@ -1,6 +1,16 @@
+import { useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useTabs, tabIcon, type TabKind } from '../contexts/TabsContext';
 import { OPEN_SEARCH_EVENT } from './SearchPalette';
+import { api } from '../api/client';
+
+// Polled independently of whatever's currently open (the sidebar is
+// mounted the whole time regardless of which page is showing) so the
+// unread count in the nav stays current even when Inbox itself isn't the
+// active tab. 2 minutes matches the worker's own IMAP sync cadence —
+// polling faster than the underlying data actually changes just wastes a
+// round trip.
+const UNREAD_POLL_MS = 120_000;
 
 interface SidebarProps {
   open?: boolean;
@@ -77,6 +87,29 @@ const SIDEBAR_SECTIONS: NavSectionDef[] = [
 
 export function Sidebar({ open = false, onClose }: SidebarProps) {
   const { openTab, showContextMenu } = useTabs();
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    function load() {
+      api
+        .getInboxFeed()
+        .then((feed) => {
+          if (cancelled) return;
+          setUnreadCount(feed.accounts.reduce((sum, a) => sum + a.newCount, 0));
+        })
+        .catch(() => {
+          // Best-effort — a transient failure just leaves the last-known
+          // count showing rather than breaking the whole sidebar.
+        });
+    }
+    load();
+    const interval = setInterval(load, UNREAD_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
 
   // Plain click navigates the current tab (default NavLink behavior, left
   // untouched below). Cmd/ctrl-click — and right-click's "Open in New Tab" —
@@ -99,6 +132,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
   }
 
   function renderItem({ path, label, kind }: NavItemDef) {
+    const badge = kind === 'inbox' && unreadCount > 0 ? unreadCount : null;
     return (
       <NavLink
         key={path}
@@ -109,6 +143,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
       >
         <span className="sidebar__nav-icon">{tabIcon(kind)}</span>
         {label}
+        {badge !== null && <span className="sidebar__nav-badge">{badge}</span>}
       </NavLink>
     );
   }

@@ -350,7 +350,12 @@ export class ImapClient {
    * return that part's raw content (may be HTML or MIME boundary text
    * rather than clean plain text) — a known v1 limitation without a real
    * MIME parser; good enough for a preview, worth revisiting if it reads
-   * garbled on HTML-heavy senders. */
+   * garbled on HTML-heavy senders.
+   *
+   * Superseded by fetchRawMessage + mimeParser.ts for the actual peek UI
+   * (see email.ts), which decodes properly instead of returning whichever
+   * part's raw encoded bytes happen to be first. Left in place only for
+   * reply-quoting, which just needs *some* text, not a clean read. */
   async fetchFullText(uid: number): Promise<string> {
     const res = await this.command(`UID FETCH ${uid} (BODY.PEEK[1])`);
     if (res.status !== 'OK') throw new ImapProtocolError(`UID FETCH failed: ${res.text || res.status}`);
@@ -367,6 +372,25 @@ export class ImapClient {
     return '';
   }
 
+  /** The entire raw RFC822 message (headers + body, still MIME-encoded) —
+   * what mimeParser.ts needs to walk the real part tree and decode
+   * properly, rather than guessing at a single fixed part number. */
+  async fetchRawMessage(uid: number): Promise<string> {
+    const res = await this.command(`UID FETCH ${uid} (BODY.PEEK[])`);
+    if (res.status !== 'OK') throw new ImapProtocolError(`UID FETCH failed: ${res.text || res.status}`);
+    const line = res.untagged.find((l) => l[1] === 'FETCH');
+    if (!line) return '';
+    const attrs = line[2];
+    if (!Array.isArray(attrs)) return '';
+    for (let i = 0; i < attrs.length; i += 2) {
+      const name = attrs[i];
+      if (typeof name === 'string' && name.startsWith('BODY[]') && typeof attrs[i + 1] === 'string') {
+        return attrs[i + 1] as string;
+      }
+    }
+    return '';
+  }
+
   /** Removes the \Inbox label (Gmail's archive) or sets/clears \Seen — the
    * two write operations Inbox needs. Gmail's IMAP maps "remove from
    * INBOX" to the X-GM-LABELS extension when given -X-GM-LABELS (\Inbox),
@@ -376,6 +400,17 @@ export class ImapClient {
   async archive(uid: number): Promise<void> {
     const res = await this.command(`UID STORE ${uid} -X-GM-LABELS (\\Inbox)`);
     if (res.status !== 'OK') throw new ImapProtocolError(`archive failed: ${res.text || res.status}`);
+  }
+
+  /** Real delete — moves the message to Gmail's Trash, same mechanism as
+   * archive() (a special-use label assigned via the X-GM-LABELS
+   * extension), which Gmail treats as "move this message's location",
+   * removing it from Inbox/All Mail the same as clicking Delete in Gmail
+   * itself. Gmail auto-purges Trash after 30 days; this doesn't touch that
+   * timer or bypass it. */
+  async trash(uid: number): Promise<void> {
+    const res = await this.command(`UID STORE ${uid} +X-GM-LABELS (\\Trash)`);
+    if (res.status !== 'OK') throw new ImapProtocolError(`trash failed: ${res.text || res.status}`);
   }
 
   async setSeen(uid: number, seen: boolean): Promise<void> {

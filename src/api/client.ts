@@ -1227,6 +1227,8 @@ export const api = {
 
   archiveEmail: (id: string) => request<{ ok: true }>(`/api/email/messages/${id}/archive`, { method: 'POST' }),
 
+  deleteEmail: (id: string) => request<{ ok: true }>(`/api/email/messages/${id}/delete`, { method: 'POST' }),
+
   peekEmail: (id: string) => request<EmailPeekResult>(`/api/email/messages/${id}/peek`, { method: 'POST' }),
 
   convertEmail: (id: string, data: { as: 'task' | 'note'; parentId?: string | null; dueDate?: string | null }) =>
