@@ -9358,7 +9358,7 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 .bets-workspace__col-th-btn {
   display: block;
   width: 100%;
-  text-align: left;
+  text-align: center;
   background: none;
   border: none;
   cursor: text;
@@ -9381,6 +9381,7 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   font: inherit;
   text-transform: inherit;
   letter-spacing: inherit;
+  text-align: center;
   padding: 5px 8px;
   border: 1px solid var(--color-accent);
   background: var(--color-card-bg);
@@ -9538,7 +9539,8 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 }
 
 .bets-workspace__table th.bets-workspace__game-th,
-.bets-workspace__table th.bets-workspace__time-th {
+.bets-workspace__table th.bets-workspace__time-th,
+.bets-workspace__table th.bets-workspace__value-th {
   text-align: center;
 }
 
@@ -9779,6 +9781,51 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   padding: 6px 8px;
 }
 
+.bets-workspace__projection {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.bets-workspace__projection-bar {
+  position: relative;
+  display: flex;
+  height: 18px;
+  border-radius: 999px;
+  overflow: hidden;
+  border: var(--border-hairline);
+}
+
+.bets-workspace__projection-fill {
+  height: 100%;
+}
+
+.bets-workspace__projection-fill--away {
+  background: color-mix(in srgb, var(--color-accent) 55%, var(--color-card-bg));
+}
+
+.bets-workspace__projection-fill--home {
+  background: var(--color-accent);
+}
+
+.bets-workspace__projection-center {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 2px;
+  height: 100%;
+  background: var(--color-paper);
+  transform: translateX(-1px);
+}
+
+.bets-workspace__projection-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-ink);
+}
+
 .bets-workspace__handicap-meetings {
   display: flex;
   flex-direction: column;
@@ -9829,6 +9876,7 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   text-transform: uppercase;
   letter-spacing: 0.03em;
   color: var(--color-muted);
+  text-align: center;
 }
 
 .bets-workspace__modal-cell-value {

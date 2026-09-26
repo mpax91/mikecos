@@ -401,6 +401,32 @@ function TeamSnapshotCard({ team }: { team: BetGameTeamSnapshot }) {
   );
 }
 
+/** ESPN's projection as a horizontal bar — two fills meeting where the
+ * favorite's edge is, plus a fixed center line at 50% so it's obvious at a
+ * glance whether a team is favored and by how much, not just two numbers to
+ * do math on. */
+function ProjectionBar({ awayAbbr, awayPct, homeAbbr, homePct }: { awayAbbr: string; awayPct: number | null; homeAbbr: string; homePct: number | null }) {
+  const away = awayPct ?? (homePct != null ? 100 - homePct : 50);
+  const home = homePct ?? (awayPct != null ? 100 - awayPct : 50);
+  return (
+    <div className="bets-workspace__projection">
+      <div className="bets-workspace__projection-bar">
+        <div className="bets-workspace__projection-fill bets-workspace__projection-fill--away" style={{ flexBasis: `${away}%` }} />
+        <div className="bets-workspace__projection-fill bets-workspace__projection-fill--home" style={{ flexBasis: `${home}%` }} />
+        <div className="bets-workspace__projection-center" />
+      </div>
+      <div className="bets-workspace__projection-labels">
+        <span className="bets-workspace__projection-label bets-workspace__projection-label--away">
+          {awayAbbr} {away.toFixed(1)}%
+        </span>
+        <span className="bets-workspace__projection-label bets-workspace__projection-label--home">
+          {homeAbbr} {home.toFixed(1)}%
+        </span>
+      </div>
+    </div>
+  );
+}
+
 /** Weather/venue/wind, ESPN's model projection, head-to-head matchup
  * history, and each team's record/pitcher/form/injuries/leaders — the rest
  * of the handicapping panel, below the odds line (see OddsSummary) which
@@ -430,9 +456,7 @@ function MatchupContext({ data, loading }: { data: BetGameEnrichment | null; loa
       {data.predictor && (data.predictor.homeWinPct != null || data.predictor.awayWinPct != null) && data.away && data.home && (
         <div className="bets-workspace__handicap-predictor">
           <span className="bets-form__field-label">ESPN Projection</span>
-          <span className="bets-workspace__handicap-stat-row text-muted">
-            {data.away.abbreviation} {data.predictor.awayWinPct != null ? `${data.predictor.awayWinPct}%` : ''} / {data.home.abbreviation} {data.predictor.homeWinPct != null ? `${data.predictor.homeWinPct}%` : ''}
-          </span>
+          <ProjectionBar awayAbbr={data.away.abbreviation} awayPct={data.predictor.awayWinPct} homeAbbr={data.home.abbreviation} homePct={data.predictor.homeWinPct} />
         </div>
       )}
 
