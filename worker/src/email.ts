@@ -234,6 +234,21 @@ emailRouter.get('/accounts/:id/debug-inbox', async (c) => {
     const client = new ImapClient();
     await client.connect(account.imap_host, account.imap_port);
     await client.login(account.email, pass);
+
+    const mailboxNames = await client.listMailboxes();
+    // Gmail's IMAP has been confirmed (by hand, against a real account) to
+    // still report a currently-snoozed message as present in a plain
+    // "SELECT INBOX; UID SEARCH ALL" — there is no per-message flag/label
+    // over IMAP that distinguishes it from ordinary inbox mail. The one
+    // remaining possibility this checks: a separate virtual mailbox Gmail
+    // might expose for snoozed mail (by analogy with "[Gmail]/All Mail",
+    // "[Gmail]/Sent Mail", etc.) that a message currently sitting in
+    // Snoozed would also show up under — if one exists, cross-referencing
+    // its contents against "needs processing" is a real, IMAP-only fix;
+    // if not, filtering snoozed mail here needs Gmail's own API instead.
+    const snoozedMailboxName = mailboxNames.find((n) => /snooz/i.test(n)) ?? null;
+    const gmMsgIdsInSnoozedMailbox = snoozedMailboxName ? new Set(await client.selectAndListGmMsgIds(snoozedMailboxName)) : null;
+
     await client.selectInbox();
     const uidsInInbox = await client.searchAllUids();
     // Only the UIDs MikeOS currently has parked in "needs processing" —
@@ -251,10 +266,13 @@ emailRouter.get('/accounts/:id/debug-inbox', async (c) => {
       stillInImapSearchAllResults: uidsInInbox.includes(m.uid),
       liveFlags: byUid.get(m.uid)?.flags ?? null,
       liveGmLabels: byUid.get(m.uid)?.gmLabels ?? null,
+      alsoInSnoozedMailbox: gmMsgIdsInSnoozedMailbox ? gmMsgIdsInSnoozedMailbox.has(m.gm_msgid) : null,
     }));
 
     return c.json({
       accountEmail: account.email,
+      mailboxNames,
+      snoozedMailboxName,
       totalUidsInImapInboxSearch: uidsInInbox.length,
       needsProcessingCount: needsProcessing.length,
       messages,

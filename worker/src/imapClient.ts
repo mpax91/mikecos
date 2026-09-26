@@ -274,6 +274,46 @@ export class ImapClient {
     if (res.status !== 'OK') throw new ImapProtocolError(`SELECT INBOX failed: ${res.text || res.status}`);
   }
 
+  /** Diagnostic only — lists every mailbox the account has, so a
+   * Gmail-specific virtual mailbox (e.g. "[Gmail]/Snoozed", if Gmail
+   * exposes one at all — unconfirmed, this is how we check) can be found
+   * without guessing its exact name/casing. */
+  async listMailboxes(): Promise<string[]> {
+    const res = await this.command('LIST "" "*"');
+    if (res.status !== 'OK') throw new ImapProtocolError(`LIST failed: ${res.text || res.status}`);
+    const names: string[] = [];
+    for (const line of res.untagged) {
+      // shape: ['LIST', [flags...], delimiter, mailboxName]
+      if (line[0] === 'LIST' && typeof line[3] === 'string') names.push(line[3]);
+    }
+    return names;
+  }
+
+  /** Diagnostic only — SELECT an arbitrary mailbox by name (quoted, so a
+   * name containing spaces/brackets like "[Gmail]/Snoozed" works) and
+   * return the gm_msgids currently in it, to check whether a message
+   * MikeOS has flagged in_inbox also shows up under a different mailbox
+   * Gmail uses for snoozed mail. */
+  async selectAndListGmMsgIds(mailboxName: string): Promise<string[]> {
+    const esc = mailboxName.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    const selRes = await this.command(`SELECT "${esc}"`);
+    if (selRes.status !== 'OK') throw new ImapProtocolError(`SELECT "${mailboxName}" failed: ${selRes.text || selRes.status}`);
+    const uids = await this.searchAllUids();
+    if (uids.length === 0) return [];
+    const res = await this.command(`UID FETCH ${uids.join(',')} (X-GM-MSGID)`);
+    if (res.status !== 'OK') throw new ImapProtocolError(`UID FETCH failed: ${res.text || res.status}`);
+    const ids: string[] = [];
+    for (const line of res.untagged) {
+      if (line[1] !== 'FETCH') continue;
+      const attrs = line[2];
+      if (!Array.isArray(attrs)) continue;
+      for (let i = 0; i < attrs.length; i += 2) {
+        if (attrs[i] === 'X-GM-MSGID' && typeof attrs[i + 1] === 'string') ids.push(attrs[i + 1] as string);
+      }
+    }
+    return ids;
+  }
+
   /** UIDs of every message currently in the selected mailbox. */
   async searchAllUids(): Promise<number[]> {
     const res = await this.command('UID SEARCH ALL');
