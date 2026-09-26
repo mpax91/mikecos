@@ -5013,10 +5013,14 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 10px;
-  border: none;
-  background: none;
-  border-radius: 8px;
+  padding: 8px 12px;
+  border: var(--border-hairline);
+  /* A subdued pill at rest, not plain text — without this an inactive
+     category (everything except whichever one is currently open) had no
+     visual affordance of being clickable at all, especially on touch
+     where there's no hover state to reveal it. */
+  background: rgba(120, 120, 120, 0.06);
+  border-radius: 999px;
   font-size: 13px;
   font-weight: var(--weight-medium);
   color: var(--color-ink);
@@ -5025,11 +5029,12 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 }
 
 .settings-page__category:hover {
-  background: rgba(47, 74, 60, 0.08);
+  background: rgba(47, 74, 60, 0.12);
 }
 
 .settings-page__category.is-active {
   background: var(--color-accent);
+  border-color: var(--color-accent);
   color: var(--color-accent-text);
 }
 
@@ -9069,10 +9074,26 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   gap: 6px;
 }
 
-.bets-workspace__modal-cells-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: 6px 12px;
+/* Tips (tippers) and Lines (sportsbooks) side by side as their own vertical
+   columns — five rows in each, top to bottom — rather than one auto-fill
+   grid that mixed the two together in whatever order they happened to
+   flow. */
+.bets-workspace__modal-cells-split {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.bets-workspace__modal-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.bets-workspace__modal-col .bets-form__field-label {
+  margin-bottom: 2px;
 }
 
 .bets-workspace__modal-cell {
@@ -9226,34 +9247,42 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
     display: none;
   }
 
+  /* table-layout: fixed with width: 100% distributes any "leftover" space
+     proportionally across every column that has an explicit width — Game
+     only looked capped before because it was the one column left on
+     width: auto, so it absorbed 100% of the leftover instead of a share of
+     it. Switching the table itself to width: auto (shrink-to-fit, sized
+     from the columns below) is what actually caps Game — any real leftover
+     just becomes blank space at the row's right edge instead of stretching
+     Game to fill it. .bets-workspace__table-wrap's overflow-x: auto is
+     still there as a safety net if a very long matchup ever pushes past
+     the viewport. */
+  .bets-workspace__table {
+    width: auto;
+  }
+
   .bets-workspace__matchup-cell,
   .bets-workspace__matchup-btn {
-    width: auto;
+    width: 112px;
     white-space: normal;
     text-overflow: clip;
   }
 
-  /* table-layout: fixed takes its column widths from the header row, so
-     Game only actually gets the freed-up space once the pin/time/notes
-     header cells are pinned down to something narrow too — width: auto on
-     .bets-workspace__matchup-cell alone still left those three splitting
-     the remainder roughly evenly with Game, which is what kept wrapping
-     it to two lines even with the value columns hidden. */
   .bets-workspace__table thead th:first-child {
-    width: 26px;
+    width: 24px;
   }
 
   .bets-workspace__pin-cell {
-    width: 26px;
+    width: 24px;
   }
 
   .bets-workspace__table th.bets-workspace__time-th {
-    width: 48px;
+    width: 42px;
   }
 
   .bets-workspace__table th.bets-workspace__sport-th,
   .bets-workspace__sport-cell {
-    width: 38px;
+    width: 34px;
     font-size: 9px;
     padding: 4px 2px;
     overflow: hidden;
@@ -9261,31 +9290,54 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   }
 
   .bets-workspace__time-cell {
-    width: 48px;
+    width: 42px;
     font-size: 10px;
     padding: 4px 4px;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
-  /* Widened a bit further than the tap target strictly needs — pin/sport/
-     time/notes together are what Game's width is computed as "whatever's
-     left over" from (see the comment above), so giving these a bit more
-     room is also how Game itself gets a bit smaller, on top of fixing the
-     "+ note" overflow below. */
+  /* Notes is the one thing on this row Mike actually taps repeatedly
+     (every game gets a look), so it gets real size — bigger than a bare
+     tap-target minimum — rather than being squeezed down with everything
+     else Game doesn't need. */
   .bets-workspace__table thead th:last-child {
-    width: 40px;
+    width: 56px;
   }
 
   .bets-workspace__notes-cell {
-    width: 40px;
-    padding: 4px 4px;
+    width: 56px;
+    padding: 4px 6px;
     overflow: hidden;
     white-space: nowrap;
   }
 
   .bets-workspace__notes-btn {
-    font-size: 13px;
+    font-size: 16px;
+    padding: 4px 8px;
+  }
+
+  /* The date pill, search box, and every chip (Jump to today / Tips only /
+     + Add column / Clear All / + Add Game) used to wrap to a second line
+     the moment they didn't all fit — this makes the row scroll
+     horizontally instead, one line, swipeable. Deliberately NOT snapped
+     tightly to the container edge (no scroll-snap-align on the items
+     themselves, no padding trimmed to the exact last pixel of the last
+     chip) so whichever chip lands at the edge is naturally cut off
+     mid-pill rather than ending flush — that partial "peek" is what tells
+     you there's more to swipe to, without needing a separate arrow/fade
+     affordance. */
+  .bets-workspace__toolbar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x proximity;
+    padding-bottom: 2px;
+  }
+
+  .bets-workspace__toolbar > * {
+    flex-shrink: 0;
+    scroll-snap-align: start;
   }
 }
 

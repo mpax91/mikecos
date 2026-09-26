@@ -57,6 +57,27 @@ function attr(xml: string, tagName: string, attrName: string): string | null {
   return m ? decodeEntities(m[1]) : null;
 }
 
+// Some feeds (NY Post's chief among them) intermittently reissue the same
+// story under a fresh <guid> each time it's re-featured or re-crawled,
+// purely because a tracking query string somewhere in the guid/link
+// changed — since news_articles' uniqueness is (feed_id, guid), that alone
+// creates a second row for what's really the same article. Stripping the
+// query string and hash (and a trailing slash) before storing the URL
+// means two fetches of "the same" story collapse onto the same stored url,
+// which refreshFeed (worker/src/index.ts) then checks as a secondary
+// de-dupe key alongside guid — see the comment there.
+function normalizeArticleUrl(raw: string): string {
+  try {
+    const u = new URL(raw);
+    u.search = '';
+    u.hash = '';
+    u.pathname = u.pathname.replace(/\/+$/, '') || '/';
+    return u.toString();
+  } catch {
+    return raw; // an unparseable "url" (shouldn't happen, but not worth throwing over) is stored as-is
+  }
+}
+
 function firstImgSrc(html: string): string | null {
   const m = html.match(/<img[^>]+src=["']([^"']+)["']/i);
   return m ? m[1] : null;
@@ -115,7 +136,7 @@ export async function parseFeed(xml: string): Promise<ParsedFeed> {
       url = tag(block, 'link');
     }
     if (!url) continue; // an item we can't link to isn't worth showing
-    url = decodeEntities(url.trim());
+    url = normalizeArticleUrl(decodeEntities(url.trim()));
 
     const rawGuid = tag(block, 'guid') ?? tag(block, 'id') ?? null;
     const guid = rawGuid ? decodeEntities(rawGuid.trim()) : await sha1Hex(`${url}|${title}`);

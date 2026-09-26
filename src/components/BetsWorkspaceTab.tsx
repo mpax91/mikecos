@@ -176,20 +176,25 @@ function bestOddsColumns(entry: BoardEntry, cols: string[]): Set<string> {
 
 function NotesModal({
   entry,
-  columns,
+  tipperColumns,
+  sportsbookColumns,
   onCellCommit,
   onClose,
   onSave,
   onRemove,
 }: {
   entry: BoardEntry;
-  /** The value columns worth exposing here — the day's tipper roster for
-   * a regular game, SPORTSBOOK_COLUMNS for a pinned Best Bet. Editable
-   * right in this modal (see the section below) — the table's own columns
-   * are hidden on narrow screens (see .bets-workspace__table-wrap's mobile
-   * rule), and this is the only other place a tip/line can be entered from
-   * a phone. */
-  columns: string[];
+  /** The day's tipper roster — one vertical column ("Tips"). Editable right
+   * in this modal (see the section below) — the table's own columns are
+   * hidden on narrow screens (see .bets-workspace__table-wrap's mobile
+   * rule), and this is the only other place a tip can be entered from a
+   * phone. */
+  tipperColumns: string[];
+  /** The fixed sportsbook list — a second vertical column ("Lines"),
+   * side by side with Tips rather than interleaved with it, so five
+   * tippers and five books each read top-to-bottom as their own group
+   * instead of an auto-wrapping grid mixing the two. */
+  sportsbookColumns: string[];
   onCellCommit: (entry: BoardEntry, source: string, value: string) => void;
   onClose: () => void;
   onSave: (note: string) => Promise<void>;
@@ -220,11 +225,12 @@ function NotesModal({
     }
   }
 
-  // Anything with a saved value but no longer among the current column
+  // Anything with a saved value but no longer among either current column
   // list (a tipper column renamed/removed since) still shown read-only
-  // below, so stray data isn't silently hidden — everything else in
-  // `columns` gets a real editable input, filled in or not.
-  const strayEntries = [...entry.cells.entries()].filter(([label, v]) => v.trim() && !columns.includes(label));
+  // below, so stray data isn't silently hidden — everything else gets a
+  // real editable input, filled in or not.
+  const allColumns = [...tipperColumns, ...sportsbookColumns];
+  const strayEntries = [...entry.cells.entries()].filter(([label, v]) => v.trim() && !allColumns.includes(label));
 
   return (
     <Modal title={entry.matchup} onClose={onClose}>
@@ -235,17 +241,30 @@ function NotesModal({
           </div>
         )}
         {entry.startTime && <div className="bets-workspace__modal-kickoff">{formatKickoff(entry.startTime)}</div>}
-        {columns.length > 0 && (
-          <div className="bets-workspace__modal-cells">
-            <span className="bets-form__field-label">Tips / lines</span>
-            <div className="bets-workspace__modal-cells-grid">
-              {columns.map((col) => (
-                <label key={col} className="bets-workspace__modal-cell bets-workspace__modal-cell--input">
-                  <span className="bets-workspace__modal-cell-label">{col}</span>
-                  <CellInput value={entry.cells.get(col) ?? ''} onCommit={(v) => onCellCommit(entry, col, v)} />
-                </label>
-              ))}
-            </div>
+        {(tipperColumns.length > 0 || sportsbookColumns.length > 0) && (
+          <div className="bets-workspace__modal-cells-split">
+            {tipperColumns.length > 0 && (
+              <div className="bets-workspace__modal-col">
+                <span className="bets-form__field-label">Tips</span>
+                {tipperColumns.map((col) => (
+                  <label key={col} className="bets-workspace__modal-cell bets-workspace__modal-cell--input">
+                    <span className="bets-workspace__modal-cell-label">{col}</span>
+                    <CellInput value={entry.cells.get(col) ?? ''} onCommit={(v) => onCellCommit(entry, col, v)} />
+                  </label>
+                ))}
+              </div>
+            )}
+            {sportsbookColumns.length > 0 && (
+              <div className="bets-workspace__modal-col">
+                <span className="bets-form__field-label">Lines</span>
+                {sportsbookColumns.map((col) => (
+                  <label key={col} className="bets-workspace__modal-cell bets-workspace__modal-cell--input">
+                    <span className="bets-workspace__modal-cell-label">{col}</span>
+                    <CellInput value={entry.cells.get(col) ?? ''} onCommit={(v) => onCellCommit(entry, col, v)} />
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
         )}
         {strayEntries.length > 0 && (
@@ -263,7 +282,11 @@ function NotesModal({
         )}
         <label className="bets-form__field">
           <span>Notes — bets you like, reasoning, anything</span>
-          <textarea rows={5} autoFocus value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. SEA -6.5 looks soft, CAR getting too many points" />
+          {/* Deliberately no autoFocus — on mobile that pops the keyboard
+              the instant this modal opens, before Mike's looked at the
+              tips/lines above it. Focus only happens on an actual tap into
+              the textarea. */}
+          <textarea rows={5} value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. SEA -6.5 looks soft, CAR getting too many points" />
         </label>
       </div>
       <div className="modal__actions">
@@ -630,7 +653,15 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
   const searchQuery = search.trim().toLowerCase();
   const visibleEntries = searchQuery
     ? entries.filter((e) => {
-        const haystack = [e.matchup, e.sport, e.note, ...e.cells.values()].join(' ').toLowerCase();
+        // e.matchup is the abbreviated form the schedule source gives us
+        // ("VT @ MIA") — homeName/awayName carry the full spelled-out
+        // names when the source has them ("Virginia Tech"), so a search
+        // for "Virginia" finds this row even though the Game column only
+        // ever shows "VT".
+        const haystack = [e.matchup, e.homeName, e.awayName, e.sport, e.note, ...e.cells.values()]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
         return haystack.includes(searchQuery);
       })
     : entries;
@@ -790,7 +821,7 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
         </div>
       )}
 
-      <div className="toolbar-row">
+      <div className="toolbar-row bets-workspace__toolbar">
         <div className="dashboard-page__period-pill">
           <button type="button" className="dashboard-page__nav-btn" onClick={() => setDate((d) => shiftDate(d, -1))} aria-label="Previous day">
             ‹
@@ -969,11 +1000,12 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
       {notesFor && (
         <NotesModal
           entry={notesFor}
-          // Union of both tables' columns (tipper + sportsbook) — a pinned
-          // game can show in both, and either set of values is worth
-          // reaching from here since this modal is the only tip-entry path
-          // on a phone (see the comment on NotesModal's `columns` prop).
-          columns={[...columns, ...SPORTSBOOK_COLUMNS]}
+          // Both are always passed regardless of whether this game is
+          // pinned — a pinned game's tipper cells are still worth reaching
+          // from here, and vice versa, since this modal is the only
+          // tip/line-entry path on a phone.
+          tipperColumns={columns}
+          sportsbookColumns={SPORTSBOOK_COLUMNS}
           onCellCommit={handleCellCommit}
           onClose={() => setNotesFor(null)}
           onSave={(note) => handleNotesSave(notesFor, note)}

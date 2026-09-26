@@ -192,7 +192,10 @@ export function BriefingModal() {
       setAskAnswer(null);
       setAskResults(null);
       setOpen(true);
-      setTimeout(() => inputRef.current?.focus(), 0);
+      // Deliberately NOT auto-focusing the Ask input here — on mobile that
+      // pops the keyboard the instant the briefing opens, before Mike's
+      // even looked at it. Focus only happens if he actually taps into the
+      // Ask box himself.
     }
     window.addEventListener(OPEN_BRIEFING_EVENT, onOpenEvent);
     return () => window.removeEventListener(OPEN_BRIEFING_EVENT, onOpenEvent);

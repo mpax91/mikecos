@@ -5097,6 +5097,25 @@ async function refreshFeed(env: Env, feed: NewsFeedRow, force = false): Promise<
     const parsed = await parseFeed(xml);
 
     for (const item of parsed.items) {
+      // Primary de-dupe is (feed_id, guid) below, but some feeds (NY Post
+      // in particular) reissue the same story under a fresh guid on a
+      // later fetch — a tracking query string changing somewhere is the
+      // usual cause. parseFeed already normalizes item.url (strips
+      // query/hash), so a genuine repeat almost always still matches on
+      // URL even when the guid didn't — checking that first, and updating
+      // the existing row in place, is what actually stops the duplicate
+      // rather than just tidying the URL cosmetically.
+      const existingByUrl = await env.DB.prepare('SELECT id FROM news_articles WHERE feed_id = ? AND url = ?')
+        .bind(feed.id, item.url)
+        .first<{ id: string }>();
+      if (existingByUrl) {
+        await env.DB.prepare(
+          `UPDATE news_articles SET guid = ?, title = ?, description = ?, image_url = ?, published_at = ?, fetched_at = ? WHERE id = ?`
+        )
+          .bind(item.guid, item.title, item.description, item.imageUrl, item.publishedAt, ts, existingByUrl.id)
+          .run();
+        continue;
+      }
       const articleId = uid();
       await env.DB.prepare(
         `INSERT INTO news_articles (id, feed_id, guid, url, title, description, image_url, published_at, fetched_at)
