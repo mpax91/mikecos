@@ -2242,12 +2242,12 @@ a {
 
 .modal__close {
   flex-shrink: 0;
-  width: 28px;
-  height: 28px;
+  width: 34px;
+  height: 34px;
   border-radius: 999px;
-  border: none;
-  background: transparent;
-  color: var(--color-muted);
+  border: var(--border-hairline);
+  background: var(--color-sidebar);
+  color: var(--color-ink);
   font-size: 20px;
   line-height: 1;
   display: flex;
@@ -9580,14 +9580,79 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 }
 
 .bets-workspace__odds-summary {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--color-ink);
   background: color-mix(in srgb, var(--color-accent) 10%, var(--color-card-bg));
   border: 1px solid var(--color-accent);
   border-radius: 8px;
-  padding: 8px 10px;
+  padding: 8px 10px 6px;
   margin-top: -4px;
+}
+
+.bets-workspace__odds-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+  table-layout: fixed;
+}
+
+.bets-workspace__odds-table th,
+.bets-workspace__odds-table td {
+  padding: 4px 6px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.bets-workspace__odds-table thead th {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.bets-workspace__odds-table thead th:first-child {
+  width: 30%;
+}
+
+.bets-workspace__odds-table tbody th[scope='row'] {
+  text-align: left;
+  font-weight: 500;
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.bets-workspace__odds-current {
+  display: block;
+  font-weight: 700;
+  color: var(--color-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.bets-workspace__odds-open {
+  display: block;
+  font-size: 10.5px;
+  color: var(--color-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.bets-workspace__odds-total-cell {
+  text-align: center;
+}
+
+.bets-workspace__odds-ou-prices {
+  display: block;
+  font-size: 10.5px;
+}
+
+.bets-workspace__odds-provider {
+  font-size: 10.5px;
+  text-align: right;
+  margin-top: 2px;
+}
+
+@media (max-width: 420px) {
+  .bets-workspace__odds-table {
+    font-size: 12px;
+  }
 }
 
 .bets-workspace__handicap {
@@ -9637,6 +9702,70 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   display: flex;
   flex-direction: column;
   gap: 2px;
+  margin-top: 2px;
+}
+
+.bets-workspace__handicap-pitcher {
+  display: flex;
+  flex-direction: column;
+  background: var(--color-sidebar);
+  border-radius: 6px;
+  padding: 5px 8px;
+  margin-bottom: 2px;
+}
+
+.bets-workspace__handicap-pitcher-name {
+  font-weight: 600;
+  color: var(--color-ink);
+}
+
+.bets-workspace__handicap-form-dots {
+  display: inline-flex;
+  gap: 3px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.bets-workspace__handicap-form-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.bets-workspace__handicap-form-dot--win {
+  background: color-mix(in srgb, var(--color-good, #2e7d32) 20%, transparent);
+  color: var(--color-good, #2e7d32);
+}
+
+.bets-workspace__handicap-form-dot--loss {
+  background: color-mix(in srgb, var(--color-critical, #c0392b) 16%, transparent);
+  color: var(--color-critical, #c0392b);
+}
+
+.bets-workspace__handicap-form-dot--unknown {
+  background: var(--color-sidebar);
+  color: var(--color-muted);
+}
+
+.bets-workspace__handicap-predictor,
+.bets-workspace__handicap-history {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-top: var(--border-hairline);
+  padding-top: 6px;
+}
+
+.bets-workspace__handicap-meetings {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
   margin-top: 2px;
 }
 
@@ -12060,13 +12189,14 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   padding: 0;
 }
 
-.modal__header {
+.vault-note-modal .modal__header {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 16px 20px;
   border-bottom: var(--border-hairline);
   flex-shrink: 0;
+  margin-bottom: 0;
 }
 
 .vault-note-modal__title {
@@ -12081,22 +12211,6 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 
 .vault-note-modal__title:focus {
   outline: none;
-}
-
-.modal__close {
-  border: none;
-  background: transparent;
-  color: var(--color-muted);
-  font-size: 15px;
-  cursor: pointer;
-  padding: 4px 6px;
-  border-radius: 6px;
-  flex-shrink: 0;
-}
-
-.modal__close:hover {
-  background: var(--color-sidebar);
-  color: var(--color-ink);
 }
 
 .vault-note-modal__body {

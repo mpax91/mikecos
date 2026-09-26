@@ -987,31 +987,77 @@ export interface BetGameTopPerformer {
   stat: string;
 }
 
+export interface BetGameProbablePitcher {
+  name: string;
+  throws: string | null; // 'L' | 'R'
+  wins: string | null;
+  losses: string | null;
+  era: string | null;
+  strikeouts: string | null;
+}
+
+export interface BetGameRecentGame {
+  date: string | null;
+  opponent: string | null;
+  atVs: string | null; // '@' | 'vs'
+  result: 'W' | 'L' | null;
+  score: string | null;
+}
+
 export interface BetGameTeamSnapshot {
   abbreviation: string;
   displayName: string;
   record: { overall: string | null; home: string | null; road: string | null };
   avgPointsFor: number | null;
   avgPointsAgainst: number | null;
-  injuries: BetGameInjury[];
+  injuries: BetGameInjury[]; // already filtered server-side to game-time-decision-ish statuses — see betsEnrichment.ts
   topPerformers: BetGameTopPerformer[];
+  probablePitcher: BetGameProbablePitcher | null; // MLB only
+  recentForm: { record: string | null; games: BetGameRecentGame[] }; // straight W/L, most recent first
+}
+
+// Open vs current — ESPN's odds partner (DraftKings in every sample seen)
+// exposes both, not just a single live snapshot.
+export interface BetGameOddsSide {
+  open: number | null;
+  current: number | null;
 }
 
 export interface BetGameOdds {
-  provider: string | null; // e.g. "DraftKings" — ESPN's own odds partner, refreshed on every fetch (not a locked opening/closing line)
-  details: string | null; // e.g. "BUF -7"
-  overUnder: number | null;
-  overOdds: number | null;
-  underOdds: number | null;
-  moneylineHome: number | null;
-  moneylineAway: number | null;
+  provider: string | null; // e.g. "DraftKings"
+  spread: { home: BetGameOddsSide; away: BetGameOddsSide } | null;
+  total: { open: number | null; current: number | null; overOdds: number | null; underOdds: number | null } | null;
+  moneyline: { home: BetGameOddsSide; away: BetGameOddsSide } | null;
+}
+
+export interface BetGameMatchupMeeting {
+  date: string | null;
+  homeAbbr: string | null;
+  awayAbbr: string | null;
+  homeScore: string | null;
+  awayScore: string | null;
+  winnerAbbr: string | null;
+}
+
+export interface BetGameMatchupHistory {
+  series: { type: string; summary: string | null }[]; // 'season' | 'current' | 'preseason'
+  recentMeetings: BetGameMatchupMeeting[]; // up to 5, most recent first
+}
+
+// ESPN's own model-based win probability — a free, real number, but a model
+// projection, not a human tipster's pick. Surface it labeled that way.
+export interface BetGamePredictor {
+  homeWinPct: number | null;
+  awayWinPct: number | null;
 }
 
 export interface BetGameEnrichment {
   found: boolean;
   venue: { name: string | null; city: string | null; state: string | null; indoor: boolean } | null;
-  weather: { temperature: number | null; precipitationChance: number | null; indoor: boolean } | null;
+  weather: { temperature: number | null; precipitationChance: number | null; windGust: number | null; indoor: boolean } | null;
   odds: BetGameOdds | null;
+  matchupHistory: BetGameMatchupHistory | null;
+  predictor: BetGamePredictor | null;
   home: BetGameTeamSnapshot | null;
   away: BetGameTeamSnapshot | null;
   note: string | null; // set when nothing could be resolved, so the UI can say why

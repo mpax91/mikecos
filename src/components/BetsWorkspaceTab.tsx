@@ -195,7 +195,8 @@ function useBetEnrichment(sport: string, date: string, matchup: string): { data:
         if (!cancelled) setData(r);
       })
       .catch(() => {
-        if (!cancelled) setData({ found: false, venue: null, weather: null, odds: null, home: null, away: null, note: "Couldn't load handicapping data right now." });
+        if (!cancelled)
+          setData({ found: false, venue: null, weather: null, odds: null, matchupHistory: null, predictor: null, home: null, away: null, note: "Couldn't load handicapping data right now." });
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -208,69 +209,161 @@ function useBetEnrichment(sport: string, date: string, matchup: string): { data:
   return { data, loading };
 }
 
-/** Spread/moneyline/total — the numbers Mike actually glances at first, so
- * this renders right under the matchup header rather than buried below
- * the tips/lines grid with the rest of the handicapping panel. */
+const signedNum = (n: number) => (n > 0 ? `+${n}` : `${n}`);
+
+/** One market's open-vs-current pair, rendered as a single cell — just the
+ * current number when nothing's moved, or current with the open value
+ * called out underneath when it has. Returns null (an empty cell) rather
+ * than a placeholder dash when there's nothing to show. */
+function OddsCell({ open, current, format }: { open: number | null; current: number | null; format: (n: number) => string }) {
+  if (current == null) return null;
+  if (open == null || open === current) return <span className="bets-workspace__odds-current">{format(current)}</span>;
+  return (
+    <>
+      <span className="bets-workspace__odds-current">{format(current)}</span>
+      <span className="bets-workspace__odds-open">open {format(open)}</span>
+    </>
+  );
+}
+
+/** Spread/total/moneyline as a clean, structured Open-vs-Current table —
+ * renders right under the matchup header, above the tips/lines grid, so
+ * it's the first thing Mike sees when a game's notes open. */
 function OddsSummary({ data, loading }: { data: BetGameEnrichment | null; loading: boolean }) {
   if (loading) return <div className="bets-workspace__odds-summary text-muted">Loading line…</div>;
-  if (!data?.found || !data.odds) return null; // no line to show — MatchupContext below still surfaces data?.note if there's an explanation
+  if (!data?.found || !data.odds || !data.away || !data.home) return null; // no line to show — MatchupContext below still surfaces data?.note if there's an explanation
 
-  const signed = (n: number) => (n > 0 ? `+${n}` : `${n}`);
-  const parts: string[] = [];
-  if (data.odds.details) parts.push(`Line: ${data.odds.details}`);
-  if (data.odds.overUnder != null) {
-    const ouOdds = data.odds.overOdds != null && data.odds.underOdds != null ? ` (o${signed(data.odds.overOdds)} / u${signed(data.odds.underOdds)})` : '';
-    parts.push(`O/U ${data.odds.overUnder}${ouOdds}`);
-  }
-  if (data.odds.moneylineHome != null && data.odds.moneylineAway != null && data.away && data.home) {
-    parts.push(`ML: ${data.away.abbreviation} ${signed(data.odds.moneylineAway)} / ${data.home.abbreviation} ${signed(data.odds.moneylineHome)}`);
-  }
-  if (parts.length === 0) return null;
+  const { odds, away, home } = data;
+  if (!odds.spread && !odds.total && !odds.moneyline) return null;
 
   return (
     <div className="bets-workspace__odds-summary">
-      {parts.join(' · ')}
-      {data.odds.provider && <span className="text-muted"> — via {data.odds.provider}</span>}
+      <table className="bets-workspace__odds-table">
+        <thead>
+          <tr>
+            <th scope="col" />
+            <th scope="col">{away.abbreviation || 'Away'}</th>
+            <th scope="col">{home.abbreviation || 'Home'}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {odds.spread && (
+            <tr>
+              <th scope="row">Spread</th>
+              <td>
+                <OddsCell open={odds.spread.away.open} current={odds.spread.away.current} format={signedNum} />
+              </td>
+              <td>
+                <OddsCell open={odds.spread.home.open} current={odds.spread.home.current} format={signedNum} />
+              </td>
+            </tr>
+          )}
+          {odds.moneyline && (
+            <tr>
+              <th scope="row">Moneyline</th>
+              <td>
+                <OddsCell open={odds.moneyline.away.open} current={odds.moneyline.away.current} format={signedNum} />
+              </td>
+              <td>
+                <OddsCell open={odds.moneyline.home.open} current={odds.moneyline.home.current} format={signedNum} />
+              </td>
+            </tr>
+          )}
+          {odds.total && (
+            <tr>
+              <th scope="row">Total</th>
+              <td colSpan={2} className="bets-workspace__odds-total-cell">
+                <OddsCell open={odds.total.open} current={odds.total.current} format={(n) => `${n}`} />
+                {odds.total.overOdds != null && odds.total.underOdds != null && (
+                  <span className="bets-workspace__odds-ou-prices text-muted">
+                    o{signedNum(odds.total.overOdds)} / u{signedNum(odds.total.underOdds)}
+                  </span>
+                )}
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+      {odds.provider && <div className="bets-workspace__odds-provider text-muted">via {odds.provider}</div>}
     </div>
   );
 }
 
-/** One team's handicapping snapshot — record/splits, scoring, injuries,
- * top performers. Shown twice, side by side (away then home, matching the
- * matchup string's own order). */
+/** One team's handicapping snapshot — starting pitcher, record/splits,
+ * scoring, recent form, top performers, and any real game-time-decision
+ * injuries (long-term IL/Out entries are filtered out server-side — see
+ * betsEnrichment.ts). Shown twice, side by side (away then home, matching
+ * the matchup string's own order). */
 function TeamSnapshotCard({ team }: { team: BetGameTeamSnapshot }) {
   return (
     <div className="bets-workspace__handicap-team">
       <div className="bets-workspace__handicap-team-name">{team.displayName || team.abbreviation}</div>
-      <div className="bets-workspace__handicap-stat-row">
-        <span>{team.record.overall ?? '—'}</span>
-        {(team.record.home || team.record.road) && (
-          <span className="text-muted">
-            ({team.record.home ?? '—'} home, {team.record.road ?? '—'} road)
+
+      {team.probablePitcher && (
+        <div className="bets-workspace__handicap-pitcher">
+          <span className="bets-workspace__handicap-pitcher-name">
+            {team.probablePitcher.name}
+            {team.probablePitcher.throws ? ` (${team.probablePitcher.throws})` : ''}
           </span>
-        )}
-      </div>
-      {(team.avgPointsFor != null || team.avgPointsAgainst != null) && (
-        <div className="bets-workspace__handicap-stat-row text-muted">
-          {team.avgPointsFor ?? '—'} scored / {team.avgPointsAgainst ?? '—'} allowed per game
+          {(team.probablePitcher.wins != null || team.probablePitcher.losses != null || team.probablePitcher.era != null) && (
+            <span className="text-muted">
+              {team.probablePitcher.wins ?? '0'}-{team.probablePitcher.losses ?? '0'}
+              {team.probablePitcher.era != null ? `, ${team.probablePitcher.era} ERA` : ''}
+              {team.probablePitcher.strikeouts != null ? `, ${team.probablePitcher.strikeouts} K` : ''}
+            </span>
+          )}
         </div>
       )}
+
+      {team.record.overall && (
+        <div className="bets-workspace__handicap-stat-row">
+          <span>{team.record.overall}</span>
+          {(team.record.home || team.record.road) && (
+            <span className="text-muted">
+              {[team.record.home ? `${team.record.home} home` : null, team.record.road ? `${team.record.road} road` : null].filter(Boolean).join(', ')}
+            </span>
+          )}
+        </div>
+      )}
+
+      {(team.avgPointsFor != null || team.avgPointsAgainst != null) && (
+        <div className="bets-workspace__handicap-stat-row text-muted">
+          {[team.avgPointsFor != null ? `${team.avgPointsFor} scored` : null, team.avgPointsAgainst != null ? `${team.avgPointsAgainst} allowed` : null].filter(Boolean).join(' / ')} per game
+        </div>
+      )}
+
+      {team.recentForm.record && (
+        <div className="bets-workspace__handicap-stat-row">
+          <span className="text-muted">Last 5:</span> {team.recentForm.record}
+          {team.recentForm.games.length > 0 && (
+            <span className="bets-workspace__handicap-form-dots">
+              {team.recentForm.games.map((g, i) => (
+                <span key={i} className={`bets-workspace__handicap-form-dot bets-workspace__handicap-form-dot--${g.result === 'W' ? 'win' : g.result === 'L' ? 'loss' : 'unknown'}`} title={g.opponent ? `${g.atVs ?? ''} ${g.opponent} ${g.score ?? ''}`.trim() : undefined}>
+                  {g.result ?? '?'}
+                </span>
+              ))}
+            </span>
+          )}
+        </div>
+      )}
+
       {team.topPerformers.length > 0 && (
         <div className="bets-workspace__handicap-section">
           {team.topPerformers.map((p) => (
             <div key={p.category} className="bets-workspace__handicap-stat-row">
-              <span className="text-muted">{p.category}:</span> {p.player} — {p.stat}
+              <span className="text-muted">{p.category}:</span> {p.player}, {p.stat}
             </div>
           ))}
         </div>
       )}
+
       {team.injuries.length > 0 && (
         <div className="bets-workspace__handicap-section">
-          <span className="bets-form__field-label">Injuries</span>
+          <span className="bets-form__field-label">Game-Time Decisions</span>
           {team.injuries.map((inj, i) => (
             <div key={i} className="bets-workspace__handicap-stat-row">
               {inj.player}
-              {inj.position ? ` (${inj.position})` : ''} — {inj.status}
+              {inj.position ? ` (${inj.position})` : ''}, {inj.status}
               {inj.detail ? `, ${inj.detail}` : ''}
             </div>
           ))}
@@ -280,23 +373,59 @@ function TeamSnapshotCard({ team }: { team: BetGameTeamSnapshot }) {
   );
 }
 
-/** Weather/venue and each team's record/scoring/injuries/leaders — the
- * rest of the handicapping panel, below the odds line (see OddsSummary)
- * which surfaces separately, right under the matchup header. */
+/** Weather/venue/wind, ESPN's model projection, head-to-head matchup
+ * history, and each team's record/pitcher/form/injuries/leaders — the rest
+ * of the handicapping panel, below the odds line (see OddsSummary) which
+ * surfaces separately, right under the matchup header. */
 function MatchupContext({ data, loading }: { data: BetGameEnrichment | null; loading: boolean }) {
   if (loading) return <div className="bets-workspace__handicap text-muted">Loading matchup context…</div>;
   if (!data || !data.found) return <div className="bets-workspace__handicap text-muted">{data?.note ?? 'No handicapping data available for this game.'}</div>;
 
   const conditions: string[] = [];
-  if (data.venue) conditions.push(data.venue.indoor ? `${data.venue.name ?? 'Indoor venue'} (dome)` : [data.venue.name, data.venue.city && data.venue.state ? `${data.venue.city}, ${data.venue.state}` : null].filter(Boolean).join(' — '));
+  if (data.venue) conditions.push(data.venue.indoor ? `${data.venue.name ?? 'Indoor venue'} (dome)` : [data.venue.name, data.venue.city && data.venue.state ? `${data.venue.city}, ${data.venue.state}` : null].filter(Boolean).join(', '));
   if (data.weather && !data.weather.indoor) {
-    const bits = [data.weather.temperature != null ? `${data.weather.temperature}°F` : null, data.weather.precipitationChance != null ? `${data.weather.precipitationChance}% chance of precip` : null].filter(Boolean);
+    const bits = [
+      data.weather.temperature != null ? `${data.weather.temperature}°F` : null,
+      data.weather.precipitationChance != null ? `${data.weather.precipitationChance}% chance of precip` : null,
+      data.weather.windGust != null ? `wind gusting to ${data.weather.windGust} mph` : null,
+    ].filter(Boolean);
     if (bits.length > 0) conditions.push(bits.join(', '));
   }
+
+  const seasonSeries = data.matchupHistory?.series.find((s) => s.type === 'season');
+  const currentSeries = data.matchupHistory?.series.find((s) => s.type === 'current');
 
   return (
     <div className="bets-workspace__handicap">
       {conditions.length > 0 && <div className="bets-workspace__handicap-conditions">{conditions.join(' · ')}</div>}
+
+      {data.predictor && (data.predictor.homeWinPct != null || data.predictor.awayWinPct != null) && data.away && data.home && (
+        <div className="bets-workspace__handicap-predictor">
+          <span className="bets-form__field-label">ESPN Projection</span>
+          <span className="bets-workspace__handicap-stat-row text-muted">
+            {data.away.abbreviation} {data.predictor.awayWinPct != null ? `${data.predictor.awayWinPct}%` : ''} / {data.home.abbreviation} {data.predictor.homeWinPct != null ? `${data.predictor.homeWinPct}%` : ''}
+          </span>
+        </div>
+      )}
+
+      {data.matchupHistory && (seasonSeries?.summary || currentSeries?.summary || data.matchupHistory.recentMeetings.length > 0) && (
+        <div className="bets-workspace__handicap-history">
+          <span className="bets-form__field-label">Matchup History</span>
+          {seasonSeries?.summary && <div className="bets-workspace__handicap-stat-row">{seasonSeries.summary}</div>}
+          {currentSeries?.summary && currentSeries.summary !== seasonSeries?.summary && <div className="bets-workspace__handicap-stat-row text-muted">{currentSeries.summary}</div>}
+          {data.matchupHistory.recentMeetings.length > 0 && (
+            <div className="bets-workspace__handicap-meetings">
+              {data.matchupHistory.recentMeetings.map((m, i) => (
+                <div key={i} className="bets-workspace__handicap-stat-row text-muted">
+                  {m.date ? new Date(m.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : ''} · {m.awayAbbr} {m.awayScore} @ {m.homeAbbr} {m.homeScore}
+                  {m.winnerAbbr ? ` (${m.winnerAbbr} won)` : ''}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {(data.away || data.home) && (
         <div className="bets-workspace__handicap-teams">
           {data.away && <TeamSnapshotCard team={data.away} />}
@@ -515,7 +644,6 @@ function CellInput({ value, onCommit }: { value: string; onCommit: (v: string) =
       onKeyDown={(e) => {
         if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
       }}
-      placeholder="—"
       title={value || undefined}
     />
   );
