@@ -3,7 +3,7 @@ import type { Env } from './types';
 import { encryptField, decryptField, EncryptionNotConfiguredError } from './cryptoField';
 import { ImapClient, parseHeaderBlock } from './imapClient';
 import { sendMail } from './smtpClient';
-import { parseMimeMessageToText } from './mimeParser';
+import { parseMimeMessageToText, decodeSnippet } from './mimeParser';
 
 const now = () => new Date().toISOString();
 const uid = () => crypto.randomUUID();
@@ -614,7 +614,7 @@ async function syncAccountInbox(env: Env, client: ImapClient, account: EmailAcco
           headers.subject || '(no subject)',
           headers.fromName,
           headers.fromEmail,
-          cleanSnippet(f.snippet),
+          decodeSnippet(f.snippet, f.snippetMime),
           headers.dateIso ?? ts,
           isSeen,
           ts,
@@ -653,20 +653,6 @@ async function syncAccountInbox(env: Env, client: ImapClient, account: EmailAcco
   }
 }
 
-/** BODY[1]'s raw bytes for an HTML/multipart message can include MIME
- * boundary lines and markup rather than clean text — see imapClient.ts's
- * header comment. This strips the more common noise (angle-bracket tags, a
- * lone MIME boundary marker line) so the list-view preview reads
- * reasonably even when it isn't a clean plain-text part; not a real HTML-
- * to-text conversion. */
-function cleanSnippet(raw: string): string {
-  const stripped = raw
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/--[-\w=]{10,}/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return stripped.slice(0, 240);
-}
 
 async function syncOneAccount(env: Env, account: EmailAccountRow): Promise<{ id: string; ok: boolean; error?: string }> {
   let client: ImapClient | null = null;

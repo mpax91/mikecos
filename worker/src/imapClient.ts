@@ -38,7 +38,8 @@ export interface FetchedMessage {
   gmThrId: string | null;
   flags: string[];
   headerBlock: string; // raw "From: ...\r\nSubject: ...\r\n" text
-  snippet: string; // best-effort plain-text preview
+  snippet: string; // raw, still-MIME-encoded first bytes of part 1 — see mimeParser.decodeSnippet
+  snippetMime: string; // part 1's own MIME headers (Content-Type/-Transfer-Encoding), needed to decode `snippet`
 }
 
 export interface ParsedHeaders {
@@ -339,7 +340,7 @@ export class ImapClient {
    * fetch (see fetchFullText). */
   async fetchMessages(uidSet: string, snippetBytes = 400): Promise<FetchedMessage[]> {
     if (!uidSet) return [];
-    const items = `(UID FLAGS X-GM-MSGID X-GM-THRID BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE MESSAGE-ID)] BODY.PEEK[1]<0.${snippetBytes}>)`;
+    const items = `(UID FLAGS X-GM-MSGID X-GM-THRID BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE MESSAGE-ID)] BODY.PEEK[1.MIME] BODY.PEEK[1]<0.${snippetBytes}>)`;
     const res = await this.command(`UID FETCH ${uidSet} ${items}`);
     if (res.status !== 'OK') throw new ImapProtocolError(`UID FETCH failed: ${res.text || res.status}`);
     return res.untagged.filter((l) => l[1] === 'FETCH').map((l) => parseFetchLine(l));
@@ -463,7 +464,7 @@ export class ImapClient {
 function parseFetchLine(line: ImapToken[]): FetchedMessage {
   // line shape: [seq, 'FETCH', [attr, val, attr, val, ...]]
   const attrs = line[2];
-  const out: FetchedMessage = { uid: 0, gmMsgId: null, gmThrId: null, flags: [], headerBlock: '', snippet: '' };
+  const out: FetchedMessage = { uid: 0, gmMsgId: null, gmThrId: null, flags: [], headerBlock: '', snippet: '', snippetMime: '' };
   if (!Array.isArray(attrs)) return out;
   for (let i = 0; i < attrs.length; i += 2) {
     const name = attrs[i];
@@ -474,6 +475,7 @@ function parseFetchLine(line: ImapToken[]): FetchedMessage {
     else if (name === 'X-GM-THRID' && typeof val === 'string') out.gmThrId = val;
     else if (name === 'FLAGS' && Array.isArray(val)) out.flags = val.filter((f): f is string => typeof f === 'string');
     else if (name.startsWith('BODY[HEADER.FIELDS') && typeof val === 'string') out.headerBlock = val;
+    else if (name.startsWith('BODY[1.MIME]') && typeof val === 'string') out.snippetMime = val;
     else if (name.startsWith('BODY[1]') && typeof val === 'string') out.snippet = val;
   }
   return out;

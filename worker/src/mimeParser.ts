@@ -159,3 +159,36 @@ export function parseMimeMessageToText(raw: string): string {
   if (html) return htmlToText(decodePart(html));
   return '';
 }
+
+/** For the list-view snippet: fetchMessages pulls only the first N raw
+ * bytes of part 1 (BODY.PEEK[1]<0.400>, cheap enough to do on every synced
+ * message every poll — unlike the full peek, which fetches the whole
+ * message on demand). That byte cap can land mid-base64-quartet or
+ * mid-escape, so this tolerates a truncated tail instead of throwing: it
+ * trims to a clean boundary before decoding, rather than failing (or
+ * silently showing raw base64, which is what shipped before this). Always
+ * returns a single-line, pre-truncated preview string. */
+export function decodeSnippet(rawBytesTruncated: string, partMimeHeaderBlock: string, maxLen = 220): string {
+  const { contentType, params, transferEncoding } = parseHeaders(partMimeHeaderBlock);
+  const charset = params.charset || 'utf-8';
+  let text: string;
+  try {
+    if (transferEncoding === 'base64') {
+      const cleaned = rawBytesTruncated.replace(/[^A-Za-z0-9+/=]/g, '');
+      const usable = cleaned.slice(0, Math.floor(cleaned.length / 4) * 4);
+      text = decodeCharset(base64ToBytes(usable), charset);
+    } else if (transferEncoding === 'quoted-printable') {
+      // Drop a possibly-cut trailing escape ("=", "=A") so it isn't
+      // mistaken for literal characters.
+      const safe = rawBytesTruncated.replace(/=[0-9A-Fa-f]?$/, '');
+      text = decodeCharset(quotedPrintableToBytes(safe), charset);
+    } else {
+      text = rawBytesTruncated;
+    }
+  } catch {
+    text = '';
+  }
+  if (contentType === 'text/html') text = htmlToText(text);
+  const singleLine = text.replace(/\s+/g, ' ').trim();
+  return singleLine.length > maxLen ? singleLine.slice(0, maxLen).trim() + '…' : singleLine;
+}
