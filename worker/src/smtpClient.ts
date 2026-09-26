@@ -47,7 +47,11 @@ export async function sendMail(opts: {
   user: string;
   pass: string;
   fromEmail: string;
-  toEmail: string;
+  /** One or more "To" recipients — a reply-all can have several. */
+  toEmails: string[];
+  /** Additional Cc recipients (reply-all's other original recipients). Left
+   * out (or empty) sends with no Cc header at all. */
+  ccEmails?: string[];
   subject: string;
   bodyText: string;
   inReplyTo?: string | null;
@@ -72,13 +76,17 @@ export async function sendMail(opts: {
     await expect(btoa(opts.user), [334]);
     await expect(btoa(opts.pass), [235]);
     await expect(`MAIL FROM:<${opts.fromEmail}>`, [250]);
-    await expect(`RCPT TO:<${opts.toEmail}>`, [250, 251]);
+    const allRecipients = [...opts.toEmails, ...(opts.ccEmails ?? [])];
+    for (const rcpt of allRecipients) {
+      await expect(`RCPT TO:<${rcpt}>`, [250, 251]);
+    }
     await expect('DATA', [354]);
 
     const messageId = `<${crypto.randomUUID()}@mikeos>`;
     const headers = [
       `From: ${opts.fromEmail}`,
-      `To: ${opts.toEmail}`,
+      `To: ${opts.toEmails.join(', ')}`,
+      opts.ccEmails && opts.ccEmails.length > 0 ? `Cc: ${opts.ccEmails.join(', ')}` : null,
       `Subject: ${opts.subject}`,
       `Message-ID: ${messageId}`,
       opts.inReplyTo ? `In-Reply-To: ${opts.inReplyTo}` : null,

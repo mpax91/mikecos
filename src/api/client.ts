@@ -1234,7 +1234,7 @@ export const api = {
   convertEmail: (id: string, data: { as: 'task' | 'note'; parentId?: string | null; dueDate?: string | null }) =>
     request<{ entityId: string }>(`/api/email/messages/${id}/convert`, { method: 'POST', body: JSON.stringify(data) }),
 
-  replyToEmail: (id: string, data: { body: string; archive?: boolean }) =>
+  replyToEmail: (id: string, data: { body: string; archive?: boolean; mode?: 'sender' | 'all' }) =>
     request<{ ok: true }>(`/api/email/messages/${id}/reply`, { method: 'POST', body: JSON.stringify(data) }),
 
   forwardEmail: (id: string, data: { to: string; note?: string }) =>

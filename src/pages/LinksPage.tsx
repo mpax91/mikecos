@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useReportTabMeta } from '../contexts/TabsContext';
 import { api } from '../api/client';
 import type { BookmarkNode, QuickLink } from '../api/types';
@@ -190,6 +191,23 @@ function BookmarksSection() {
  * booking link). Read-only/click-only by design: all add/edit/remove
  * management happens in Settings → Links, not here, so this page stays
  * clean. */
+// Adding/editing/reordering tiles all happen in Settings → Links, not on
+// this read-only page, so this deep-link — same gear-icon pattern as News'
+// own Settings shortcut (see NewsPage.tsx) — is the quick way back there
+// instead of hunting for it in Settings' category list.
+function LinksHeader() {
+  return (
+    <div className="links-page__header">
+      <h1 className="heading-serif" style={{ fontSize: 24, margin: '0 0 2px' }}>
+        Links
+      </h1>
+      <Link to="/settings?cat=links" className="links-page__settings-link" title="Manage Links" aria-label="Manage Links">
+        ⚙️
+      </Link>
+    </div>
+  );
+}
+
 export function LinksPage() {
   useReportTabMeta('Links', 'links');
   const [links, setLinks] = useState<QuickLink[] | null>(null);
@@ -214,9 +232,7 @@ export function LinksPage() {
   if (links.length === 0) {
     return (
       <div>
-        <h1 className="heading-serif" style={{ fontSize: 24, margin: '0 0 2px' }}>
-          Links
-        </h1>
+        <LinksHeader />
         <div className="empty-state">No links yet — add some in Settings → Links.</div>
         <BookmarksSection />
       </div>
@@ -227,9 +243,7 @@ export function LinksPage() {
 
   return (
     <div>
-      <h1 className="heading-serif" style={{ fontSize: 24, margin: '0 0 2px' }}>
-        Links
-      </h1>
+      <LinksHeader />
       <p className="links-page__subhead">Quick jumps to the things that get buried — click to open, or copy where marked.</p>
 
       {groups.map((group) => (

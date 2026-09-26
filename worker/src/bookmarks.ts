@@ -30,6 +30,16 @@ interface BookmarkNode {
   children: BookmarkNode[];
 }
 
+// Chrome's own export always wraps everything Mike actually uses in a
+// top-level "Bookmarks bar" folder (a sibling of "Other bookmarks"/"Mobile
+// bookmarks", both usually empty or ignorable) — so viewing Links' Bookmarks
+// section always cost one extra click into that single wrapper before
+// reaching anything real. Since it's Chrome's own fixed naming (not
+// something Mike renamed), it's safe to recognize by name and splice its
+// children straight into the root list in its place, same position, rather
+// than showing it as a folder of its own.
+const BAR_FOLDER_NAMES = new Set(['bookmarks bar', 'bookmarks toolbar']); // Chrome / Firefox-style export naming
+
 function rowsToTree(rows: BookmarkRow[]): BookmarkNode[] {
   const byId = new Map<string, BookmarkNode>();
   for (const r of rows) byId.set(r.id, { id: r.id, type: r.type, title: r.title, url: r.url, children: [] });
@@ -39,7 +49,7 @@ function rowsToTree(rows: BookmarkRow[]): BookmarkNode[] {
     if (r.parent_id && byId.has(r.parent_id)) byId.get(r.parent_id)!.children.push(node);
     else roots.push(node);
   }
-  return roots;
+  return roots.flatMap((n) => (n.type === 'folder' && BAR_FOLDER_NAMES.has(n.title.trim().toLowerCase()) ? n.children : [n]));
 }
 
 // GET /api/bookmarks — the full imported tree, plus when it was last

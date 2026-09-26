@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Env } from './types';
 import { encryptField, decryptField, EncryptionNotConfiguredError } from './cryptoField';
-import { ImapClient, parseHeaderBlock } from './imapClient';
+import { ImapClient, parseHeaderBlock, type ParsedAddress } from './imapClient';
 import { sendMail } from './smtpClient';
 import { parseMimeMessageToParts, decodeSnippet } from './mimeParser';
 
@@ -522,10 +522,11 @@ emailRouter.post('/messages/:id/convert', async (c) => {
 // A deliberately minimal reply — plain text, threaded via In-Reply-To/
 // References so it lands in the same Gmail thread. Not a full compose
 // client (see the design conversation this came out of): no attachments,
-// no CC/BCC, always replies to the original sender.
+// no BCC, and "reply all" only widens To/Cc to the original message's own
+// recipients — it never lets Mike add someone new.
 emailRouter.post('/messages/:id/reply', async (c) => {
   const id = c.req.param('id');
-  const body = await c.req.json<{ body: string; archive?: boolean }>();
+  const body = await c.req.json<{ body: string; archive?: boolean; mode?: 'sender' | 'all' }>();
   if (!body.body?.trim()) return c.json({ error: 'body is required' }, 400);
   const found = await getMessageWithAccount(c.env, id);
   if (!found) return c.json({ error: 'not found' }, 404);
@@ -534,13 +535,59 @@ emailRouter.post('/messages/:id/reply', async (c) => {
 
   try {
     const pass = await decryptField(c.env, account.app_password_enc, 'EMAIL_ACCOUNT_ENC_KEY');
+
+    // Reply-all needs the original message's To/Cc, which the regular sync
+    // never stores (fetchMessages only pulls From/Subject/Date/Message-ID —
+    // see imapClient.ts) — so this opens a live IMAP connection just to read
+    // those two headers off the real mailbox, same "one extra round trip for
+    // an on-demand action" trade Inbox already makes for peek/forward.
+    let toRecipients: ParsedAddress[] = [];
+    let ccRecipients: ParsedAddress[] = [];
+    if (body.mode === 'all') {
+      const client = new ImapClient();
+      await client.connect(account.imap_host, account.imap_port);
+      await client.login(account.email, pass);
+      await client.selectInbox();
+      const addr = await client.fetchAddressHeaders(message.uid);
+      await client.logout();
+      toRecipients = addr.to;
+      ccRecipients = addr.cc;
+    }
+
+    const selfEmail = account.email.trim().toLowerCase();
+    const seen = new Set<string>();
+    const toEmails: string[] = [];
+    const ccEmails: string[] = [];
+    const addTo = (email: string | null | undefined) => {
+      if (!email) return;
+      const key = email.trim().toLowerCase();
+      if (!key || key === selfEmail || seen.has(key)) return;
+      seen.add(key);
+      toEmails.push(email.trim());
+    };
+    const addCc = (email: string | null | undefined) => {
+      if (!email) return;
+      const key = email.trim().toLowerCase();
+      if (!key || key === selfEmail || seen.has(key)) return;
+      seen.add(key);
+      ccEmails.push(email.trim());
+    };
+
+    addTo(message.from_email);
+    if (body.mode === 'all') {
+      for (const a of toRecipients) addTo(a.email);
+      for (const a of ccRecipients) addCc(a.email);
+    }
+    if (toEmails.length === 0) return c.json({ error: 'No recipients to reply to' }, 400);
+
     await sendMail({
       host: account.smtp_host,
       port: account.smtp_port,
       user: account.email,
       pass,
       fromEmail: account.email,
-      toEmail: message.from_email,
+      toEmails,
+      ccEmails: ccEmails.length > 0 ? ccEmails : undefined,
       subject: message.subject.toLowerCase().startsWith('re:') ? message.subject : `Re: ${message.subject}`,
       bodyText: body.body,
       inReplyTo: message.message_id_header,
@@ -613,7 +660,7 @@ emailRouter.post('/messages/:id/forward', async (c) => {
       user: account.email,
       pass,
       fromEmail: account.email,
-      toEmail: to,
+      toEmails: [to],
       subject,
       bodyText,
     });

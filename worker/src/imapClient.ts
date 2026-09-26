@@ -447,6 +447,27 @@ export class ImapClient {
     });
   }
 
+  /** Live per-message fetch of the To/Cc recipient lists — only needed for
+   * reply-all (see email.ts), which is rare enough that it isn't worth
+   * storing on every synced message (fetchMessages' regular HEADER.FIELDS
+   * only pulls FROM SUBJECT DATE MESSAGE-ID). One extra round trip on the
+   * same open connection when Mike actually hits "Reply All". */
+  async fetchAddressHeaders(uid: number): Promise<{ to: ParsedAddress[]; cc: ParsedAddress[] }> {
+    const res = await this.command(`UID FETCH ${uid} (BODY.PEEK[HEADER.FIELDS (TO CC)])`);
+    if (res.status !== 'OK') throw new ImapProtocolError(`UID FETCH failed: ${res.text || res.status}`);
+    const line = res.untagged.find((l) => l[1] === 'FETCH');
+    if (!line) return { to: [], cc: [] };
+    const attrs = line[2];
+    if (!Array.isArray(attrs)) return { to: [], cc: [] };
+    for (let i = 0; i < attrs.length; i += 2) {
+      const name = attrs[i];
+      if (typeof name === 'string' && name.startsWith('BODY[HEADER.FIELDS') && typeof attrs[i + 1] === 'string') {
+        return parseAddressListHeaders(attrs[i + 1] as string);
+      }
+    }
+    return { to: [], cc: [] };
+  }
+
   async logout(): Promise<void> {
     try {
       await this.command('LOGOUT');
@@ -526,4 +547,76 @@ export function parseHeaderBlock(block: string): ParsedHeaders {
     if (!Number.isNaN(d.getTime())) dateIso = d.toISOString();
   }
   return { fromName, fromEmail, subject, dateIso, messageId };
+}
+
+export interface ParsedAddress {
+  name: string | null;
+  email: string;
+}
+
+// Splits a raw header value like `"Doe, Jane" <jane@x.com>, bob@y.com` on
+// commas, ignoring any comma that falls inside a quoted display name (Gmail
+// and most clients quote a display name that itself contains a comma, e.g.
+// "Doe, Jane"). Not a full RFC 2822 address-list grammar (no escaped-quote
+// handling, no comment-in-parens support) — same "good enough" bar as the
+// rest of this hand-rolled parser; worth revisiting only if a real address
+// shows up mangled.
+function splitAddressList(raw: string): string[] {
+  const parts: string[] = [];
+  let cur = '';
+  let inQuotes = false;
+  for (const ch of raw) {
+    if (ch === '"') inQuotes = !inQuotes;
+    if (ch === ',' && !inQuotes) {
+      parts.push(cur);
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  if (cur.trim()) parts.push(cur);
+  return parts.map((s) => s.trim()).filter(Boolean);
+}
+
+function parseOneAddress(raw: string): ParsedAddress | null {
+  const emailMatch = raw.match(/<([^>]+)>/);
+  if (emailMatch) {
+    const email = emailMatch[1].trim();
+    if (!email) return null;
+    const name = raw.slice(0, emailMatch.index).trim().replace(/^"|"$/g, '') || null;
+    return { name, email };
+  }
+  if (raw.includes('@')) return { name: null, email: raw.trim() };
+  return null;
+}
+
+/** Parses a `BODY[HEADER.FIELDS (TO CC)]`-style raw block into the To/Cc
+ * recipient lists — used only for reply-all (see email.ts), since the
+ * regular sync path (fetchMessages) never needs anything beyond From. Kept
+ * as its own function rather than folded into parseHeaderBlock since that
+ * one only ever handles single-address fields (From). */
+export function parseAddressListHeaders(block: string): { to: ParsedAddress[]; cc: ParsedAddress[] } {
+  const lines = block.split(/\r\n/);
+  const folded: string[] = [];
+  for (const line of lines) {
+    if (/^[ \t]/.test(line) && folded.length > 0) {
+      folded[folded.length - 1] += ' ' + line.trim();
+    } else if (line.trim()) {
+      folded.push(line);
+    }
+  }
+  let toRaw = '';
+  let ccRaw = '';
+  for (const line of folded) {
+    const m = line.match(/^([A-Za-z-]+):\s*(.*)$/);
+    if (!m) continue;
+    const key = m[1].toLowerCase();
+    if (key === 'to') toRaw = m[2];
+    else if (key === 'cc') ccRaw = m[2];
+  }
+  const parseList = (raw: string) =>
+    splitAddressList(raw)
+      .map(parseOneAddress)
+      .filter((a): a is ParsedAddress => a !== null);
+  return { to: parseList(toRaw), cc: parseList(ccRaw) };
 }

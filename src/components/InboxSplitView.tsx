@@ -101,6 +101,7 @@ export function InboxSplitView() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loadingSelected, setLoadingSelected] = useState(false);
   const [replyOpen, setReplyOpen] = useState(false);
+  const [replyMode, setReplyMode] = useState<'sender' | 'all'>('sender');
   const [replyDraft, setReplyDraft] = useState('');
   const [replyArchiveAfter, setReplyArchiveAfter] = useState(false);
   const [sendingReply, setSendingReply] = useState(false);
@@ -134,6 +135,7 @@ export function InboxSplitView() {
   async function selectMessage(m: EmailMessage) {
     setSelectedId(m.id);
     setReplyOpen(false);
+    setReplyMode('sender');
     setReplyDraft('');
     setForwardOpen(false);
     setForwardTo('');
@@ -168,11 +170,24 @@ export function InboxSplitView() {
     }
   }
 
+  // Reply and Reply All share one panel/draft — the toolbar buttons just
+  // pick which mode it opens in (see openReply below) — rather than two
+  // separate panels that'd have to stay in sync with each other.
+  function openReply(mode: 'sender' | 'all') {
+    if (replyOpen && replyMode === mode) {
+      setReplyOpen(false);
+      return;
+    }
+    setReplyMode(mode);
+    setReplyOpen(true);
+    setForwardOpen(false);
+  }
+
   async function sendReply() {
     if (!selected || !replyDraft.trim()) return;
     setSendingReply(true);
     try {
-      await reply(selected.id, replyDraft.trim(), replyArchiveAfter);
+      await reply(selected.id, replyDraft.trim(), replyArchiveAfter, replyMode);
       setReplyDraft('');
       setReplyOpen(false);
       if (replyArchiveAfter) setSelectedId(null);
@@ -294,14 +309,20 @@ export function InboxSplitView() {
               <button
                 type="button"
                 className="btn btn--ghost btn--sm inbox-split__reply-toggle"
-                onClick={() => {
-                  setReplyOpen((v) => !v);
-                  setForwardOpen(false);
-                }}
+                onClick={() => openReply('sender')}
                 disabled={!selected.from_email}
                 title={selected.from_email ? undefined : 'No parseable sender address to reply to'}
               >
                 ↩ Reply
+              </button>
+              <button
+                type="button"
+                className="btn btn--ghost btn--sm inbox-split__reply-toggle"
+                onClick={() => openReply('all')}
+                disabled={!selected.from_email}
+                title={selected.from_email ? undefined : 'No parseable sender address to reply to'}
+              >
+                ↩↩ Reply All
               </button>
               <button
                 type="button"
@@ -333,8 +354,15 @@ export function InboxSplitView() {
 
             {replyOpen && (
               <div className="inbox-split__reply">
+                {/* Inbox doesn't fetch the original To/Cc until send time (a
+                    live IMAP round trip only reply-all actually needs — see
+                    email.ts), so this can't list the other recipients by name
+                    up front; it just says what's about to happen. */}
+                {replyMode === 'all' && (
+                  <div className="inbox-split__reply-hint">Replying to {selected.from_email ?? 'sender'} and everyone else on this message.</div>
+                )}
                 <textarea
-                  placeholder={`Reply to ${selected.from_email ?? 'sender'}…`}
+                  placeholder={replyMode === 'all' ? 'Reply all…' : `Reply to ${selected.from_email ?? 'sender'}…`}
                   value={replyDraft}
                   onChange={(e) => setReplyDraft(e.target.value)}
                   rows={4}

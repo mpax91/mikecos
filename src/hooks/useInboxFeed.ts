@@ -76,8 +76,8 @@ export function useInboxFeed(accountId?: string) {
     }
   }
 
-  async function reply(id: string, body: string, archiveAfter = false) {
-    await api.replyToEmail(id, { body, archive: archiveAfter });
+  async function reply(id: string, body: string, archiveAfter = false, mode: 'sender' | 'all' = 'sender') {
+    await api.replyToEmail(id, { body, archive: archiveAfter, mode });
     load();
   }
 

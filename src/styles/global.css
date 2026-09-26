@@ -4277,6 +4277,11 @@ a {
   cursor: pointer;
 }
 
+.inbox-split__reply-hint {
+  font-size: 12.5px;
+  color: var(--color-muted);
+}
+
 .inbox-split__forward-to {
   width: 100%;
   font-family: var(--font-sans);
@@ -5762,6 +5767,35 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 }
 
 /* ---- Links page (sidebar "Links" tray) ---- */
+
+.links-page__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* Same footprint/behavior as News' own Settings deep-link
+   (.news-page__settings-link) — kept as its own class per this codebase's
+   per-page naming convention rather than shared, but identical rules. */
+.links-page__settings-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: var(--border-hairline);
+  background: var(--color-card-bg);
+  font-size: 14px;
+  line-height: 1;
+  text-decoration: none;
+  flex-shrink: 0;
+}
+
+.links-page__settings-link:hover {
+  background: rgba(47, 74, 60, 0.08);
+}
 
 .links-page__subhead {
   color: var(--color-muted);
