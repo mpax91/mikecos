@@ -174,6 +174,67 @@ function bestOddsColumns(entry: BoardEntry, cols: string[]): Set<string> {
   return winners;
 }
 
+/** Fetches handicapping context (weather/injuries/team-form/odds) for a
+ * game — see worker/src/betsEnrichment.ts. Pulled into its own hook,
+ * rather than living inside one panel component, so the odds line and the
+ * rest of the panel can render in two different spots in the modal (see
+ * OddsSummary/MatchupContext below) off a single fetch. Fails quietly (a
+ * one-line note, not an error banner) since this is bonus context, not
+ * something the Workspace tab depends on. */
+function useBetEnrichment(sport: string, date: string, matchup: string): { data: BetGameEnrichment | null; loading: boolean } {
+  const [data, setData] = useState<BetGameEnrichment | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setData(null);
+    api
+      .getBetEnrichment(sport, date, matchup)
+      .then((r) => {
+        if (!cancelled) setData(r);
+      })
+      .catch(() => {
+        if (!cancelled) setData({ found: false, venue: null, weather: null, odds: null, home: null, away: null, note: "Couldn't load handicapping data right now." });
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sport, date, matchup]);
+
+  return { data, loading };
+}
+
+/** Spread/moneyline/total — the numbers Mike actually glances at first, so
+ * this renders right under the matchup header rather than buried below
+ * the tips/lines grid with the rest of the handicapping panel. */
+function OddsSummary({ data, loading }: { data: BetGameEnrichment | null; loading: boolean }) {
+  if (loading) return <div className="bets-workspace__odds-summary text-muted">Loading line…</div>;
+  if (!data?.found || !data.odds) return null; // no line to show — MatchupContext below still surfaces data?.note if there's an explanation
+
+  const signed = (n: number) => (n > 0 ? `+${n}` : `${n}`);
+  const parts: string[] = [];
+  if (data.odds.details) parts.push(`Line: ${data.odds.details}`);
+  if (data.odds.overUnder != null) {
+    const ouOdds = data.odds.overOdds != null && data.odds.underOdds != null ? ` (o${signed(data.odds.overOdds)} / u${signed(data.odds.underOdds)})` : '';
+    parts.push(`O/U ${data.odds.overUnder}${ouOdds}`);
+  }
+  if (data.odds.moneylineHome != null && data.odds.moneylineAway != null && data.away && data.home) {
+    parts.push(`ML: ${data.away.abbreviation} ${signed(data.odds.moneylineAway)} / ${data.home.abbreviation} ${signed(data.odds.moneylineHome)}`);
+  }
+  if (parts.length === 0) return null;
+
+  return (
+    <div className="bets-workspace__odds-summary">
+      {parts.join(' · ')}
+      {data.odds.provider && <span className="text-muted"> — via {data.odds.provider}</span>}
+    </div>
+  );
+}
+
 /** One team's handicapping snapshot — record/splits, scoring, injuries,
  * top performers. Shown twice, side by side (away then home, matching the
  * matchup string's own order). */
@@ -219,36 +280,10 @@ function TeamSnapshotCard({ team }: { team: BetGameTeamSnapshot }) {
   );
 }
 
-/** Weather/injuries/team-form context for a game, pulled from ESPN's free
- * public data (see worker/src/betsEnrichment.ts) — no odds/stats API key
- * involved. Lazy-loads on mount since it's a handful of upstream fetches
- * the rest of the modal doesn't need to wait on, and fails quietly (a
- * one-line note, not an error banner) since this is bonus context, not
- * something the Workspace tab depends on. */
-function HandicappingPanel({ sport, date, matchup }: { sport: string; date: string; matchup: string }) {
-  const [data, setData] = useState<BetGameEnrichment | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setData(null);
-    api
-      .getBetEnrichment(sport, date, matchup)
-      .then((r) => {
-        if (!cancelled) setData(r);
-      })
-      .catch(() => {
-        if (!cancelled) setData({ found: false, venue: null, weather: null, odds: null, home: null, away: null, note: "Couldn't load handicapping data right now." });
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [sport, date, matchup]);
-
+/** Weather/venue and each team's record/scoring/injuries/leaders — the
+ * rest of the handicapping panel, below the odds line (see OddsSummary)
+ * which surfaces separately, right under the matchup header. */
+function MatchupContext({ data, loading }: { data: BetGameEnrichment | null; loading: boolean }) {
   if (loading) return <div className="bets-workspace__handicap text-muted">Loading matchup context…</div>;
   if (!data || !data.found) return <div className="bets-workspace__handicap text-muted">{data?.note ?? 'No handicapping data available for this game.'}</div>;
 
@@ -258,26 +293,10 @@ function HandicappingPanel({ sport, date, matchup }: { sport: string; date: stri
     const bits = [data.weather.temperature != null ? `${data.weather.temperature}°F` : null, data.weather.precipitationChance != null ? `${data.weather.precipitationChance}% chance of precip` : null].filter(Boolean);
     if (bits.length > 0) conditions.push(bits.join(', '));
   }
-  const signed = (n: number) => (n > 0 ? `+${n}` : `${n}`);
-  const oddsLine: string[] = [];
-  if (data.odds?.details) oddsLine.push(`Line: ${data.odds.details}`);
-  if (data.odds?.overUnder != null) {
-    const ouOdds = data.odds.overOdds != null && data.odds.underOdds != null ? ` (o${signed(data.odds.overOdds)} / u${signed(data.odds.underOdds)})` : '';
-    oddsLine.push(`O/U ${data.odds.overUnder}${ouOdds}`);
-  }
-  if (data.odds?.moneylineHome != null && data.odds?.moneylineAway != null && data.away && data.home) {
-    oddsLine.push(`ML: ${data.away.abbreviation} ${signed(data.odds.moneylineAway)} / ${data.home.abbreviation} ${signed(data.odds.moneylineHome)}`);
-  }
 
   return (
     <div className="bets-workspace__handicap">
       {conditions.length > 0 && <div className="bets-workspace__handicap-conditions">{conditions.join(' · ')}</div>}
-      {oddsLine.length > 0 && (
-        <div className="bets-workspace__handicap-conditions">
-          {oddsLine.join(' · ')}
-          {data.odds?.provider && <span className="text-muted"> — via {data.odds.provider}</span>}
-        </div>
-      )}
       {(data.away || data.home) && (
         <div className="bets-workspace__handicap-teams">
           {data.away && <TeamSnapshotCard team={data.away} />}
@@ -351,6 +370,7 @@ function NotesModal({
   // real editable input, filled in or not.
   const allColumns = [...tipperColumns, ...sportsbookColumns];
   const strayEntries = [...entry.cells.entries()].filter(([label, v]) => v.trim() && !allColumns.includes(label));
+  const enrichment = useBetEnrichment(entry.sport, date, entry.matchup);
 
   return (
     <Modal title={entry.matchup} onClose={onClose}>
@@ -361,6 +381,7 @@ function NotesModal({
           </div>
         )}
         {entry.startTime && <div className="bets-workspace__modal-kickoff">{formatKickoff(entry.startTime)}</div>}
+        <OddsSummary data={enrichment.data} loading={enrichment.loading} />
         {(tipperColumns.length > 0 || sportsbookColumns.length > 0) && (
           <div className="bets-workspace__modal-cells-split">
             {tipperColumns.length > 0 && (
@@ -387,7 +408,7 @@ function NotesModal({
             )}
           </div>
         )}
-        <HandicappingPanel sport={entry.sport} date={date} matchup={entry.matchup} />
+        <MatchupContext data={enrichment.data} loading={enrichment.loading} />
         {strayEntries.length > 0 && (
           <div className="bets-workspace__modal-cells">
             <span className="bets-form__field-label">Other saved values</span>
@@ -943,71 +964,79 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
       )}
 
       <div className="toolbar-row bets-workspace__toolbar">
-        <div className="dashboard-page__period-pill">
-          <button type="button" className="dashboard-page__nav-btn" onClick={() => setDate((d) => shiftDate(d, -1))} aria-label="Previous day">
-            ‹
-          </button>
-          <span className="dashboard-page__period-label">
-            <span className="dashboard-page__period-main">
-              {new Date(`${date}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-            </span>
-          </span>
-          <button type="button" className="dashboard-page__nav-btn" onClick={() => setDate((d) => shiftDate(d, 1))} aria-label="Next day">
-            ›
+        {/* Search and Tips-only are the two controls Mike reaches for on
+            almost every visit, so on mobile they stay put on their own row
+            instead of scrolling away with the rest — see
+            .bets-workspace__toolbar-primary/-pills below. */}
+        <div className="bets-workspace__toolbar-primary">
+          <input
+            type="search"
+            className="bets-workspace__search"
+            placeholder="Search games, notes, tips…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <button
+            type="button"
+            className={`chip${tipsOnly ? ' is-active' : ''}`}
+            onClick={() => setTipsOnly((v) => !v)}
+            title="Hide games where none of today's tipper columns have a value"
+          >
+            {tipsOnly ? '✓ Tips only' : 'Tips only'}
           </button>
         </div>
-        {date !== todayLocalISODash() && (
-          <button type="button" className="chip" onClick={() => setDate(todayLocalISODash())}>
-            Jump to today
-          </button>
-        )}
-        <input
-          type="search"
-          className="bets-workspace__search"
-          placeholder="Search games, notes, tips…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-        <button
-          type="button"
-          className={`chip${tipsOnly ? ' is-active' : ''}`}
-          onClick={() => setTipsOnly((v) => !v)}
-          title="Hide games where none of today's tipper columns have a value"
-        >
-          {tipsOnly ? '✓ Tips only' : 'Tips only'}
-        </button>
-        <div className="bets-workspace__column-add">
-          {addingColumn ? (
-            <div className="bets-workspace__column-add-input">
-              <input
-                autoFocus
-                placeholder="New tipper column…"
-                value={newColumnName}
-                onChange={(e) => setNewColumnName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') commitNewColumn();
-                  if (e.key === 'Escape') {
-                    setAddingColumn(false);
-                    setNewColumnName('');
-                  }
-                }}
-                onBlur={commitNewColumn}
-              />
-            </div>
-          ) : (
-            <button type="button" className="chip" onClick={() => setAddingColumn(true)}>
-              + Add column
+        <div className="bets-workspace__toolbar-pills">
+          <div className="dashboard-page__period-pill">
+            <button type="button" className="dashboard-page__nav-btn" onClick={() => setDate((d) => shiftDate(d, -1))} aria-label="Previous day">
+              ‹
+            </button>
+            <span className="dashboard-page__period-label">
+              <span className="dashboard-page__period-main">
+                {new Date(`${date}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+              </span>
+            </span>
+            <button type="button" className="dashboard-page__nav-btn" onClick={() => setDate((d) => shiftDate(d, 1))} aria-label="Next day">
+              ›
+            </button>
+          </div>
+          {date !== todayLocalISODash() && (
+            <button type="button" className="chip" onClick={() => setDate(todayLocalISODash())}>
+              Jump to today
             </button>
           )}
-        </div>
-        {notes && notes.length > 0 && (
-          <button type="button" className="chip" onClick={handleClearAll} title="Delete every saved note/tip/pin for this date">
-            Clear All
+          <div className="bets-workspace__column-add">
+            {addingColumn ? (
+              <div className="bets-workspace__column-add-input">
+                <input
+                  autoFocus
+                  placeholder="New tipper column…"
+                  value={newColumnName}
+                  onChange={(e) => setNewColumnName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') commitNewColumn();
+                    if (e.key === 'Escape') {
+                      setAddingColumn(false);
+                      setNewColumnName('');
+                    }
+                  }}
+                  onBlur={commitNewColumn}
+                />
+              </div>
+            ) : (
+              <button type="button" className="chip" onClick={() => setAddingColumn(true)}>
+                + Add column
+              </button>
+            )}
+          </div>
+          {notes && notes.length > 0 && (
+            <button type="button" className="chip" onClick={handleClearAll} title="Delete every saved note/tip/pin for this date">
+              Clear All
+            </button>
+          )}
+          <button className="btn" onClick={() => setAdding(true)}>
+            + Add Game
           </button>
-        )}
-        <button className="btn" onClick={() => setAdding(true)}>
-          + Add Game
-        </button>
+        </div>
       </div>
 
       {clearedSnapshot && (

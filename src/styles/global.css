@@ -2205,10 +2205,41 @@ a {
   box-sizing: border-box;
 }
 
+.modal__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
 .modal h3 {
-  margin: 0 0 16px;
+  margin: 0;
   font-size: 15px;
   font-weight: var(--weight-medium);
+}
+
+.modal__close {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  color: var(--color-muted);
+  font-size: 20px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  margin: -4px -4px 0 0;
+}
+
+.modal__close:hover,
+.modal__close:active {
+  background: rgba(120, 120, 120, 0.1);
+  color: var(--color-ink);
 }
 
 .modal input, .modal textarea, .modal select {
@@ -8790,6 +8821,18 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   font-weight: 600;
 }
 
+/* Two clusters within .bets-workspace__toolbar — desktop just lets them
+   sit inline as part of the same flex row (see .toolbar-row); the mobile
+   media query below turns each into its own full-width row instead, one
+   fixed in place and one scrollable — see the comment there. */
+.bets-workspace__toolbar-primary,
+.bets-workspace__toolbar-pills {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .bets-workspace__search {
   font-size: 12.5px;
   padding: 6px 12px;
@@ -9066,6 +9109,17 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   font-size: 11.5px;
   color: var(--color-muted);
   margin-top: -8px;
+}
+
+.bets-workspace__odds-summary {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-ink);
+  background: color-mix(in srgb, var(--color-accent) 10%, var(--color-card-bg));
+  border: 1px solid var(--color-accent);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-top: -4px;
 }
 
 .bets-workspace__handicap {
@@ -9367,17 +9421,42 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
     padding: 4px 8px;
   }
 
-  /* The date pill, search box, and every chip (Jump to today / Tips only /
-     + Add column / Clear All / + Add Game) used to wrap to a second line
-     the moment they didn't all fit — this makes the row scroll
-     horizontally instead, one line, swipeable. Deliberately NOT snapped
-     tightly to the container edge (no scroll-snap-align on the items
-     themselves, no padding trimmed to the exact last pixel of the last
-     chip) so whichever chip lands at the edge is naturally cut off
-     mid-pill rather than ending flush — that partial "peek" is what tells
-     you there's more to swipe to, without needing a separate arrow/fade
-     affordance. */
+  /* Search and Tips-only (.bets-workspace__toolbar-primary) get used on
+     almost every visit, so they stay fixed on their own full-width row —
+     never scrolled out of view. Everything else (the date pill, Jump to
+     today, + Add column, Clear All, + Add Game — all inside
+     .bets-workspace__toolbar-pills) used to wrap to a second line the
+     moment it didn't all fit; this makes that group scroll horizontally
+     instead, one line, swipeable. Deliberately NOT snapped tightly to the
+     container edge (no scroll-snap-align flush with the last pixel) so
+     whichever chip lands at the edge is naturally cut off mid-pill rather
+     than ending flush — that partial "peek" is what tells you there's
+     more to swipe to, without needing a separate arrow/fade affordance. */
   .bets-workspace__toolbar {
+    flex-wrap: wrap;
+  }
+
+  .bets-workspace__toolbar-primary {
+    flex: 1 0 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .bets-workspace__toolbar-primary .bets-workspace__search {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .bets-workspace__toolbar-primary .chip {
+    flex-shrink: 0;
+  }
+
+  .bets-workspace__toolbar-pills {
+    flex: 1 0 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
     flex-wrap: nowrap;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
@@ -9385,7 +9464,7 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
     padding-bottom: 2px;
   }
 
-  .bets-workspace__toolbar > * {
+  .bets-workspace__toolbar-pills > * {
     flex-shrink: 0;
     scroll-snap-align: start;
   }
