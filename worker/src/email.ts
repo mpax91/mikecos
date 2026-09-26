@@ -203,6 +203,67 @@ emailRouter.post('/accounts/:id/test', async (c) => {
   }
 });
 
+// Diagnostic only, read-only (no writes to email_messages or the real
+// mailbox) — connects live and reports exactly what Gmail's IMAP is
+// saying about the messages currently in this account's needs-processing
+// queue: their real X-GM-LABELS and FLAGS, straight from the server,
+// rather than what MikeOS last synced. Built to chase down why messages
+// that are snoozed in Gmail (with a future return date) were showing up
+// as "Needs Processing" the same day they were snoozed — this surfaces
+// whether Gmail's IMAP is genuinely still reporting \Inbox for them (a
+// real Gmail/IMAP quirk MikeOS would need a different data source to work
+// around) or whether the label list looks like it should have excluded
+// them (pointing at a bug in this hand-written IMAP client instead,
+// which had never run against a live account before this one — see
+// imapClient.ts's header comment).
+emailRouter.get('/accounts/:id/debug-inbox', async (c) => {
+  const id = c.req.param('id');
+  const account = await c.env.DB.prepare('SELECT * FROM email_accounts WHERE id = ?').bind(id).first<EmailAccountRow>();
+  if (!account) return c.json({ error: 'not found' }, 404);
+
+  const needsProcessing = (
+    await c.env.DB.prepare(
+      `SELECT gm_msgid, uid, subject, received_at FROM email_messages WHERE account_id = ? AND in_inbox = 1 AND is_read = 1 AND processed_at IS NULL ORDER BY received_at ASC`
+    )
+      .bind(id)
+      .all<{ gm_msgid: string; uid: number; subject: string; received_at: string }>()
+  ).results ?? [];
+
+  try {
+    const pass = await decryptField(c.env, account.app_password_enc, 'EMAIL_ACCOUNT_ENC_KEY');
+    const client = new ImapClient();
+    await client.connect(account.imap_host, account.imap_port);
+    await client.login(account.email, pass);
+    await client.selectInbox();
+    const uidsInInbox = await client.searchAllUids();
+    // Only the UIDs MikeOS currently has parked in "needs processing" —
+    // not the whole mailbox — so this stays fast and small regardless of
+    // how big the real inbox is.
+    const targetUids = needsProcessing.map((m) => m.uid).filter((u) => uidsInInbox.includes(u));
+    const debugRows = await client.fetchLabelsDebug(targetUids.join(','));
+    await client.logout();
+
+    const byUid = new Map(debugRows.map((r) => [r.uid, r]));
+    const messages = needsProcessing.map((m) => ({
+      subject: m.subject,
+      receivedAt: m.received_at,
+      uid: m.uid,
+      stillInImapSearchAllResults: uidsInInbox.includes(m.uid),
+      liveFlags: byUid.get(m.uid)?.flags ?? null,
+      liveGmLabels: byUid.get(m.uid)?.gmLabels ?? null,
+    }));
+
+    return c.json({
+      accountEmail: account.email,
+      totalUidsInImapInboxSearch: uidsInInbox.length,
+      needsProcessingCount: needsProcessing.length,
+      messages,
+    });
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 502);
+  }
+});
+
 // Manual "Sync now" — the same sync a cron tick runs, callable on demand
 // from Settings or the Inbox feed's own refresh button.
 emailRouter.post('/sync', async (c) => {

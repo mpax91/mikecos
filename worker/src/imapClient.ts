@@ -344,6 +344,33 @@ export class ImapClient {
     if (res.status !== 'OK') throw new ImapProtocolError(`mark ${seen ? 'read' : 'unread'} failed: ${res.text || res.status}`);
   }
 
+  /** Diagnostic only — not used by the regular sync path (see
+   * fetchMessages). Pulls X-GM-LABELS alongside FLAGS/Subject for a set of
+   * UIDs already in the selected mailbox, so a live account's actual Gmail
+   * label state can be inspected directly (e.g. GET
+   * /api/email/accounts/:id/debug-inbox) rather than inferred from
+   * whether UID SEARCH ALL happened to return that UID. */
+  async fetchLabelsDebug(uidSet: string): Promise<{ uid: number; flags: string[]; gmLabels: string[]; subject: string }[]> {
+    if (!uidSet) return [];
+    const res = await this.command(`UID FETCH ${uidSet} (UID FLAGS X-GM-LABELS BODY.PEEK[HEADER.FIELDS (SUBJECT)])`);
+    if (res.status !== 'OK') throw new ImapProtocolError(`UID FETCH failed: ${res.text || res.status}`);
+    return res.untagged.filter((l) => l[1] === 'FETCH').map((line) => {
+      const attrs = line[2];
+      const out = { uid: 0, flags: [] as string[], gmLabels: [] as string[], subject: '' };
+      if (!Array.isArray(attrs)) return out;
+      for (let i = 0; i < attrs.length; i += 2) {
+        const name = attrs[i];
+        const val = attrs[i + 1];
+        if (typeof name !== 'string') continue;
+        if (name === 'UID' && typeof val === 'string') out.uid = parseInt(val, 10);
+        else if (name === 'FLAGS' && Array.isArray(val)) out.flags = val.filter((f): f is string => typeof f === 'string');
+        else if (name === 'X-GM-LABELS' && Array.isArray(val)) out.gmLabels = val.filter((f): f is string => typeof f === 'string');
+        else if (name.startsWith('BODY[HEADER.FIELDS') && typeof val === 'string') out.subject = val.replace(/^Subject:\s*/i, '').trim();
+      }
+      return out;
+    });
+  }
+
   async logout(): Promise<void> {
     try {
       await this.command('LOGOUT');
