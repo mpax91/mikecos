@@ -9757,15 +9757,16 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 .bets-workspace__handicap-history {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  border-top: var(--border-hairline);
-  padding-top: 6px;
+  gap: 4px;
+  background: var(--color-sidebar);
+  border-radius: 6px;
+  padding: 6px 8px;
 }
 
 .bets-workspace__handicap-meetings {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 3px;
   margin-top: 2px;
 }
 

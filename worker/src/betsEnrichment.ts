@@ -88,11 +88,20 @@ interface EspnScoreboard {
   events?: EspnScoreboardEvent[];
 }
 
+// Strips spaces/periods/hyphens so a squished-together typed token ("PENNST")
+// still lines up against ESPN's spaced-out name ("Penn State Nittany Lions")
+// — found by hand when a real NCAAF matchup (Wisconsin @ Penn State, typed as
+// "WISC @ PENNST") failed to resolve: "pennst" is a substring of ESPN's name
+// only once both sides have their spaces removed.
+function normalizeTeamToken(s: string): string {
+  return s.toLowerCase().replace(/[\s.\-]/g, '');
+}
+
 function teamTokenMatches(token: string, team: EspnTeamRef | undefined): boolean {
   if (!team) return false;
-  const t = token.trim().toLowerCase();
+  const t = normalizeTeamToken(token.trim());
   if (!t) return false;
-  const candidates = [team.abbreviation, team.displayName, team.shortDisplayName].filter((v): v is string => !!v).map((v) => v.toLowerCase());
+  const candidates = [team.abbreviation, team.displayName, team.shortDisplayName].filter((v): v is string => !!v).map((v) => normalizeTeamToken(v));
   return candidates.some((v) => v === t || v.includes(t) || t.includes(v));
 }
 

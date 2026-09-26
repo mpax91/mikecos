@@ -262,10 +262,11 @@ function OddsSummary({ data, loading }: { data: BetGameEnrichment | null; loadin
             <tr>
               <th scope="row">Moneyline</th>
               <td>
-                <OddsCell open={odds.moneyline.away.open} current={odds.moneyline.away.current} format={signedNum} />
+                {/* Open moneyline is deliberately not shown — it's noisy here and Mike doesn't want it (spread/total still show it since those move more meaningfully). */}
+                <OddsCell open={null} current={odds.moneyline.away.current} format={signedNum} />
               </td>
               <td>
-                <OddsCell open={odds.moneyline.home.open} current={odds.moneyline.home.current} format={signedNum} />
+                <OddsCell open={null} current={odds.moneyline.home.current} format={signedNum} />
               </td>
             </tr>
           )}
@@ -330,10 +331,11 @@ function TeamSnapshotCard({ team }: { team: BetGameTeamSnapshot }) {
 
       {team.record.overall && (
         <div className="bets-workspace__handicap-stat-row">
-          <span>{team.record.overall}</span>
+          <span>{team.record.overall} overall</span>
           {(team.record.home || team.record.road) && (
             <span className="text-muted">
-              {[team.record.home ? `${team.record.home} home` : null, team.record.road ? `${team.record.road} road` : null].filter(Boolean).join(', ')}
+              {' '}
+              ({[team.record.home ? `${team.record.home} home` : null, team.record.road ? `${team.record.road} road` : null].filter(Boolean).join(', ')})
             </span>
           )}
         </div>
