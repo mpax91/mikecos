@@ -258,11 +258,26 @@ function HandicappingPanel({ sport, date, matchup }: { sport: string; date: stri
     const bits = [data.weather.temperature != null ? `${data.weather.temperature}°F` : null, data.weather.precipitationChance != null ? `${data.weather.precipitationChance}% chance of precip` : null].filter(Boolean);
     if (bits.length > 0) conditions.push(bits.join(', '));
   }
-  if (data.odds?.details) conditions.push(`Line: ${data.odds.details}${data.odds.overUnder != null ? `, O/U ${data.odds.overUnder}` : ''}`);
+  const signed = (n: number) => (n > 0 ? `+${n}` : `${n}`);
+  const oddsLine: string[] = [];
+  if (data.odds?.details) oddsLine.push(`Line: ${data.odds.details}`);
+  if (data.odds?.overUnder != null) {
+    const ouOdds = data.odds.overOdds != null && data.odds.underOdds != null ? ` (o${signed(data.odds.overOdds)} / u${signed(data.odds.underOdds)})` : '';
+    oddsLine.push(`O/U ${data.odds.overUnder}${ouOdds}`);
+  }
+  if (data.odds?.moneylineHome != null && data.odds?.moneylineAway != null && data.away && data.home) {
+    oddsLine.push(`ML: ${data.away.abbreviation} ${signed(data.odds.moneylineAway)} / ${data.home.abbreviation} ${signed(data.odds.moneylineHome)}`);
+  }
 
   return (
     <div className="bets-workspace__handicap">
       {conditions.length > 0 && <div className="bets-workspace__handicap-conditions">{conditions.join(' · ')}</div>}
+      {oddsLine.length > 0 && (
+        <div className="bets-workspace__handicap-conditions">
+          {oddsLine.join(' · ')}
+          {data.odds?.provider && <span className="text-muted"> — via {data.odds.provider}</span>}
+        </div>
+      )}
       {(data.away || data.home) && (
         <div className="bets-workspace__handicap-teams">
           {data.away && <TeamSnapshotCard team={data.away} />}

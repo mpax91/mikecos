@@ -2,8 +2,19 @@ import { Hono } from 'hono';
 import type { Env } from './types';
 
 /** Handicapping context for a Bets Workspace game — weather, injuries,
- * team form (records/scoring, with home/away splits), and each team's
- * current statistical leaders. Mounted at /api/bets/enrichment.
+ * team form (records/scoring, with home/away splits), each team's current
+ * statistical leaders, and the consensus line (spread, moneyline, total —
+ * see EspnOddsSide/`odds` below). Mounted at /api/bets/enrichment.
+ *
+ * The odds specifically come from ESPN's own odds partner (DraftKings in
+ * every sample checked), refreshed whenever this endpoint is hit — not a
+ * locked-in opening or closing line, and not cross-shopped against other
+ * books the way the sportsbook columns Mike fills in by hand are. Checked
+ * by hand across NFL/NCAAF/MLB (including lower-tier college games) and
+ * it was populated every time for a real, in-season matchup; the one gap
+ * found was NHL preseason games, where sportsbooks themselves don't post
+ * lines yet — not a data-access problem, so it should resolve once the
+ * NHL regular season starts.
  *
  * No API key or paid data feed anywhere here — every fetch below goes to
  * site.web.api.espn.com, which turns out to be a *different* host than the
@@ -137,8 +148,13 @@ interface EspnLeaderTeam {
   leaders?: EspnLeaderCategory[];
 }
 interface EspnOddsSide {
-  details?: string;
+  provider?: { name?: string };
+  details?: string; // human-readable spread, e.g. "BUF -7"
   overUnder?: number;
+  overOdds?: number;
+  underOdds?: number;
+  homeTeamOdds?: { moneyLine?: number };
+  awayTeamOdds?: { moneyLine?: number };
 }
 interface EspnSummary {
   gameInfo?: {
@@ -275,7 +291,17 @@ betsEnrichmentRouter.get('/', async (c) => {
             indoor: !!indoor,
           }
         : null,
-    odds: oddsInfo ? { provider: null, details: oddsInfo.details ?? null, overUnder: oddsInfo.overUnder ?? null } : null,
+    odds: oddsInfo
+      ? {
+          provider: oddsInfo.provider?.name ?? null,
+          details: oddsInfo.details ?? null,
+          overUnder: oddsInfo.overUnder ?? null,
+          overOdds: oddsInfo.overOdds ?? null,
+          underOdds: oddsInfo.underOdds ?? null,
+          moneylineHome: oddsInfo.homeTeamOdds?.moneyLine ?? null,
+          moneylineAway: oddsInfo.awayTeamOdds?.moneyLine ?? null,
+        }
+      : null,
     home,
     away,
     note: null,

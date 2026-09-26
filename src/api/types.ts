@@ -997,11 +997,21 @@ export interface BetGameTeamSnapshot {
   topPerformers: BetGameTopPerformer[];
 }
 
+export interface BetGameOdds {
+  provider: string | null; // e.g. "DraftKings" — ESPN's own odds partner, refreshed on every fetch (not a locked opening/closing line)
+  details: string | null; // e.g. "BUF -7"
+  overUnder: number | null;
+  overOdds: number | null;
+  underOdds: number | null;
+  moneylineHome: number | null;
+  moneylineAway: number | null;
+}
+
 export interface BetGameEnrichment {
   found: boolean;
   venue: { name: string | null; city: string | null; state: string | null; indoor: boolean } | null;
   weather: { temperature: number | null; precipitationChance: number | null; indoor: boolean } | null;
-  odds: { provider: string | null; details: string | null; overUnder: number | null } | null;
+  odds: BetGameOdds | null;
   home: BetGameTeamSnapshot | null;
   away: BetGameTeamSnapshot | null;
   note: string | null; // set when nothing could be resolved, so the UI can say why
