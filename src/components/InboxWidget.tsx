@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import type { EmailAccountWithCounts, EmailInboxFeed, EmailMessage } from '../api/types';
 import { formatRelativeTime } from '../utils/formatRelativeTime';
-import { ConfirmModal } from './ConfirmModal';
 import { TrashIcon } from './icons';
 
 /** Today's Inbox section — a live status board over every connected
@@ -23,7 +22,6 @@ export function InboxWidget() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [sendingReplyId, setSendingReplyId] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState<EmailMessage | null>(null);
 
   function load() {
     api
@@ -67,15 +65,18 @@ export function InboxWidget() {
     }
   }
 
-  async function confirmDelete() {
-    if (!deleting) return;
-    const id = deleting.id;
+  // No confirm dialog: a delete moves the message to Gmail Trash, recoverable
+  // there for 30 days same as deleting it in Gmail itself, so the extra step
+  // wasn't buying anything — Mike's own call. Errors are still surfaced
+  // (rather than left silent) since this hits real IMAP state.
+  async function handleDelete(id: string) {
     setBusyId(id);
     try {
       await api.deleteEmail(id);
       if (expandedId === id) setExpandedId(null);
-      setDeleting(null);
       load();
+    } catch (e) {
+      alert(`Couldn't delete this message: ${String(e)}`);
     } finally {
       setBusyId(null);
     }
@@ -143,7 +144,7 @@ export function InboxWidget() {
               <button
                 type="button"
                 className="btn btn--ghost btn--sm inbox-widget__delete-btn"
-                onClick={() => setDeleting(m)}
+                onClick={() => handleDelete(m.id)}
                 disabled={busyId === m.id}
                 title="Delete"
               >
@@ -225,15 +226,6 @@ export function InboxWidget() {
           <div className="empty-state empty-state--section">Inbox zero. 🎉</div>
         ) : (
           <div className="inbox-widget__group">{feed.items.map((m) => renderRow(m, feed.accounts))}</div>
-        )}
-
-        {deleting && (
-          <ConfirmModal
-            title="Delete this email?"
-            body={`"${deleting.subject || '(no subject)'}" will move to Trash in Gmail — recoverable there for 30 days, same as deleting it in Gmail itself.`}
-            onConfirm={confirmDelete}
-            onCancel={() => setDeleting(null)}
-          />
         )}
       </div>
   );

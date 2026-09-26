@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { useInboxFeed } from '../hooks/useInboxFeed';
 import type { EmailAccountWithCounts, EmailMessage } from '../api/types';
 import { formatRelativeTime } from '../utils/formatRelativeTime';
-import { ConfirmModal } from './ConfirmModal';
 import { TrashIcon } from './icons';
 
 function absoluteDate(iso: string): string {
@@ -80,7 +79,6 @@ export function InboxSplitView() {
   const [replyOpen, setReplyOpen] = useState(false);
   const [replyDraft, setReplyDraft] = useState('');
   const [sendingReply, setSendingReply] = useState(false);
-  const [deleting, setDeleting] = useState<EmailMessage | null>(null);
 
   if (error) return <div className="empty-state">Couldn't load Inbox: {error}</div>;
   if (!feed) return <div className="empty-state">Loading…</div>;
@@ -113,11 +111,17 @@ export function InboxSplitView() {
     if (selectedId === id) setSelectedId(null);
   }
 
-  async function confirmDelete() {
-    if (!deleting) return;
-    await deleteMessage(deleting.id);
-    if (selectedId === deleting.id) setSelectedId(null);
-    setDeleting(null);
+  // No confirm dialog: a delete moves the message to Gmail Trash, recoverable
+  // there for 30 days same as deleting it in Gmail itself, so the extra step
+  // wasn't buying anything — Mike's own call. Errors are still surfaced
+  // (rather than left silent) since this hits real IMAP state.
+  async function handleDelete(id: string) {
+    try {
+      await deleteMessage(id);
+      if (selectedId === id) setSelectedId(null);
+    } catch (e) {
+      alert(`Couldn't delete this message: ${String(e)}`);
+    }
   }
 
   async function sendReply() {
@@ -240,7 +244,7 @@ export function InboxSplitView() {
               <button
                 type="button"
                 className="btn btn--ghost btn--sm inbox-split__delete-btn"
-                onClick={() => setDeleting(selected)}
+                onClick={() => handleDelete(selected.id)}
                 disabled={busyId === selected.id}
               >
                 <TrashIcon size={12} /> Delete
@@ -272,15 +276,6 @@ export function InboxSplitView() {
           </>
         )}
       </div>
-
-      {deleting && (
-        <ConfirmModal
-          title="Delete this email?"
-          body={`"${deleting.subject || '(no subject)'}" will move to Trash in Gmail — recoverable there for 30 days, same as deleting it in Gmail itself.`}
-          onConfirm={confirmDelete}
-          onCancel={() => setDeleting(null)}
-        />
-      )}
     </div>
   );
 }
