@@ -87,7 +87,12 @@ const SIDEBAR_SECTIONS: NavSectionDef[] = [
 
 export function Sidebar({ open = false, onClose }: SidebarProps) {
   const { openTab, showContextMenu } = useTabs();
-  const [unreadCount, setUnreadCount] = useState(0);
+  // New + Needs Processing combined — the same total Inbox's own "All" tab
+  // badge already shows. Started as strictly-unread ("New") only, which
+  // left the sidebar showing nothing while Inbox's own All tab showed a
+  // real count, since most of what accumulates in Inbox is read-but-not-
+  // yet-dealt-with (Needs Processing), not strictly unread.
+  const [inboxBadgeCount, setInboxBadgeCount] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -96,7 +101,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
         .getInboxFeed()
         .then((feed) => {
           if (cancelled) return;
-          setUnreadCount(feed.accounts.reduce((sum, a) => sum + a.newCount, 0));
+          setInboxBadgeCount(feed.accounts.reduce((sum, a) => sum + a.newCount + a.needsProcessingCount, 0));
         })
         .catch(() => {
           // Best-effort — a transient failure just leaves the last-known
@@ -132,7 +137,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
   }
 
   function renderItem({ path, label, kind }: NavItemDef) {
-    const badge = kind === 'inbox' && unreadCount > 0 ? unreadCount : null;
+    const badge = kind === 'inbox' && inboxBadgeCount > 0 ? inboxBadgeCount : null;
     return (
       <NavLink
         key={path}
