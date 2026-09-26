@@ -9068,6 +9068,56 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   margin-top: -8px;
 }
 
+.bets-workspace__handicap {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 12.5px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bets-workspace__handicap-conditions {
+  color: var(--color-ink);
+  font-weight: 500;
+}
+
+.bets-workspace__handicap-teams {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 520px) {
+  .bets-workspace__handicap-teams {
+    grid-template-columns: 1fr;
+  }
+}
+
+.bets-workspace__handicap-team {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.bets-workspace__handicap-team-name {
+  font-weight: 600;
+  color: var(--color-ink);
+}
+
+.bets-workspace__handicap-stat-row {
+  line-height: 1.4;
+}
+
+.bets-workspace__handicap-section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 2px;
+}
+
 .bets-workspace__modal-cells {
   display: flex;
   flex-direction: column;
@@ -9263,7 +9313,7 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 
   .bets-workspace__matchup-cell,
   .bets-workspace__matchup-btn {
-    width: 112px;
+    width: 168px;
     white-space: normal;
     text-overflow: clip;
   }

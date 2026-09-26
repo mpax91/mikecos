@@ -49,6 +49,7 @@ import { emailRouter, syncAllAccounts } from './email';
 import { bookmarksRouter } from './bookmarks';
 import { cloudRouter } from './cloud';
 import { contactsAssistantRouter } from './contactsAssistant';
+import { betsEnrichmentRouter } from './betsEnrichment';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -77,6 +78,7 @@ app.route('/api/email', emailRouter);
 app.route('/api/bookmarks', bookmarksRouter);
 app.route('/api/cloud', cloudRouter);
 app.route('/api/contacts/ask', contactsAssistantRouter);
+app.route('/api/bets/enrichment', betsEnrichmentRouter);
 
 // Hono's default unhandled-error response is a bare "Internal Server Error"
 // with no body — fine for not leaking internals to an outside caller, but

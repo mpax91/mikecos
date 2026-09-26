@@ -969,6 +969,44 @@ export interface ContactAskResponse {
   contacts: ContactAskResultEntry[];
 }
 
+// Bets Workspace handicapping enrichment (see worker/src/betsEnrichment.ts)
+// — weather, injuries, and team form pulled from ESPN's free public data,
+// no key or paid odds feed involved. Every field is nullable/optional
+// because a sport, date, or single stat ESPN doesn't have just comes back
+// empty rather than erroring.
+export interface BetGameInjury {
+  player: string;
+  position: string | null;
+  status: string;
+  detail: string | null;
+}
+
+export interface BetGameTopPerformer {
+  category: string;
+  player: string;
+  stat: string;
+}
+
+export interface BetGameTeamSnapshot {
+  abbreviation: string;
+  displayName: string;
+  record: { overall: string | null; home: string | null; road: string | null };
+  avgPointsFor: number | null;
+  avgPointsAgainst: number | null;
+  injuries: BetGameInjury[];
+  topPerformers: BetGameTopPerformer[];
+}
+
+export interface BetGameEnrichment {
+  found: boolean;
+  venue: { name: string | null; city: string | null; state: string | null; indoor: boolean } | null;
+  weather: { temperature: number | null; precipitationChance: number | null; indoor: boolean } | null;
+  odds: { provider: string | null; details: string | null; overUnder: number | null } | null;
+  home: BetGameTeamSnapshot | null;
+  away: BetGameTeamSnapshot | null;
+  note: string | null; // set when nothing could be resolved, so the UI can say why
+}
+
 export type ContactNoteSourceType = 'quick_note' | 'jot' | 'note' | 'task';
 
 /** A single quick, unstructured note tied to a contact — the Bill-Clinton-

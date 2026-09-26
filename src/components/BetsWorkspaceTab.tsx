@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
-import type { BetGameNote, BetPromo, BetScheduleGame } from '../api/types';
+import type { BetGameEnrichment, BetGameNote, BetGameTeamSnapshot, BetPromo, BetScheduleGame } from '../api/types';
 import { SPORTS, formatMoney, type SportsbookBalance } from '../utils/bets';
 import { Modal } from './Modal';
 import { useIsMobile } from '../hooks/useIsMobile';
@@ -174,8 +174,108 @@ function bestOddsColumns(entry: BoardEntry, cols: string[]): Set<string> {
   return winners;
 }
 
+/** One team's handicapping snapshot — record/splits, scoring, injuries,
+ * top performers. Shown twice, side by side (away then home, matching the
+ * matchup string's own order). */
+function TeamSnapshotCard({ team }: { team: BetGameTeamSnapshot }) {
+  return (
+    <div className="bets-workspace__handicap-team">
+      <div className="bets-workspace__handicap-team-name">{team.displayName || team.abbreviation}</div>
+      <div className="bets-workspace__handicap-stat-row">
+        <span>{team.record.overall ?? '—'}</span>
+        {(team.record.home || team.record.road) && (
+          <span className="text-muted">
+            ({team.record.home ?? '—'} home, {team.record.road ?? '—'} road)
+          </span>
+        )}
+      </div>
+      {(team.avgPointsFor != null || team.avgPointsAgainst != null) && (
+        <div className="bets-workspace__handicap-stat-row text-muted">
+          {team.avgPointsFor ?? '—'} scored / {team.avgPointsAgainst ?? '—'} allowed per game
+        </div>
+      )}
+      {team.topPerformers.length > 0 && (
+        <div className="bets-workspace__handicap-section">
+          {team.topPerformers.map((p) => (
+            <div key={p.category} className="bets-workspace__handicap-stat-row">
+              <span className="text-muted">{p.category}:</span> {p.player} — {p.stat}
+            </div>
+          ))}
+        </div>
+      )}
+      {team.injuries.length > 0 && (
+        <div className="bets-workspace__handicap-section">
+          <span className="bets-form__field-label">Injuries</span>
+          {team.injuries.map((inj, i) => (
+            <div key={i} className="bets-workspace__handicap-stat-row">
+              {inj.player}
+              {inj.position ? ` (${inj.position})` : ''} — {inj.status}
+              {inj.detail ? `, ${inj.detail}` : ''}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Weather/injuries/team-form context for a game, pulled from ESPN's free
+ * public data (see worker/src/betsEnrichment.ts) — no odds/stats API key
+ * involved. Lazy-loads on mount since it's a handful of upstream fetches
+ * the rest of the modal doesn't need to wait on, and fails quietly (a
+ * one-line note, not an error banner) since this is bonus context, not
+ * something the Workspace tab depends on. */
+function HandicappingPanel({ sport, date, matchup }: { sport: string; date: string; matchup: string }) {
+  const [data, setData] = useState<BetGameEnrichment | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setData(null);
+    api
+      .getBetEnrichment(sport, date, matchup)
+      .then((r) => {
+        if (!cancelled) setData(r);
+      })
+      .catch(() => {
+        if (!cancelled) setData({ found: false, venue: null, weather: null, odds: null, home: null, away: null, note: "Couldn't load handicapping data right now." });
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sport, date, matchup]);
+
+  if (loading) return <div className="bets-workspace__handicap text-muted">Loading matchup context…</div>;
+  if (!data || !data.found) return <div className="bets-workspace__handicap text-muted">{data?.note ?? 'No handicapping data available for this game.'}</div>;
+
+  const conditions: string[] = [];
+  if (data.venue) conditions.push(data.venue.indoor ? `${data.venue.name ?? 'Indoor venue'} (dome)` : [data.venue.name, data.venue.city && data.venue.state ? `${data.venue.city}, ${data.venue.state}` : null].filter(Boolean).join(' — '));
+  if (data.weather && !data.weather.indoor) {
+    const bits = [data.weather.temperature != null ? `${data.weather.temperature}°F` : null, data.weather.precipitationChance != null ? `${data.weather.precipitationChance}% chance of precip` : null].filter(Boolean);
+    if (bits.length > 0) conditions.push(bits.join(', '));
+  }
+  if (data.odds?.details) conditions.push(`Line: ${data.odds.details}${data.odds.overUnder != null ? `, O/U ${data.odds.overUnder}` : ''}`);
+
+  return (
+    <div className="bets-workspace__handicap">
+      {conditions.length > 0 && <div className="bets-workspace__handicap-conditions">{conditions.join(' · ')}</div>}
+      {(data.away || data.home) && (
+        <div className="bets-workspace__handicap-teams">
+          {data.away && <TeamSnapshotCard team={data.away} />}
+          {data.home && <TeamSnapshotCard team={data.home} />}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function NotesModal({
   entry,
+  date,
   tipperColumns,
   sportsbookColumns,
   onCellCommit,
@@ -184,6 +284,11 @@ function NotesModal({
   onRemove,
 }: {
   entry: BoardEntry;
+  /** The board's selected day ('YYYY-MM-DD') — entry.startTime exists for
+   * an auto-pulled game but not a manually-added one, so the enrichment
+   * lookup below uses this rather than trying to derive a date from the
+   * entry itself. */
+  date: string;
   /** The day's tipper roster — one vertical column ("Tips"). Editable right
    * in this modal (see the section below) — the table's own columns are
    * hidden on narrow screens (see .bets-workspace__table-wrap's mobile
@@ -267,6 +372,7 @@ function NotesModal({
             )}
           </div>
         )}
+        <HandicappingPanel sport={entry.sport} date={date} matchup={entry.matchup} />
         {strayEntries.length > 0 && (
           <div className="bets-workspace__modal-cells">
             <span className="bets-form__field-label">Other saved values</span>
@@ -1000,6 +1106,7 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
       {notesFor && (
         <NotesModal
           entry={notesFor}
+          date={date}
           // Both are always passed regardless of whether this game is
           // pinned — a pinned game's tipper cells are still worth reaching
           // from here, and vice versa, since this modal is the only
