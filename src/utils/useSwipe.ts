@@ -50,6 +50,18 @@ export function useSwipe(opts: SwipeOptions) {
     // browser's real hit-testing) can never catch — this only shows up on
     // an actual touchscreen, which is exactly the "feels broken on
     // mobile/tablet but the code looks right" symptom.
+    //
+    // Skipped for mouse input: a mouse pointer never "slides off" a shrinking
+    // hit area the way a finger does, so there's no drag-tracking reason to
+    // capture it — and capturing it anyway has a real cost on desktop. Once
+    // this element holds capture, some browsers (Chrome included) redirect
+    // the synthesized "click" event to the capturing element instead of the
+    // actual descendant under the cursor, so a plain, un-dragged click on a
+    // button nested inside this card (News's "Mark Read"/"Save" buttons) ends
+    // up targeting the card itself and firing the card's own onClick (open
+    // the article) instead of the button's. Touch/pen still capture as
+    // before, since that's the input this guard exists for.
+    if (e.pointerType === 'mouse') return;
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
     } catch {
