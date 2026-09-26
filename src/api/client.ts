@@ -1236,4 +1236,7 @@ export const api = {
 
   replyToEmail: (id: string, data: { body: string; archive?: boolean }) =>
     request<{ ok: true }>(`/api/email/messages/${id}/reply`, { method: 'POST', body: JSON.stringify(data) }),
+
+  forwardEmail: (id: string, data: { to: string; note?: string }) =>
+    request<{ ok: true }>(`/api/email/messages/${id}/forward`, { method: 'POST', body: JSON.stringify(data) }),
 };

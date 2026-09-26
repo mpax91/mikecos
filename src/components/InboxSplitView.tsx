@@ -1,8 +1,32 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useInboxFeed } from '../hooks/useInboxFeed';
-import type { EmailAccountWithCounts, EmailMessage } from '../api/types';
+import { api } from '../api/client';
+import type { Contact, EmailAccountWithCounts, EmailMessage } from '../api/types';
 import { formatRelativeTime } from '../utils/formatRelativeTime';
 import { TrashIcon } from './icons';
+
+/** Flattened (one row per email address) so a contact with two addresses
+ * offers both, independently, as forward targets. */
+interface ContactEmail {
+  name: string;
+  email: string;
+}
+
+function contactEmails(contacts: Contact[]): ContactEmail[] {
+  const out: ContactEmail[] = [];
+  for (const c of contacts) {
+    let emails: string[] = [];
+    try {
+      emails = JSON.parse(c.emails);
+    } catch {
+      continue;
+    }
+    for (const email of emails) {
+      if (email) out.push({ name: c.name, email });
+    }
+  }
+  return out;
+}
 
 function absoluteDate(iso: string): string {
   return new Date(iso).toLocaleString(undefined, {
@@ -73,12 +97,29 @@ function EmailBodyFrame({ html }: { html: string }) {
  * by the `has-selection` class rather than any JS media-query logic. */
 export function InboxSplitView() {
   const [activeAccount, setActiveAccount] = useState<string | null>(null);
-  const { feed, error, bodies, busyId, peek, archive, deleteMessage, convert, reply } = useInboxFeed(activeAccount ?? undefined);
+  const { feed, error, bodies, busyId, peek, archive, deleteMessage, convert, reply, forward } = useInboxFeed(activeAccount ?? undefined);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loadingSelected, setLoadingSelected] = useState(false);
   const [replyOpen, setReplyOpen] = useState(false);
   const [replyDraft, setReplyDraft] = useState('');
+  const [replyArchiveAfter, setReplyArchiveAfter] = useState(false);
   const [sendingReply, setSendingReply] = useState(false);
+  const [forwardOpen, setForwardOpen] = useState(false);
+  const [forwardTo, setForwardTo] = useState('');
+  const [forwardNote, setForwardNote] = useState('');
+  const [sendingForward, setSendingForward] = useState(false);
+  // Not Gmail — Inbox has no address book of its own to autocomplete from,
+  // so this borrows MikeOS's own Contacts (personal ones only, the same
+  // default listContacts already uses elsewhere — the voter-roll import
+  // would otherwise dump thousands of unrelated names into the picker).
+  // Loaded once, lazily, the first time Forward is opened rather than on
+  // every page load.
+  const [contactEmailList, setContactEmailList] = useState<ContactEmail[] | null>(null);
+  useEffect(() => {
+    if (forwardOpen && contactEmailList === null) {
+      api.listContacts().then((cs) => setContactEmailList(contactEmails(cs)));
+    }
+  }, [forwardOpen, contactEmailList]);
 
   if (error) return <div className="empty-state">Couldn't load Inbox: {error}</div>;
   if (!feed) return <div className="empty-state">Loading…</div>;
@@ -94,6 +135,9 @@ export function InboxSplitView() {
     setSelectedId(m.id);
     setReplyOpen(false);
     setReplyDraft('');
+    setForwardOpen(false);
+    setForwardTo('');
+    setForwardNote('');
     if (bodies[m.id] === undefined) {
       setLoadingSelected(true);
       await peek(m);
@@ -128,14 +172,29 @@ export function InboxSplitView() {
     if (!selected || !replyDraft.trim()) return;
     setSendingReply(true);
     try {
-      await reply(selected.id, replyDraft.trim(), true);
+      await reply(selected.id, replyDraft.trim(), replyArchiveAfter);
       setReplyDraft('');
       setReplyOpen(false);
-      setSelectedId(null);
+      if (replyArchiveAfter) setSelectedId(null);
     } catch (e) {
       alert(`Couldn't send reply: ${String(e)}`);
     } finally {
       setSendingReply(false);
+    }
+  }
+
+  async function sendForward() {
+    if (!selected || !forwardTo.trim()) return;
+    setSendingForward(true);
+    try {
+      await forward(selected.id, forwardTo.trim(), forwardNote.trim() || undefined);
+      setForwardTo('');
+      setForwardNote('');
+      setForwardOpen(false);
+    } catch (e) {
+      alert(`Couldn't forward this message: ${String(e)}`);
+    } finally {
+      setSendingForward(false);
     }
   }
 
@@ -235,11 +294,24 @@ export function InboxSplitView() {
               <button
                 type="button"
                 className="btn btn--ghost btn--sm inbox-split__reply-toggle"
-                onClick={() => setReplyOpen((v) => !v)}
+                onClick={() => {
+                  setReplyOpen((v) => !v);
+                  setForwardOpen(false);
+                }}
                 disabled={!selected.from_email}
                 title={selected.from_email ? undefined : 'No parseable sender address to reply to'}
               >
                 ↩ Reply
+              </button>
+              <button
+                type="button"
+                className="btn btn--ghost btn--sm"
+                onClick={() => {
+                  setForwardOpen((v) => !v);
+                  setReplyOpen(false);
+                }}
+              >
+                ➜ Forward
               </button>
               <button
                 type="button"
@@ -268,8 +340,54 @@ export function InboxSplitView() {
                   rows={4}
                   autoFocus
                 />
-                <button type="button" className="btn btn--sm" onClick={sendReply} disabled={!replyDraft.trim() || sendingReply}>
-                  {sendingReply ? 'Sending…' : 'Send & Archive'}
+                <div className="inbox-split__reply-actions">
+                  {/* Sending no longer auto-archives by default — Mike's own
+                      call: archiving is one click away in the same toolbar
+                      once he's actually done with the message, and a send
+                      that quietly also archived was surprising more often
+                      than it saved a step. */}
+                  <label className="inbox-split__archive-toggle">
+                    <input type="checkbox" checked={replyArchiveAfter} onChange={(e) => setReplyArchiveAfter(e.target.checked)} />
+                    Archive after sending
+                  </label>
+                  <button type="button" className="btn btn--sm" onClick={sendReply} disabled={!replyDraft.trim() || sendingReply}>
+                    {sendingReply ? 'Sending…' : 'Send'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {forwardOpen && (
+              <div className="inbox-split__reply">
+                <input
+                  type="email"
+                  className="inbox-split__forward-to"
+                  placeholder="Forward to…"
+                  value={forwardTo}
+                  onChange={(e) => setForwardTo(e.target.value)}
+                  list="inbox-forward-contacts"
+                  autoFocus
+                />
+                {/* Gmail autocompletes a forward's recipient from its own
+                    Contacts; Inbox has no equivalent address book, so this
+                    borrows MikeOS's own Contacts instead (see
+                    contactEmailList above) — start typing a name or email
+                    and matching people show up here same as any native
+                    autocomplete. Nothing stops typing an address that isn't
+                    a saved contact at all. */}
+                <datalist id="inbox-forward-contacts">
+                  {(contactEmailList ?? []).map((c) => (
+                    <option key={c.email} value={c.email} label={c.name} />
+                  ))}
+                </datalist>
+                <textarea
+                  placeholder="Add a note (optional)…"
+                  value={forwardNote}
+                  onChange={(e) => setForwardNote(e.target.value)}
+                  rows={3}
+                />
+                <button type="button" className="btn btn--sm" onClick={sendForward} disabled={!forwardTo.trim() || sendingForward}>
+                  {sendingForward ? 'Sending…' : 'Send'}
                 </button>
               </div>
             )}

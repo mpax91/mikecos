@@ -76,10 +76,14 @@ export function useInboxFeed(accountId?: string) {
     }
   }
 
-  async function reply(id: string, body: string, archiveAfter = true) {
+  async function reply(id: string, body: string, archiveAfter = false) {
     await api.replyToEmail(id, { body, archive: archiveAfter });
     load();
   }
 
-  return { feed, error, bodies, busyId, load, peek, archive, deleteMessage, convert, reply };
+  async function forward(id: string, to: string, note?: string) {
+    await api.forwardEmail(id, { to, note });
+  }
+
+  return { feed, error, bodies, busyId, load, peek, archive, deleteMessage, convert, reply, forward };
 }

@@ -566,6 +566,64 @@ emailRouter.post('/messages/:id/reply', async (c) => {
   return c.json({ ok: true });
 });
 
+// Forward — no address book of its own (Gmail's forward autocompletes from
+// its own Contacts; MikeOS's Inbox has no equivalent), so the frontend
+// feeds this a raw email address, typed free-hand or picked from Mike's
+// existing MikeOS Contacts. Re-fetches the original message over IMAP
+// (same as peek) to quote its real body under a standard
+// "---------- Forwarded message ----------" header block, rather than
+// forwarding just the truncated list-view snippet.
+emailRouter.post('/messages/:id/forward', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json<{ to: string; note?: string }>();
+  const to = body.to?.trim();
+  if (!to) return c.json({ error: 'to is required' }, 400);
+  const found = await getMessageWithAccount(c.env, id);
+  if (!found) return c.json({ error: 'not found' }, 404);
+  const { message, account } = found;
+
+  try {
+    const pass = await decryptField(c.env, account.app_password_enc, 'EMAIL_ACCOUNT_ENC_KEY');
+
+    const client = new ImapClient();
+    await client.connect(account.imap_host, account.imap_port);
+    await client.login(account.email, pass);
+    await client.selectInbox();
+    const raw = await client.fetchRawMessage(message.uid);
+    const { text: originalText } = parseMimeMessageToParts(raw);
+    await client.logout();
+
+    const from = message.from_name ? `${message.from_name} <${message.from_email ?? ''}>` : message.from_email ?? 'Unknown sender';
+    const forwardBlock = [
+      '---------- Forwarded message ----------',
+      `From: ${from}`,
+      `Date: ${new Date(message.received_at).toLocaleString('en-US')}`,
+      `Subject: ${message.subject}`,
+      `To: ${account.email}`,
+      '',
+      originalText,
+    ].join('\n');
+    const bodyText = body.note?.trim() ? `${body.note.trim()}\n\n${forwardBlock}` : forwardBlock;
+    const subjectLower = message.subject.toLowerCase();
+    const subject = subjectLower.startsWith('fwd:') || subjectLower.startsWith('fw:') ? message.subject : `Fwd: ${message.subject}`;
+
+    await sendMail({
+      host: account.smtp_host,
+      port: account.smtp_port,
+      user: account.email,
+      pass,
+      fromEmail: account.email,
+      toEmail: to,
+      subject,
+      bodyText,
+    });
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 502);
+  }
+
+  return c.json({ ok: true });
+});
+
 // ---- Sync engine (cron + manual "Sync now") ----
 
 async function applyPendingActions(env: Env, client: ImapClient, accountId: string): Promise<void> {

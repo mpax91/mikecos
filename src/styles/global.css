@@ -4261,6 +4261,28 @@ a {
   align-self: flex-end;
 }
 
+.inbox-split__reply-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.inbox-split__archive-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+
+.inbox-split__forward-to {
+  width: 100%;
+  font-family: var(--font-sans);
+  font-size: 13px;
+}
+
 @media (max-width: 860px) {
   .inbox-split {
     grid-template-columns: 1fr;
