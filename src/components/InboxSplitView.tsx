@@ -27,15 +27,51 @@ function AccountBadge({ account, size = 22 }: { account: EmailAccountWithCounts 
   );
 }
 
+/** Renders a message's actual HTML in a sandboxed, auto-resizing iframe —
+ * the sandbox (no allow-scripts) is what actually makes this safe to do
+ * with sender-supplied markup; mimeParser's stripActivelyUnsafe on the
+ * server just tidies up what lands in the srcdoc rather than doing the
+ * real safety work. allow-same-origin is there only so this component can
+ * read the frame's own scrollHeight to size itself — combined with no
+ * allow-scripts, that grants no extra capability the sandbox doesn't
+ * already block. Links get target="_blank" (via <base>) and
+ * allow-popups(-to-escape-sandbox) so clicking one opens a normal new
+ * tab instead of silently doing nothing. */
+function EmailBodyFrame({ html }: { html: string }) {
+  const [height, setHeight] = useState(120);
+  const srcDoc = `<!doctype html><html><head><base target="_blank"><meta name="viewport" content="width=device-width, initial-scale=1"><style>
+    body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; font-size: 14px; line-height: 1.55; color: #2E2A22; word-wrap: break-word; overflow-wrap: anywhere; }
+    img { max-width: 100%; height: auto; }
+    a { color: #2F4A3C; }
+    table { max-width: 100%; }
+  </style></head><body>${html}</body></html>`;
+  return (
+    <iframe
+      className="inbox-split__body-frame"
+      srcDoc={srcDoc}
+      sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+      style={{ height }}
+      onLoad={(e) => {
+        const doc = (e.target as HTMLIFrameElement).contentDocument;
+        if (doc) setHeight(doc.documentElement.scrollHeight + 16);
+      }}
+      title="Email body"
+    />
+  );
+}
+
 /** Inbox's full-page reading experience (InboxPage only — Today keeps the
  * compact InboxWidget) — a real split view: a message list on the left,
  * a reading pane on the right that looks like an actual email (sender
- * block, subject as a heading, clean body, a proper action toolbar)
- * instead of a row expanding into a plain text box. On narrow viewports
- * the two collapse into one column and selecting a message replaces the
- * list with the reading pane (a "back" arrow returns to it) — see the
- * .inbox-split CSS for the breakpoint, driven by the `has-selection`
- * class rather than any JS media-query logic. */
+ * block, subject as a heading, the sender's real HTML body, a proper
+ * action toolbar) instead of a row expanding into a plain text box. One
+ * flat list, no New/Needs Processing split — Mike's own call: not every
+ * message needs a decision, the point of this Inbox is just not missing
+ * something that landed in a mailbox he doesn't check directly. On
+ * narrow viewports the two collapse into one column and selecting a
+ * message replaces the list with the reading pane (a "back" arrow
+ * returns to it) — see the .inbox-split CSS for the breakpoint, driven
+ * by the `has-selection` class rather than any JS media-query logic. */
 export function InboxSplitView() {
   const [activeAccount, setActiveAccount] = useState<string | null>(null);
   const { feed, error, bodies, busyId, peek, archive, deleteMessage, convert, reply } = useInboxFeed(activeAccount ?? undefined);
@@ -52,11 +88,9 @@ export function InboxSplitView() {
     return <div className="empty-state">No email accounts connected yet — add one in Settings → Email Accounts.</div>;
   }
 
-  const allMessages = [...feed.newItems, ...feed.needsProcessing];
-  const selected = allMessages.find((m) => m.id === selectedId) ?? null;
+  const selected = feed.items.find((m) => m.id === selectedId) ?? null;
   const selectedAccount = feed.accounts.find((a) => a.id === selected?.account_id);
-  const totalNew = feed.accounts.reduce((sum, a) => sum + a.newCount, 0);
-  const totalNeedsProcessing = feed.accounts.reduce((sum, a) => sum + a.needsProcessingCount, 0);
+  const totalUnread = feed.accounts.reduce((sum, a) => sum + a.unreadCount, 0);
 
   async function selectMessage(m: EmailMessage) {
     setSelectedId(m.id);
@@ -124,56 +158,45 @@ export function InboxSplitView() {
     );
   }
 
+  const peeked = selected ? bodies[selected.id] : undefined;
+
   return (
     <div className={`inbox-split${selectedId ? ' has-selection' : ''}`}>
       <div className="inbox-split__list">
         <div className="inbox-split__tabs">
           <button
             type="button"
-            className={`inbox-widget__tab${activeAccount === null ? ' is-active' : ''}`}
+            className={`inbox-split__tab${activeAccount === null ? ' is-active' : ''}`}
             onClick={() => {
               setActiveAccount(null);
               setSelectedId(null);
             }}
+            title="All accounts"
           >
             All
-            {totalNew + totalNeedsProcessing > 0 && <span className="inbox-widget__tab-badge">{totalNew + totalNeedsProcessing}</span>}
+            {totalUnread > 0 && <span className="inbox-split__tab-badge">{totalUnread}</span>}
           </button>
           {feed.accounts.map((a) => (
             <button
               type="button"
               key={a.id}
-              className={`inbox-widget__tab${activeAccount === a.id ? ' is-active' : ''}`}
+              className={`inbox-split__tab${activeAccount === a.id ? ' is-active' : ''}`}
               onClick={() => {
                 setActiveAccount(a.id);
                 setSelectedId(null);
               }}
               title={a.label}
             >
-              {a.iconImageUrl ? <img src={a.iconImageUrl} alt="" className="inbox-widget__tab-img" /> : <span style={{ color: a.color }}>{a.icon}</span>}{' '}
-              {a.label}
-              {a.newCount + a.needsProcessingCount > 0 && <span className="inbox-widget__tab-badge">{a.newCount + a.needsProcessingCount}</span>}
+              {a.iconImageUrl ? <img src={a.iconImageUrl} alt="" className="inbox-split__tab-img" /> : <span style={{ color: a.color }}>{a.icon}</span>}
+              {a.unreadCount > 0 && <span className="inbox-split__tab-badge">{a.unreadCount}</span>}
             </button>
           ))}
         </div>
 
-        {allMessages.length === 0 ? (
+        {feed.items.length === 0 ? (
           <div className="empty-state empty-state--section">Inbox zero. 🎉</div>
         ) : (
-          <>
-            {feed.newItems.length > 0 && (
-              <div className="inbox-split__group">
-                <div className="inbox-split__group-title">New ({feed.newItems.length})</div>
-                {feed.newItems.map(renderListRow)}
-              </div>
-            )}
-            {feed.needsProcessing.length > 0 && (
-              <div className="inbox-split__group">
-                <div className="inbox-split__group-title">Needs Processing ({feed.needsProcessing.length})</div>
-                {feed.needsProcessing.map(renderListRow)}
-              </div>
-            )}
-          </>
+          feed.items.map(renderListRow)
         )}
       </div>
 
@@ -224,7 +247,13 @@ export function InboxSplitView() {
               </button>
             </div>
 
-            <div className="inbox-split__body">{loadingSelected ? 'Loading…' : bodies[selected.id] || '(empty message)'}</div>
+            {loadingSelected || !peeked ? (
+              <div className="inbox-split__body">Loading…</div>
+            ) : peeked.html ? (
+              <EmailBodyFrame html={peeked.html} />
+            ) : (
+              <div className="inbox-split__body">{peeked.text || '(empty message)'}</div>
+            )}
 
             {replyOpen && (
               <div className="inbox-split__reply">

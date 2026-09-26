@@ -9,9 +9,11 @@ import { TrashIcon } from './icons';
  * mailbox (see Settings → Email Accounts), Thunderbird-style: an "All"
  * tab alongside one tab per account, each with its own icon/color for
  * quick visual scanning. Not a mail client — no folder browsing, no
- * compose-from-scratch — just "what's new" and "what have I read but not
- * dealt with yet" (MikeOS's own processed state, independent of Gmail's
- * read/unread), matching how Mike actually works an inbox to zero. */
+ * compose-from-scratch — just a flat list of everything still sitting in
+ * these mailboxes (not archived, deleted, or converted). No New/Needs
+ * Processing split: Mike's own call — the point of this feature is just
+ * not missing something in an inbox he doesn't check directly, not
+ * tracking a per-message processed state. */
 export function InboxWidget() {
   const [feed, setFeed] = useState<EmailInboxFeed | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -48,7 +50,7 @@ export function InboxWidget() {
     try {
       const res = await api.peekEmail(m.id);
       setBodies((prev) => ({ ...prev, [m.id]: res.body }));
-      load(); // it just moved from New to Needs Processing (or disappears if it was already there)
+      load(); // it just flipped to read — refreshes the unread badge
     } catch (e) {
       setBodies((prev) => ({ ...prev, [m.id]: `Couldn't load this message: ${String(e)}` }));
     }
@@ -187,8 +189,7 @@ export function InboxWidget() {
     );
   }
 
-  const totalNew = feed.accounts.reduce((sum, a) => sum + a.newCount, 0);
-  const totalNeedsProcessing = feed.accounts.reduce((sum, a) => sum + a.needsProcessingCount, 0);
+  const totalUnread = feed.accounts.reduce((sum, a) => sum + a.unreadCount, 0);
 
   return (
     <div className="inbox-widget card">
@@ -199,7 +200,7 @@ export function InboxWidget() {
             onClick={() => setActiveAccount(null)}
           >
             All
-            {totalNew + totalNeedsProcessing > 0 && <span className="inbox-widget__tab-badge">{totalNew + totalNeedsProcessing}</span>}
+            {totalUnread > 0 && <span className="inbox-widget__tab-badge">{totalUnread}</span>}
           </button>
           {feed.accounts.map((a) => (
             <button
@@ -215,28 +216,15 @@ export function InboxWidget() {
                 <span style={{ color: a.color }}>{a.icon}</span>
               )}{' '}
               {a.label}
-              {a.newCount + a.needsProcessingCount > 0 && <span className="inbox-widget__tab-badge">{a.newCount + a.needsProcessingCount}</span>}
+              {a.unreadCount > 0 && <span className="inbox-widget__tab-badge">{a.unreadCount}</span>}
             </button>
           ))}
         </div>
 
-        {feed.newItems.length === 0 && feed.needsProcessing.length === 0 ? (
+        {feed.items.length === 0 ? (
           <div className="empty-state empty-state--section">Inbox zero. 🎉</div>
         ) : (
-          <>
-            {feed.newItems.length > 0 && (
-              <div className="inbox-widget__group">
-                <div className="inbox-widget__group-title">New ({feed.newItems.length})</div>
-                {feed.newItems.map((m) => renderRow(m, feed.accounts))}
-              </div>
-            )}
-            {feed.needsProcessing.length > 0 && (
-              <div className="inbox-widget__group">
-                <div className="inbox-widget__group-title">Needs Processing ({feed.needsProcessing.length})</div>
-                {feed.needsProcessing.map((m) => renderRow(m, feed.accounts))}
-              </div>
-            )}
-          </>
+          <div className="inbox-widget__group">{feed.items.map((m) => renderRow(m, feed.accounts))}</div>
         )}
 
         {deleting && (

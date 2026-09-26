@@ -87,12 +87,15 @@ const SIDEBAR_SECTIONS: NavSectionDef[] = [
 
 export function Sidebar({ open = false, onClose }: SidebarProps) {
   const { openTab, showContextMenu } = useTabs();
-  // New + Needs Processing combined — the same total Inbox's own "All" tab
-  // badge already shows. Started as strictly-unread ("New") only, which
-  // left the sidebar showing nothing while Inbox's own All tab showed a
-  // real count, since most of what accumulates in Inbox is read-but-not-
-  // yet-dealt-with (Needs Processing), not strictly unread.
-  const [inboxBadgeCount, setInboxBadgeCount] = useState(0);
+  // Strictly unread mail across every connected mailbox — the whole point
+  // of this badge is noticing something landed in an inbox Mike doesn't
+  // check regularly, not tracking "stuff to deal with" (that's what Inbox
+  // itself, and its own per-account tab badges, are for). null means "not
+  // loaded yet" (no badge at all); once loaded, the badge always shows,
+  // including "0" — a badge that only appears when there's something to
+  // report is indistinguishable from a broken/stuck feature, and Mike
+  // specifically wants to see the "0" as proof it's live.
+  const [inboxUnreadCount, setInboxUnreadCount] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -101,7 +104,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
         .getInboxFeed()
         .then((feed) => {
           if (cancelled) return;
-          setInboxBadgeCount(feed.accounts.reduce((sum, a) => sum + a.newCount + a.needsProcessingCount, 0));
+          setInboxUnreadCount(feed.accounts.reduce((sum, a) => sum + a.unreadCount, 0));
         })
         .catch(() => {
           // Best-effort — a transient failure just leaves the last-known
@@ -137,7 +140,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
   }
 
   function renderItem({ path, label, kind }: NavItemDef) {
-    const badge = kind === 'inbox' && inboxBadgeCount > 0 ? inboxBadgeCount : null;
+    const badge = kind === 'inbox' ? inboxUnreadCount : null;
     return (
       <NavLink
         key={path}

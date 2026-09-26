@@ -3,7 +3,7 @@ import type { Env } from './types';
 import { encryptField, decryptField, EncryptionNotConfiguredError } from './cryptoField';
 import { ImapClient, parseHeaderBlock } from './imapClient';
 import { sendMail } from './smtpClient';
-import { parseMimeMessageToText, decodeSnippet } from './mimeParser';
+import { parseMimeMessageToParts, decodeSnippet } from './mimeParser';
 
 const now = () => new Date().toISOString();
 const uid = () => crypto.randomUUID();
@@ -304,6 +304,15 @@ emailRouter.post('/sync', async (c) => {
 });
 
 // ---- Feed (Today → Inbox) ----
+//
+// One flat list — everything still sitting in the mailbox's Inbox
+// (in_inbox = 1, meaning: not archived, not deleted, not converted to a
+// task/note). Used to be split into "New" vs "Needs Processing" (a GTD-
+// style read/unread-but-undealt-with distinction), but for these
+// secondary, rarely-checked mailboxes that distinction wasn't useful —
+// Mike's actual want is simpler: don't let something sit in there
+// unnoticed. So the list is unified and `isRead` just controls how a row
+// looks (unread = bold), not which bucket it's in.
 
 emailRouter.get('/inbox', async (c) => {
   const accountId = c.req.query('account_id');
@@ -313,19 +322,12 @@ emailRouter.get('/inbox', async (c) => {
 
   const scoped = accountId ? accounts.filter((a) => a.id === accountId) : accounts;
   const ids = scoped.map((a) => a.id);
-  if (ids.length === 0) return c.json({ accounts: [], newItems: [], needsProcessing: [] });
+  if (ids.length === 0) return c.json({ accounts: [], items: [] });
 
   const placeholders = ids.map(() => '?').join(',');
-  const newItems = (
+  const items = (
     await c.env.DB.prepare(
-      `SELECT * FROM email_messages WHERE account_id IN (${placeholders}) AND in_inbox = 1 AND is_read = 0 ORDER BY received_at DESC`
-    )
-      .bind(...ids)
-      .all<EmailMessageRow>()
-  ).results ?? [];
-  const needsProcessing = (
-    await c.env.DB.prepare(
-      `SELECT * FROM email_messages WHERE account_id IN (${placeholders}) AND in_inbox = 1 AND is_read = 1 AND processed_at IS NULL ORDER BY received_at ASC`
+      `SELECT * FROM email_messages WHERE account_id IN (${placeholders}) AND in_inbox = 1 ORDER BY received_at DESC`
     )
       .bind(...ids)
       .all<EmailMessageRow>()
@@ -337,17 +339,17 @@ emailRouter.get('/inbox', async (c) => {
     accounts.map(async (a) => {
       const row = await c.env.DB.prepare(
         `SELECT
-           SUM(CASE WHEN in_inbox = 1 AND is_read = 0 THEN 1 ELSE 0 END) as new_count,
-           SUM(CASE WHEN in_inbox = 1 AND is_read = 1 AND processed_at IS NULL THEN 1 ELSE 0 END) as needs_processing_count
+           SUM(CASE WHEN in_inbox = 1 AND is_read = 0 THEN 1 ELSE 0 END) as unread_count,
+           SUM(CASE WHEN in_inbox = 1 THEN 1 ELSE 0 END) as total_count
          FROM email_messages WHERE account_id = ?`
       )
         .bind(a.id)
-        .first<{ new_count: number; needs_processing_count: number }>();
-      return { ...accountJson(a), newCount: row?.new_count ?? 0, needsProcessingCount: row?.needs_processing_count ?? 0 };
+        .first<{ unread_count: number; total_count: number }>();
+      return { ...accountJson(a), unreadCount: row?.unread_count ?? 0, totalCount: row?.total_count ?? 0 };
     })
   );
 
-  return c.json({ accounts: counts, newItems, needsProcessing });
+  return c.json({ accounts: counts, items });
 });
 
 async function getMessageWithAccount(env: Env, id: string) {
@@ -381,10 +383,15 @@ emailRouter.post('/messages/:id/archive', async (c) => {
 });
 
 // Peek — fetches the full raw message live (bodies aren't cached in D1,
-// see migration's header comment), decodes it into clean plain text (see
-// mimeParser.ts — this used to hand back a single fixed MIME part's raw,
-// still-encoded bytes, which is what produced the garbled base64-looking
-// block Mike saw on HTML/multipart mail), and marks \Seen on the real
+// see migration's header comment) and decodes it two ways (see
+// mimeParser.ts): `body`, clean plain text for contexts that just need
+// something readable (the compact Today widget, reply-quoting later);
+// `bodyHtml`, the sender's actual HTML part (lightly stripped of
+// anything actively unsafe, not fully sanitized — see
+// stripActivelyUnsafe's own comment for why that's enough here), for
+// rendering a message the way an actual email client would instead of a
+// plain-text conversion that drops formatting and turns inline images
+// into "[image: Google]"-style alt text. Also marks \Seen on the real
 // mailbox in the same connection, plus flips is_read locally. A live IMAP
 // round trip per peek (roughly a second, dominated by the TLS handshake),
 // which is fine for an on-demand single-message action.
@@ -395,6 +402,7 @@ emailRouter.post('/messages/:id/peek', async (c) => {
   const { message, account } = found;
 
   let body = '';
+  let bodyHtml: string | null = null;
   try {
     const pass = await decryptField(c.env, account.app_password_enc, 'EMAIL_ACCOUNT_ENC_KEY');
     const client = new ImapClient();
@@ -402,7 +410,9 @@ emailRouter.post('/messages/:id/peek', async (c) => {
     await client.login(account.email, pass);
     await client.selectInbox();
     const raw = await client.fetchRawMessage(message.uid);
-    body = parseMimeMessageToText(raw);
+    const parsed = parseMimeMessageToParts(raw);
+    body = parsed.text;
+    bodyHtml = parsed.html;
     if (!message.is_read) await client.setSeen(message.uid, true);
     await client.logout();
   } catch (err) {
@@ -410,14 +420,14 @@ emailRouter.post('/messages/:id/peek', async (c) => {
   }
 
   await c.env.DB.prepare('UPDATE email_messages SET is_read = 1, updated_at = ? WHERE id = ?').bind(now(), id).run();
-  return c.json({ ...message, is_read: 1, body });
+  return c.json({ ...message, is_read: 1, body, bodyHtml });
 });
 
 // Real delete — distinct from Archive (which just files it out of Inbox
 // into All Mail). Same instant-locally/queued-for-real-mailbox split as
-// archive: in_inbox flips to 0 right away so it disappears from both New
-// and Needs Processing, and the actual Gmail Trash move happens on the
-// next sync tick via applyPendingActions + ImapClient.trash.
+// archive: in_inbox flips to 0 right away so it disappears from the feed,
+// and the actual Gmail Trash move happens on the next sync tick via
+// applyPendingActions + ImapClient.trash.
 emailRouter.post('/messages/:id/delete', async (c) => {
   const id = c.req.param('id');
   const found = await getMessageWithAccount(c.env, id);

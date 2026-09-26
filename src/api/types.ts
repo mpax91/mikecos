@@ -1870,8 +1870,8 @@ export interface EmailAccount {
 /** An EmailAccount plus its unread/unprocessed counts, as returned by
  * GET /api/email/inbox — the account-tab strip's badge counts. */
 export interface EmailAccountWithCounts extends EmailAccount {
-  newCount: number;
-  needsProcessingCount: number;
+  unreadCount: number;
+  totalCount: number;
 }
 
 export interface EmailMessage {
@@ -1897,12 +1897,15 @@ export interface EmailMessage {
 
 export interface EmailInboxFeed {
   accounts: EmailAccountWithCounts[];
-  newItems: EmailMessage[];
-  needsProcessing: EmailMessage[];
+  // Everything still sitting in the mailbox's Inbox (not archived,
+  // deleted, or converted) — no more New/Needs Processing split; a
+  // message's `is_read` just controls how its row looks.
+  items: EmailMessage[];
 }
 
 export interface EmailPeekResult extends EmailMessage {
   body: string;
+  bodyHtml: string | null;
 }
 
 export interface EmailSyncResult {

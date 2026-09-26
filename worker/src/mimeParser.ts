@@ -160,6 +160,38 @@ export function parseMimeMessageToText(raw: string): string {
   return '';
 }
 
+/** Strips the handful of things that would be actively unsafe even inside
+ * a sandboxed iframe with scripts disabled: <script> tags (belt and
+ * braces), inline event-handler attributes (onclick, onerror, etc, which
+ * the sandbox already blocks from running but there's no reason to ship
+ * them to the DOM at all), and javascript: URLs. Deliberately not a full
+ * sanitizer (no attempt to strip <style>, layout markup, or remote
+ * images) — the sandboxed iframe this renders into is what actually does
+ * the safety work; this just tidies up what lands in its srcdoc. */
+function stripActivelyUnsafe(html: string): string {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/\son[a-z]+\s*=\s*"[^"]*"/gi, '')
+    .replace(/\son[a-z]+\s*=\s*'[^']*'/gi, '')
+    .replace(/(href|src)\s*=\s*("javascript:[^"]*"|'javascript:[^']*')/gi, '$1="#"');
+}
+
+/** Like parseMimeMessageToText, but also returns the original HTML part
+ * (lightly cleaned, not converted to text) when the message has one —
+ * for rendering a message the way an actual email client would, instead
+ * of a plain-text conversion that drops formatting, links-as-links, and
+ * inline images (replaced by the sender's alt text, e.g. "[image:
+ * Google]"). `html` is null when the message has no text/html part at
+ * all (plain-text-only mail) — the caller falls back to `text` then. */
+export function parseMimeMessageToParts(raw: string): { text: string; html: string | null } {
+  const parts = collectLeafParts(raw);
+  const plain = parts.find((p) => p.contentType === 'text/plain');
+  const htmlPart = parts.find((p) => p.contentType === 'text/html');
+  const text = plain ? decodePart(plain).trim() : htmlPart ? htmlToText(decodePart(htmlPart)) : '';
+  const html = htmlPart ? stripActivelyUnsafe(decodePart(htmlPart)) : null;
+  return { text, html };
+}
+
 /** For the list-view snippet: fetchMessages pulls only the first N raw
  * bytes of part 1 (BODY.PEEK[1]<0.400>, cheap enough to do on every synced
  * message every poll — unlike the full peek, which fetches the whole

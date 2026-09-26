@@ -3975,20 +3975,61 @@ a {
 
 .inbox-split__tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   padding: 10px 10px 8px;
-  overflow-x: auto;
   flex: 0 0 auto;
   border-bottom: var(--border-hairline);
 }
 
-.inbox-split__group-title {
-  padding: 10px 14px 4px;
-  font-size: 11px;
+/* Icon-only account tabs — dropping the label text (Mike's own fix for
+   the horizontal-scroll complaint) means these stay compact enough to
+   wrap onto a second line in the 340px list column instead of ever
+   needing overflow-x scrolling. */
+.inbox-split__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: transparent;
+  border-radius: 999px;
+  padding: 6px 9px;
+  font-size: 13px;
   font-weight: var(--weight-medium);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
   color: var(--color-muted);
+  cursor: pointer;
+}
+
+.inbox-split__tab:hover {
+  color: var(--color-ink);
+}
+
+.inbox-split__tab.is-active {
+  background: var(--color-sidebar);
+  color: var(--color-ink);
+  box-shadow: 0 0 0 0.5px var(--color-border);
+}
+
+.inbox-split__tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--color-accent-secondary);
+  color: #fff;
+  font-size: 10px;
+  font-weight: var(--weight-medium);
+}
+
+.inbox-split__tab-img {
+  width: 15px;
+  height: 15px;
+  border-radius: 3px;
+  object-fit: cover;
+  vertical-align: middle;
 }
 
 .inbox-split__row {
@@ -4005,7 +4046,7 @@ a {
   font-family: var(--font-sans);
 }
 
-.inbox-split__group:first-child .inbox-split__row:first-child {
+.inbox-split__tabs + .inbox-split__row {
   border-top: none;
 }
 
@@ -4182,6 +4223,21 @@ a {
   line-height: 1.65;
   color: var(--color-ink);
   max-width: 680px;
+}
+
+/* The sender's real HTML, rendered as an actual email would look —
+   see EmailBodyFrame's comment for why an iframe (sandboxed, no
+   allow-scripts) is what makes this safe with arbitrary sender markup.
+   Height is set inline per-message (auto-resized to content on load). */
+.inbox-split__body-frame {
+  width: 100%;
+  max-width: 680px;
+  border: none;
+  background: var(--color-card-bg);
+}
+
+.inbox-split__reply-toggle {
+  margin-left: 0;
 }
 
 .inbox-split__reply {
