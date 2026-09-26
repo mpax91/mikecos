@@ -555,10 +555,13 @@ betsEnrichmentRouter.get('/', async (c) => {
     odds: oddsInfo
       ? {
           provider: oddsInfo.provider?.name ?? null,
+          // Mike wants the price (the vig for taking that side, e.g. -110)
+          // here, not the open line — that's why this is `price`, not `open`
+          // the way moneyline/total still track open-vs-current.
           spread: oddsInfo.pointSpread
             ? {
-                home: { open: parseSignedNumber(oddsInfo.pointSpread.home?.open?.line), current: parseSignedNumber(oddsInfo.pointSpread.home?.close?.line) },
-                away: { open: parseSignedNumber(oddsInfo.pointSpread.away?.open?.line), current: parseSignedNumber(oddsInfo.pointSpread.away?.close?.line) },
+                home: { current: parseSignedNumber(oddsInfo.pointSpread.home?.close?.line), price: parseSignedNumber(oddsInfo.pointSpread.home?.close?.odds) },
+                away: { current: parseSignedNumber(oddsInfo.pointSpread.away?.close?.line), price: parseSignedNumber(oddsInfo.pointSpread.away?.close?.odds) },
               }
             : null,
           total: oddsInfo.total

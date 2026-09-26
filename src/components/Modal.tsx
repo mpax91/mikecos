@@ -2,14 +2,18 @@ export function Modal({
   title,
   children,
   onClose,
+  className,
 }: {
   title: string;
   children: React.ReactNode;
   onClose: () => void;
+  /** Extra class on the inner `.modal` box — for a modal that wants more
+   * width than the default (see `.bets-workspace__notes-modal`). */
+  className?: string;
 }) {
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div className={className ? `modal ${className}` : 'modal'} onClick={(e) => e.stopPropagation()}>
         <div className="modal__header">
           <h3>{title}</h3>
           {/* Tapping the backdrop closes on desktop, but a tall modal (the

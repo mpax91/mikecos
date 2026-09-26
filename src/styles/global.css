@@ -2226,6 +2226,22 @@ a {
   box-sizing: border-box;
 }
 
+/* The Bets game-detail modal packs in the odds table, tips/lines grid, and
+   the full handicapping panel (pitcher/goalie card, matchup history, two
+   team snapshots) — the default 380px squeezes that content into a column
+   too thin to read comfortably. Widened on desktop only; max-width: 100%
+   on the base .modal rule still caps it on a narrow phone viewport, where
+   it naturally fills most of the screen either way. */
+.bets-workspace__notes-modal {
+  width: 620px;
+}
+
+@media (min-width: 900px) {
+  .bets-workspace__notes-modal {
+    width: 720px;
+  }
+}
+
 .modal__header {
   display: flex;
   align-items: flex-start;

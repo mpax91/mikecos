@@ -1032,9 +1032,17 @@ export interface BetGameOddsSide {
   current: number | null;
 }
 
+// Spread shows the price (the vig for taking that side, e.g. -110) instead
+// of the open line — Mike's own call, since the open line read as a
+// confusing near-duplicate of the current line.
+export interface BetGameOddsSpreadSide {
+  current: number | null;
+  price: number | null;
+}
+
 export interface BetGameOdds {
   provider: string | null; // e.g. "DraftKings"
-  spread: { home: BetGameOddsSide; away: BetGameOddsSide } | null;
+  spread: { home: BetGameOddsSpreadSide; away: BetGameOddsSpreadSide } | null;
   total: { open: number | null; current: number | null; overOdds: number | null; underOdds: number | null } | null;
   moneyline: { home: BetGameOddsSide; away: BetGameOddsSide } | null;
 }

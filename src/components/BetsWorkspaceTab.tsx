@@ -226,6 +226,19 @@ function OddsCell({ open, current, format }: { open: number | null; current: num
   );
 }
 
+/** Spread's own cell — the line on top, the price (vig) below it, e.g.
+ * "-1.5" over "-110" — same idea as Total's over/under prices, but one
+ * price per side instead of one shared pair. */
+function SpreadCell({ current, price }: { current: number | null; price: number | null }) {
+  if (current == null) return null;
+  return (
+    <>
+      <span className="bets-workspace__odds-current">{signedNum(current)}</span>
+      {price != null && <span className="bets-workspace__odds-open">{signedNum(price)}</span>}
+    </>
+  );
+}
+
 /** Spread/total/moneyline as a clean, structured Open-vs-Current table —
  * renders right under the matchup header, above the tips/lines grid, so
  * it's the first thing Mike sees when a game's notes open. */
@@ -251,10 +264,10 @@ function OddsSummary({ data, loading }: { data: BetGameEnrichment | null; loadin
             <tr>
               <th scope="row">Spread</th>
               <td>
-                <OddsCell open={odds.spread.away.open} current={odds.spread.away.current} format={signedNum} />
+                <SpreadCell current={odds.spread.away.current} price={odds.spread.away.price} />
               </td>
               <td>
-                <OddsCell open={odds.spread.home.open} current={odds.spread.home.current} format={signedNum} />
+                <SpreadCell current={odds.spread.home.current} price={odds.spread.home.price} />
               </td>
             </tr>
           )}
@@ -517,7 +530,7 @@ function NotesModal({
   const enrichment = useBetEnrichment(entry.sport, date, entry.matchup);
 
   return (
-    <Modal title={entry.matchup} onClose={onClose}>
+    <Modal title={entry.matchup} onClose={onClose} className="bets-workspace__notes-modal">
       <div className="bets-form">
         {(entry.awayName || entry.homeName) && (
           <div className="bets-workspace__modal-fullnames">
