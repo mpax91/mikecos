@@ -3,6 +3,7 @@ import { api } from '../../api/client';
 import type { RewardsMerchant } from '../../api/types';
 import { Modal } from '../../components/Modal';
 import { ConfirmModal } from '../../components/ConfirmModal';
+import { TrashIcon } from '../../components/icons';
 
 interface FormState {
   name: string;
@@ -138,7 +139,7 @@ export function RewardsMerchantsPanel() {
                   ✎
                 </button>
                 <button type="button" onClick={() => setDeleting(m)} title="Delete">
-                  🗑
+                  <TrashIcon />
                 </button>
               </div>
             </div>

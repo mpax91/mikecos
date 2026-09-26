@@ -3,6 +3,7 @@ import { api } from '../../api/client';
 import type { EmailAccount } from '../../api/types';
 import { Modal } from '../../components/Modal';
 import { ConfirmModal } from '../../components/ConfirmModal';
+import { TrashIcon } from '../../components/icons';
 
 interface FormState {
   label: string;
@@ -259,7 +260,7 @@ export function EmailAccountsPanel() {
                   ✎
                 </button>
                 <button type="button" onClick={() => setDeleting(a)} title="Remove">
-                  🗑
+                  <TrashIcon />
                 </button>
               </div>
             </div>

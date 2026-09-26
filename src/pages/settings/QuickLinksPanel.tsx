@@ -3,6 +3,7 @@ import { api } from '../../api/client';
 import type { QuickLink } from '../../api/types';
 import { Modal } from '../../components/Modal';
 import { ConfirmModal } from '../../components/ConfirmModal';
+import { TrashIcon } from '../../components/icons';
 
 interface FormState {
   id: string | null; // null while creating
@@ -212,7 +213,7 @@ export function QuickLinksPanel() {
                   ✎
                 </button>
                 <button type="button" onClick={() => setDeleting(link)} title="Delete">
-                  🗑
+                  <TrashIcon />
                 </button>
               </div>
             </div>

@@ -3,6 +3,7 @@ import { api } from '../../api/client';
 import type { WalletCategory } from '../../api/types';
 import { Modal } from '../../components/Modal';
 import { ConfirmModal } from '../../components/ConfirmModal';
+import { TrashIcon } from '../../components/icons';
 
 /** Settings' management screen for Wallet's category pick list (see
  * migrations/0046_wallet_categories.sql) — add/rename/reorder/remove the
@@ -136,7 +137,7 @@ export function WalletCategoriesPanel() {
                   ✎
                 </button>
                 <button type="button" onClick={() => setDeleting(cat)} title="Delete">
-                  🗑
+                  <TrashIcon />
                 </button>
               </div>
             </div>

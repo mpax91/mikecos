@@ -6075,6 +6075,9 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 }
 
 .manage-row__actions button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 26px;
   height: 26px;
   border-radius: 6px;

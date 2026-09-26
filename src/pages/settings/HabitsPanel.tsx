@@ -3,6 +3,7 @@ import { api } from '../../api/client';
 import type { Habit, HabitDirection } from '../../api/types';
 import { Modal } from '../../components/Modal';
 import { ConfirmModal } from '../../components/ConfirmModal';
+import { TrashIcon } from '../../components/icons';
 
 interface HabitFormState {
   name: string;
@@ -248,7 +249,7 @@ export function HabitsPanel() {
                   ✎
                 </button>
                 <button type="button" onClick={() => setDeleting(h)} title="Delete">
-                  🗑
+                  <TrashIcon />
                 </button>
               </div>
             </div>
