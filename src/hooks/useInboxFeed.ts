@@ -66,14 +66,34 @@ export function useInboxFeed(accountId?: string) {
     }
   }
 
-  async function convert(id: string, as: 'task' | 'note') {
+  // Returns the created entityId so the caller can offer "Undo" (see
+  // InboxSplitView's undo toast) — converting no longer removes the message
+  // from Inbox at all (Mike's own call — see email.ts's /messages/:id/
+  // convert), so there's nothing else for this to reverse locally besides
+  // the entity itself.
+  async function convert(id: string, as: 'task' | 'note' | 'jot', dueDate?: string | null): Promise<string> {
     setBusyId(id);
     try {
-      await api.convertEmail(id, { as });
+      const res = await api.convertEmail(id, { as, dueDate });
       load();
+      return res.entityId;
     } finally {
       setBusyId(null);
     }
+  }
+
+  async function unconvert(id: string, entityId: string) {
+    await api.unconvertEmail(id, entityId);
+    load();
+  }
+
+  // Undo for Archive/Delete — reverses the local in_inbox flip (and, if the
+  // sync cron already beat the undo toast to it, the real mailbox change
+  // too — see email.ts's /messages/:id/undo) and refreshes the feed so the
+  // message reappears.
+  async function undo(id: string, kind: 'archive' | 'trash') {
+    await api.undoEmailAction(id, kind);
+    load();
   }
 
   async function reply(id: string, body: string, archiveAfter = false, mode: 'sender' | 'all' = 'sender') {
@@ -85,5 +105,5 @@ export function useInboxFeed(accountId?: string) {
     await api.forwardEmail(id, { to, note });
   }
 
-  return { feed, error, bodies, busyId, load, peek, archive, deleteMessage, convert, reply, forward };
+  return { feed, error, bodies, busyId, load, peek, archive, deleteMessage, convert, unconvert, undo, reply, forward };
 }

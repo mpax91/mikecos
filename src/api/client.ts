@@ -1229,10 +1229,20 @@ export const api = {
 
   deleteEmail: (id: string) => request<{ ok: true }>(`/api/email/messages/${id}/delete`, { method: 'POST' }),
 
+  // Undo for Archive/Delete — see email.ts's /messages/:id/undo for how it
+  // decides between just cancelling the still-queued mailbox action and a
+  // real IMAP reversal.
+  undoEmailAction: (id: string, kind: 'archive' | 'trash') =>
+    request<{ ok: true }>(`/api/email/messages/${id}/undo`, { method: 'POST', body: JSON.stringify({ kind }) }),
+
   peekEmail: (id: string) => request<EmailPeekResult>(`/api/email/messages/${id}/peek`, { method: 'POST' }),
 
-  convertEmail: (id: string, data: { as: 'task' | 'note'; parentId?: string | null; dueDate?: string | null }) =>
+  convertEmail: (id: string, data: { as: 'task' | 'note' | 'jot'; parentId?: string | null; dueDate?: string | null }) =>
     request<{ entityId: string }>(`/api/email/messages/${id}/convert`, { method: 'POST', body: JSON.stringify(data) }),
+
+  // Undo for Take Action / Save as Note / Jot.
+  unconvertEmail: (id: string, entityId: string) =>
+    request<{ ok: true }>(`/api/email/messages/${id}/unconvert`, { method: 'POST', body: JSON.stringify({ entityId }) }),
 
   replyToEmail: (id: string, data: { body: string; archive?: boolean; mode?: 'sender' | 'all' }) =>
     request<{ ok: true }>(`/api/email/messages/${id}/reply`, { method: 'POST', body: JSON.stringify(data) }),

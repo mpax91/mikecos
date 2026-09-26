@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useInboxFeed } from '../hooks/useInboxFeed';
 import { api } from '../api/client';
 import type { Contact, EmailAccountWithCounts, EmailMessage } from '../api/types';
@@ -26,6 +26,25 @@ function contactEmails(contacts: Contact[]): ContactEmail[] {
     }
   }
   return out;
+}
+
+// Local-timezone date math for Take Action's Today/Tomorrow/Next Week
+// shortcuts — same "no timezone library, just getFullYear/getMonth/getDate"
+// idiom this codebase already uses in a handful of pages (BetsPage etc.)
+// rather than a shared util, since each is a two-line function.
+function todayLocalISODash(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function addDaysLocalISODash(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function niceDate(dueDateIso: string): string {
+  return new Date(`${dueDateIso}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
 function absoluteDate(iso: string): string {
@@ -97,7 +116,9 @@ function EmailBodyFrame({ html }: { html: string }) {
  * by the `has-selection` class rather than any JS media-query logic. */
 export function InboxSplitView() {
   const [activeAccount, setActiveAccount] = useState<string | null>(null);
-  const { feed, error, bodies, busyId, peek, archive, deleteMessage, convert, reply, forward } = useInboxFeed(activeAccount ?? undefined);
+  const { feed, error, bodies, busyId, peek, archive, deleteMessage, convert, unconvert, undo, reply, forward } = useInboxFeed(
+    activeAccount ?? undefined
+  );
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loadingSelected, setLoadingSelected] = useState(false);
   const [replyOpen, setReplyOpen] = useState(false);
@@ -109,6 +130,36 @@ export function InboxSplitView() {
   const [forwardTo, setForwardTo] = useState('');
   const [forwardNote, setForwardNote] = useState('');
   const [sendingForward, setSendingForward] = useState(false);
+  const [takeActionOpen, setTakeActionOpen] = useState(false);
+  const [customDate, setCustomDate] = useState('');
+
+  // A brief "X — Undo" banner after Archive/Delete/Take Action/Jot/Save as
+  // Note — Mike's own call, after finding "Make a Task" had silently
+  // archived an email with no way back. Auto-dismisses after a few seconds
+  // (long enough to notice and react, not so long it becomes a second
+  // "did I mean to do that" the way a confirm dialog would). Only one
+  // toast at a time — a new action's toast simply replaces whatever's
+  // showing, same as Gmail's own snackbar.
+  const [toast, setToast] = useState<{ message: string; onUndo: () => void | Promise<void> } | null>(null);
+  const toastTimeoutRef = useRef<number | null>(null);
+  useEffect(() => () => {
+    if (toastTimeoutRef.current != null) window.clearTimeout(toastTimeoutRef.current);
+  }, []);
+  function showUndoToast(message: string, onUndo: () => void | Promise<void>) {
+    if (toastTimeoutRef.current != null) window.clearTimeout(toastTimeoutRef.current);
+    setToast({ message, onUndo });
+    toastTimeoutRef.current = window.setTimeout(() => {
+      toastTimeoutRef.current = null;
+      setToast(null);
+    }, 8000);
+  }
+  async function handleUndo() {
+    if (!toast) return;
+    if (toastTimeoutRef.current != null) window.clearTimeout(toastTimeoutRef.current);
+    const { onUndo } = toast;
+    setToast(null);
+    await onUndo();
+  }
   // Not Gmail — Inbox has no address book of its own to autocomplete from,
   // so this borrows MikeOS's own Contacts (personal ones only, the same
   // default listContacts already uses elsewhere — the voter-roll import
@@ -140,6 +191,8 @@ export function InboxSplitView() {
     setForwardOpen(false);
     setForwardTo('');
     setForwardNote('');
+    setTakeActionOpen(false);
+    setCustomDate('');
     if (bodies[m.id] === undefined) {
       setLoadingSelected(true);
       await peek(m);
@@ -147,14 +200,14 @@ export function InboxSplitView() {
     }
   }
 
+  // Archive/Delete both get an Undo toast — see the toast state above.
+  // Undo's own server-side logic (email.ts's /messages/:id/undo) is what
+  // decides whether reversing this is free (the mailbox change hasn't
+  // actually happened yet) or needs a real IMAP round trip.
   async function handleArchive(id: string) {
     await archive(id);
     if (selectedId === id) setSelectedId(null);
-  }
-
-  async function handleConvert(id: string, as: 'task' | 'note') {
-    await convert(id, as);
-    if (selectedId === id) setSelectedId(null);
+    showUndoToast('Archived', () => undo(id, 'archive'));
   }
 
   // No confirm dialog: a delete moves the message to Gmail Trash, recoverable
@@ -165,9 +218,37 @@ export function InboxSplitView() {
     try {
       await deleteMessage(id);
       if (selectedId === id) setSelectedId(null);
+      showUndoToast('Moved to Trash', () => undo(id, 'trash'));
     } catch (e) {
       alert(`Couldn't delete this message: ${String(e)}`);
     }
+  }
+
+  // Take Action / Jot / Save as Note all leave the email sitting right in
+  // Inbox — see email.ts's /messages/:id/convert for why — so there's no
+  // selection to clear here; the message stays exactly where it was. Undo
+  // just deletes the entity that got created.
+  async function handleJot(id: string) {
+    const entityId = await convert(id, 'jot');
+    showUndoToast('Added as a Jot', () => unconvert(id, entityId));
+  }
+
+  async function handleSaveNote(id: string) {
+    const entityId = await convert(id, 'note');
+    showUndoToast('Saved as a Note', () => unconvert(id, entityId));
+  }
+
+  async function scheduleTask(id: string, dueDate: string) {
+    const entityId = await convert(id, 'task', dueDate);
+    setTakeActionOpen(false);
+    setCustomDate('');
+    showUndoToast(`Added as a task for ${niceDate(dueDate)}`, () => unconvert(id, entityId));
+  }
+
+  function toggleTakeAction() {
+    setTakeActionOpen((v) => !v);
+    setReplyOpen(false);
+    setForwardOpen(false);
   }
 
   // Reply and Reply All share one panel/draft — the toolbar buttons just
@@ -181,6 +262,7 @@ export function InboxSplitView() {
     setReplyMode(mode);
     setReplyOpen(true);
     setForwardOpen(false);
+    setTakeActionOpen(false);
   }
 
   async function sendReply() {
@@ -300,10 +382,13 @@ export function InboxSplitView() {
               <button type="button" className="btn btn--ghost btn--sm" onClick={() => handleArchive(selected.id)} disabled={busyId === selected.id}>
                 📥 Archive
               </button>
-              <button type="button" className="btn btn--ghost btn--sm" onClick={() => handleConvert(selected.id, 'task')} disabled={busyId === selected.id}>
-                ✅ Make a Task
+              <button type="button" className="btn btn--ghost btn--sm" onClick={toggleTakeAction} disabled={busyId === selected.id}>
+                📅 Take Action
               </button>
-              <button type="button" className="btn btn--ghost btn--sm" onClick={() => handleConvert(selected.id, 'note')} disabled={busyId === selected.id}>
+              <button type="button" className="btn btn--ghost btn--sm" onClick={() => handleJot(selected.id)} disabled={busyId === selected.id}>
+                🗒️ Jot
+              </button>
+              <button type="button" className="btn btn--ghost btn--sm" onClick={() => handleSaveNote(selected.id)} disabled={busyId === selected.id}>
                 📝 Save as Note
               </button>
               <button
@@ -330,6 +415,7 @@ export function InboxSplitView() {
                 onClick={() => {
                   setForwardOpen((v) => !v);
                   setReplyOpen(false);
+                  setTakeActionOpen(false);
                 }}
               >
                 ➜ Forward
@@ -385,6 +471,40 @@ export function InboxSplitView() {
               </div>
             )}
 
+            {takeActionOpen && (
+              <div className="inbox-split__reply">
+                <div className="inbox-split__reply-hint">
+                  Schedule this as a task — the email stays right here in Inbox until the task itself is done.
+                </div>
+                <div className="inbox-split__take-action-row">
+                  <button type="button" className="btn btn--sm" onClick={() => scheduleTask(selected.id, todayLocalISODash())}>
+                    Today
+                  </button>
+                  <button type="button" className="btn btn--sm" onClick={() => scheduleTask(selected.id, addDaysLocalISODash(1))}>
+                    Tomorrow
+                  </button>
+                  <button type="button" className="btn btn--sm" onClick={() => scheduleTask(selected.id, addDaysLocalISODash(7))}>
+                    Next Week
+                  </button>
+                  <input
+                    type="date"
+                    className="inbox-split__take-action-date"
+                    value={customDate}
+                    onChange={(e) => setCustomDate(e.target.value)}
+                    aria-label="Custom due date"
+                  />
+                  <button
+                    type="button"
+                    className="btn btn--sm btn--ghost"
+                    onClick={() => customDate && scheduleTask(selected.id, customDate)}
+                    disabled={!customDate}
+                  >
+                    Set
+                  </button>
+                </div>
+              </div>
+            )}
+
             {forwardOpen && (
               <div className="inbox-split__reply">
                 <input
@@ -422,6 +542,15 @@ export function InboxSplitView() {
           </>
         )}
       </div>
+
+      {toast && (
+        <div className="inbox-toast">
+          <span className="inbox-toast__message">{toast.message}</span>
+          <button type="button" className="inbox-toast__undo" onClick={handleUndo}>
+            Undo
+          </button>
+        </div>
+      )}
     </div>
   );
 }

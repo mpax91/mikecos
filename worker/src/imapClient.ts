@@ -414,6 +414,27 @@ export class ImapClient {
     if (res.status !== 'OK') throw new ImapProtocolError(`trash failed: ${res.text || res.status}`);
   }
 
+  /** Undo for archive() — adds the \Inbox label back. Only needed when the
+   * Undo toast (see email.ts's /messages/:id/undo) loses the race with the
+   * sync cron: the common case cancels the still-queued pending action
+   * instead and never touches the real mailbox at all. */
+  async restoreToInbox(uid: number): Promise<void> {
+    const res = await this.command(`UID STORE ${uid} +X-GM-LABELS (\\Inbox)`);
+    if (res.status !== 'OK') throw new ImapProtocolError(`restoreToInbox failed: ${res.text || res.status}`);
+  }
+
+  /** Undo for trash() — same "only if the sync already beat us to it" case
+   * as restoreToInbox, but also has to remove \Trash, not just add \Inbox
+   * back, or Gmail leaves the message filed in both places. Two STORE
+   * commands rather than one: RFC 3501 STORE takes a single data-item, so
+   * a combined "+X-GM-LABELS (\Inbox) -X-GM-LABELS (\Trash)" isn't valid. */
+  async untrash(uid: number): Promise<void> {
+    const res1 = await this.command(`UID STORE ${uid} -X-GM-LABELS (\\Trash)`);
+    if (res1.status !== 'OK') throw new ImapProtocolError(`untrash (remove Trash) failed: ${res1.text || res1.status}`);
+    const res2 = await this.command(`UID STORE ${uid} +X-GM-LABELS (\\Inbox)`);
+    if (res2.status !== 'OK') throw new ImapProtocolError(`untrash (add Inbox) failed: ${res2.text || res2.status}`);
+  }
+
   async setSeen(uid: number, seen: boolean): Promise<void> {
     const op = seen ? '+FLAGS.SILENT' : '-FLAGS.SILENT';
     const res = await this.command(`UID STORE ${uid} ${op} (\\Seen)`);

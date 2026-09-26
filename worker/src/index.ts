@@ -2857,6 +2857,32 @@ app.patch('/api/entities/:id', async (c) => {
       )
         .bind(uid(), id, body.title ?? existing.title, ts, localDateString(ts))
         .run();
+
+      // A task created from an email via Inbox's "Take Action" (see
+      // email.ts's /messages/:id/convert) deliberately leaves the source
+      // email sitting in Inbox rather than archiving it on the spot —
+      // Mike's own call: it stays visible as a reminder that something's
+      // still outstanding until the task itself is actually done. This is
+      // that "done" signal, so it's the one place that email finally gets
+      // archived — same instant-locally/queued-for-real-mailbox split
+      // every other Inbox action uses (see email.ts's applyPendingActions).
+      const linkedEmail = await c.env.DB.prepare(
+        `SELECT id, account_id FROM email_messages WHERE converted_to_entity_id = ? AND in_inbox = 1`
+      )
+        .bind(id)
+        .first<{ id: string; account_id: string }>();
+      if (linkedEmail) {
+        await c.env.DB.batch([
+          c.env.DB.prepare('UPDATE email_messages SET in_inbox = 0, processed_at = ?, updated_at = ? WHERE id = ?').bind(ts, ts, linkedEmail.id),
+          c.env.DB.prepare('INSERT INTO email_pending_actions (id, account_id, message_id, action, created_at) VALUES (?, ?, ?, ?, ?)').bind(
+            uid(),
+            linkedEmail.account_id,
+            linkedEmail.id,
+            'archive',
+            ts
+          ),
+        ]);
+      }
     } else if (existing.status === 'done') {
       await c.env.DB.prepare(
         `DELETE FROM task_completions WHERE id = (SELECT id FROM task_completions WHERE entity_id = ? ORDER BY completed_at DESC LIMIT 1)`

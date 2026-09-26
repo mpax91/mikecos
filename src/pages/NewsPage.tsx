@@ -225,7 +225,7 @@ export function NewsPage() {
         {/* Feed management now lives in Settings (see NewsFeedsPanel) —
             this is just a deep-link over, not a popup, since it's only
             going to get more to manage (folders, sources) as it grows. */}
-        <Link to="/settings?cat=news-feeds" className="news-page__settings-link" title="Manage News Feeds" aria-label="Manage News Feeds">
+        <Link to="/settings?cat=news-feeds" className="settings-gear-link" title="Manage News Feeds" aria-label="Manage News Feeds">
           ⚙️
         </Link>
       </div>

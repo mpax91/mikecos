@@ -4288,6 +4288,58 @@ a {
   font-size: 13px;
 }
 
+.inbox-split__take-action-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.inbox-split__take-action-date {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: var(--border-hairline);
+  background: var(--color-card-bg);
+}
+
+/* Inbox's Undo toast — Archive/Delete/Take Action/Jot/Save as Note all
+   surface one of these instead of just silently doing the thing, after
+   "Make a Task" once archived an email with no way to get it back. Fixed
+   to the viewport (not the split view) so it stays visible even if
+   switching accounts/messages re-renders the list underneath it. */
+.inbox-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  background: var(--color-ink, #2e2a22);
+  color: #fff;
+  font-size: 13.5px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  z-index: 50;
+}
+
+.inbox-toast__undo {
+  background: none;
+  border: none;
+  color: #9fd6b0;
+  font-weight: 600;
+  font-size: 13.5px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.inbox-toast__undo:hover {
+  text-decoration: underline;
+}
+
 @media (max-width: 860px) {
   .inbox-split {
     grid-template-columns: 1fr;
@@ -5773,28 +5825,6 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-}
-
-/* Same footprint/behavior as News' own Settings deep-link
-   (.news-page__settings-link) — kept as its own class per this codebase's
-   per-page naming convention rather than shared, but identical rules. */
-.links-page__settings-link {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
-  border: var(--border-hairline);
-  background: var(--color-card-bg);
-  font-size: 14px;
-  line-height: 1;
-  text-decoration: none;
-  flex-shrink: 0;
-}
-
-.links-page__settings-link:hover {
-  background: rgba(47, 74, 60, 0.08);
 }
 
 .links-page__subhead {
@@ -10383,10 +10413,11 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   flex: 1;
 }
 
-/* Deep-links to Settings' News Feeds panel — same footprint as the
-   Feed/Story/Saved buttons beside it (see .news-page__view-switch) so it
-   reads as one toolbar, not an odd icon bolted on. */
-.news-page__settings-link {
+/* Shared gear-icon deep-link to a page's own Settings category — News,
+   Links, Inbox, Habits, and any future page that manages something in
+   Settings all use this one class rather than each keeping its own copy, so
+   the affordance actually stays visually identical everywhere it appears. */
+.settings-gear-link {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -10401,7 +10432,7 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   flex-shrink: 0;
 }
 
-.news-page__settings-link:hover {
+.settings-gear-link:hover {
   background: rgba(47, 74, 60, 0.08);
 }
 

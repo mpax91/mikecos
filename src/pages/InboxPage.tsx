@@ -36,8 +36,8 @@ export function InboxPage() {
           Inbox
         </h1>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <Link to="/settings?cat=email-accounts" className="btn btn--ghost btn--sm">
-            Manage Accounts
+          <Link to="/settings?cat=email-accounts" className="settings-gear-link" title="Manage Email Accounts" aria-label="Manage Email Accounts">
+            ⚙️
           </Link>
           <button type="button" className="btn btn--sm" onClick={syncNow} disabled={syncing}>
             {syncing ? 'Syncing…' : 'Sync Now'}

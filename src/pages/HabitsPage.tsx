@@ -179,8 +179,8 @@ export function HabitsPage() {
         <h1 className="heading-serif" style={{ fontSize: 24, margin: 0 }}>
           Habits
         </h1>
-        <Link to="/settings?cat=habits" className="btn btn--ghost">
-          Manage Habits
+        <Link to="/settings?cat=habits" className="settings-gear-link" title="Manage Habits" aria-label="Manage Habits">
+          ⚙️
         </Link>
       </div>
 

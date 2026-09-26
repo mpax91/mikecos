@@ -201,7 +201,7 @@ function LinksHeader() {
       <h1 className="heading-serif" style={{ fontSize: 24, margin: '0 0 2px' }}>
         Links
       </h1>
-      <Link to="/settings?cat=links" className="links-page__settings-link" title="Manage Links" aria-label="Manage Links">
+      <Link to="/settings?cat=links" className="settings-gear-link" title="Manage Links" aria-label="Manage Links">
         ⚙️
       </Link>
     </div>

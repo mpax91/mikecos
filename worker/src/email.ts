@@ -446,15 +446,94 @@ emailRouter.post('/messages/:id/delete', async (c) => {
   return c.json({ ok: true });
 });
 
+// Undo for Archive/Delete — the Inbox undo toast's server side. In the
+// common case (the toast is clicked within its few-second window) the real
+// mailbox change hasn't happened yet — applyPendingActions only runs on the
+// next cron tick, up to ~2 minutes later — so cancelling the still-queued
+// pending_actions row and flipping in_inbox back to 1 is the whole story,
+// no IMAP round trip needed. Only when the toast loses that race (a slow
+// click, or the cron happened to fire in between) does this fall back to
+// actually reversing the change on the real mailbox.
+emailRouter.post('/messages/:id/undo', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json<{ kind: 'archive' | 'trash' }>();
+  if (body.kind !== 'archive' && body.kind !== 'trash') return c.json({ error: 'kind must be "archive" or "trash"' }, 400);
+  const found = await getMessageWithAccount(c.env, id);
+  if (!found) return c.json({ error: 'not found' }, 404);
+  const { message, account } = found;
+
+  const pending = await c.env.DB.prepare(
+    `SELECT id FROM email_pending_actions WHERE message_id = ? AND action = ? AND applied_at IS NULL ORDER BY created_at DESC LIMIT 1`
+  )
+    .bind(id, body.kind)
+    .first<{ id: string }>();
+
+  try {
+    if (pending) {
+      await c.env.DB.prepare('DELETE FROM email_pending_actions WHERE id = ?').bind(pending.id).run();
+    } else {
+      const pass = await decryptField(c.env, account.app_password_enc, 'EMAIL_ACCOUNT_ENC_KEY');
+      const client = new ImapClient();
+      await client.connect(account.imap_host, account.imap_port);
+      await client.login(account.email, pass);
+      await client.selectInbox();
+      if (body.kind === 'archive') await client.restoreToInbox(message.uid);
+      else await client.untrash(message.uid);
+      await client.logout();
+    }
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 502);
+  }
+
+  await c.env.DB.prepare('UPDATE email_messages SET in_inbox = 1, processed_at = NULL, updated_at = ? WHERE id = ?').bind(now(), id).run();
+  return c.json({ ok: true });
+});
+
+// Undo for Take Action / Save as Note / Jot — since converting no longer
+// touches the email's Inbox status at all (see /messages/:id/convert),
+// undoing one is just deleting the entity it created and clearing the
+// email's back-reference to it. Recursive in the same way DELETE
+// /api/entities/:id is, though a freshly-converted entity never has
+// children yet in practice.
+emailRouter.post('/messages/:id/unconvert', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json<{ entityId: string }>();
+  if (!body.entityId) return c.json({ error: 'entityId is required' }, 400);
+  const found = await getMessageWithAccount(c.env, id);
+  if (!found) return c.json({ error: 'not found' }, 404);
+
+  await c.env.DB.batch([
+    c.env.DB.prepare('DELETE FROM entities WHERE id = ?').bind(body.entityId),
+    c.env.DB.prepare('UPDATE email_messages SET converted_to_entity_id = NULL, updated_at = ? WHERE id = ? AND converted_to_entity_id = ?').bind(
+      now(),
+      id,
+      body.entityId
+    ),
+  ]);
+  return c.json({ ok: true });
+});
+
 // Turns an email into a real MikeOS entity — the replacement for Gmail's
 // snooze (see the design discussion this was built from): instead of
-// hiding the email and reshowing it later, it becomes a real task/note
-// (optionally nested under a project via parentId) and the email itself
-// gets archived, same as any other processed message.
+// hiding the email and reshowing it later, it becomes a real task ("Take
+// Action", scheduled via dueDate), a Note, or a Jot (a title-optional quick
+// capture — see /api/jots).
+//
+// Mike's own call: this does NOT touch the email's Inbox status. Earlier
+// versions archived the source message the instant it was converted, which
+// meant the email vanished from Inbox at the same moment as the thing
+// "processing" it was created — there was nowhere left to see that a task
+// had come from an email, and no way to tell MikeOS "actually, hold off."
+// The email now stays right where it is; `converted_to_entity_id` just
+// remembers which entity it became, so a task's own completion (see
+// index.ts's PATCH /api/entities/:id) can archive it automatically once
+// Mike actually deals with the task — that's the real "processed" moment.
+// Notes/Jots have no equivalent completion signal, so those stay in Inbox
+// until Mike archives them himself, same as any other message.
 emailRouter.post('/messages/:id/convert', async (c) => {
   const id = c.req.param('id');
-  const body = await c.req.json<{ as: 'task' | 'note'; parentId?: string | null; dueDate?: string | null }>();
-  if (body.as !== 'task' && body.as !== 'note') return c.json({ error: 'as must be "task" or "note"' }, 400);
+  const body = await c.req.json<{ as: 'task' | 'note' | 'jot'; parentId?: string | null; dueDate?: string | null }>();
+  if (body.as !== 'task' && body.as !== 'note' && body.as !== 'jot') return c.json({ error: 'as must be "task", "note", or "jot"' }, 400);
   const found = await getMessageWithAccount(c.env, id);
   if (!found) return c.json({ error: 'not found' }, 404);
   const { message } = found;
@@ -480,6 +559,22 @@ emailRouter.post('/messages/:id/convert', async (c) => {
     )
       .bind(entityId, title, body.parentId ?? null, isTopLevel ? 1 : 0, (maxPos?.m ?? -1) + 1, body.dueDate ?? null, ts, ts, ts)
       .run();
+  } else if (body.as === 'jot') {
+    // Same shape as POST /api/jots — a title-optional type='note' row with
+    // is_jot=1, always top-level (Jots aren't nested under a project).
+    // Given a title here (the email's subject) rather than leaving it
+    // blank like a typical Keep-style jot, since "which email was this"
+    // is worth keeping visible.
+    const contentJson = JSON.stringify({
+      type: 'doc',
+      content: bodyText.split('\n').map((line) => ({ type: 'paragraph', content: line ? [{ type: 'text', text: line }] : [] })),
+    });
+    await c.env.DB.prepare(
+      `INSERT INTO entities (id, type, title, content, parent_id, is_top_level, status, position, last_touched, created_at, updated_at, search_text, is_jot)
+       VALUES (?, 'note', ?, ?, NULL, 1, NULL, 0, ?, ?, ?, ?, 1)`
+    )
+      .bind(entityId, title, contentJson, ts, ts, ts, bodyText)
+      .run();
   } else {
     const isTopLevel = !body.parentId;
     const maxPos = await c.env.DB.prepare(
@@ -499,21 +594,7 @@ emailRouter.post('/messages/:id/convert', async (c) => {
       .run();
   }
 
-  await c.env.DB.batch([
-    c.env.DB.prepare('UPDATE email_messages SET in_inbox = 0, processed_at = ?, converted_to_entity_id = ?, updated_at = ? WHERE id = ?').bind(
-      ts,
-      entityId,
-      ts,
-      id
-    ),
-    c.env.DB.prepare('INSERT INTO email_pending_actions (id, account_id, message_id, action, created_at) VALUES (?, ?, ?, ?, ?)').bind(
-      uid(),
-      found.message.account_id,
-      id,
-      'archive',
-      ts
-    ),
-  ]);
+  await c.env.DB.prepare('UPDATE email_messages SET converted_to_entity_id = ?, updated_at = ? WHERE id = ?').bind(entityId, ts, id).run();
 
   const entity = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(entityId).first();
   return c.json({ entity, entityId });
