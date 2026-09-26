@@ -10013,23 +10013,23 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
     display: none;
   }
 
-  /* table-layout: fixed with width: 100% distributes any "leftover" space
-     proportionally across every column that has an explicit width — Game
-     only looked capped before because it was the one column left on
-     width: auto, so it absorbed 100% of the leftover instead of a share of
-     it. Switching the table itself to width: auto (shrink-to-fit, sized
-     from the columns below) is what actually caps Game — any real leftover
-     just becomes blank space at the row's right edge instead of stretching
-     Game to fill it. .bets-workspace__table-wrap's overflow-x: auto is
-     still there as a safety net if a very long matchup ever pushes past
-     the viewport. */
+  /* The table fills the card's full width (width: 100%) rather than
+     shrink-to-fit — a fixed-width table left a visible gap of bare
+     background to its right on a phone, which read as broken. Pin/Time/
+     Notes below keep small explicit widths since their content is a fixed
+     size either way; Game is deliberately the one column with no width
+     set, so it's the single flexible column that absorbs whatever's left
+     after those three — on a typical phone that's still comfortably more
+     room than a team-name matchup needs, with white-space: normal so a
+     longer one wraps onto a second line instead of overflowing.
+     .bets-workspace__table-wrap's overflow-x: auto is still there as a
+     safety net regardless. */
   .bets-workspace__table {
-    width: auto;
+    width: 100%;
   }
 
   .bets-workspace__matchup-cell,
   .bets-workspace__matchup-btn {
-    width: 168px;
     white-space: normal;
     text-overflow: clip;
   }
