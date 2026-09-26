@@ -937,6 +937,38 @@ export interface VoterNamesCleanupChunkResponse {
   done: boolean;
 }
 
+// Re-parses already-imported voter_records rows' stored raw_data with the
+// current field mapping — see worker/migrations/0022_voter_record_fields.sql
+// and worker/src/index.ts's POST /api/contacts/voter-fields/backfill-chunk.
+// Also fills in the linked contact's city (or birthday/address) when still
+// blank. No preview step (unlike name cleanup) — this only ever fills in
+// blanks, never changes an existing value, so there's nothing to review
+// first.
+export interface VoterFieldsBackfillChunkResponse {
+  processed: number;
+  updated: number;
+  nextCursor: string | null;
+  done: boolean;
+}
+
+// Contacts "Ask" — rule-based natural-language query over contacts + voter
+// data (see worker/src/contactsAssistant.ts for the matching rules).
+export interface ContactAskResultEntry {
+  id: string;
+  name: string;
+  city: string | null;
+  circle: ContactCircle;
+  party: string | null;
+  voterAge: number | null;
+}
+
+export interface ContactAskResponse {
+  understood: string[]; // e.g. ["city: Bedford", "party: Republicans", "age: under 25"] — empty when nothing was recognized
+  summary: string; // e.g. "You have 79 Republicans under 25 in Bedford."
+  count: number;
+  contacts: ContactAskResultEntry[];
+}
+
 export type ContactNoteSourceType = 'quick_note' | 'jot' | 'note' | 'task';
 
 /** A single quick, unstructured note tied to a contact — the Bill-Clinton-

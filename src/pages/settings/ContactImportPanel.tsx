@@ -165,6 +165,8 @@ export function ContactImportPanel() {
   const [nameCleanup, setNameCleanup] = useState<VoterNamesPreviewResponse | null>(null);
   const [confirmingNameCleanup, setConfirmingNameCleanup] = useState(false);
   const [nameCleanupProgress, setNameCleanupProgress] = useState<{ done: number; total: number } | null>(null);
+  const [fieldsBackfillRunning, setFieldsBackfillRunning] = useState(false);
+  const [fieldsBackfillDone, setFieldsBackfillDone] = useState<number | null>(null);
   const [duplicates, setDuplicates] = useState<DuplicateCandidate[] | null>(null);
   const [mergingVoterId, setMergingVoterId] = useState<string | null>(null);
   const [showAllDuplicates, setShowAllDuplicates] = useState(false);
@@ -245,6 +247,40 @@ export function ContactImportPanel() {
       setError(String(e));
     } finally {
       setNameCleanupProgress(null);
+    }
+  }
+
+  const BACKFILL_CHUNK_SIZE = 200;
+
+  /** One-time (per newly-added field) fill-in-the-blanks pass — re-parses
+   * every already-imported voter_records row's stored raw_data with
+   * whatever the current field mapping is, updating only columns that are
+   * still blank. No preview: unlike name cleanup this never changes an
+   * existing value, so there's nothing to review before running it. Added
+   * alongside the Contacts assistant, which needs `city` populated on
+   * every already-imported voter contact to filter by town at all. */
+  async function handleBackfillVoterFields() {
+    setError(null);
+    setFieldsBackfillRunning(true);
+    setFieldsBackfillDone(0);
+    try {
+      let cursor: string | null = null;
+      let totalDone = 0;
+      let totalUpdated = 0;
+      while (true) {
+        const res = await api.backfillVoterFieldsChunk(cursor, BACKFILL_CHUNK_SIZE);
+        totalUpdated += res.updated;
+        totalDone += res.processed;
+        cursor = res.nextCursor;
+        setFieldsBackfillDone(totalDone);
+        if (res.done) break;
+      }
+      setResult(`Backfilled ${totalUpdated.toLocaleString()} voter contact${totalUpdated === 1 ? '' : 's'} — city and any other still-blank fields filled in from the original import data.`);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setFieldsBackfillRunning(false);
+      setFieldsBackfillDone(null);
     }
   }
 
@@ -496,6 +532,22 @@ export function ContactImportPanel() {
           )}
         </div>
       )}
+
+      <div className="contact-import__orphaned">
+        <h3 className="contact-import__card-title">Fill In New Voter Fields</h3>
+        <p className="contact-import__card-desc">
+          Re-reads every already-imported voter contact's original import data and fills in any field that's still
+          blank (city, most recently) — never overwrites anything already set. Safe to run any time; it's a no-op
+          once everything's filled in.
+        </p>
+        {fieldsBackfillRunning ? (
+          <span className="contact-import__review-hint">Backfilling… {(fieldsBackfillDone ?? 0).toLocaleString()} processed so far</span>
+        ) : (
+          <button type="button" className="btn btn--ghost" onClick={handleBackfillVoterFields}>
+            Fill In Missing Fields
+          </button>
+        )}
+      </div>
 
       {duplicates && duplicates.length > 0 && (
         <div className="contact-import__orphaned">

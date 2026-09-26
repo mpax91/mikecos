@@ -48,6 +48,7 @@ import { runPlexAiringCheck } from './plexAiring';
 import { emailRouter, syncAllAccounts } from './email';
 import { bookmarksRouter } from './bookmarks';
 import { cloudRouter } from './cloud';
+import { contactsAssistantRouter } from './contactsAssistant';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -75,6 +76,7 @@ app.route('/api/plex', plexRouter);
 app.route('/api/email', emailRouter);
 app.route('/api/bookmarks', bookmarksRouter);
 app.route('/api/cloud', cloudRouter);
+app.route('/api/contacts/ask', contactsAssistantRouter);
 
 // Hono's default unhandled-error response is a bare "Internal Server Error"
 // with no body — fine for not leaking internals to an outside caller, but
@@ -1185,6 +1187,11 @@ interface ParsedContactRecord {
   emails: string[];
   phones: string[];
   address: string | null;
+  // The town/city alone, when the source has one as its own column —
+  // `address` above is the combined display string, but a location filter
+  // (see contactsAssistant.ts) needs an exact value to match against, not
+  // something it has to re-parse out of "123 Main St, Bedford, NY 10506".
+  city: string | null;
   company: string | null;
   title: string | null;
   circleHint: ContactCircle | null;
@@ -1391,6 +1398,7 @@ function parseContactsCsv(text: string): ParsedContactRecord[] {
   const companyIdx = findColumn(headers, ['organization 1 name', 'company', 'organization']);
   const titleIdx = findColumn(headers, ['organization 1 title', 'title', 'job title']);
   const addressIdx = findColumn(headers, ['address 1 formatted', 'address', 'street address']);
+  const cityIdx = findColumn(headers, ['address 1 city', 'city']);
   const birthdayIdx = findColumn(headers, ['birthday']);
   const labelsIdx = findColumn(headers, ['labels', 'group membership', 'category', 'categories']);
   // Google Contacts' export numbers relation columns 1..N as separate
@@ -1423,6 +1431,7 @@ function parseContactsCsv(text: string): ParsedContactRecord[] {
       emails: emailIdx >= 0 ? splitMulti(get(emailIdx)) : [],
       phones: phoneIdx >= 0 ? splitMulti(get(phoneIdx)) : [],
       address: addressIdx >= 0 ? get(addressIdx) || null : null,
+      city: cityIdx >= 0 ? get(cityIdx) || null : null,
       company: companyIdx >= 0 ? get(companyIdx) || null : null,
       title: titleIdx >= 0 ? get(titleIdx) || null : null,
       circleHint: labelsIdx >= 0 ? circleFromLabel(splitLabels(get(labelsIdx))) : null,
@@ -1469,6 +1478,7 @@ const VOTER_HISTORY_IGNORE_HEADERS = new Set([
 type VoterFields = Pick<
   ParsedContactRecord,
   | 'address'
+  | 'city'
   | 'birthday_month'
   | 'birthday_day'
   | 'birthday_year'
@@ -1606,6 +1616,7 @@ function extractVoterFields(raw: Record<string, string>): VoterFields {
 
   return {
     address,
+    city,
     birthday_month: bday.month,
     birthday_day: bday.day,
     birthday_year: bday.year,
@@ -1695,6 +1706,7 @@ function parseVCard(text: string): ParsedContactRecord[] {
     let org = '';
     let title = '';
     let address: string | null = null;
+    let city: string | null = null;
     const emails: string[] = [];
     const phones: string[] = [];
     let categories: string[] = [];
@@ -1711,7 +1723,15 @@ function parseVCard(text: string): ParsedContactRecord[] {
       else if (key === 'TEL') phones.push(value);
       else if (key === 'ORG') org = value.split(';')[0];
       else if (key === 'TITLE') title = value;
-      else if (key === 'ADR') address = value.split(';').filter(Boolean).join(', ');
+      else if (key === 'ADR') {
+        // RFC 6350 ADR is a fixed 7-component structure: PO Box; Extended;
+        // Street; City; Region; Postal Code; Country — component index 3
+        // is always "city" when present, so this doesn't need any of the
+        // free-text parsing a combined address string would.
+        const parts = value.split(';');
+        address = parts.filter(Boolean).join(', ');
+        city = parts[3]?.trim() || null;
+      }
       else if (key === 'BDAY') bday = parseDateParts(value);
       else if (key === 'CATEGORIES') categories = splitMulti(value);
     }
@@ -1721,6 +1741,7 @@ function parseVCard(text: string): ParsedContactRecord[] {
       emails,
       phones,
       address,
+      city,
       company: org || null,
       title: title || null,
       circleHint: circleFromLabel(categories),
@@ -2022,6 +2043,7 @@ async function processDecisionChunk(
         if (!existing.company && r.company) fields.push(['company', r.company]);
         if (!existing.title && r.title) fields.push(['title', r.title]);
         if (!existing.address && r.address) fields.push(['address', r.address]);
+        if (!existing.city && r.city) fields.push(['city', r.city]);
         if (!existing.birthday_month && r.birthday_month) {
           fields.push(['birthday_month', r.birthday_month], ['birthday_day', r.birthday_day], ['birthday_year', r.birthday_year]);
         }
@@ -2059,11 +2081,11 @@ async function processDecisionChunk(
         db
           .prepare(
             `INSERT INTO contacts
-               (id, name, company, title, circle, emails, phones, address,
+               (id, name, company, title, circle, emails, phones, address, city,
                 birthday_month, birthday_day, birthday_year,
                 anniversary_month, anniversary_day, anniversary_year,
                 pinned, source, import_batch_id, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, 0, ?, ?, ?, ?)`
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, 0, ?, ?, ?, ?)`
           )
           .bind(
             contactId,
@@ -2074,6 +2096,7 @@ async function processDecisionChunk(
             JSON.stringify(r.emails),
             JSON.stringify(r.phones),
             r.address,
+            r.city,
             r.birthday_month,
             r.birthday_day,
             r.birthday_year,
@@ -2309,14 +2332,14 @@ app.post('/api/contacts/voter-fields/backfill-chunk', async (c) => {
   // batches of 50, same ID_CHUNK size the import-batch delete endpoint
   // above already uses for the same reason.
   const contactIds = [...new Set(rows.map((r) => r.contact_id))];
-  const contactsById = new Map<string, { birthday_month: number | null; address: string | null }>();
+  const contactsById = new Map<string, { birthday_month: number | null; address: string | null; city: string | null }>();
   const CONTACT_ID_CHUNK = 50;
   for (let i = 0; i < contactIds.length; i += CONTACT_ID_CHUNK) {
     const idChunk = contactIds.slice(i, i + CONTACT_ID_CHUNK);
     const placeholders = idChunk.map(() => '?').join(', ');
-    const { results: contactRows } = await c.env.DB.prepare(`SELECT id, birthday_month, address FROM contacts WHERE id IN (${placeholders})`)
+    const { results: contactRows } = await c.env.DB.prepare(`SELECT id, birthday_month, address, city FROM contacts WHERE id IN (${placeholders})`)
       .bind(...idChunk)
-      .all<{ id: string; birthday_month: number | null; address: string | null }>();
+      .all<{ id: string; birthday_month: number | null; address: string | null; city: string | null }>();
     for (const cr of contactRows ?? []) contactsById.set(cr.id, cr);
   }
 
@@ -2362,6 +2385,12 @@ app.post('/api/contacts/voter-fields/backfill-chunk', async (c) => {
       if (f.address && (!contact.address || (!hasHouseNumber(contact.address) && hasHouseNumber(f.address)))) {
         contactFields.push(['address', f.address]);
       }
+      // city is new as of this same change (extractVoterFields didn't
+      // return it before) — every already-imported voter contact is
+      // missing it, not just ones with some other bug, so this is a plain
+      // fill-if-blank like birthday, not the address column's special
+      // house-number-repair case above.
+      if (!contact.city && f.city) contactFields.push(['city', f.city]);
       if (contactFields.length > 0) {
         contactFields.push(['updated_at', ts]);
         const setClause = contactFields.map(([k]) => `${k} = ?`).join(', ');

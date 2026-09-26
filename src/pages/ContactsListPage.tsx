@@ -6,6 +6,7 @@ import { Modal } from '../components/Modal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { KebabMenu } from '../components/KebabMenu';
 import { useTabs, useReportTabMeta } from '../contexts/TabsContext';
+import { ContactsAskPanel } from './ContactsAskPanel';
 
 const CIRCLES: { value: ContactCircle; label: string }[] = [
   { value: 'family', label: 'Family' },
@@ -95,6 +96,7 @@ export function ContactsListPage() {
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [deleting, setDeleting] = useState<Contact | null>(null);
+  const [asking, setAsking] = useState(false);
 
   const load = useCallback(() => {
     api
@@ -143,15 +145,22 @@ export function ContactsListPage() {
 
   if (error) return <div className="empty-state">Couldn't load contacts: {error}</div>;
 
+  if (asking) return <ContactsAskPanel onBack={() => setAsking(false)} />;
+
   return (
     <div>
       <div className="toolbar-row">
         <h1 className="heading-serif" style={{ fontSize: 24, margin: 0 }}>
           Contacts
         </h1>
-        <button className="btn" onClick={() => setCreating(true)}>
-          + New Contact
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn--ghost" onClick={() => setAsking(true)} title="Ask a question about your contacts">
+            🔍 Ask
+          </button>
+          <button className="btn" onClick={() => setCreating(true)}>
+            + New Contact
+          </button>
+        </div>
       </div>
 
       <div className="toolbar-row" style={{ marginTop: 4, flexWrap: 'wrap', gap: 8 }}>
