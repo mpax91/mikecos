@@ -4,6 +4,7 @@ import type { BetGameEnrichment, BetGameNote, BetGameTeamSnapshot, BetPromo, Bet
 import { SPORTS, formatMoney, type SportsbookBalance } from '../utils/bets';
 import { Modal } from './Modal';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { KebabMenu } from './KebabMenu';
 
 function todayLocalISODash(): string {
   const d = new Date();
@@ -886,6 +887,10 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
   // none of that day's tipper columns have a value — Best Bets isn't
   // affected, since a pinned row isn't judged by tipper cells.
   const [tipsOnly, setTipsOnly] = useState(false);
+  // Add column/Clear All/Add Game move into a single kebab menu on phone
+  // width — the toolbar used to let this whole row scroll horizontally to
+  // reach them, which Mike didn't want on this screen at all.
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     setSchedule(null);
@@ -1203,19 +1208,37 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
                 />
               </div>
             ) : (
-              <button type="button" className="chip" onClick={() => setAddingColumn(true)}>
-                + Add column
-              </button>
+              !isMobile && (
+                <button type="button" className="chip" onClick={() => setAddingColumn(true)}>
+                  + Add column
+                </button>
+              )
             )}
           </div>
-          {notes && notes.length > 0 && (
+          {!isMobile && notes && notes.length > 0 && (
             <button type="button" className="chip" onClick={handleClearAll} title="Delete every saved note/tip/pin for this date">
               Clear All
             </button>
           )}
-          <button className="btn" onClick={() => setAdding(true)}>
-            + Add Game
-          </button>
+          {!isMobile && (
+            <button className="btn" onClick={() => setAdding(true)}>
+              + Add Game
+            </button>
+          )}
+          {/* On phone width these three collapse into one kebab — the row
+              used to let Mike swipe sideways to reach them, which he didn't
+              want on this screen; a menu keeps every action reachable
+              without any horizontal scrolling. */}
+          {isMobile && (
+            <KebabMenu
+              className="bets-workspace__mobile-menu"
+              items={[
+                { label: '+ Add column', onClick: () => setAddingColumn(true) },
+                ...(notes && notes.length > 0 ? [{ label: 'Clear All', onClick: handleClearAll, danger: true, separatorBefore: true }] : []),
+                { label: '+ Add Game', onClick: () => setAdding(true), positive: true, separatorBefore: true },
+              ]}
+            />
+          )}
         </div>
       </div>
 

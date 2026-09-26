@@ -10043,7 +10043,7 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   }
 
   .bets-workspace__table th.bets-workspace__time-th {
-    width: 42px;
+    width: 60px;
   }
 
   .bets-workspace__table th.bets-workspace__sport-th,
@@ -10055,12 +10055,13 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
     text-overflow: ellipsis;
   }
 
+  /* Wide enough for "12:35 PM" in full — it was truncating to "12:3…" at
+     the old 42px. */
   .bets-workspace__time-cell {
-    width: 42px;
+    width: 60px;
     font-size: 10px;
     padding: 4px 4px;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   /* Notes is the one thing on this row Mike actually taps repeatedly
@@ -10084,16 +10085,15 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   }
 
   /* Search and Tips-only (.bets-workspace__toolbar-primary) get used on
-     almost every visit, so they stay fixed on their own full-width row —
-     never scrolled out of view. Everything else (the date pill, Jump to
-     today, + Add column, Clear All, + Add Game — all inside
-     .bets-workspace__toolbar-pills) used to wrap to a second line the
-     moment it didn't all fit; this makes that group scroll horizontally
-     instead, one line, swipeable. Deliberately NOT snapped tightly to the
-     container edge (no scroll-snap-align flush with the last pixel) so
-     whichever chip lands at the edge is naturally cut off mid-pill rather
-     than ending flush — that partial "peek" is what tells you there's
-     more to swipe to, without needing a separate arrow/fade affordance. */
+     almost every visit, so they stay fixed on their own full-width row.
+     Everything else (the date pill, Jump to today) lives in
+     .bets-workspace__toolbar-pills — this used to make that row scroll
+     horizontally to reach + Add column/Clear All/+ Add Game, which wasn't
+     wanted on this screen at all. Those three now collapse into one kebab
+     menu on mobile (see the JSX and .bets-workspace__mobile-menu below),
+     so what's left fits on one line without needing to scroll; flex-wrap:
+     wrap stays on as a plain, no-scroll fallback in case a long "Jump to
+     today" chip ever doesn't fit next to the date pill on a narrow phone. */
   .bets-workspace__toolbar {
     flex-wrap: wrap;
   }
@@ -10119,16 +10119,11 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
     display: flex;
     align-items: center;
     gap: 8px;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scroll-snap-type: x proximity;
-    padding-bottom: 2px;
+    flex-wrap: wrap;
   }
 
-  .bets-workspace__toolbar-pills > * {
-    flex-shrink: 0;
-    scroll-snap-align: start;
+  .bets-workspace__mobile-menu {
+    margin-left: auto;
   }
 }
 
