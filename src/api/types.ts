@@ -383,6 +383,66 @@ export interface BookmarksImportResult {
   importedAt: string;
 }
 
+// ---- Cloud — a live, Windows-Explorer-style view over connected cloud
+// storage accounts (see worker/migrations/0061_cloud_storage.sql and
+// worker/src/cloudProviders/*.ts). Nothing here is cached in D1 beyond the
+// account connection itself and its quota snapshot: every browse/search
+// call reflects the provider's real, current state. ----
+
+export type CloudProviderId = 'google_drive' | 'onedrive' | 'dropbox' | 'box';
+
+export interface CloudProviderInfo {
+  id: CloudProviderId;
+  label: string;
+  configured: boolean; // whether an OAuth app has been registered for this provider yet
+  connectedCount: number;
+}
+
+export interface CloudQuota {
+  usedBytes: number;
+  totalBytes: number | null; // null = unlimited/unreported
+  checkedAt: string;
+}
+
+export interface CloudAccount {
+  id: string;
+  provider: CloudProviderId;
+  providerLabel: string;
+  label: string; // Mike's own name for the account, e.g. "Personal"
+  accountEmail: string | null;
+  icon: string;
+  color: string;
+  position: number;
+  status: 'connected' | 'error';
+  lastError: string | null;
+  quota: CloudQuota | null;
+}
+
+export interface CloudFileEntry {
+  id: string; // opaque — pass back verbatim as folderId/fileId, never parse it
+  name: string;
+  type: 'folder' | 'file';
+  sizeBytes: number | null;
+  modifiedAt: string | null;
+  mimeType: string | null;
+  webUrl: string | null; // provider's own "open" link, for View
+}
+
+export interface CloudBrowseResponse {
+  entries: CloudFileEntry[];
+}
+
+export interface CloudSearchHit extends CloudFileEntry {
+  path: string | null;
+  accountId: string;
+  accountLabel: string;
+  provider: CloudProviderId;
+}
+
+export interface CloudSearchResponse {
+  results: CloudSearchHit[];
+}
+
 // ---- Wallet (loyalty/membership/pass/gift cards — see
 // worker/migrations/0045_wallet.sql for why this is its own flat table) ----
 

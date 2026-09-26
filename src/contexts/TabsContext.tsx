@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ContextMenu, type ContextMenuItem } from '../components/ContextMenu';
 
-export type TabKind = 'today' | 'projects-list' | 'notes-list' | 'jots-list' | 'settings' | 'project' | 'folder' | 'note' | 'stats' | 'boards-list' | 'board' | 'contacts-list' | 'contact' | 'journal' | 'dashboard' | 'news' | 'links' | 'lists-list' | 'list' | 'vault-list' | 'vault' | 'vault-rollups' | 'wallet-list' | 'bets' | 'plex-list' | 'habits' | 'inbox';
+export type TabKind = 'today' | 'projects-list' | 'notes-list' | 'jots-list' | 'settings' | 'project' | 'folder' | 'note' | 'stats' | 'boards-list' | 'board' | 'contacts-list' | 'contact' | 'journal' | 'dashboard' | 'news' | 'links' | 'lists-list' | 'list' | 'vault-list' | 'vault' | 'vault-rollups' | 'wallet-list' | 'bets' | 'plex-list' | 'habits' | 'inbox' | 'cloud';
 
 export interface Tab {
   id: string;
@@ -33,6 +33,7 @@ function inferTabMeta(path: string): { kind: TabKind; title: string } {
   if (path === '/bets') return { kind: 'bets', title: 'Bets' };
   if (path === '/news' || path.startsWith('/news/')) return { kind: 'news', title: 'News' };
   if (path === '/links') return { kind: 'links', title: 'Links' };
+  if (path === '/cloud') return { kind: 'cloud', title: 'Cloud' };
   if (path === '/lists') return { kind: 'lists-list', title: 'Lists' };
   if (path.startsWith('/lists/')) return { kind: 'list', title: 'List' };
   if (path === '/vault/rollups') return { kind: 'vault-rollups', title: 'Vault Rollups' };
@@ -299,6 +300,7 @@ export function tabIcon(kind: TabKind): string {
   if (kind === 'bets') return '🎲';
   if (kind === 'news') return '📰';
   if (kind === 'links') return '🔗';
+  if (kind === 'cloud') return '☁️';
   if (kind === 'lists-list' || kind === 'list') return '☑️';
   if (kind === 'vault-list' || kind === 'vault') return '🗄️';
   if (kind === 'wallet-list') return '🎫';

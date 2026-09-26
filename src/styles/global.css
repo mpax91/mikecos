@@ -5571,6 +5571,280 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   flex-wrap: wrap;
 }
 
+/* ---- Cloud (a live view over connected cloud storage accounts) ---- */
+
+.cloud-page__search {
+  width: 100%;
+  max-width: 480px;
+  padding: 9px 14px;
+  border-radius: 8px;
+  border: var(--border-hairline);
+  background: var(--color-card-bg);
+  color: var(--color-ink);
+  font-size: 13px;
+  margin: 4px 0 18px;
+}
+
+.cloud-page__tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.cloud-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 16px;
+  border-radius: 12px;
+  border: var(--border-hairline);
+  border-top: 3px solid var(--cloud-tile-color, var(--color-accent));
+  background: var(--color-card-bg);
+  text-align: left;
+  cursor: pointer;
+}
+
+.cloud-tile:hover {
+  background: var(--color-sidebar);
+}
+
+.cloud-tile__icon {
+  font-size: 26px;
+}
+
+.cloud-tile__label {
+  font-size: 14px;
+  font-weight: var(--weight-medium);
+  color: var(--color-ink);
+}
+
+.cloud-tile__provider {
+  font-size: 11.5px;
+  color: var(--color-muted);
+  margin-bottom: 4px;
+}
+
+.cloud-tile__error {
+  font-size: 11.5px;
+  color: var(--color-accent-secondary);
+}
+
+.cloud-tile__quota {
+  width: 100%;
+  font-size: 11px;
+  color: var(--color-muted);
+}
+
+.cloud-tile__quota-bar {
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--color-sidebar);
+  overflow: hidden;
+  margin-bottom: 3px;
+}
+
+.cloud-tile__quota-fill {
+  height: 100%;
+  background: var(--cloud-tile-color, var(--color-accent));
+}
+
+.cloud-page__breadcrumbs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+.cloud-page__breadcrumbs button {
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  font: inherit;
+  color: var(--color-accent);
+  cursor: pointer;
+}
+
+.cloud-page__breadcrumbs button:disabled {
+  color: var(--color-ink);
+  font-weight: var(--weight-medium);
+  cursor: default;
+}
+
+.cloud-page__crumb-sep {
+  color: var(--color-muted);
+  margin: 0 2px;
+}
+
+.cloud-tree {
+  display: flex;
+  flex-direction: column;
+  border-top: var(--border-hairline);
+}
+
+.cloud-tree__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 6px;
+  border-bottom: var(--border-hairline);
+  background: none;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+  font: inherit;
+  text-align: left;
+  color: var(--color-ink);
+}
+
+.cloud-tree__row--folder {
+  cursor: pointer;
+}
+
+.cloud-tree__row--folder:hover {
+  background: var(--color-sidebar);
+}
+
+.cloud-tree__icon {
+  font-size: 15px;
+  flex-shrink: 0;
+}
+
+.cloud-tree__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: flex;
+  flex-direction: column;
+}
+
+.cloud-search__context {
+  font-size: 11px;
+  color: var(--color-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cloud-tree__meta {
+  font-size: 11.5px;
+  color: var(--color-muted);
+  flex-shrink: 0;
+  min-width: 60px;
+  text-align: right;
+}
+
+.cloud-tree__actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+/* ---- Settings: Cloud Storage panel ---- */
+
+.cloud-settings__providers {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.cloud-settings__provider {
+  padding-bottom: 16px;
+  border-bottom: var(--border-hairline);
+}
+
+.cloud-settings__provider-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.cloud-settings__provider-name {
+  font-size: 14px;
+  font-weight: var(--weight-medium);
+}
+
+.cloud-settings__not-configured {
+  font-size: 11px;
+  color: var(--color-muted);
+  background: var(--color-sidebar);
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.cloud-settings__account {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.cloud-settings__account-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 140px;
+}
+
+.cloud-settings__account-label {
+  font-size: 13px;
+  font-weight: var(--weight-medium);
+}
+
+.cloud-settings__account-email {
+  font-size: 11.5px;
+  color: var(--color-muted);
+}
+
+.cloud-settings__account-error {
+  font-size: 11.5px;
+  color: var(--color-accent-secondary);
+}
+
+.cloud-settings__quota {
+  flex: 1;
+  max-width: 220px;
+  font-size: 11px;
+  color: var(--color-muted);
+}
+
+.cloud-settings__quota-bar {
+  width: 100%;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--color-sidebar);
+  overflow: hidden;
+  margin-bottom: 3px;
+}
+
+.cloud-settings__quota-fill {
+  height: 100%;
+  background: var(--color-accent);
+}
+
+.cloud-settings__connect-form {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 6px;
+}
+
+.cloud-settings__connect-form input {
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: var(--border-hairline);
+  background: var(--color-card-bg);
+  color: var(--color-ink);
+  font-size: 12.5px;
+  min-width: 200px;
+}
+
 .links-page__toast {
   position: fixed;
   bottom: 22px;
@@ -7395,7 +7669,7 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   border: var(--border-hairline);
   border-radius: 6px;
   font-size: 13.5px;
-  background: var(--color-surface);
+  background: var(--color-card-bg);
 }
 
 .dashboard-page__controls {
@@ -7419,7 +7693,7 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   padding: 5px 12px;
   border: var(--border-hairline);
   border-radius: 999px;
-  background: var(--color-surface);
+  background: var(--color-card-bg);
   font-size: 12.5px;
   color: var(--color-muted);
   cursor: pointer;
@@ -7456,7 +7730,7 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   align-items: center;
   gap: 2px;
   border: var(--border-hairline);
-  background: var(--color-surface);
+  background: var(--color-card-bg);
   border-radius: 999px;
   padding: 4px 6px;
 }
@@ -8523,7 +8797,7 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 
 .bets-workspace__search:focus {
   border-color: var(--color-accent);
-  background: var(--color-surface);
+  background: var(--color-card-bg);
 }
 
 .bets-workspace__column-add-input input {
@@ -8577,7 +8851,7 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   letter-spacing: inherit;
   padding: 5px 8px;
   border: 1px solid var(--color-accent);
-  background: var(--color-surface);
+  background: var(--color-card-bg);
   color: var(--color-ink);
 }
 
@@ -8876,7 +9150,7 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 
 .bets-workspace__cell-input:focus {
   border-color: var(--color-accent);
-  background: var(--color-surface);
+  background: var(--color-card-bg);
   box-shadow: inset 0 0 0 1px var(--color-accent);
 }
 

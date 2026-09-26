@@ -61,6 +61,7 @@ const SIDEBAR_SECTIONS: NavSectionDef[] = [
       { path: '/wallet', label: 'Wallet', kind: 'wallet-list' },
       { path: '/plex', label: 'Plex', kind: 'plex-list' },
       { path: '/links', label: 'Links', kind: 'links' },
+      { path: '/cloud', label: 'Cloud', kind: 'cloud' },
       { path: '/contacts', label: 'Contacts', kind: 'contacts-list' },
     ],
   },

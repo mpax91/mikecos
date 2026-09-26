@@ -339,6 +339,27 @@ export interface Env {
   // reason: a fresh environment should still deploy, and email.ts fails
   // those specific requests with a clear error instead.
   EMAIL_ACCOUNT_ENC_KEY?: string;
+  // AES-256-GCM key (same shape/generation as the above) for Cloud
+  // Storage's access/refresh tokens — see worker/src/cloudProviders/*.ts
+  // and worker/src/cloud.ts. Optional at the type level for the same
+  // reason: a fresh environment should still deploy, and cloud.ts fails
+  // those specific requests with a clear error instead.
+  CLOUD_ACCOUNT_ENC_KEY?: string;
+  // OAuth client id/secret per Cloud Storage provider — each is a Worker
+  // secret from that provider's own developer console (Google Cloud
+  // Console, Azure AD app registrations, Dropbox App Console, Box
+  // Developer Console). All optional at the type level: a provider whose
+  // pair isn't set yet just shows "not configured" in Settings → Cloud
+  // Storage instead of the Worker failing to boot — see
+  // cloudProviders/registry.ts's `isConfigured`.
+  GOOGLE_DRIVE_CLIENT_ID?: string;
+  GOOGLE_DRIVE_CLIENT_SECRET?: string;
+  ONEDRIVE_CLIENT_ID?: string;
+  ONEDRIVE_CLIENT_SECRET?: string;
+  DROPBOX_CLIENT_ID?: string;
+  DROPBOX_CLIENT_SECRET?: string;
+  BOX_CLIENT_ID?: string;
+  BOX_CLIENT_SECRET?: string;
 }
 
 // ---- News (RSS reader) — raw D1 row shapes; see

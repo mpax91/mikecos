@@ -7,6 +7,7 @@ import { ContactImportPanel } from './settings/ContactImportPanel';
 import { UploadPanel } from './settings/UploadPanel';
 import { QuickLinksPanel } from './settings/QuickLinksPanel';
 import { BookmarksImportPanel } from './settings/BookmarksImportPanel';
+import { CloudStoragePanel } from './settings/CloudStoragePanel';
 import { WalletCategoriesPanel } from './settings/WalletCategoriesPanel';
 import { SecurityPanel } from './settings/SecurityPanel';
 import { NewsFeedsPanel } from './settings/NewsFeedsPanel';
@@ -34,6 +35,7 @@ const CATEGORIES: Category[] = [
   { id: 'recurring', label: 'Recurring Tasks', icon: '🔁' },
   { id: 'calendars', label: 'Calendar Integrations', icon: '📅' },
   { id: 'links', label: 'Links', icon: '🔗' },
+  { id: 'cloud', label: 'Cloud Storage', icon: '☁️' },
   { id: 'wallet', label: 'Wallet Categories', icon: '🎫' },
   { id: 'email-accounts', label: 'Email Accounts', icon: '📥' },
   { id: 'rewards-merchants', label: 'Rewards Merchants', icon: '🏷️' },
@@ -87,6 +89,7 @@ export function SettingsPage() {
               <BookmarksImportPanel />
             </>
           )}
+          {active === 'cloud' && <CloudStoragePanel />}
           {active === 'wallet' && <WalletCategoriesPanel />}
           {active === 'email-accounts' && <EmailAccountsPanel />}
           {active === 'rewards-merchants' && <RewardsMerchantsPanel />}

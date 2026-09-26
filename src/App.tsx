@@ -20,6 +20,7 @@ import { DashboardPage } from './pages/DashboardPage';
 import { BetsPage } from './pages/BetsPage';
 import { NewsPage } from './pages/NewsPage';
 import { LinksPage } from './pages/LinksPage';
+import { CloudPage } from './pages/CloudPage';
 import { VaultPage } from './pages/VaultPage';
 import { VaultRollupsPage } from './pages/VaultRollupsPage';
 import { WalletPage } from './pages/WalletPage';
@@ -77,6 +78,7 @@ export default function App() {
             <Route path="/bets" element={<BetsPage />} />
             <Route path="/news" element={<NewsPage />} />
             <Route path="/links" element={<LinksPage />} />
+            <Route path="/cloud" element={<CloudPage />} />
             <Route path="/vault" element={<VaultPage />} />
             <Route path="/vault/rollups" element={<VaultRollupsPage />} />
             <Route path="/vault/:id" element={<VaultPage />} />

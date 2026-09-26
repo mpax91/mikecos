@@ -1,8 +1,9 @@
 import type { Env } from './types';
 
 /** Field-level encryption, shared by every feature that stores a real
- * secret in D1 — Payment Cards' number/CVV (PAYMENT_CARD_ENC_KEY) and Email
- * Accounts' IMAP/SMTP app passwords (EMAIL_ACCOUNT_ENC_KEY). AES-256-GCM
+ * secret in D1 — Payment Cards' number/CVV (PAYMENT_CARD_ENC_KEY), Email
+ * Accounts' IMAP/SMTP app passwords (EMAIL_ACCOUNT_ENC_KEY), and Cloud
+ * Storage's OAuth access/refresh tokens (CLOUD_ACCOUNT_ENC_KEY). AES-256-GCM
  * via the platform's own Web Crypto (no dependency needed), keyed by a
  * Cloudflare Worker secret that lives only in Cloudflare's secret store,
  * never in D1 and never in this repo. Deliberately NOT derived from the
@@ -24,7 +25,9 @@ function bytesToB64(bytes: Uint8Array): string {
   return btoa(bin);
 }
 
-async function getKey(env: Env, envVarName: 'PAYMENT_CARD_ENC_KEY' | 'EMAIL_ACCOUNT_ENC_KEY'): Promise<CryptoKey> {
+type EncKeyName = 'PAYMENT_CARD_ENC_KEY' | 'EMAIL_ACCOUNT_ENC_KEY' | 'CLOUD_ACCOUNT_ENC_KEY';
+
+async function getKey(env: Env, envVarName: EncKeyName): Promise<CryptoKey> {
   const raw = env[envVarName];
   if (!raw) throw new EncryptionNotConfiguredError(envVarName);
   const cached = cachedKeys.get(envVarName);
@@ -49,22 +52,14 @@ export class EncryptionNotConfiguredError extends Error {
  * fresh random 12-byte IV every call (IVs don't need to be secret, only
  * unique per encryption under the same key, which crypto.getRandomValues
  * guarantees for all practical purposes here). */
-export async function encryptField(
-  env: Env,
-  plaintext: string,
-  envVarName: 'PAYMENT_CARD_ENC_KEY' | 'EMAIL_ACCOUNT_ENC_KEY' = 'PAYMENT_CARD_ENC_KEY'
-): Promise<string> {
+export async function encryptField(env: Env, plaintext: string, envVarName: EncKeyName = 'PAYMENT_CARD_ENC_KEY'): Promise<string> {
   const key = await getKey(env, envVarName);
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(plaintext));
   return `${bytesToB64(iv)}.${bytesToB64(new Uint8Array(ct))}`;
 }
 
-export async function decryptField(
-  env: Env,
-  stored: string,
-  envVarName: 'PAYMENT_CARD_ENC_KEY' | 'EMAIL_ACCOUNT_ENC_KEY' = 'PAYMENT_CARD_ENC_KEY'
-): Promise<string> {
+export async function decryptField(env: Env, stored: string, envVarName: EncKeyName = 'PAYMENT_CARD_ENC_KEY'): Promise<string> {
   const [ivB64, ctB64] = stored.split('.');
   if (!ivB64 || !ctB64) throw new Error('malformed encrypted field');
   const key = await getKey(env, envVarName);

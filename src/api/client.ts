@@ -1,5 +1,5 @@
 import type { AuthenticationResponseJSON, PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON, RegistrationResponseJSON } from '@simplewebauthn/browser';
-import type { AuthCredentialSummary, AuthStatus, Bet, BetLeg, BetGameNote, BetPromo, BetPromoStatus, BetScheduleGame, BetTransaction, BetTransactionType, VaultEntryDetail, VaultFact, BriefingResponse, CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, CreditScoreEntry, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitDirection, HabitEvent, HabitLog, HabitSummary, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsSavedArticle, NewsSettings, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, VaultFactLabel, VaultRollupGroup, WalletCard, WalletCardFact, WalletCategory, RewardsCard, RewardsBonus, RewardsPerk, RewardsImportResult, RewardsMerchant, RewardsOffer, PaymentCard, PaymentCardFact, PaymentCardSecrets, PlexLibrary, PlexItem, PlexItemDetail, PlexIssue, PlexMissingEpisode, PlexSyncChunkResult, PlexAiringCheckResult, PlexAiringScanChunkResult, WeatherResponse, WeekResponse, EmailAccount, EmailInboxFeed, EmailPeekResult, EmailSyncResult, BookmarksResponse, BookmarksImportResult } from './types';
+import type { AuthCredentialSummary, AuthStatus, Bet, BetLeg, BetGameNote, BetPromo, BetPromoStatus, BetScheduleGame, BetTransaction, BetTransactionType, VaultEntryDetail, VaultFact, BriefingResponse, CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, CreditScoreEntry, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitDirection, HabitEvent, HabitLog, HabitSummary, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsSavedArticle, NewsSettings, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, VaultFactLabel, VaultRollupGroup, WalletCard, WalletCardFact, WalletCategory, RewardsCard, RewardsBonus, RewardsPerk, RewardsImportResult, RewardsMerchant, RewardsOffer, PaymentCard, PaymentCardFact, PaymentCardSecrets, PlexLibrary, PlexItem, PlexItemDetail, PlexIssue, PlexMissingEpisode, PlexSyncChunkResult, PlexAiringCheckResult, PlexAiringScanChunkResult, WeatherResponse, WeekResponse, EmailAccount, EmailInboxFeed, EmailPeekResult, EmailSyncResult, BookmarksResponse, BookmarksImportResult, CloudProviderId, CloudProviderInfo, CloudAccount, CloudBrowseResponse, CloudSearchResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -610,6 +610,32 @@ export const api = {
   },
 
   clearBookmarks: () => request<{ ok: true }>('/api/bookmarks', { method: 'DELETE' }),
+
+  // ---- Cloud (a live view over connected cloud storage accounts — see
+  // worker/migrations/0061_cloud_storage.sql and worker/src/cloud.ts) ----
+
+  listCloudProviders: () => request<CloudProviderInfo[]>('/api/cloud/providers'),
+
+  listCloudAccounts: () => request<CloudAccount[]>('/api/cloud/accounts'),
+
+  // Not a fetch — this navigates the browser to the Worker, which redirects
+  // on to the provider's own consent screen. returnOrigin lets the Worker's
+  // callback bounce back to wherever the frontend is actually running
+  // (mikeos.pages.dev in prod, localhost in dev) without hardcoding either.
+  startCloudConnect: (provider: CloudProviderId, label: string) => {
+    const params = new URLSearchParams({ label, returnOrigin: window.location.origin });
+    window.location.href = `${API_BASE}/api/cloud/${provider}/oauth/start?${params}`;
+  },
+
+  disconnectCloudAccount: (id: string) => request<{ ok: true }>(`/api/cloud/accounts/${id}`, { method: 'DELETE' }),
+
+  browseCloud: (accountId: string, folderId: string | null) =>
+    request<CloudBrowseResponse>(`/api/cloud/accounts/${accountId}/browse${folderId ? `?folderId=${encodeURIComponent(folderId)}` : ''}`),
+
+  searchCloud: (q: string) => request<CloudSearchResponse>(`/api/cloud/search?q=${encodeURIComponent(q)}`),
+
+  cloudDownloadUrl: (accountId: string, fileId: string, name: string) =>
+    `${API_BASE}/api/cloud/accounts/${accountId}/download?fileId=${encodeURIComponent(fileId)}&name=${encodeURIComponent(name)}`,
 
   // ---- Canvas boards (infinite-canvas pinboard) ----
 
