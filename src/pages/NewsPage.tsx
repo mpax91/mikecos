@@ -585,27 +585,32 @@ function ArticleRow({
           <div className="news-article-card__title">{article.title}</div>
           {article.description && <div className="news-article-card__desc">{article.description}</div>}
         </div>
+        {/* A tiny icon-only button here (just a ●/○ dot) reads fine once you
+            know it's there, but the tooltip ("Mark read") is the only place
+            that word actually appears — a click aimed at where that label
+            implies a button should be, rather than the dot itself, falls
+            through to the card underneath and opens the article instead.
+            Real visible text removes the ambiguity: there's no invisible
+            target to miss. */}
         <div className="news-article-card__actions">
           <button
-            className="btn btn--icon"
-            title={article.is_read ? 'Mark unread' : 'Mark read'}
+            className="btn btn--ghost btn--sm news-article-card__action-btn"
             onClick={(e) => {
               e.stopPropagation();
               commitReadAction(!article.is_read);
             }}
           >
-            {article.is_read ? '○' : '●'}
+            {article.is_read ? '○ Mark Unread' : '● Mark Read'}
           </button>
           <button
-            className="btn btn--icon"
-            title="Save"
+            className="btn btn--ghost btn--sm news-article-card__action-btn"
             disabled={article.is_saved}
             onClick={(e) => {
               e.stopPropagation();
               onSave(article);
             }}
           >
-            {article.is_saved ? '★' : '☆'}
+            {article.is_saved ? '★ Saved' : '☆ Save'}
           </button>
         </div>
       </div>

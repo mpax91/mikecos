@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
-import type { Entity, MeetingItem, StatsResponse, TodayResponse, TodayTask, TopNewsItem, WeatherDay } from '../api/types';
+import type { CompletionItem, Entity, MeetingItem, StatsResponse, TodayResponse, TodayTask, TopNewsItem, WeatherDay } from '../api/types';
 import { TaskRow } from '../components/TaskRow';
 import { TaskDetailModal } from '../components/TaskDetailModal';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -239,6 +239,19 @@ export function TodayPage() {
         : prev
     );
     await api.updateEntity(task.id, { status: 'done' });
+    load();
+    loadStats();
+  }
+
+  // Unchecking something already marked done — a correction, same as
+  // TaskRow's own instant (no animation) uncheck path elsewhere. Reopening
+  // can move the task to a different bucket than "today's completed" (back
+  // into Overdue if its due date has passed, into today's open list, or off
+  // this page entirely if it's not due today at all) so this reloads from
+  // the server rather than trying to patch it into the right list locally.
+  async function reopenTask(completion: CompletionItem) {
+    setData((prev) => (prev ? { ...prev, completed: prev.completed.filter((c) => c.id !== completion.id) } : prev));
+    await api.updateEntity(completion.entity_id, { status: 'open' });
     load();
     loadStats();
   }
@@ -511,14 +524,20 @@ export function TodayPage() {
                   bottom of the same list rather than just vanishing (or
                   living in a separate section below) — matches how Week
                   view already shows a day's completions inline in its
-                  column. Read-only row (checked checkbox, no toggle/pin/
-                  delete) since un-completing isn't a thing this list
-                  supports; clicking still opens the same task-detail modal
-                  every other row here does, since a completed task can
-                  still carry a description or attachments worth seeing. */}
+                  column. Unchecking reopens the task (see reopenTask) same
+                  as unchecking anywhere else in the app; clicking the row
+                  itself still opens the same task-detail modal every other
+                  row here does, since a completed task can still carry a
+                  description or attachments worth seeing. */}
               {completed.map((t) => (
                 <div key={t.id} className="task-row" onClick={() => setTaskStack([t.entity_id])}>
-                  <input type="checkbox" checked readOnly className="task-row__checkbox" onClick={(e) => e.stopPropagation()} />
+                  <input
+                    type="checkbox"
+                    checked
+                    onChange={() => reopenTask(t)}
+                    onClick={(e) => e.stopPropagation()}
+                    className="task-row__checkbox"
+                  />
                   <span className="task-row__title is-done">{t.title || 'Untitled Task'}</span>
                 </div>
               ))}

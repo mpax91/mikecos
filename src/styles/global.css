@@ -10632,17 +10632,17 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   flex-direction: column;
   gap: 6px;
   align-self: flex-start;
+  align-items: stretch;
 }
 
-/* Mark-read/Save were sized for the whole app's default icon button (a
-   ~23px box) — fine on touch, where the coarse-pointer rule below already
-   widens the hit area, but on desktop a mouse click a couple pixels off
-   that box lands on the card underneath instead and opens the article,
-   which reads as "the mark-read button doesn't work." Give these two a
-   bigger hit target on every pointer type, not just coarse ones. */
-.news-article-card__actions .btn--icon {
-  min-width: 32px;
-  min-height: 32px;
+/* Labeled pill buttons (real "Mark Read"/"Save" text, not just a ●/○ or
+   ★/☆ glyph) — a bare icon's hit target can be widened, but the click
+   still has to land exactly on a few invisible pixels, and a miss falls
+   through to the card underneath and opens the article. Text removes the
+   ambiguity: the whole visible label is the clickable thing. */
+.news-article-card__action-btn {
+  white-space: nowrap;
+  justify-content: center;
 }
 
 .news-article-card__actions--saved {
@@ -10882,6 +10882,22 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
     height: 68px;
   }
 
+  /* The Mark Read/Save buttons went from a narrow icon column to real
+     text labels (see news-article-card__action-btn) — wide enough now
+     that squeezing them into their old vertical sliver next to the body
+     on a phone-width row would crowd the title. Same fix as the Saved
+     row just below: wrap them onto their own full-width row instead. */
+  .news-article-card {
+    flex-wrap: wrap;
+  }
+
+  .news-article-card__actions {
+    flex: 1 1 100%;
+    flex-direction: row;
+    justify-content: flex-end;
+    margin-top: 4px;
+  }
+
   /* Saved's row of 3 actions ("→ Jots", "→ Notes", ✕) is wide enough,
      laid out inline, to eat most of a phone-width row on its own — the
      body (flex: 1; min-width: 0) had nowhere left to go and got squeezed
@@ -10963,11 +10979,6 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   .btn--icon {
     min-width: 34px;
     min-height: 34px;
-  }
-
-  .news-article-card__actions .btn--icon {
-    min-width: 38px;
-    min-height: 38px;
   }
 
   /* iOS Safari zooms the whole page in when a focused input's computed
