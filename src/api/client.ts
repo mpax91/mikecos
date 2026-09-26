@@ -59,6 +59,13 @@ function resolvePaymentCard(card: PaymentCard): PaymentCard {
   return withFront.backArtUrl && !/^https?:\/\//i.test(withFront.backArtUrl) ? { ...withFront, backArtUrl: `${API_BASE}${withFront.backArtUrl}` } : withFront;
 }
 
+// Same fix, for an Email Account's uploaded icon image.
+function resolveEmailAccount(account: EmailAccount): EmailAccount {
+  return account.iconImageUrl && !/^https?:\/\//i.test(account.iconImageUrl)
+    ? { ...account, iconImageUrl: `${API_BASE}${account.iconImageUrl}` }
+    : account;
+}
+
 export const api = {
   listProjects: () => request<ProjectListItem[]>('/api/projects'),
 
@@ -1173,19 +1180,20 @@ export const api = {
 
   // ---- Inbox ----
 
-  listEmailAccounts: () => request<EmailAccount[]>('/api/email/accounts'),
+  listEmailAccounts: () => request<EmailAccount[]>('/api/email/accounts').then((accounts) => accounts.map(resolveEmailAccount)),
 
   createEmailAccount: (data: {
     label: string;
     email: string;
     appPassword: string;
     icon?: string;
+    iconImageKey?: string | null;
     color?: string;
     imapHost?: string;
     imapPort?: number;
     smtpHost?: string;
     smtpPort?: number;
-  }) => request<EmailAccount>('/api/email/accounts', { method: 'POST', body: JSON.stringify(data) }),
+  }) => request<EmailAccount>('/api/email/accounts', { method: 'POST', body: JSON.stringify(data) }).then(resolveEmailAccount),
 
   updateEmailAccount: (
     id: string,
@@ -1194,6 +1202,7 @@ export const api = {
       email: string;
       appPassword: string;
       icon: string;
+      iconImageKey: string | null;
       color: string;
       active: boolean;
       imapHost: string;
@@ -1202,7 +1211,7 @@ export const api = {
       smtpPort: number;
       position: number;
     }>
-  ) => request<EmailAccount>(`/api/email/accounts/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  ) => request<EmailAccount>(`/api/email/accounts/${id}`, { method: 'PATCH', body: JSON.stringify(data) }).then(resolveEmailAccount),
 
   deleteEmailAccount: (id: string) => request<{ ok: true }>(`/api/email/accounts/${id}`, { method: 'DELETE' }),
 
@@ -1211,7 +1220,10 @@ export const api = {
   syncEmailNow: () => request<EmailSyncResult>('/api/email/sync', { method: 'POST' }),
 
   getInboxFeed: (accountId?: string) =>
-    request<EmailInboxFeed>(`/api/email/inbox${accountId ? `?account_id=${encodeURIComponent(accountId)}` : ''}`),
+    request<EmailInboxFeed>(`/api/email/inbox${accountId ? `?account_id=${encodeURIComponent(accountId)}` : ''}`).then((feed) => ({
+      ...feed,
+      accounts: feed.accounts.map((a) => resolveEmailAccount(a) as typeof a),
+    })),
 
   archiveEmail: (id: string) => request<{ ok: true }>(`/api/email/messages/${id}/archive`, { method: 'POST' }),
 

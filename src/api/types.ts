@@ -1856,6 +1856,8 @@ export interface EmailAccount {
   smtp_host: string;
   smtp_port: number;
   icon: string;
+  icon_image_key: string | null;
+  iconImageUrl: string | null;
   color: string;
   position: number;
   active: number;

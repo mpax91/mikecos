@@ -97,7 +97,7 @@ export function InboxWidget() {
         <div className="inbox-widget__row-main" onClick={() => togglePeek(m)}>
           {!activeAccount && account && (
             <span className="inbox-widget__row-account" style={{ color: account.color }} title={account.label}>
-              {account.icon}
+              {account.iconImageUrl ? <img src={account.iconImageUrl} alt="" className="inbox-widget__row-account-img" /> : account.icon}
             </span>
           )}
           <div className="inbox-widget__row-text">
@@ -183,7 +183,12 @@ export function InboxWidget() {
               onClick={() => setActiveAccount(a.id)}
               title={a.label}
             >
-              <span style={{ color: a.color }}>{a.icon}</span> {a.label}
+              {a.iconImageUrl ? (
+                <img src={a.iconImageUrl} alt="" className="inbox-widget__tab-img" />
+              ) : (
+                <span style={{ color: a.color }}>{a.icon}</span>
+              )}{' '}
+              {a.label}
               {a.newCount + a.needsProcessingCount > 0 && <span className="inbox-widget__tab-badge">{a.newCount + a.needsProcessingCount}</span>}
             </button>
           ))}

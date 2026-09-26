@@ -24,6 +24,7 @@ interface EmailAccountRow {
   smtp_host: string;
   smtp_port: number;
   icon: string;
+  icon_image_key: string | null;
   color: string;
   position: number;
   active: number;
@@ -58,7 +59,7 @@ function accountJson(row: EmailAccountRow) {
   // app_password_enc deliberately never leaves the server — once set, the
   // Settings UI can only overwrite it, never read it back.
   const { app_password_enc: _enc, ...rest } = row;
-  return rest;
+  return { ...rest, iconImageUrl: row.icon_image_key ? `/api/files/${row.icon_image_key}` : null };
 }
 
 // ---- Accounts (Settings → Email Accounts) ----
@@ -74,6 +75,7 @@ emailRouter.post('/accounts', async (c) => {
     email: string;
     appPassword: string;
     icon?: string;
+    iconImageKey?: string | null;
     color?: string;
     imapHost?: string;
     imapPort?: number;
@@ -95,8 +97,8 @@ emailRouter.post('/accounts', async (c) => {
   const id = uid();
   const ts = now();
   await c.env.DB.prepare(
-    `INSERT INTO email_accounts (id, label, email, app_password_enc, imap_host, imap_port, smtp_host, smtp_port, icon, color, position, active, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`
+    `INSERT INTO email_accounts (id, label, email, app_password_enc, imap_host, imap_port, smtp_host, smtp_port, icon, icon_image_key, color, position, active, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`
   )
     .bind(
       id,
@@ -108,6 +110,7 @@ emailRouter.post('/accounts', async (c) => {
       body.smtpHost?.trim() || 'smtp.gmail.com',
       body.smtpPort ?? 465,
       body.icon?.trim() || '📧',
+      body.iconImageKey || null,
       body.color?.trim() || '#2F4A3C',
       (maxPos?.m ?? -1) + 1,
       ts,
@@ -125,6 +128,7 @@ emailRouter.patch('/accounts/:id', async (c) => {
     email?: string;
     appPassword?: string;
     icon?: string;
+    iconImageKey?: string | null;
     color?: string;
     active?: boolean;
     imapHost?: string;
@@ -145,6 +149,13 @@ emailRouter.patch('/accounts/:id', async (c) => {
   if (body.label !== undefined) set('label', body.label.trim());
   if (body.email !== undefined) set('email', body.email.trim());
   if (body.icon !== undefined) set('icon', body.icon.trim());
+  // Swapping to a new image (or clearing it) orphans the old R2 object —
+  // clean it up the same way payment_cards.cover_art_key does, rather than
+  // leaking storage every time Mike changes an account's icon.
+  if (body.iconImageKey !== undefined && existing.icon_image_key && existing.icon_image_key !== body.iconImageKey) {
+    await c.env.FILES.delete(existing.icon_image_key).catch(() => {});
+  }
+  if (body.iconImageKey !== undefined) set('icon_image_key', body.iconImageKey || null);
   if (body.color !== undefined) set('color', body.color.trim());
   if (body.active !== undefined) set('active', body.active ? 1 : 0);
   if (body.imapHost !== undefined) set('imap_host', body.imapHost.trim());
@@ -172,6 +183,8 @@ emailRouter.patch('/accounts/:id', async (c) => {
 
 emailRouter.delete('/accounts/:id', async (c) => {
   const id = c.req.param('id');
+  const existing = await c.env.DB.prepare('SELECT icon_image_key FROM email_accounts WHERE id = ?').bind(id).first<{ icon_image_key: string | null }>();
+  if (existing?.icon_image_key) await c.env.FILES.delete(existing.icon_image_key).catch(() => {});
   await c.env.DB.batch([
     c.env.DB.prepare('DELETE FROM email_pending_actions WHERE account_id = ?').bind(id),
     c.env.DB.prepare('DELETE FROM email_messages WHERE account_id = ?').bind(id),

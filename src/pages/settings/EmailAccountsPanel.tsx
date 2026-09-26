@@ -10,10 +10,20 @@ interface FormState {
   email: string;
   appPassword: string;
   icon: string;
+  iconImageKey: string | null;
+  iconImageUrl: string | null;
   color: string;
 }
 
-const EMPTY_FORM: FormState = { label: '', email: '', appPassword: '', icon: '📧', color: '#2F4A3C' };
+const EMPTY_FORM: FormState = {
+  label: '',
+  email: '',
+  appPassword: '',
+  icon: '📧',
+  iconImageKey: null,
+  iconImageUrl: null,
+  color: '#2F4A3C',
+};
 // A handful of distinct icons/colors to suggest per new account, cycled by
 // how many accounts already exist — mostly so Mike doesn't have to think of
 // one every time, not a hard rule (both fields are freely editable).
@@ -26,7 +36,15 @@ const SUGGESTED: { icon: string; color: string }[] = [
 ];
 
 function formFromAccount(a: EmailAccount): FormState {
-  return { label: a.label, email: a.email, appPassword: '', icon: a.icon, color: a.color };
+  return {
+    label: a.label,
+    email: a.email,
+    appPassword: '',
+    icon: a.icon,
+    iconImageKey: a.icon_image_key,
+    iconImageUrl: a.iconImageUrl,
+    color: a.color,
+  };
 }
 
 /** Settings' management screen for Inbox's connected mailboxes. Each
@@ -48,6 +66,8 @@ export function EmailAccountsPanel() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [testingId, setTestingId] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<{ id: string; ok: boolean; error?: string } | null>(null);
+  const [uploadingIcon, setUploadingIcon] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   function load() {
     api
@@ -88,6 +108,7 @@ export function EmailAccountsPanel() {
         email: form.email.trim(),
         appPassword: form.appPassword.trim(),
         icon: form.icon.trim() || undefined,
+        iconImageKey: form.iconImageKey,
         color: form.color.trim() || undefined,
       });
       setAdding(false);
@@ -108,6 +129,7 @@ export function EmailAccountsPanel() {
         label: form.label.trim(),
         email: form.email.trim(),
         icon: form.icon.trim() || undefined,
+        iconImageKey: form.iconImageKey,
         color: form.color.trim() || undefined,
         // Only overwrite the stored app password if a new one was typed —
         // leaving the field blank keeps the existing one.
@@ -119,6 +141,20 @@ export function EmailAccountsPanel() {
       setSaveError(String(e));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleIconFile(file: File | undefined) {
+    if (!file) return;
+    setUploadingIcon(true);
+    setUploadError(null);
+    try {
+      const res = await api.uploadInline(file);
+      setForm((f) => ({ ...f, iconImageKey: res.r2_key, iconImageUrl: res.url }));
+    } catch (e) {
+      setUploadError(String(e));
+    } finally {
+      setUploadingIcon(false);
     }
   }
 
@@ -160,15 +196,47 @@ export function EmailAccountsPanel() {
             value={form.label}
             onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))}
           />
-          <input
-            placeholder="Icon (emoji)"
-            value={form.icon}
-            maxLength={4}
-            style={{ maxWidth: 100 }}
-            onChange={(e) => setForm((f) => ({ ...f, icon: e.target.value }))}
-          />
           <input type="color" value={form.color} onChange={(e) => setForm((f) => ({ ...f, color: e.target.value }))} style={{ width: 44, padding: 2 }} />
         </div>
+        <div className="settings-page__form-row settings-page__icon-row">
+          {form.iconImageUrl ? (
+            <img src={form.iconImageUrl} alt="" className="settings-page__icon-preview" />
+          ) : (
+            <span className="settings-page__icon-preview settings-page__icon-preview--emoji" style={{ color: form.color }}>
+              {form.icon || '📧'}
+            </span>
+          )}
+          <div className="settings-page__icon-controls">
+            <label className="btn btn--ghost btn--sm settings-page__icon-upload">
+              {uploadingIcon ? 'Uploading…' : form.iconImageUrl ? 'Replace image' : 'Upload image'}
+              <input
+                type="file"
+                accept="image/*"
+                hidden
+                disabled={uploadingIcon}
+                onChange={(e) => handleIconFile(e.target.files?.[0])}
+              />
+            </label>
+            {form.iconImageUrl ? (
+              <button
+                type="button"
+                className="btn btn--ghost btn--sm"
+                onClick={() => setForm((f) => ({ ...f, iconImageKey: null, iconImageUrl: null }))}
+              >
+                Remove image
+              </button>
+            ) : (
+              <input
+                placeholder="or type an emoji"
+                value={form.icon}
+                maxLength={4}
+                style={{ maxWidth: 130 }}
+                onChange={(e) => setForm((f) => ({ ...f, icon: e.target.value }))}
+              />
+            )}
+          </div>
+        </div>
+        {uploadError && <div className="settings-page__rrule-error">{uploadError}</div>}
         <div className="settings-page__form-row">
           <input
             placeholder="you@gmail.com"
@@ -221,7 +289,12 @@ export function EmailAccountsPanel() {
             <div className="manage-row" key={a.id}>
               <div className="manage-row__body" onClick={() => openEdit(a)}>
                 <div className="manage-row__title">
-                  <span style={{ color: a.color }}>{a.icon}</span> {a.label}
+                  {a.iconImageUrl ? (
+                    <img src={a.iconImageUrl} alt="" className="settings-page__icon-thumb" />
+                  ) : (
+                    <span style={{ color: a.color }}>{a.icon}</span>
+                  )}{' '}
+                  {a.label}
                   {!a.active && <span className="settings-page__archived-tag"> · paused</span>}
                 </div>
                 <div className="settings-page__section-hint" style={{ margin: 0 }}>
