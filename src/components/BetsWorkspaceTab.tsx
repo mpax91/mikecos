@@ -315,6 +315,19 @@ function TeamSnapshotCard({ team }: { team: BetGameTeamSnapshot }) {
         </div>
       )}
 
+      {team.probableGoalie && (
+        <div className="bets-workspace__handicap-pitcher">
+          <span className="bets-workspace__handicap-pitcher-name">{team.probableGoalie.name}</span>
+          {(team.probableGoalie.wins != null || team.probableGoalie.losses != null || team.probableGoalie.gaa != null) && (
+            <span className="text-muted">
+              {team.probableGoalie.wins ?? '0'}-{team.probableGoalie.losses ?? '0'}
+              {team.probableGoalie.gaa != null ? `, ${team.probableGoalie.gaa} GAA` : ''}
+              {team.probableGoalie.savePct != null ? `, ${team.probableGoalie.savePct} SV%` : ''}
+            </span>
+          )}
+        </div>
+      )}
+
       {team.record.overall && (
         <div className="bets-workspace__handicap-stat-row">
           <span>{team.record.overall}</span>

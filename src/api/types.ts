@@ -996,6 +996,14 @@ export interface BetGameProbablePitcher {
   strikeouts: string | null;
 }
 
+export interface BetGameProbableGoalie {
+  name: string;
+  gaa: string | null;
+  savePct: string | null;
+  wins: string | null;
+  losses: string | null;
+}
+
 export interface BetGameRecentGame {
   date: string | null;
   opponent: string | null;
@@ -1013,6 +1021,7 @@ export interface BetGameTeamSnapshot {
   injuries: BetGameInjury[]; // already filtered server-side to game-time-decision-ish statuses — see betsEnrichment.ts
   topPerformers: BetGameTopPerformer[];
   probablePitcher: BetGameProbablePitcher | null; // MLB only
+  probableGoalie: BetGameProbableGoalie | null; // NHL only
   recentForm: { record: string | null; games: BetGameRecentGame[] }; // straight W/L, most recent first
 }
 

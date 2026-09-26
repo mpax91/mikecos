@@ -246,6 +246,17 @@ interface EspnPredictor {
   awayTeam?: { id?: string; gameProjection?: string };
 }
 
+// NHL's starting-goalie equivalent of MLB's probable pitcher — a separate
+// top-level field (not under header.competitions[].probables the way
+// baseball's is), keyed by homeTeam/awayTeam rather than a homeAway string.
+interface EspnGoalieTeam {
+  athletes?: { displayName?: string; statistics?: EspnStatCategory[] }[];
+}
+interface EspnGoalies {
+  homeTeam?: EspnGoalieTeam;
+  awayTeam?: EspnGoalieTeam;
+}
+
 interface EspnSummary {
   gameInfo?: {
     venue?: { fullName?: string; indoor?: boolean; address?: { city?: string; state?: string } };
@@ -258,6 +269,7 @@ interface EspnSummary {
   seasonseries?: EspnSeasonSeriesEntry[];
   lastFiveGames?: EspnLastFiveTeam[];
   predictor?: EspnPredictor;
+  goalies?: EspnGoalies;
 }
 
 // Only these read as "up in the air" — a real game-time-decision — as
@@ -296,6 +308,18 @@ function probablePitcherFor(competitors: EspnHeaderCompetitor[] | undefined, hom
     losses: statCategoryValue(categories, 'losses'),
     era: statCategoryValue(categories, 'ERA'),
     strikeouts: statCategoryValue(categories, 'strikeouts'),
+  };
+}
+
+function probableGoalieFor(goalies: EspnGoalies | undefined, homeAway: 'home' | 'away') {
+  const athlete = (homeAway === 'home' ? goalies?.homeTeam : goalies?.awayTeam)?.athletes?.[0];
+  if (!athlete?.displayName) return null;
+  return {
+    name: athlete.displayName,
+    gaa: statCategoryValue(athlete.statistics, 'avgGoalsAgainst'),
+    savePct: statCategoryValue(athlete.statistics, 'savePct'),
+    wins: statCategoryValue(athlete.statistics, 'wins'),
+    losses: statCategoryValue(athlete.statistics, 'losses'),
   };
 }
 
@@ -354,6 +378,7 @@ interface TeamSnapshot {
   injuries: { player: string; position: string | null; status: string; detail: string | null }[];
   topPerformers: { category: string; player: string; stat: string }[];
   probablePitcher: { name: string; throws: string | null; wins: string | null; losses: string | null; era: string | null; strikeouts: string | null } | null;
+  probableGoalie: { name: string; gaa: string | null; savePct: string | null; wins: string | null; losses: string | null } | null;
   recentForm: { record: string | null; games: { date: string | null; opponent: string | null; atVs: string | null; result: 'W' | 'L' | null; score: string | null }[] };
 }
 
@@ -362,6 +387,7 @@ async function fetchTeamSnapshot(
   teamId: string,
   injuryEntry: EspnInjuryTeam | undefined,
   probablePitcher: TeamSnapshot['probablePitcher'],
+  probableGoalie: TeamSnapshot['probableGoalie'],
   recentForm: TeamSnapshot['recentForm']
 ): Promise<TeamSnapshot | null> {
   const data = await fetchEspnJson<EspnTeamResponse>(`https://site.web.api.espn.com/apis/site/v2/sports/${sportPath}/teams/${teamId}`);
@@ -391,6 +417,7 @@ async function fetchTeamSnapshot(
       })),
     topPerformers: [], // filled in by the caller once the abbreviation is known — see topPerformersFor below
     probablePitcher,
+    probableGoalie,
     recentForm,
   };
 }
@@ -435,6 +462,7 @@ betsEnrichmentRouter.get('/', async (c) => {
       resolved.homeTeamId,
       homeInjuries,
       probablePitcherFor(headerCompetitors, 'home'),
+      probableGoalieFor(summary?.goalies, 'home'),
       recentFormFor(summary?.lastFiveGames, resolved.homeTeamId)
     ),
     fetchTeamSnapshot(
@@ -442,6 +470,7 @@ betsEnrichmentRouter.get('/', async (c) => {
       resolved.awayTeamId,
       awayInjuries,
       probablePitcherFor(headerCompetitors, 'away'),
+      probableGoalieFor(summary?.goalies, 'away'),
       recentFormFor(summary?.lastFiveGames, resolved.awayTeamId)
     ),
   ]);
