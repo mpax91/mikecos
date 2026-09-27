@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../../api/client';
-import type { NewsFeed } from '../../api/types';
+import type { NewsFeed, NewsFolder } from '../../api/types';
 import { ConfirmModal } from '../../components/ConfirmModal';
 
 const AUTO_READ_DEFAULT_HOURS = 48;
@@ -22,6 +22,16 @@ export function NewsFeedsPanel() {
   const [editing, setEditing] = useState<Record<string, { title: string; folder: string }>>({});
   const [confirmDelete, setConfirmDelete] = useState<NewsFeed | null>(null);
 
+  // Folder order — see worker/migrations/0064_news_folders.sql. `folders`
+  // is just the ordered list of names /api/news/folders returns (already
+  // sorted: explicitly-positioned ones first, everything else alphabetical
+  // after them); reordering swaps two entries locally and PUTs the whole
+  // list back, rather than tracking sortOrder per-row like Wallet
+  // Categories does — folder names aren't real rows anywhere else, so
+  // there's no id to key a partial update off of.
+  const [folders, setFolders] = useState<NewsFolder[] | null>(null);
+  const [reorderingFolders, setReorderingFolders] = useState(false);
+
   // Auto-mark-as-read: articles older than this many hours silently clear
   // out of the unread feed on their own. `autoReadEnabled` toggles the
   // checkbox; `autoReadHours` is the number field, only meaningful while
@@ -42,13 +52,35 @@ export function NewsFeedsPanel() {
       .catch((e) => setError(String(e)));
   }
 
+  function loadFolders() {
+    api.listNewsFolders().then(setFolders);
+  }
+
   useEffect(() => {
     load();
+    loadFolders();
     api.getNewsSettings().then((s) => {
       setAutoReadEnabled(s.auto_read_hours != null);
       if (s.auto_read_hours != null) setAutoReadHours(s.auto_read_hours);
     });
   }, []);
+
+  async function moveFolder(folder: NewsFolder, dir: -1 | 1) {
+    if (!folders) return;
+    const i = folders.findIndex((f) => f.name === folder.name);
+    const j = i + dir;
+    if (j < 0 || j >= folders.length) return;
+    const next = [...folders];
+    [next[i], next[j]] = [next[j], next[i]];
+    setReorderingFolders(true);
+    setFolders(next);
+    try {
+      await api.reorderNewsFolders(next.map((f) => f.name));
+      load(); // feed folder-groups on the News page follow this same order
+    } finally {
+      setReorderingFolders(false);
+    }
+  }
 
   useEffect(
     () => () => {
@@ -91,6 +123,7 @@ export function NewsFeedsPanel() {
         setFolder('');
       }
       load();
+      loadFolders();
     } catch (err) {
       setAddError(err instanceof Error ? err.message : 'Could not add that feed.');
     } finally {
@@ -112,12 +145,14 @@ export function NewsFeedsPanel() {
       return next;
     });
     load();
+    loadFolders();
   }
 
   async function deleteFeed(feed: NewsFeed) {
     await api.deleteNewsFeed(feed.id);
     setConfirmDelete(null);
     load();
+    loadFolders();
   }
 
   if (error) return <div className="empty-state">Couldn't load feeds: {error}</div>;
@@ -148,6 +183,42 @@ export function NewsFeedsPanel() {
         hours
       </label>
       {!autoReadSaved && <p className="settings-page__section-hint">Saving…</p>}
+
+      <div className="toolbar-row" style={{ marginTop: 28 }}>
+        <h2 className="settings-page__section-title">Folder Order</h2>
+      </div>
+      <p className="settings-page__section-hint">
+        Controls where each folder sits underneath "All" in News' sidebar. Uncategorized always sorts last and isn't
+        listed here.
+      </p>
+      {!folders ? (
+        <p className="settings-page__section-hint">Loading…</p>
+      ) : folders.length === 0 ? (
+        <p className="settings-page__section-hint">No folders yet — give a feed below a folder name to create one.</p>
+      ) : (
+        <div className="manage-list">
+          {folders.map((f, i) => (
+            <div className="manage-row" key={f.name}>
+              <div className="manage-row__move">
+                <button type="button" disabled={i === 0 || reorderingFolders} onClick={() => moveFolder(f, -1)} title="Move up">
+                  ▲
+                </button>
+                <button
+                  type="button"
+                  disabled={i === folders.length - 1 || reorderingFolders}
+                  onClick={() => moveFolder(f, 1)}
+                  title="Move down"
+                >
+                  ▼
+                </button>
+              </div>
+              <div className="manage-row__body">
+                <div className="manage-row__title">{f.name}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="toolbar-row" style={{ marginTop: 28 }}>
         <h2 className="settings-page__section-title">News Feeds</h2>

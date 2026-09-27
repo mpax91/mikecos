@@ -5205,14 +5205,55 @@ async function refreshFeed(env: Env, feed: NewsFeedRow, force = false): Promise<
 
 app.get('/api/news/feeds', async (c) => {
   await applyNewsAutoRead(c.env);
+  // Folders with an explicit position (news_folders, set via Settings'
+  // "Folder Order") sort by that first; any folder Mike hasn't reordered
+  // yet falls back to alphabetical, same as before this existed — and
+  // Uncategorized (folder IS NULL) always sorts last regardless.
   const { results } = await c.env.DB.prepare(
     `SELECT f.*, (
        SELECT COUNT(*) FROM news_articles a
        WHERE a.feed_id = f.id AND a.id NOT IN (SELECT article_id FROM news_read)
      ) as unread_count
-     FROM news_feeds f ORDER BY f.folder IS NULL, f.folder ASC, f.position ASC, f.title ASC`
+     FROM news_feeds f
+     LEFT JOIN news_folders nf ON nf.name = f.folder
+     ORDER BY f.folder IS NULL, nf.sort_order IS NULL, nf.sort_order ASC, f.folder COLLATE NOCASE ASC, f.position ASC, f.title ASC`
   ).all<NewsFeedRow & { unread_count: number }>();
   return c.json((results ?? []).map(newsFeedToApi));
+});
+
+// ---- Folder order (0064_news_folders.sql) — Settings-managed reordering
+// for News' sidebar folder groups. Folders themselves are still just a
+// free-text string on each feed (see 0026_news.sql); this only stores the
+// display order for whichever folder names are currently in use. ----
+
+app.get('/api/news/folders', async (c) => {
+  const { results } = await c.env.DB.prepare(
+    `SELECT f.folder as name, nf.sort_order as sort_order
+     FROM news_feeds f
+     LEFT JOIN news_folders nf ON nf.name = f.folder
+     WHERE f.folder IS NOT NULL
+     GROUP BY f.folder
+     ORDER BY nf.sort_order IS NULL, nf.sort_order ASC, f.folder COLLATE NOCASE ASC`
+  ).all<{ name: string; sort_order: number | null }>();
+  return c.json((results ?? []).map((r) => ({ name: r.name, sortOrder: r.sort_order })));
+});
+
+app.put('/api/news/folders/reorder', async (c) => {
+  const body = await c.req.json<{ order?: string[] }>().catch(() => ({}) as Record<string, never>);
+  const order = body.order;
+  if (!Array.isArray(order) || order.length === 0) return c.json({ error: 'order (non-empty array of folder names) is required' }, 400);
+  const ts = now();
+  await Promise.all(
+    order.map((name, i) =>
+      c.env.DB.prepare(
+        `INSERT INTO news_folders (name, sort_order, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT (name) DO UPDATE SET sort_order = excluded.sort_order, updated_at = excluded.updated_at`
+      )
+        .bind(name, i, ts)
+        .run()
+    )
+  );
+  return c.json({ ok: true });
 });
 
 app.post('/api/news/feeds', async (c) => {

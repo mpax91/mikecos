@@ -39,21 +39,20 @@ function scopeLabel(scope: Scope, feeds: NewsFeed[]): string {
 }
 
 function groupFeedsByFolder(feeds: NewsFeed[]): { folder: string | null; feeds: NewsFeed[] }[] {
+  // Preserve the order feeds already arrive in rather than re-sorting here
+  // — /api/news/feeds' own ORDER BY already places folders by their
+  // Settings-managed position (see news_folders / "Folder Order" in
+  // Settings → News Feeds), falling back to alphabetical for any folder
+  // that hasn't been explicitly ordered, with Uncategorized (folder null)
+  // always last. Re-sorting client-side would just override that with a
+  // flat alphabetical order and silently undo the reordering feature.
   const map = new Map<string | null, NewsFeed[]>();
   for (const f of feeds) {
     const key = f.folder;
     if (!map.has(key)) map.set(key, []);
     map.get(key)!.push(f);
   }
-  // Named folders first (alphabetical), Uncategorized last — matches the
-  // ORDER BY the feeds endpoint already uses.
-  return [...map.entries()]
-    .sort(([a], [b]) => {
-      if (a === null) return 1;
-      if (b === null) return -1;
-      return a.localeCompare(b);
-    })
-    .map(([folder, fs]) => ({ folder, feeds: fs }));
+  return [...map.entries()].map(([folder, fs]) => ({ folder, feeds: fs }));
 }
 
 export function NewsPage() {

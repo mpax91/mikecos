@@ -1417,6 +1417,16 @@ export interface NewsFeed {
   unread_count: number; // computed server-side from the cached article table
 }
 
+/** One folder name currently in use across news_feeds, plus its Settings-
+ * managed sort position (see worker/migrations/0064_news_folders.sql).
+ * sortOrder is null until Mike has explicitly reordered folders at least
+ * once — those sort alphabetically, after every folder that does have a
+ * position. */
+export interface NewsFolder {
+  name: string;
+  sortOrder: number | null;
+}
+
 /** A fetched-and-cached feed item. Cached (not fetched live per read) so
  * read/saved state has a stable id to key off of across devices — see
  * worker/migrations/0026_news.sql's header comment. */
