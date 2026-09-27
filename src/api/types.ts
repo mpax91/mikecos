@@ -1427,6 +1427,20 @@ export interface NewsFolder {
   sortOrder: number | null;
 }
 
+/** GET /api/news/feeds' response shape. totalUnread and folderUnread are
+ * server-computed distinct-article counts — a story 0065_news_article_feeds
+ * links to more than one feed (a publisher's own overlapping category
+ * feeds) must not be double-counted the way summing each feed's own
+ * unread_count client-side would; each feed's own unread_count on the
+ * NewsFeed rows themselves stays accurate as-is. folderUnread is keyed by
+ * folder name, with '' for Uncategorized (folder null), matching the
+ * convention the rest of News' API already uses for that. */
+export interface NewsFeedsResponse {
+  feeds: NewsFeed[];
+  totalUnread: number;
+  folderUnread: Record<string, number>;
+}
+
 /** A fetched-and-cached feed item. Cached (not fetched live per read) so
  * read/saved state has a stable id to key off of across devices — see
  * worker/migrations/0026_news.sql's header comment. */

@@ -5153,57 +5153,63 @@ async function refreshFeed(env: Env, feed: NewsFeedRow, force = false): Promise<
     const xml = await res.text();
     const parsed = await parseFeed(xml);
 
-    for (const item of parsed.items) {
-      // Primary de-dupe is (feed_id, guid) below, but some feeds (NY Post
-      // in particular) reissue the same story under a fresh guid on a
-      // later fetch — a tracking query string changing somewhere is the
-      // usual cause. parseFeed already normalizes item.url (strips
-      // query/hash), so a genuine repeat almost always still matches on
-      // URL even when the guid didn't — checking that first, and updating
-      // the existing row in place, is what actually stops the duplicate
-      // rather than just tidying the URL cosmetically.
-      const existingByUrl = await env.DB.prepare('SELECT id FROM news_articles WHERE feed_id = ? AND url = ?')
-        .bind(feed.id, item.url)
-        .first<{ id: string }>();
-      if (existingByUrl) {
-        await env.DB.prepare(
-          `UPDATE news_articles SET guid = ?, title = ?, description = ?, image_url = ?, published_at = ?, fetched_at = ? WHERE id = ?`
-        )
-          .bind(item.guid, item.title, item.description, item.imageUrl, item.publishedAt, ts, existingByUrl.id)
-          .run();
-        continue;
-      }
-
-      // Cross-feed duplicate check (0065_news_article_feeds.sql) — a
-      // handful of publishers (NYT chief among them, per Mike's own
-      // subscriptions) syndicate the exact same story, same URL, into
-      // several of their own category feeds at once (Politics, US News,
-      // Top Stories, ...). If some OTHER feed already owns this URL, don't
-      // insert a second news_articles row for it — that's what produced
-      // the same story appearing twice in "All"/a folder. Just note that
-      // this feed carries it too, so its own unread count and article list
-      // still include it, while read/saved state (keyed off the one
-      // canonical article id) stays shared.
-      const existingElsewhere = await env.DB.prepare('SELECT id FROM news_articles WHERE url = ? AND feed_id != ?')
-        .bind(item.url, feed.id)
-        .first<{ id: string }>();
-      if (existingElsewhere) {
-        await env.DB.prepare('INSERT OR IGNORE INTO news_article_feeds (article_id, feed_id) VALUES (?, ?)')
-          .bind(existingElsewhere.id, feed.id)
-          .run();
-        continue;
-      }
-
-      const articleId = uid();
-      await env.DB.prepare(
-        `INSERT INTO news_articles (id, feed_id, guid, url, title, description, image_url, published_at, fetched_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT (feed_id, guid) DO UPDATE SET
-           url = excluded.url, title = excluded.title, description = excluded.description,
-           image_url = excluded.image_url, published_at = excluded.published_at, fetched_at = excluded.fetched_at`
+    // De-dupe is URL-based, both within this feed (some feeds — NY Post
+    // especially — reissue the same story under a fresh guid on a later
+    // fetch, usually a tracking query string changing; parseFeed already
+    // strips query/hash) and across feeds (0065_news_article_feeds.sql —
+    // a publisher's own category feeds, e.g. Mike's NYT Politics/US
+    // News/Top Stories, often carry the exact same URL). That needs
+    // knowing what's already in news_articles for every item's URL — but
+    // doing that as one SELECT per item, like this used to, means a feed
+    // with 30 items costs 30+ D1 round-trips, and refreshing "All" fires
+    // every feed's refresh at once: with ~28 feeds that blew past
+    // Cloudflare's per-request subrequest limit and made the whole "All"
+    // request fail outright (while a single feed's refresh, far fewer
+    // subrequests, kept working — which is exactly the bug this fixes).
+    // So: one batched SELECT for every item's URL up front, then every
+    // resulting insert/update queued into one batch() call, regardless of
+    // how many items the feed has.
+    if (parsed.items.length > 0) {
+      const urls = [...new Set(parsed.items.map((i) => i.url))];
+      const { results: existingRows } = await env.DB.prepare(
+        `SELECT id, feed_id, url FROM news_articles WHERE url IN (${urls.map(() => '?').join(',')})`
       )
-        .bind(articleId, feed.id, item.guid, item.url, item.title, item.description, item.imageUrl, item.publishedAt, ts)
-        .run();
+        .bind(...urls)
+        .all<{ id: string; feed_id: string; url: string }>();
+      const existingByUrl = new Map((existingRows ?? []).map((r) => [r.url, r]));
+
+      const stmts: D1PreparedStatement[] = [];
+      for (const item of parsed.items) {
+        const existing = existingByUrl.get(item.url);
+        if (existing && existing.feed_id === feed.id) {
+          stmts.push(
+            env.DB.prepare(`UPDATE news_articles SET guid = ?, title = ?, description = ?, image_url = ?, published_at = ?, fetched_at = ? WHERE id = ?`).bind(
+              item.guid,
+              item.title,
+              item.description,
+              item.imageUrl,
+              item.publishedAt,
+              ts,
+              existing.id
+            )
+          );
+        } else if (existing) {
+          // Owned by a different feed — link this feed to it instead of
+          // inserting a second row for the same story (see comment above).
+          stmts.push(env.DB.prepare('INSERT OR IGNORE INTO news_article_feeds (article_id, feed_id) VALUES (?, ?)').bind(existing.id, feed.id));
+        } else {
+          stmts.push(
+            env.DB.prepare(
+              `INSERT INTO news_articles (id, feed_id, guid, url, title, description, image_url, published_at, fetched_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT (feed_id, guid) DO UPDATE SET
+                 url = excluded.url, title = excluded.title, description = excluded.description,
+                 image_url = excluded.image_url, published_at = excluded.published_at, fetched_at = excluded.fetched_at`
+            ).bind(uid(), feed.id, item.guid, item.url, item.title, item.description, item.imageUrl, item.publishedAt, ts)
+          );
+        }
+      }
+      if (stmts.length > 0) await env.DB.batch(stmts);
     }
 
     // Only overwrite the feed's own title if it's still the placeholder
@@ -5240,7 +5246,32 @@ app.get('/api/news/feeds', async (c) => {
      LEFT JOIN news_folders nf ON nf.name = f.folder
      ORDER BY f.folder IS NULL, nf.sort_order IS NULL, nf.sort_order ASC, f.folder COLLATE NOCASE ASC, f.position ASC, f.title ASC`
   ).all<NewsFeedRow & { unread_count: number }>();
-  return c.json((results ?? []).map(newsFeedToApi));
+
+  // "All"/folder badges used to be summed client-side from each feed's own
+  // unread_count above — that double(or triple-)counted any article
+  // 0065_news_article_feeds.sql links to more than one feed (Mike's
+  // overlapping NYT category feeds), since the same article contributes to
+  // several feeds' counts at once. news_articles itself has exactly one row
+  // per real story regardless of how many feeds carry it, so a plain
+  // COUNT(*)/COUNT(DISTINCT) here is correct where a per-feed sum isn't.
+  const totalUnread = await c.env.DB.prepare('SELECT COUNT(*) as n FROM news_articles WHERE id NOT IN (SELECT article_id FROM news_read)').first<{
+    n: number;
+  }>();
+  const { results: folderRows } = await c.env.DB.prepare(
+    `SELECT COALESCE(f.folder, '') as folder, COUNT(DISTINCT a.id) as n
+     FROM news_feeds f
+     JOIN (
+       SELECT feed_id, id as article_id FROM news_articles
+       UNION
+       SELECT feed_id, article_id FROM news_article_feeds
+     ) fa ON fa.feed_id = f.id
+     JOIN news_articles a ON a.id = fa.article_id
+     WHERE a.id NOT IN (SELECT article_id FROM news_read)
+     GROUP BY f.folder`
+  ).all<{ folder: string; n: number }>();
+  const folderUnread = Object.fromEntries((folderRows ?? []).map((r) => [r.folder, r.n]));
+
+  return c.json({ feeds: (results ?? []).map(newsFeedToApi), totalUnread: totalUnread?.n ?? 0, folderUnread });
 });
 
 // ---- Folder order (0064_news_folders.sql) — Settings-managed reordering

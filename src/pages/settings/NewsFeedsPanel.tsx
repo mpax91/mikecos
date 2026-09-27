@@ -45,8 +45,8 @@ export function NewsFeedsPanel() {
   function load() {
     api
       .listNewsFeeds()
-      .then((list) => {
-        setFeeds(list);
+      .then((res) => {
+        setFeeds(res.feeds);
         setError(null);
       })
       .catch((e) => setError(String(e)));

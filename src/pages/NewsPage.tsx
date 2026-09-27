@@ -59,6 +59,12 @@ export function NewsPage() {
   useReportTabMeta('News', 'news');
 
   const [feeds, setFeeds] = useState<NewsFeed[]>([]);
+  // Server-computed distinct-article totals (see NewsFeedsResponse) — kept
+  // separate from feeds' own per-feed unread_count because summing that
+  // client-side double-counts any article shared across feeds (Mike's
+  // overlapping NYT category feeds, see 0065_news_article_feeds.sql).
+  const [totalUnread, setTotalUnread] = useState(0);
+  const [folderUnread, setFolderUnread] = useState<Record<string, number>>({});
   const [articles, setArticles] = useState<NewsArticle[]>([]);
   const [saved, setSaved] = useState<NewsSavedArticle[]>([]);
   const [scope, setScope] = useState<Scope>({ type: 'all' });
@@ -92,8 +98,12 @@ export function NewsPage() {
 
   const loadFeeds = useCallback(async () => {
     const requestId = ++feedsRequestRef.current;
-    const list = await api.listNewsFeeds();
-    if (requestId === feedsRequestRef.current) setFeeds(list);
+    const res = await api.listNewsFeeds();
+    if (requestId === feedsRequestRef.current) {
+      setFeeds(res.feeds);
+      setTotalUnread(res.totalUnread);
+      setFolderUnread(res.folderUnread);
+    }
   }, []);
 
   const loadArticles = useCallback(async () => {
@@ -131,8 +141,6 @@ export function NewsPage() {
     else loadArticles();
   }, [view, loadArticles, loadSaved]);
 
-  const totalUnread = useMemo(() => feeds.reduce((sum, f) => sum + f.unread_count, 0), [feeds]);
-
   async function markRead(articleId: string, read: boolean) {
     // The normal feed only ever shows unread articles, and the Recently
     // Read fail-safe only ever shows read ones — so whichever way an
@@ -151,11 +159,20 @@ export function NewsPage() {
       // reload.
       return cached ? [{ ...cached, is_read: read }, ...prev] : prev;
     });
-    // Instant feedback for the folder/feed unread badges, rather than
+    // Instant feedback for the feed/folder/All unread badges, rather than
     // waiting on loadFeeds' round trip — see feedsRequestRef above for why
-    // that round trip alone wasn't reliably instant either.
+    // that round trip alone wasn't reliably instant either. Approximate for
+    // an article cross-linked to more than one feed (only its owning
+    // feed/folder moves here) — loadFeeds() below reconciles the rest a
+    // moment later.
     if (cached) {
-      setFeeds((prev) => prev.map((f) => (f.id === cached.feed_id ? { ...f, unread_count: Math.max(0, f.unread_count + (read ? -1 : 1)) } : f)));
+      const delta = read ? -1 : 1;
+      setFeeds((prev) => prev.map((f) => (f.id === cached.feed_id ? { ...f, unread_count: Math.max(0, f.unread_count + delta) } : f)));
+      setTotalUnread((n) => Math.max(0, n + delta));
+      setFolderUnread((prev) => {
+        const key = cached.feed_folder ?? '';
+        return { ...prev, [key]: Math.max(0, (prev[key] ?? 0) + delta) };
+      });
     }
     await api.markNewsArticleRead(articleId, read);
     loadFeeds(); // reconciles with the server in case of drift
@@ -174,13 +191,23 @@ export function NewsPage() {
   async function markAllRead() {
     const opts = scope.type === 'feed' ? { feedId: scope.feedId } : scope.type === 'folder' ? { folder: scope.folder ?? '' } : undefined;
     // Instant feedback — zero out whichever feeds are in scope rather than
-    // waiting on the round trip before the badges update.
+    // waiting on the round trip before the badges update. All/folder cases
+    // zero their own aggregate directly; the feed case can't cheaply derive
+    // the right folder/All delta client-side (other feeds in that folder
+    // may still have unread articles of their own), so it leaves those to
+    // loadFeeds()'s reconciliation just below instead of guessing.
     setFeeds((prev) =>
       prev.map((f) => {
         const inScope = scope.type === 'feed' ? f.id === scope.feedId : scope.type === 'folder' ? f.folder === scope.folder : true;
         return inScope ? { ...f, unread_count: 0 } : f;
       })
     );
+    if (scope.type === 'all') {
+      setTotalUnread(0);
+      setFolderUnread({});
+    } else if (scope.type === 'folder') {
+      setFolderUnread((prev) => ({ ...prev, [scope.folder ?? '']: 0 }));
+    }
     await api.markAllNewsRead(opts);
     loadFeeds();
     loadArticles();
@@ -246,6 +273,8 @@ export function NewsPage() {
           <nav className={`news-page__folders${mobileNavOpen ? ' is-open' : ''}`}>
             <FolderNav
               feeds={feeds}
+              totalUnread={totalUnread}
+              folderUnread={folderUnread}
               scope={scope}
               onSelect={(s) => {
                 setScope(s);
@@ -280,9 +309,20 @@ export function NewsPage() {
   );
 }
 
-function FolderNav({ feeds, scope, onSelect }: { feeds: NewsFeed[]; scope: Scope; onSelect: (s: Scope) => void }) {
+function FolderNav({
+  feeds,
+  totalUnread,
+  folderUnread,
+  scope,
+  onSelect,
+}: {
+  feeds: NewsFeed[];
+  totalUnread: number;
+  folderUnread: Record<string, number>;
+  scope: Scope;
+  onSelect: (s: Scope) => void;
+}) {
   const groups = useMemo(() => groupFeedsByFolder(feeds), [feeds]);
-  const totalUnread = feeds.reduce((sum, f) => sum + f.unread_count, 0);
 
   return (
     <>
@@ -294,7 +334,12 @@ function FolderNav({ feeds, scope, onSelect }: { feeds: NewsFeed[]; scope: Scope
         {totalUnread > 0 && <span className="news-page__unread-badge">{totalUnread}</span>}
       </button>
       {groups.map(({ folder, feeds: folderFeeds }) => {
-        const unread = folderFeeds.reduce((sum, f) => sum + f.unread_count, 0);
+        // Server-computed distinct count (see NewsFeedsResponse) — summing
+        // folderFeeds' own unread_count here would double-count a story
+        // 0065_news_article_feeds links across more than one feed in the
+        // same folder, which is exactly what NYT's Politics/US
+        // News/Top Stories overlap produces.
+        const unread = folderUnread[folder ?? ''] ?? 0;
         const isActiveFolder = scope.type === 'folder' && scope.folder === folder;
         return (
           <div key={folder ?? '__none__'} className="news-page__folder-group">
