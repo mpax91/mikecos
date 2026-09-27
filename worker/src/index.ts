@@ -5173,6 +5173,27 @@ async function refreshFeed(env: Env, feed: NewsFeedRow, force = false): Promise<
           .run();
         continue;
       }
+
+      // Cross-feed duplicate check (0065_news_article_feeds.sql) — a
+      // handful of publishers (NYT chief among them, per Mike's own
+      // subscriptions) syndicate the exact same story, same URL, into
+      // several of their own category feeds at once (Politics, US News,
+      // Top Stories, ...). If some OTHER feed already owns this URL, don't
+      // insert a second news_articles row for it — that's what produced
+      // the same story appearing twice in "All"/a folder. Just note that
+      // this feed carries it too, so its own unread count and article list
+      // still include it, while read/saved state (keyed off the one
+      // canonical article id) stays shared.
+      const existingElsewhere = await env.DB.prepare('SELECT id FROM news_articles WHERE url = ? AND feed_id != ?')
+        .bind(item.url, feed.id)
+        .first<{ id: string }>();
+      if (existingElsewhere) {
+        await env.DB.prepare('INSERT OR IGNORE INTO news_article_feeds (article_id, feed_id) VALUES (?, ?)')
+          .bind(existingElsewhere.id, feed.id)
+          .run();
+        continue;
+      }
+
       const articleId = uid();
       await env.DB.prepare(
         `INSERT INTO news_articles (id, feed_id, guid, url, title, description, image_url, published_at, fetched_at)
@@ -5212,7 +5233,8 @@ app.get('/api/news/feeds', async (c) => {
   const { results } = await c.env.DB.prepare(
     `SELECT f.*, (
        SELECT COUNT(*) FROM news_articles a
-       WHERE a.feed_id = f.id AND a.id NOT IN (SELECT article_id FROM news_read)
+       WHERE (a.feed_id = f.id OR EXISTS (SELECT 1 FROM news_article_feeds af WHERE af.article_id = a.id AND af.feed_id = f.id))
+         AND a.id NOT IN (SELECT article_id FROM news_read)
      ) as unread_count
      FROM news_feeds f
      LEFT JOIN news_folders nf ON nf.name = f.folder
@@ -5318,6 +5340,17 @@ app.delete('/api/news/feeds/:id', async (c) => {
   await c.env.DB.prepare(
     `UPDATE news_saved SET article_id = NULL WHERE article_id IN (SELECT id FROM news_articles WHERE feed_id = ?)`
   ).bind(id).run();
+  // These FKs declare ON DELETE CASCADE, but this DB doesn't reliably run
+  // with foreign_keys pragma'd on per-connection, so news_article_feeds
+  // rows are cleaned up explicitly rather than trusted to cascade: one
+  // pass for rows belonging to articles this feed OWNS (about to be
+  // deleted below), one for rows where this feed was merely a secondary
+  // carrier of some other feed's article.
+  await c.env.DB.prepare(
+    `DELETE FROM news_article_feeds WHERE article_id IN (SELECT id FROM news_articles WHERE feed_id = ?) OR feed_id = ?`
+  )
+    .bind(id, id)
+    .run();
   await c.env.DB.prepare('DELETE FROM news_articles WHERE feed_id = ?').bind(id).run();
   await c.env.DB.prepare('DELETE FROM news_feeds WHERE id = ?').bind(id).run();
   return c.json({ ok: true });
@@ -5380,8 +5413,15 @@ app.get('/api/news/articles', async (c) => {
   // already marked read — so this path skips straight to the query,
   // rather than waiting on N feed fetches for a list that wouldn't
   // change from them anyway.
+  // Every feed-scoped WHERE below also matches via news_article_feeds
+  // (0065_news_article_feeds.sql) — a story can belong to this scope
+  // either because its owning feed (a.feed_id) is one of targetFeeds, or
+  // because it was de-duped against an owning feed OUTSIDE this scope but
+  // is also carried by one of targetFeeds (Mike's overlapping NYT category
+  // feeds are exactly this case).
   if (recentlyRead) {
-    const placeholders = targetFeeds.map(() => '?').join(',');
+    const ids = targetFeeds.map((f) => f.id);
+    const placeholders = ids.map(() => '?').join(',');
     const { results } = await c.env.DB.prepare(
       `SELECT a.*, f.title as feed_title, f.folder as feed_folder,
               1 as is_read, (s.article_id IS NOT NULL) as is_saved
@@ -5389,11 +5429,12 @@ app.get('/api/news/articles', async (c) => {
        JOIN news_feeds f ON f.id = a.feed_id
        JOIN news_read r ON r.article_id = a.id
        LEFT JOIN news_saved s ON s.article_id = a.id
-       WHERE a.feed_id IN (${placeholders}) AND r.auto_marked = 0
+       WHERE (a.feed_id IN (${placeholders}) OR a.id IN (SELECT article_id FROM news_article_feeds WHERE feed_id IN (${placeholders})))
+         AND r.auto_marked = 0
        ORDER BY r.read_at DESC
        LIMIT 25`
     )
-      .bind(...targetFeeds.map((f) => f.id))
+      .bind(...ids, ...ids)
       .all<NewsArticleRow & { feed_title: string; feed_folder: string | null; is_read: number; is_saved: number }>();
     const articles = (results ?? []).map((r) => ({ ...r, is_read: true, is_saved: !!r.is_saved }));
     return c.json({ articles, stale_feeds: [] });
@@ -5410,7 +5451,8 @@ app.get('/api/news/articles', async (c) => {
     })
   );
 
-  const placeholders = targetFeeds.map(() => '?').join(',');
+  const ids = targetFeeds.map((f) => f.id);
+  const placeholders = ids.map(() => '?').join(',');
   const { results } = await c.env.DB.prepare(
     `SELECT a.*, f.title as feed_title, f.folder as feed_folder,
             (r.article_id IS NOT NULL) as is_read, (s.article_id IS NOT NULL) as is_saved
@@ -5418,12 +5460,12 @@ app.get('/api/news/articles', async (c) => {
      JOIN news_feeds f ON f.id = a.feed_id
      LEFT JOIN news_read r ON r.article_id = a.id
      LEFT JOIN news_saved s ON s.article_id = a.id
-     WHERE a.feed_id IN (${placeholders})
+     WHERE (a.feed_id IN (${placeholders}) OR a.id IN (SELECT article_id FROM news_article_feeds WHERE feed_id IN (${placeholders})))
      ${unreadOnly ? 'AND r.article_id IS NULL' : ''}
      ORDER BY a.published_at IS NULL, a.published_at DESC, a.fetched_at DESC
      LIMIT 2000`
   )
-    .bind(...targetFeeds.map((f) => f.id))
+    .bind(...ids, ...ids)
     .all<NewsArticleRow & { feed_title: string; feed_folder: string | null; is_read: number; is_saved: number }>();
 
   const articles = (results ?? []).map((r) => ({ ...r, is_read: !!r.is_read, is_saved: !!r.is_saved }));
@@ -5467,9 +5509,10 @@ app.post('/api/news/read-all', async (c) => {
   const ts = now();
   const result = await c.env.DB.prepare(
     `INSERT OR IGNORE INTO news_read (article_id, read_at, auto_marked)
-     SELECT id, ?, 0 FROM news_articles WHERE feed_id IN (${placeholders})`
+     SELECT id, ?, 0 FROM news_articles
+     WHERE feed_id IN (${placeholders}) OR id IN (SELECT article_id FROM news_article_feeds WHERE feed_id IN (${placeholders}))`
   )
-    .bind(ts, ...feedIds)
+    .bind(ts, ...feedIds, ...feedIds)
     .run();
   return c.json({ ok: true, marked: result.meta.changes ?? 0 });
 });
