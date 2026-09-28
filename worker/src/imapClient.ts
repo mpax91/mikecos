@@ -1,4 +1,5 @@
 import { connect } from 'cloudflare:sockets';
+import { base64ToBytes, decodeCharset, quotedPrintableToBytes } from './mimeParser';
 
 /** A minimal, purpose-built IMAP client over Cloudflare Workers' raw TCP
  * socket API (`cloudflare:sockets`) — not a general-purpose library, just
@@ -523,13 +524,43 @@ function parseFetchLine(line: ImapToken[]): FetchedMessage {
   return out;
 }
 
+// Matches one RFC 2047 "encoded-word" run: =?charset?B?<base64>?= or
+// =?charset?Q?<quoted-printable>?=. This is how a 7-bit-clean header field
+// (Subject, a display name) carries non-ASCII text — anything outside
+// plain ASCII, including emoji, shows up wrapped in this rather than raw
+// UTF-8 bytes, which is exactly the "=?UTF-8?q?=F0=9F=8F=86..." mangling
+// Mike saw in Inbox's subject line instead of the 🏆 it actually encodes.
+const ENCODED_WORD = /=\?([^?]+)\?([BbQq])\?([^?]*)\?=/g;
+
+/** Decodes every RFC 2047 encoded-word in a raw header value, leaving
+ * anything else untouched. Per the RFC, adjacent encoded-words separated
+ * only by whitespace are one logical run — that whitespace is part of the
+ * encoding, not real content — so it's stripped before decoding to avoid
+ * inserting a stray gap into multi-word non-ASCII subjects. */
+function decodeEncodedWords(raw: string): string {
+  if (!raw.includes('=?')) return raw;
+  const collapsed = raw.replace(/(\?=)[ \t]+(=\?)/g, '$1$2');
+  return collapsed.replace(ENCODED_WORD, (whole, charset: string, enc: string, text: string) => {
+    try {
+      // Header "Q" encoding is quoted-printable with one extra rule: `_`
+      // stands in for a literal space, since a real space can't sit
+      // unencoded next to the `?=` delimiter.
+      const bytes = enc.toUpperCase() === 'B' ? base64ToBytes(text) : quotedPrintableToBytes(text.replace(/_/g, ' '));
+      return decodeCharset(bytes, charset);
+    } catch {
+      return whole; // leave the raw encoded-word in place rather than mangling it further
+    }
+  });
+}
+
 /** Pulls From/Subject/Date out of a raw RFC822 header block — deliberately
  * simple line-based parsing (not a full RFC 2822 header parser: no folded-
- * header unwrapping beyond the basic continuation-line case, no RFC 2047
- * encoded-word decoding for non-ASCII names/subjects) since IMAP ENVELOPE's
- * own nested-list format is considerably more work to parse correctly for
- * the same three fields. Good enough for a preview; worth revisiting if
- * Mike's actual senders show mangled names/subjects in practice. */
+ * header unwrapping beyond the basic continuation-line case) since IMAP
+ * ENVELOPE's own nested-list format is considerably more work to parse
+ * correctly for the same three fields. RFC 2047 encoded-word decoding (see
+ * decodeEncodedWords above) is applied to Subject and the From display
+ * name, which is where Mike's actual senders showed mangled text in
+ * practice — an emoji-prefixed Substack subject in particular. */
 export function parseHeaderBlock(block: string): ParsedHeaders {
   const lines = block.split(/\r\n/);
   const folded: string[] = [];
@@ -558,10 +589,11 @@ export function parseHeaderBlock(block: string): ParsedHeaders {
   const emailMatch = fromRaw.match(/<([^>]+)>/);
   if (emailMatch) {
     fromEmail = emailMatch[1].trim();
-    fromName = fromRaw.slice(0, emailMatch.index).trim().replace(/^"|"$/g, '') || null;
+    fromName = decodeEncodedWords(fromRaw.slice(0, emailMatch.index).trim().replace(/^"|"$/g, '')) || null;
   } else if (fromRaw.includes('@')) {
     fromEmail = fromRaw.trim();
   }
+  subject = decodeEncodedWords(subject);
   let dateIso: string | null = null;
   if (dateRaw) {
     const d = new Date(dateRaw);

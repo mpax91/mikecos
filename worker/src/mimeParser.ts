@@ -75,7 +75,7 @@ function collectLeafParts(raw: string): MimePart[] {
   return [{ contentType, params, transferEncoding, rawBody: body }];
 }
 
-function base64ToBytes(b64: string): Uint8Array {
+export function base64ToBytes(b64: string): Uint8Array {
   const cleaned = b64.replace(/[^A-Za-z0-9+/=]/g, '');
   const binary = atob(cleaned);
   const bytes = new Uint8Array(binary.length);
@@ -83,7 +83,7 @@ function base64ToBytes(b64: string): Uint8Array {
   return bytes;
 }
 
-function quotedPrintableToBytes(qp: string): Uint8Array {
+export function quotedPrintableToBytes(qp: string): Uint8Array {
   // Soft line breaks ("=\r\n" / "=\n") are join points, not literal text.
   const joined = qp.replace(/=\r?\n/g, '');
   const bytes: number[] = [];
@@ -98,7 +98,7 @@ function quotedPrintableToBytes(qp: string): Uint8Array {
   return new Uint8Array(bytes);
 }
 
-function decodeCharset(bytes: Uint8Array, charset: string): string {
+export function decodeCharset(bytes: Uint8Array, charset: string): string {
   try {
     return new TextDecoder(charset || 'utf-8').decode(bytes);
   } catch {
