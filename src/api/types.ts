@@ -473,6 +473,14 @@ export interface WalletCard {
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
+  /** Never the actual license/passport/military-ID number — only whether
+   * one is on file. The real value comes from api.revealWalletCardId(),
+   * fetched on an explicit tap. Same pattern as PaymentCard's hasNumber. */
+  hasIdNumber: boolean;
+}
+
+export interface WalletCardIdSecret {
+  idNumber: string | null;
 }
 
 /** A structured "Details" row on a Wallet card — expiration date, member

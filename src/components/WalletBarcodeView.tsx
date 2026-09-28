@@ -4,6 +4,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { api } from '../api/client';
 import type { WalletCard, WalletCardFact } from '../api/types';
 import { CardImageLightbox } from './CardImageLightbox';
+import { isPhoneLabel, telHref } from '../utils/phone';
 
 const JSBARCODE_FORMAT: Record<string, string> = {
   code128: 'CODE128',
@@ -30,6 +31,14 @@ export function WalletBarcodeView({ card, onClose, onEdit }: { card: WalletCard;
   const [copiedFactId, setCopiedFactId] = useState<string | null>(null);
   const [lightboxSide, setLightboxSide] = useState<'front' | 'back' | null>(null);
   const [wakeLockSupported] = useState(() => typeof navigator !== 'undefined' && 'wakeLock' in navigator);
+  // Reveal-on-tap for the encrypted ID number (license/passport/military
+  // ID), same fetch-on-first-tap state machine as PaymentCardDetail's
+  // reveal() for number/CVV.
+  const [idRevealed, setIdRevealed] = useState<string | null>(null);
+  const [idRevealing, setIdRevealing] = useState(false);
+  const [idRevealError, setIdRevealError] = useState<string | null>(null);
+  const [idShown, setIdShown] = useState(false);
+  const [idCopied, setIdCopied] = useState(false);
 
   useEffect(() => {
     api.listWalletCardFacts(card.id).then(setFacts).catch(() => {});
@@ -83,6 +92,32 @@ export function WalletBarcodeView({ card, onClose, onEdit }: { card: WalletCard;
     navigator.clipboard.writeText(fallbackNumber).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1300);
+    });
+  }
+
+  async function revealId() {
+    if (idRevealed !== null) {
+      setIdShown((v) => !v);
+      return;
+    }
+    setIdRevealing(true);
+    setIdRevealError(null);
+    try {
+      const secret = await api.revealWalletCardId(card.id);
+      setIdRevealed(secret.idNumber);
+      setIdShown(true);
+    } catch {
+      setIdRevealError("Couldn't decrypt — try again.");
+    } finally {
+      setIdRevealing(false);
+    }
+  }
+
+  function copyIdNumber() {
+    if (!idRevealed) return;
+    navigator.clipboard.writeText(idRevealed).then(() => {
+      setIdCopied(true);
+      setTimeout(() => setIdCopied(false), 1300);
     });
   }
 
@@ -149,6 +184,23 @@ export function WalletBarcodeView({ card, onClose, onEdit }: { card: WalletCard;
           </div>
         )}
 
+        {card.hasIdNumber && (
+          <div className="wallet-barcode-view__extra">
+            <div className="wallet-barcode-view__extra-row">
+              <span>ID #</span>
+              <button type="button" className="wallet-barcode-view__reveal" onClick={revealId} disabled={idRevealing}>
+                {idRevealing ? 'Decrypting…' : idShown && idRevealed ? idRevealed : 'Tap to reveal'}
+              </button>
+              {idShown && idRevealed && (
+                <button type="button" className="wallet-barcode-view__copy" onClick={copyIdNumber} aria-label="Copy ID number">
+                  {idCopied ? 'Copied ✓' : 'Copy'}
+                </button>
+              )}
+            </div>
+            {idRevealError && <div className="wallet-editor__error">{idRevealError}</div>}
+          </div>
+        )}
+
         {facts.length > 0 && (
           <div className="wallet-barcode-view__details">
             <button type="button" className="wallet-barcode-view__details-toggle" onClick={() => setDetailsOpen((v) => !v)}>
@@ -156,19 +208,28 @@ export function WalletBarcodeView({ card, onClose, onEdit }: { card: WalletCard;
             </button>
             {detailsOpen && (
               <div className="wallet-barcode-view__details-rows">
-                {facts.map((f) => (
-                  <div key={f.id} className="wallet-barcode-view__details-row">
-                    <span>{f.label}</span>
-                    <span>
-                      {f.value || '—'}
-                      {f.value && (
-                        <button type="button" className="wallet-barcode-view__details-copy" onClick={() => copyFact(f)} aria-label={`Copy ${f.label}`}>
-                          {copiedFactId === f.id ? '✓' : '⧉'}
-                        </button>
-                      )}
-                    </span>
-                  </div>
-                ))}
+                {facts.map((f) => {
+                  const tel = f.value && isPhoneLabel(f.label) ? telHref(f.value) : null;
+                  return (
+                    <div key={f.id} className="wallet-barcode-view__details-row">
+                      <span>{f.label}</span>
+                      <span>
+                        {tel ? (
+                          <a href={tel} className="wallet-barcode-view__details-tel">
+                            {f.value}
+                          </a>
+                        ) : (
+                          f.value || '—'
+                        )}
+                        {f.value && (
+                          <button type="button" className="wallet-barcode-view__details-copy" onClick={() => copyFact(f)} aria-label={`Copy ${f.label}`}>
+                            {copiedFactId === f.id ? '✓' : '⧉'}
+                          </button>
+                        )}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>

@@ -6170,7 +6170,7 @@ async function runSearch(db: D1Database, q: string, scope: Set<SearchGroup>, inc
       title: w.name || 'Untitled Card',
       snippet: score < 60 ? w.category : null,
       parentTitle: null,
-      path: '/wallet',
+      path: '/wallet?tab=database&type=loyalty',
       openId: w.id,
       updatedAt: w.updated_at,
       score,
@@ -6179,8 +6179,8 @@ async function runSearch(db: D1Database, q: string, scope: Set<SearchGroup>, inc
 
   // ---- rewards cards ----
   // Same no-per-route reasoning as Wallet above — a match opens straight to
-  // that card's detail via router state, on /wallet?tab=rewards so it lands
-  // on the Rewards tab rather than My Cards.
+  // that card's detail via router state, on /wallet?tab=database&type=rewards
+  // so it lands on Card Database's Rewards pill.
   for (const rc of rewardsCardRows.results ?? []) {
     const bonusCats = (rewardsBonusRows.results ?? []).filter((b) => b.card_id === rc.id).map((b) => b.category);
     const perkText = (rewardsPerkRows.results ?? [])
@@ -6196,7 +6196,7 @@ async function runSearch(db: D1Database, q: string, scope: Set<SearchGroup>, inc
       title: rc.nickname || 'Untitled Card',
       snippet: score < 60 && bonusCats.length ? bonusCats.join(', ') : null,
       parentTitle: null,
-      path: '/wallet?tab=rewards',
+      path: '/wallet?tab=database&type=rewards',
       openId: rc.id,
       updatedAt: rc.updated_at,
       score,
@@ -6214,7 +6214,7 @@ async function runSearch(db: D1Database, q: string, scope: Set<SearchGroup>, inc
       title: pc.nickname || 'Untitled Card',
       snippet: score < 60 ? [pc.network, pc.issuer].filter(Boolean).join(' · ') || null : null,
       parentTitle: null,
-      path: '/wallet?tab=payment',
+      path: '/wallet?tab=database&type=payment',
       openId: pc.id,
       updatedAt: pc.updated_at,
       score,

@@ -32,7 +32,8 @@ export function PaymentCardsPanel() {
   }, [load]);
 
   // Deep-link from global search (worker's runSearch routes a
-  // payment_card match to /wallet?tab=payment with openId set).
+  // payment_card match to /wallet?tab=database&type=payment with openId
+  // set).
   useEffect(() => {
     const openId = (location.state as { openId?: string } | null)?.openId;
     if (!openId || !cards) return;

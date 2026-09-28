@@ -1,30 +1,31 @@
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useReportTabMeta } from '../contexts/TabsContext';
-import { WalletMyCardsPanel } from '../components/WalletMyCardsPanel';
 import { RewardsPanel } from '../components/RewardsPanel';
-import { PaymentCardsPanel } from '../components/PaymentCardsPanel';
+import { CardDatabasePanel } from '../components/CardDatabasePanel';
 
-type WalletTab = 'cards' | 'rewards' | 'payment';
+type WalletTab = 'home' | 'database';
 
-/** Wallet — the Reference-section home for all three parts of this
- * feature: "My Cards" (Phase 1 — loyalty/membership/pass/gift cards),
- * "Rewards" (Phase 2 — the credit-card rewards optimizer), and "Payment
- * Cards" (Phase 3 — a secure credit/debit vault). One nav item, one page,
- * a tab switcher between them — Mike was explicit that later parts should
- * live inside the same Wallet area rather than get their own sidebar
- * entries. The tab is reflected in the URL (?tab=rewards / ?tab=payment)
- * so a global-search match, or a bookmark/shared link, lands on the right
- * tab. */
+/** Wallet — redesigned per Mike's own explicit ask (the old 3-tab My
+ * Cards/Rewards/Payment Cards split was "clunky", left him guessing which
+ * tab to be in). Now two tabs: "Wallet" (the default landing view — Best
+ * Cards along the top, every reward card ranked by its own current rate,
+ * and Find, all on one screen — see RewardsPanel's mode="home") and "Card
+ * Database" (loyalty/payment/rewards cards, one unified place, picked by
+ * pill — see CardDatabasePanel). The tab is reflected in the URL
+ * (?tab=database) so a global-search match, or a bookmark/shared link,
+ * lands on the right one; a rewards_card deep-link needs the Card
+ * Database → Rewards pill specifically, since that's the only place a
+ * Rewards card's own edit view lives now. */
 export function WalletPage() {
   useReportTabMeta('Wallet', 'wallet-list');
   const [searchParams, setSearchParams] = useSearchParams();
   const initialTab = searchParams.get('tab');
-  const [tab, setTab] = useState<WalletTab>(initialTab === 'rewards' ? 'rewards' : initialTab === 'payment' ? 'payment' : 'cards');
+  const [tab, setTab] = useState<WalletTab>(initialTab === 'database' || initialTab === 'rewards' || initialTab === 'payment' || initialTab === 'cards' ? 'database' : 'home');
 
   function switchTab(next: WalletTab) {
     setTab(next);
-    setSearchParams(next === 'cards' ? {} : { tab: next }, { replace: true });
+    setSearchParams(next === 'home' ? {} : { tab: next }, { replace: true });
   }
 
   return (
@@ -34,19 +35,16 @@ export function WalletPage() {
           Wallet
         </h1>
         <div className="wallet-page__tabs">
-          <button type="button" className={`wallet-page__tab${tab === 'cards' ? ' is-active' : ''}`} onClick={() => switchTab('cards')}>
-            My Cards
+          <button type="button" className={`wallet-page__tab${tab === 'home' ? ' is-active' : ''}`} onClick={() => switchTab('home')}>
+            Wallet
           </button>
-          <button type="button" className={`wallet-page__tab${tab === 'rewards' ? ' is-active' : ''}`} onClick={() => switchTab('rewards')}>
-            Rewards
-          </button>
-          <button type="button" className={`wallet-page__tab${tab === 'payment' ? ' is-active' : ''}`} onClick={() => switchTab('payment')}>
-            Payment Cards
+          <button type="button" className={`wallet-page__tab${tab === 'database' ? ' is-active' : ''}`} onClick={() => switchTab('database')}>
+            Card Database
           </button>
         </div>
       </div>
 
-      {tab === 'cards' ? <WalletMyCardsPanel /> : tab === 'rewards' ? <RewardsPanel /> : <PaymentCardsPanel />}
+      {tab === 'home' ? <RewardsPanel mode="home" /> : <CardDatabasePanel />}
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import type { PaymentCard, PaymentCardFact } from '../api/types';
 import { CardImageLightbox } from './CardImageLightbox';
+import { isPhoneLabel, telHref } from '../utils/phone';
 
 /** View modal for a single Payment Card. The number and CVV are never
  * fetched until Mike explicitly taps "Reveal" — GET /cards/:id/reveal is
@@ -143,19 +144,28 @@ export function PaymentCardDetail({ card, onClose, onEdit }: { card: PaymentCard
             </button>
             {detailsOpen && (
               <div className="wallet-barcode-view__details-rows">
-                {facts.map((f) => (
-                  <div key={f.id} className="wallet-barcode-view__details-row">
-                    <span>{f.label}</span>
-                    <span>
-                      {f.value || '—'}
-                      {f.value && (
-                        <button type="button" className="wallet-barcode-view__details-copy" onClick={() => copyFact(f)} aria-label={`Copy ${f.label}`}>
-                          {copiedFactId === f.id ? '✓' : '⧉'}
-                        </button>
-                      )}
-                    </span>
-                  </div>
-                ))}
+                {facts.map((f) => {
+                  const tel = f.value && isPhoneLabel(f.label) ? telHref(f.value) : null;
+                  return (
+                    <div key={f.id} className="wallet-barcode-view__details-row">
+                      <span>{f.label}</span>
+                      <span>
+                        {tel ? (
+                          <a href={tel} className="wallet-barcode-view__details-tel">
+                            {f.value}
+                          </a>
+                        ) : (
+                          f.value || '—'
+                        )}
+                        {f.value && (
+                          <button type="button" className="wallet-barcode-view__details-copy" onClick={() => copyFact(f)} aria-label={`Copy ${f.label}`}>
+                            {copiedFactId === f.id ? '✓' : '⧉'}
+                          </button>
+                        )}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>

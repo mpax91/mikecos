@@ -25,7 +25,7 @@ function bytesToB64(bytes: Uint8Array): string {
   return btoa(bin);
 }
 
-type EncKeyName = 'PAYMENT_CARD_ENC_KEY' | 'EMAIL_ACCOUNT_ENC_KEY' | 'CLOUD_ACCOUNT_ENC_KEY';
+type EncKeyName = 'PAYMENT_CARD_ENC_KEY' | 'EMAIL_ACCOUNT_ENC_KEY' | 'CLOUD_ACCOUNT_ENC_KEY' | 'WALLET_CARD_ENC_KEY';
 
 async function getKey(env: Env, envVarName: EncKeyName): Promise<CryptoKey> {
   const raw = env[envVarName];

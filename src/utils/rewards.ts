@@ -421,6 +421,36 @@ export function findMatchingOffers(cards: RewardsCard[], query: string): Rewards
   return out;
 }
 
+export interface HeadlineRate {
+  card: RewardsCard;
+  rate: number;
+  /** The active bonus that's driving this card's rate, or null when the
+   * card's flat base rate is what's showing (no active bonus beats it). */
+  bonus: RewardsBonus | null;
+}
+
+/** Every active card's own best current answer, independent of any
+ * category or Find query — its highest active bonus rate if one beats its
+ * flat base rate, otherwise the base rate itself. One row per card (never
+ * one row per bonus), sorted highest first — this is what the Wallet home
+ * screen's "all reward cards" list is built from, so Wells Fargo Active
+ * Cash shows up once, at 2%, not once per category it happens to apply to.
+ * Deliberately excludes online-only bonuses from driving the headline rate
+ * (same reasoning as carryPlan's physical-wallet selection): a card whose
+ * only edge right now is an online-only bonus should headline at its
+ * everyday in-person rate, since that's what applies when the card is
+ * actually pulled out of the wallet. */
+export function headlineRatesForCards(cards: RewardsCard[]): HeadlineRate[] {
+  const active = cards.filter((c) => c.active);
+  const rows: HeadlineRate[] = active.map((card) => {
+    const eligible = card.bonuses.filter((b) => !b.onlineOnly && isBonusActiveToday(b));
+    if (eligible.length === 0) return { card, rate: card.baseRate, bonus: null };
+    const best = eligible.reduce((a, b) => (b.rate > a.rate ? b : a));
+    return best.rate > card.baseRate ? { card, rate: best.rate, bonus: best } : { card, rate: card.baseRate, bonus: null };
+  });
+  return rows.sort((a, b) => b.rate - a.rate);
+}
+
 /** Cards whose best applicable answer right now is specifically an
  * online-only bonus (Amazon.com, "Online Shopping," Chase Travel) — Find's
  * "if this is an online purchase" callout. Not merchant-specific on its

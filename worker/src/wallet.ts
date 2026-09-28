@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { Env } from './types';
+import { decryptField, encryptField } from './cryptoField';
 
 const now = () => new Date().toISOString();
 const uid = () => crypto.randomUUID();
@@ -33,6 +34,7 @@ interface WalletCardRow {
   sort_order: number;
   created_at: string;
   updated_at: string;
+  id_number_enc: string | null;
 }
 
 interface WalletCardFactRow {
@@ -70,6 +72,10 @@ function cardJson(row: WalletCardRow) {
     sortOrder: row.sort_order,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    // Never the decrypted value itself — same reveal-on-tap-only pattern as
+    // Payment Cards' hasNumber/hasCvv. GET /cards/:id/reveal-id is the only
+    // place the real license/passport/military-ID number is ever returned.
+    hasIdNumber: !!row.id_number_enc,
   };
 }
 
@@ -98,18 +104,26 @@ walletRouter.post('/cards', async (c) => {
     coverArtKey?: string | null;
     coverArtMime?: string | null;
     backArtKey?: string | null;
+    idNumber?: string | null;
   }>().catch(() => ({}) as Record<string, never>);
   const name = body.name?.trim();
   if (!name) return c.json({ error: 'name is required' }, 400);
   const category = body.category?.trim() || 'Other';
   const barcodeType = normalizeBarcodeType(body.barcodeType, 'code128');
 
+  let idNumberEnc: string | null = null;
+  try {
+    if (body.idNumber?.trim()) idNumberEnc = await encryptField(c.env, body.idNumber.trim(), 'WALLET_CARD_ENC_KEY');
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : 'encryption failed' }, 500);
+  }
+
   const maxPos = await c.env.DB.prepare('SELECT COALESCE(MAX(sort_order), -1) as m FROM wallet_cards').first<{ m: number }>();
   const id = uid();
   const ts = now();
   await c.env.DB.prepare(
-    `INSERT INTO wallet_cards (id, name, category, barcode_type, barcode_value, display_number, pin_code, balance, notes, color, cover_art_key, cover_art_mime, back_art_key, pinned, sort_order, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`
+    `INSERT INTO wallet_cards (id, name, category, barcode_type, barcode_value, display_number, pin_code, balance, notes, color, cover_art_key, cover_art_mime, back_art_key, pinned, sort_order, created_at, updated_at, id_number_enc)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`
   )
     .bind(
       id,
@@ -127,7 +141,8 @@ walletRouter.post('/cards', async (c) => {
       body.backArtKey || null,
       (maxPos?.m ?? -1) + 1,
       ts,
-      ts
+      ts,
+      idNumberEnc
     )
     .run();
 
@@ -153,6 +168,7 @@ walletRouter.patch('/cards/:id', async (c) => {
       backArtKey: string | null;
       pinned: boolean;
       sortOrder: number;
+      idNumber: string | null;
     }>
   >();
   const existing = await c.env.DB.prepare('SELECT * FROM wallet_cards WHERE id = ?').bind(id).first<WalletCardRow>();
@@ -188,6 +204,14 @@ walletRouter.patch('/cards/:id', async (c) => {
   if (body.backArtKey !== undefined) set('back_art_key', body.backArtKey || null);
   if (body.pinned !== undefined) set('pinned', body.pinned ? 1 : 0);
   if (body.sortOrder !== undefined) set('sort_order', body.sortOrder);
+
+  if (body.idNumber !== undefined) {
+    try {
+      set('id_number_enc', body.idNumber?.trim() ? await encryptField(c.env, body.idNumber.trim(), 'WALLET_CARD_ENC_KEY') : null);
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : 'encryption failed' }, 500);
+    }
+  }
 
   if (fields.length) {
     fields.push('updated_at = ?');
@@ -225,6 +249,21 @@ walletRouter.post('/cards/reorder', async (c) => {
   );
   await c.env.DB.batch(stmts);
   return c.json({ ok: true });
+});
+
+// The only route that ever returns a decrypted ID number — called on an
+// explicit tap in the card detail view, never as part of the list/create/
+// update response. Same pattern as paymentCards.ts's GET /cards/:id/reveal.
+walletRouter.get('/cards/:id/reveal-id', async (c) => {
+  const id = c.req.param('id');
+  const row = await c.env.DB.prepare('SELECT id_number_enc FROM wallet_cards WHERE id = ?').bind(id).first<{ id_number_enc: string | null }>();
+  if (!row) return c.json({ error: 'not found' }, 404);
+  try {
+    const idNumber = row.id_number_enc ? await decryptField(c.env, row.id_number_enc, 'WALLET_CARD_ENC_KEY') : null;
+    return c.json({ idNumber });
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : 'decryption failed' }, 500);
+  }
 });
 
 // ---- Details (0048_wallet_card_facts.sql) — a plain label/value list per

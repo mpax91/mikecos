@@ -98,6 +98,10 @@ export function WalletCardEditor({
   const [uploadingBack, setUploadingBack] = useState(false);
   const [categories, setCategories] = useState<WalletCategory[]>([]);
   const [facts, setFacts] = useState<WalletCardFact[]>([]);
+  // Write-only, same pattern as PaymentCardEditor's numberInput/clearNumber —
+  // a saved card only ever reports hasIdNumber, never the real value here.
+  const [idNumberInput, setIdNumberInput] = useState('');
+  const [clearIdNumber, setClearIdNumber] = useState(false);
   const frontInputRef = useRef<HTMLInputElement>(null);
   const backInputRef = useRef<HTMLInputElement>(null);
 
@@ -152,10 +156,13 @@ export function WalletCardEditor({
       color: form.color,
       coverArtKey: form.coverArtKey,
       backArtKey: form.backArtKey,
+      ...(idNumberInput.trim() ? { idNumber: idNumberInput.trim() } : clearIdNumber ? { idNumber: null } : {}),
     };
     try {
       const result = saved ? await api.updateWalletCard(saved.id, payload) : await api.createWalletCard(payload);
       setSaved(result);
+      setIdNumberInput('');
+      setClearIdNumber(false);
       onSaved(result);
     } catch {
       setError("Couldn't save — try again.");
@@ -327,6 +334,33 @@ export function WalletCardEditor({
               rows={4}
             />
           </label>
+
+          {form.category.trim().toLowerCase() === 'id' && (
+            <div className="wallet-editor__subsection">
+              <div className="wallet-editor__subsection-title">ID Number</div>
+              <div className="wallet-editor__hint" style={{ marginBottom: 2 }}>
+                Encrypted at rest, and never shown again after you save — the card view reveals it on tap, freshly
+                decrypted each time.
+              </div>
+              <label className="wallet-editor__field">
+                <span>License / passport / military ID #{saved?.hasIdNumber ? ' — on file' : ' (optional)'}</span>
+                <input
+                  value={idNumberInput}
+                  onChange={(e) => {
+                    setIdNumberInput(e.target.value);
+                    if (e.target.value) setClearIdNumber(false);
+                  }}
+                  placeholder={saved?.hasIdNumber && !clearIdNumber ? '•••••••••••' : 'Enter the number'}
+                />
+                {saved?.hasIdNumber && !clearIdNumber && !idNumberInput && (
+                  <button type="button" className="wallet-editor__manage-link" onClick={() => setClearIdNumber(true)}>
+                    Remove number on file
+                  </button>
+                )}
+                {clearIdNumber && <div className="wallet-editor__hint">Will be removed on save.</div>}
+              </label>
+            </div>
+          )}
 
           {error && <div className="wallet-editor__error">{error}</div>}
 

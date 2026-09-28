@@ -13058,6 +13058,20 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   flex-shrink: 0;
 }
 
+/* A "Phone #" (or any phone-like label) Details value renders as a tel:
+   link instead of inert text — tapping it opens the device's dialer, on
+   mobile and desktop/tablet alike (desktop just prompts to pick a calling
+   app, same as any tel: link). */
+.wallet-barcode-view__details-tel {
+  color: var(--color-accent, #3B5BA9);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.wallet-barcode-view__details-tel:hover {
+  text-decoration: underline;
+}
+
 /* ---- Wallet page header tabs (My Cards / Rewards) ---- */
 
 .wallet-page__tabs {
@@ -14159,4 +14173,77 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 .rewards-detail__add-offer-form input {
   width: 100%;
   box-sizing: border-box;
+}
+
+/* ---- Lost Wallet checklist ---- */
+
+.lost-wallet__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.lost-wallet__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 4px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.lost-wallet__row:hover {
+  background: var(--color-surface-alt, rgba(0, 0, 0, 0.03));
+}
+
+.lost-wallet__row input[type='checkbox'] {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+}
+
+.lost-wallet__row-name {
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.lost-wallet__row-sub {
+  color: var(--color-muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lost-wallet__missing {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lost-wallet__missing-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--color-surface-alt, rgba(197, 68, 68, 0.06));
+  border: 1px solid var(--color-border, rgba(197, 68, 68, 0.18));
+}
+
+.lost-wallet__missing-phones {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  font-weight: 600;
+}
+
+.lost-wallet__no-phone {
+  color: var(--color-muted);
+  font-size: 12px;
+  font-weight: 400;
 }

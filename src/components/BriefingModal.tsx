@@ -372,7 +372,7 @@ export function BriefingModal() {
                     <button
                       type="button"
                       className="briefing-modal__link-btn"
-                      onClick={() => (d.type === 'card_expiry' ? goTo('/wallet?tab=payment', d.cardId) : goTo(`/contacts/${d.contactId}`))}
+                      onClick={() => (d.type === 'card_expiry' ? goTo('/wallet?tab=database&type=payment', d.cardId) : goTo(`/contacts/${d.contactId}`))}
                     >
                       {upcomingDateIcon(d.type)} {d.name} — {inDaysLabel(d.inDays)}
                     </button>

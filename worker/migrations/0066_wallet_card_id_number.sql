@@ -1,0 +1,17 @@
+-- Wallet: an encrypted "ID number" field on wallet_cards, for the new ID
+-- category (driver's license, passport, military ID, etc). Mike's explicit
+-- call when asked where these numbers should live (Vault reference vs.
+-- plain-text Details fact vs. real encryption): "Extend Payment Cards'
+-- encryption to ID cards" — so this follows payment_cards' number_enc/
+-- cvv_enc pattern exactly (see 0049_payment_cards.sql), not a plaintext
+-- Details fact and not a Vault pointer. Its own WALLET_CARD_ENC_KEY secret
+-- (worker/src/cryptoField.ts), not a reuse of PAYMENT_CARD_ENC_KEY — same
+-- "each feature gets its own key" reasoning as Email Accounts' and Cloud
+-- Storage's keys.
+--
+-- Deliberately a single column, not split like payment_cards' number/cvv:
+-- an ID card only ever has the one sensitive number (license #, passport #,
+-- military ID #) — everything else about it (issuing state, expiration,
+-- "Phone #" to report loss) already fits in wallet_card_facts, same as any
+-- other wallet card.
+ALTER TABLE wallet_cards ADD COLUMN id_number_enc TEXT;

@@ -345,6 +345,14 @@ export interface Env {
   // reason: a fresh environment should still deploy, and cloud.ts fails
   // those specific requests with a clear error instead.
   CLOUD_ACCOUNT_ENC_KEY?: string;
+  // AES-256-GCM key (same shape/generation as the above) for Wallet's
+  // id_number_enc field on wallet_cards — the ID category's license/
+  // passport/military-ID numbers (see worker/src/wallet.ts and
+  // migrations/0066_wallet_card_id_number.sql). Mike's explicit choice over
+  // plain text or a Vault reference. Optional at the type level for the
+  // same reason: a fresh environment should still deploy, and wallet.ts
+  // fails those specific requests with a clear error instead.
+  WALLET_CARD_ENC_KEY?: string;
   // OAuth client id/secret per Cloud Storage provider — each is a Worker
   // secret from that provider's own developer console (Google Cloud
   // Console, Azure AD app registrations, Dropbox App Console, Box

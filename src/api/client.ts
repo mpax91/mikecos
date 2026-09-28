@@ -1,6 +1,6 @@
 import type { AuthenticationResponseJSON, PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON, RegistrationResponseJSON } from '@simplewebauthn/browser';
 import type { AuthCredentialSummary, AuthStatus, Bet, BetLeg, BetGameNote, BetPromo, BetPromoStatus, BetScheduleGame, BetTransaction, BetTransactionType, VaultEntryDetail, VaultFact, BriefingResponse, CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, CreditScoreEntry, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitDirection, HabitEvent, HabitLog, HabitSummary, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsFeedsResponse, NewsFolder, NewsSavedArticle, NewsSettings, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, VoterFieldsBackfillChunkResponse,
-  ContactAskResponse, BetGameEnrichment, VaultFactLabel, VaultRollupGroup, WalletCard, WalletCardFact, WalletCategory, RewardsCard, RewardsBonus, RewardsPerk, RewardsImportResult, RewardsMerchant, RewardsOffer, PaymentCard, PaymentCardFact, PaymentCardSecrets, PlexLibrary, PlexItem, PlexItemDetail, PlexIssue, PlexMissingEpisode, PlexSyncChunkResult, PlexAiringCheckResult, PlexAiringScanChunkResult, WeatherResponse, WeekResponse, EmailAccount, EmailInboxFeed, EmailPeekResult, EmailSyncResult, BookmarksResponse, BookmarksImportResult, CloudProviderId, CloudProviderInfo, CloudAccount, CloudBrowseResponse, CloudSearchResponse } from './types';
+  ContactAskResponse, BetGameEnrichment, VaultFactLabel, VaultRollupGroup, WalletCard, WalletCardFact, WalletCategory, WalletCardIdSecret, RewardsCard, RewardsBonus, RewardsPerk, RewardsImportResult, RewardsMerchant, RewardsOffer, PaymentCard, PaymentCardFact, PaymentCardSecrets, PlexLibrary, PlexItem, PlexItemDetail, PlexIssue, PlexMissingEpisode, PlexSyncChunkResult, PlexAiringCheckResult, PlexAiringScanChunkResult, WeatherResponse, WeekResponse, EmailAccount, EmailInboxFeed, EmailPeekResult, EmailSyncResult, BookmarksResponse, BookmarksImportResult, CloudProviderId, CloudProviderInfo, CloudAccount, CloudBrowseResponse, CloudSearchResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -966,7 +966,7 @@ export const api = {
   createWalletCard: (
     params: Partial<
       Pick<WalletCard, 'name' | 'category' | 'barcodeType' | 'barcodeValue' | 'displayNumber' | 'pinCode' | 'balance' | 'notes' | 'color' | 'coverArtKey' | 'backArtKey'>
-    >
+    > & { idNumber?: string | null }
   ) => request<WalletCard>('/api/wallet/cards', { method: 'POST', body: JSON.stringify(params) }).then(resolveWalletCard),
 
   updateWalletCard: (
@@ -976,13 +976,17 @@ export const api = {
         WalletCard,
         'name' | 'category' | 'barcodeType' | 'barcodeValue' | 'displayNumber' | 'pinCode' | 'balance' | 'notes' | 'color' | 'coverArtKey' | 'backArtKey' | 'pinned' | 'sortOrder'
       >
-    >
+    > & { idNumber?: string | null }
   ) => request<WalletCard>(`/api/wallet/cards/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }).then(resolveWalletCard),
 
   deleteWalletCard: (id: string) => request<{ ok: true }>(`/api/wallet/cards/${id}`, { method: 'DELETE' }),
 
   reorderWalletCards: (ordered_ids: string[]) =>
     request<{ ok: true }>('/api/wallet/cards/reorder', { method: 'POST', body: JSON.stringify({ ordered_ids }) }),
+
+  // The only call that ever returns a decrypted ID number — same
+  // reveal-on-tap pattern as revealPaymentCard below.
+  revealWalletCardId: (id: string) => request<WalletCardIdSecret>(`/api/wallet/cards/${id}/reveal-id`),
 
   // "Details" — structured facts on a card, same shape as Vault's quick
   // facts (see WalletCardFact's own comment for why entry_id = card id).

@@ -21,6 +21,7 @@ import {
   resolveMerchant,
   onlineEligibleCards,
   describeRotatingWindow,
+  headlineRatesForCards,
   type RewardsMatch,
 } from '../utils/rewards';
 
@@ -34,28 +35,22 @@ function formatStartDate(ymd: string | null | undefined): string {
   return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
-type RewardsSubTab = 'best' | 'find' | 'cards';
-
-/** Wallet Phase 2 — the credit-card rewards optimizer. Three sub-views,
- * each answering a different real question rather than one generic list:
- * "what should I be carrying, and what's the best card for my everyday
- * spending" (Best Cards — deliberately not restricted to cards with a
- * rotating category; the flat-rate default and fixed-category cards
- * belong here too, per Mike's own correction that "This Quarter" was too
- * narrow a frame), "what should I pay with right now for a specific
- * purchase or merchant" (Find — the one thing the team's earlier Card
- * Caddy build didn't do well, per Mike's own critique: it didn't surface
- * a card's non-cashback perks alongside the recommendation, so this view
- * always does), and "manage the ~15 cards themselves" (Cards). Quarterly
- * spend caps are deliberately never tracked — an explicit simplification
- * Mike asked for. */
-export function RewardsPanel() {
+/** 'home' — Wallet's default landing view: "Best Cards" (carry plan) along
+ * the top, then every reward card sorted by its own best current rate
+ * (headlineRatesForCards), an embedded Find search, and the category
+ * reference table — all in one screen, no sub-tab clicking required. This
+ * is what Mike's redesign asked for explicitly: no more guessing which of
+ * three tabs (My Cards/Rewards/Payment Cards) to be in.
+ * 'manage' — the full card list (add/edit/delete/import/always-carry),
+ * shown from Card Database's "Rewards" pill instead. Quarterly spend caps
+ * are deliberately never tracked — an explicit simplification Mike asked
+ * for, unrelated to this split. */
+export function RewardsPanel({ mode = 'home' }: { mode?: 'home' | 'manage' }) {
   const location = useLocation();
   const navigate = useNavigate();
 
   const [cards, setCards] = useState<RewardsCard[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [sub, setSub] = useState<RewardsSubTab>('best');
   const [openCard, setOpenCard] = useState<RewardsCard | null>(null);
   const [editing, setEditing] = useState<RewardsCard | null | 'new'>(null);
   const [deleting, setDeleting] = useState<RewardsCard | null>(null);
@@ -77,16 +72,13 @@ export function RewardsPanel() {
   }, [load]);
 
   // Deep-link from global search (worker's runSearch routes a rewards_card
-  // match to /wallet?tab=rewards with openId set) — same router-state
-  // pattern Wallet's own cards use.
+  // match to /wallet?tab=database&type=rewards with openId set) — same
+  // router-state pattern Wallet's own cards use.
   useEffect(() => {
     const openId = (location.state as { openId?: string } | null)?.openId;
     if (!openId || !cards) return;
     const match = cards.find((c) => c.id === openId);
-    if (match) {
-      setOpenCard(match);
-      setSub('cards');
-    }
+    if (match) setOpenCard(match);
     navigate('.', { replace: true, state: null });
   }, [location.state, cards, navigate]);
 
@@ -113,6 +105,11 @@ export function RewardsPanel() {
 
   const activeCards = useMemo(() => (cards ?? []).filter((c) => c.active), [cards]);
   const carry = useMemo(() => carryPlan(activeCards), [activeCards]);
+  // One row per card, sorted by that card's own best current rate — Mike's
+  // explicit spec: "a list of all reward cards that I have - sorted by
+  // highest percentage to lowest (and only showing Wells Fargo Active Cash)
+  // for 2%" — i.e. never one row per bonus.
+  const headlineRates = useMemo(() => headlineRatesForCards(activeCards), [activeCards]);
   const needsUpdate = useMemo(() => cardsNeedingQuarterUpdate(activeCards), [activeCards]);
   // Only worth a row here when it actually beats the default flat-rate
   // card's own rate — the default already covers every category at that
@@ -218,46 +215,42 @@ export function RewardsPanel() {
 
   return (
     <div>
-      <div className="wallet-page__toolbar">
-        <div className="rewards-panel__subtabs">
-          <button type="button" className={`rewards-panel__subtab${sub === 'best' ? ' is-active' : ''}`} onClick={() => setSub('best')}>
-            Best Cards
-          </button>
-          <button type="button" className={`rewards-panel__subtab${sub === 'find' ? ' is-active' : ''}`} onClick={() => setSub('find')}>
-            Find
-          </button>
-          <button type="button" className={`rewards-panel__subtab${sub === 'cards' ? ' is-active' : ''}`} onClick={() => setSub('cards')}>
-            All Cards
-          </button>
+      {mode === 'manage' && (
+        <div className="wallet-page__toolbar">
+          <div className="wallet-page__section-title" style={{ margin: 0 }}>
+            Rewards cards
+          </div>
+          <div className="rewards-panel__toolbar-actions">
+            <button type="button" className="btn btn--ghost" onClick={() => setImporting(true)}>
+              Import…
+            </button>
+            <button type="button" className="btn" onClick={() => setEditing('new')}>
+              + Add Card
+            </button>
+          </div>
         </div>
-        <div className="rewards-panel__toolbar-actions">
-          <button type="button" className="btn btn--ghost" onClick={() => setImporting(true)}>
-            Import…
-          </button>
-          <button type="button" className="btn" onClick={() => setEditing('new')}>
-            + Add Card
-          </button>
-        </div>
-      </div>
-
-      {cards.length === 0 && (
-        <div className="empty-state">No cards yet — add the first one to start building out your best-card picture.</div>
       )}
 
-      {cards.length > 0 && sub === 'best' && (
-        <>
-          {needsUpdate.length > 0 && (
-            <div className="rewards-panel__notice">
-              <span>
-                Rotating {needsUpdate.length === 1 ? 'category has' : 'categories have'} ended with nothing queued up for{' '}
-                <strong>{needsUpdate.map((c) => c.nickname).join(', ')}</strong> — set this quarter's bonus on the All Cards tab.
-              </span>
-              <button type="button" className="rewards-panel__notice-link" onClick={() => setSub('cards')}>
-                Update now
-              </button>
-            </div>
-          )}
+      {cards.length === 0 && (
+        <div className="empty-state">
+          {mode === 'home'
+            ? 'No reward cards yet — add one from Card Database → Rewards to start building out your best-card picture.'
+            : 'No cards yet — add the first one to start building out your best-card picture.'}
+        </div>
+      )}
 
+      {cards.length > 0 && needsUpdate.length > 0 && (
+        <div className="rewards-panel__notice">
+          <span>
+            Rotating {needsUpdate.length === 1 ? 'category has' : 'categories have'} ended with nothing queued up for{' '}
+            <strong>{needsUpdate.map((c) => c.nickname).join(', ')}</strong>
+            {mode === 'home' ? ' — set this quarter\'s bonus in Card Database → Rewards.' : ' — set this quarter\'s bonus below.'}
+          </span>
+        </div>
+      )}
+
+      {cards.length > 0 && mode === 'home' && (
+        <>
           <div className="wallet-page__section">
             <div className="wallet-page__section-title">Carry in your wallet</div>
             {carry.length === 0 ? (
@@ -280,43 +273,32 @@ export function RewardsPanel() {
           </div>
 
           <div className="wallet-page__section">
-            <div className="wallet-page__section-title">Worth switching for</div>
-            {categoryBests.length === 0 ? (
-              <div className="empty-state">
-                {floorRate > 0
-                  ? `Nothing beats your ${floorRate}% default right now — every category's covered by whatever's in your wallet already.`
-                  : "Add a card's base rate to see category recommendations."}
-              </div>
+            <div className="wallet-page__section-title">All reward cards</div>
+            {headlineRates.length === 0 ? (
+              <div className="empty-state">Add a card to see it ranked here.</div>
             ) : (
               <ul className="rewards-find__results">
-                {categoryBests.map(({ category, match }) => (
+                {headlineRates.map(({ card: c, rate, bonus }) => (
                   <RewardsMatchRow
-                    key={category}
-                    label={category}
-                    rate={match.rate}
-                    card={match.card}
+                    key={c.id}
+                    label={c.nickname}
+                    rate={rate}
+                    card={c}
                     onOpen={setOpenCard}
                     subtitle={
-                      <>
-                        {match.card.nickname}
-                        {match.bonus?.kind === 'rotating'
-                          ? ` · ${describeRotatingWindow(match.bonus.startsOn, match.bonus.endsOn) ?? 'rotating'}`
-                          : !match.bonus
-                          ? ' · base rate'
-                          : ''}
-                      </>
+                      bonus
+                        ? `${bonus.category}${bonus.kind === 'rotating' ? ` · ${describeRotatingWindow(bonus.startsOn, bonus.endsOn) ?? 'rotating'}` : ''}`
+                        : 'base rate'
                     }
                   />
                 ))}
               </ul>
             )}
           </div>
-        </>
-      )}
 
-      {cards.length > 0 && sub === 'find' && (
-        <div className="wallet-page__section">
-          <input
+          <div className="wallet-page__section">
+            <div className="wallet-page__section-title">Find</div>
+            <input
             type="search"
             className="wallet-page__search"
             placeholder="What are you buying, or from where? (e.g. groceries, Home Depot, Rhoback.com)"
@@ -474,10 +456,44 @@ export function RewardsPanel() {
               )}
             </>
           )}
-        </div>
+          </div>
+
+          <div className="wallet-page__section">
+            <div className="wallet-page__section-title">Worth switching for</div>
+            {categoryBests.length === 0 ? (
+              <div className="empty-state">
+                {floorRate > 0
+                  ? `Nothing beats your ${floorRate}% default right now — every category's covered by whatever's in your wallet already.`
+                  : "Add a card's base rate to see category recommendations."}
+              </div>
+            ) : (
+              <ul className="rewards-find__results">
+                {categoryBests.map(({ category, match }) => (
+                  <RewardsMatchRow
+                    key={category}
+                    label={category}
+                    rate={match.rate}
+                    card={match.card}
+                    onOpen={setOpenCard}
+                    subtitle={
+                      <>
+                        {match.card.nickname}
+                        {match.bonus?.kind === 'rotating'
+                          ? ` · ${describeRotatingWindow(match.bonus.startsOn, match.bonus.endsOn) ?? 'rotating'}`
+                          : !match.bonus
+                          ? ' · base rate'
+                          : ''}
+                      </>
+                    }
+                  />
+                ))}
+              </ul>
+            )}
+          </div>
+        </>
       )}
 
-      {cards.length > 0 && sub === 'cards' && (
+      {cards.length > 0 && mode === 'manage' && (
         <div className="wallet-page__section">
           <div className="wallet-tile-grid">
             {cards.map((c) => (
