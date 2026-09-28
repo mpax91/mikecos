@@ -126,8 +126,12 @@ function cardJson(row: RewardsCardRow, bonuses: RewardsBonusRow[], perks: Reward
 // of rows each) and matches how Wallet's own page fetches everything once
 // and works client-side from there.
 rewardsRouter.get('/cards', async (c) => {
+  // Alphabetical by nickname — same reasoning as Payment Cards'
+  // /api/payment-cards/cards: there's no reorder UI for rewards_cards
+  // either, so sort_order was just creation order, not anything Mike
+  // could actually control.
   const [cards, bonuses, perks, offers] = await Promise.all([
-    c.env.DB.prepare('SELECT * FROM rewards_cards ORDER BY sort_order ASC, nickname COLLATE NOCASE ASC').all<RewardsCardRow>(),
+    c.env.DB.prepare('SELECT * FROM rewards_cards ORDER BY nickname COLLATE NOCASE ASC').all<RewardsCardRow>(),
     c.env.DB.prepare('SELECT * FROM rewards_bonuses').all<RewardsBonusRow>(),
     c.env.DB.prepare('SELECT * FROM rewards_perks').all<RewardsPerkRow>(),
     c.env.DB.prepare("SELECT * FROM rewards_offers WHERE expires_on IS NULL OR expires_on >= date('now')").all<RewardsOfferRow>(),
@@ -474,7 +478,7 @@ interface ImportMerchant {
 // to research, see 0058_rewards_merchant_intelligence.sql.
 rewardsRouter.get('/export', async (c) => {
   const [cards, bonuses, perks, merchants] = await Promise.all([
-    c.env.DB.prepare('SELECT * FROM rewards_cards WHERE active = 1 ORDER BY sort_order ASC, nickname COLLATE NOCASE ASC').all<RewardsCardRow>(),
+    c.env.DB.prepare('SELECT * FROM rewards_cards WHERE active = 1 ORDER BY nickname COLLATE NOCASE ASC').all<RewardsCardRow>(),
     c.env.DB.prepare('SELECT * FROM rewards_bonuses').all<RewardsBonusRow>(),
     c.env.DB.prepare('SELECT * FROM rewards_perks').all<RewardsPerkRow>(),
     c.env.DB.prepare('SELECT * FROM rewards_merchants ORDER BY name COLLATE NOCASE ASC').all<RewardsMerchantRow>(),
