@@ -415,7 +415,17 @@ async function fetchAllPagedCounted(env: Env, path: string, onFetch: () => void)
   const out: PlexMetadata[] = [];
   let start = 0;
   for (;;) {
-    const page = await plexFetch<PlexMetadata>(env, path, { 'X-Plex-Container-Start': start, 'X-Plex-Container-Size': PAGE_SIZE });
+    // includeGuids=1 — without it, Plex's bulk /all listing omits the
+    // `Guid` array entirely for shows on the modern "Plex TV Series" agent
+    // (guid: "plex://show/...", no tvdb id embedded in it directly), so
+    // extractTvdbId below had nothing to find and every such show synced
+    // with tvdb_id = NULL — silently excluded from the Airing check
+    // (runPlexAiringCheck only considers shows with a resolved TVMaze id,
+    // which itself requires a tvdb_id to look up). Older libraries on the
+    // legacy thetvdb agent were unaffected (their tvdb id is embedded
+    // directly in the primary `guid`), which is why this only showed up
+    // for some shows and not others.
+    const page = await plexFetch<PlexMetadata>(env, path, { 'X-Plex-Container-Start': start, 'X-Plex-Container-Size': PAGE_SIZE, includeGuids: 1 });
     onFetch();
     const items = page.MediaContainer.Metadata ?? [];
     out.push(...items);
