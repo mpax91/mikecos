@@ -91,7 +91,12 @@ function cardJson(row: PaymentCardRow) {
 }
 
 paymentCardsRouter.get('/cards', async (c) => {
-  const { results } = await c.env.DB.prepare('SELECT * FROM payment_cards ORDER BY sort_order ASC, nickname COLLATE NOCASE ASC').all<PaymentCardRow>();
+  // Alphabetical by nickname — there's no drag-to-reorder UI wired up for
+  // Payment Cards (the /cards/reorder endpoint and sort_order column exist
+  // for parity with Wallet's other card lists, but nothing in the frontend
+  // calls it), so sort_order was really just creation order and made the
+  // list order feel arbitrary as cards got added/imported over time.
+  const { results } = await c.env.DB.prepare('SELECT * FROM payment_cards ORDER BY nickname COLLATE NOCASE ASC').all<PaymentCardRow>();
   return c.json((results ?? []).map(cardJson));
 });
 
