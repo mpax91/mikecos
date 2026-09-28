@@ -7230,6 +7230,46 @@ app.delete('/api/bet-game-notes/:id', async (c) => {
   return c.json({ ok: true });
 });
 
+// TEMPORARY — re-fetches specific Plex shows with includeGuids=1 (the fix
+// from b083ae317) and patches their plex_items.tvdb_id directly, so the
+// two shows Mike flagged don't have to wait for the multi-hour full
+// library re-sync to reach TV Shows before Airing can pick them up.
+// Read-and-write, scoped to explicit ratingKeys only, removed after use.
+app.get('/api/debug/fix-show-tvdb', async (c) => {
+  const idsParam = c.req.query('ids') ?? '';
+  const ids = idsParam.split(',').map((s) => s.trim()).filter(Boolean);
+  if (ids.length === 0) return c.json({ error: 'pass ?ids=ratingKey1,ratingKey2' }, 400);
+  if (!c.env.PLEX_SERVER_URL || !c.env.PLEX_TOKEN) return c.json({ error: 'Plex not configured' }, 500);
+  const base = c.env.PLEX_SERVER_URL.replace(/\/$/, '');
+  const out: Record<string, unknown> = {};
+  for (const id of ids) {
+    const u = new URL(`/library/metadata/${id}`, base + '/');
+    u.searchParams.set('X-Plex-Token', c.env.PLEX_TOKEN);
+    u.searchParams.set('includeGuids', '1');
+    const res = await fetch(u.toString(), { headers: { Accept: 'application/json' } });
+    if (!res.ok) {
+      out[id] = { error: `Plex ${res.status}` };
+      continue;
+    }
+    const data = await res.json<{ MediaContainer: { Metadata?: { guid?: string; Guid?: { id: string }[] }[] } }>();
+    const m = data.MediaContainer.Metadata?.[0];
+    const candidates = [...(m?.Guid ?? []).map((g) => g.id), m?.guid ?? ''];
+    let tvdbId: string | null = null;
+    for (const cand of candidates) {
+      const match = /tvdb:\/\/(\d+)/.exec(cand);
+      if (match) {
+        tvdbId = match[1];
+        break;
+      }
+    }
+    if (tvdbId) {
+      await c.env.DB.prepare('UPDATE plex_items SET tvdb_id = ? WHERE id = ?').bind(tvdbId, id).run();
+    }
+    out[id] = { tvdbId, guid: m?.guid, Guid: m?.Guid };
+  }
+  return c.json(out);
+});
+
 app.get('/api/health', (c) => c.json({ ok: true, time: now() }));
 
 // This Worker's own public URL — needed so the nightly cron can re-invoke
