@@ -5135,6 +5135,18 @@ async function applyNewsAutoRead(env: Env): Promise<void> {
     .run();
 }
 
+// D1's cap on bound parameters in a single prepared statement (and, in
+// practice, a safe per-call size for a batch() array too) — comfortably
+// under Cloudflare's actual limit, chosen so a huge outlier feed just
+// takes a few extra round-trips instead of erroring out.
+const D1_MAX_PARAMS = 100;
+
+function chunkArray<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
 /** Fetches + parses one feed and upserts its items into news_articles.
  * Best-effort: on any failure it records the error on the feed row and
  * rethrows, so callers can decide whether to surface it (a fresh add) or
@@ -5171,12 +5183,21 @@ async function refreshFeed(env: Env, feed: NewsFeedRow, force = false): Promise<
     // how many items the feed has.
     if (parsed.items.length > 0) {
       const urls = [...new Set(parsed.items.map((i) => i.url))];
-      const { results: existingRows } = await env.DB.prepare(
-        `SELECT id, feed_id, url FROM news_articles WHERE url IN (${urls.map(() => '?').join(',')})`
-      )
-        .bind(...urls)
-        .all<{ id: string; feed_id: string; url: string }>();
-      const existingByUrl = new Map((existingRows ?? []).map((r) => [r.url, r]));
+      // D1 caps bound parameters per statement well under what a feed
+      // this size can need — OpenAI's news feed alone hands back 1,200+
+      // items in one fetch, so a single `WHERE url IN (...)` with one
+      // placeholder per url blew past that cap outright ("too many SQL
+      // variables"). Chunking keeps every statement's parameter count
+      // fixed regardless of feed size.
+      const existingByUrl = new Map<string, { id: string; feed_id: string; url: string }>();
+      for (const urlChunk of chunkArray(urls, D1_MAX_PARAMS)) {
+        const { results } = await env.DB.prepare(
+          `SELECT id, feed_id, url FROM news_articles WHERE url IN (${urlChunk.map(() => '?').join(',')})`
+        )
+          .bind(...urlChunk)
+          .all<{ id: string; feed_id: string; url: string }>();
+        for (const r of results ?? []) existingByUrl.set(r.url, r);
+      }
 
       const stmts: D1PreparedStatement[] = [];
       for (const item of parsed.items) {
@@ -5209,7 +5230,12 @@ async function refreshFeed(env: Env, feed: NewsFeedRow, force = false): Promise<
           );
         }
       }
-      if (stmts.length > 0) await env.DB.batch(stmts);
+      // Same cap applies to a single batch() call's statements in
+      // aggregate, not just one query's placeholders — chunk the writes
+      // too so an outlier feed like OpenAI's can't blow through it here.
+      for (const stmtChunk of chunkArray(stmts, D1_MAX_PARAMS)) {
+        await env.DB.batch(stmtChunk);
+      }
     }
 
     // Only overwrite the feed's own title if it's still the placeholder
@@ -5230,7 +5256,65 @@ async function refreshFeed(env: Env, feed: NewsFeedRow, force = false): Promise<
   }
 }
 
+// refreshFeed's own de-dupe (see its header comment) only catches a
+// shared story if the feed that already owns it was refreshed first and
+// committed before the second feed's refresh runs its existingByUrl
+// lookup. Loading News' "All"/folder views refreshes every target feed
+// concurrently (Promise.all below), so two feeds that both see a
+// brand-new shared story for the first time in the same load can each
+// pass that lookup before either has inserted — and each then create its
+// own news_articles row for the same url. This is the backstop: it scans
+// for urls with more than one row and folds every extra row into the
+// oldest one, exactly like refreshFeed's own "owned by a different feed"
+// branch does — just after the fact instead of before. Cheap when
+// nothing's duplicated (one GROUP BY), so it's fine to call on every
+// articles/feeds load rather than only from a cron.
+async function mergeDuplicateArticles(env: Env): Promise<void> {
+  const { results: dupUrls } = await env.DB.prepare(`SELECT url FROM news_articles GROUP BY url HAVING COUNT(*) > 1`).all<{
+    url: string;
+  }>();
+  if (!dupUrls || dupUrls.length === 0) return;
+
+  for (const { url } of dupUrls) {
+    const { results: rows } = await env.DB.prepare(`SELECT id, feed_id FROM news_articles WHERE url = ? ORDER BY fetched_at ASC, id ASC`)
+      .bind(url)
+      .all<{ id: string; feed_id: string }>();
+    if (!rows || rows.length < 2) continue;
+    const [canonical, ...dupes] = rows;
+
+    const stmts: D1PreparedStatement[] = [];
+    for (const dup of dupes) {
+      // Carry over the duplicate's own owning feed as a link, and repoint
+      // any feed already linked to it (from an earlier merge or manual
+      // dedupe) onto the canonical row instead.
+      stmts.push(env.DB.prepare('INSERT OR IGNORE INTO news_article_feeds (article_id, feed_id) VALUES (?, ?)').bind(canonical.id, dup.feed_id));
+      stmts.push(
+        env.DB.prepare(
+          `INSERT OR IGNORE INTO news_article_feeds (article_id, feed_id) SELECT ?, feed_id FROM news_article_feeds WHERE article_id = ?`
+        ).bind(canonical.id, dup.id)
+      );
+      stmts.push(env.DB.prepare('DELETE FROM news_article_feeds WHERE article_id = ?').bind(dup.id));
+      // Read state: keep canonical's own if it already has one, otherwise
+      // inherit the duplicate's.
+      stmts.push(
+        env.DB.prepare(
+          `INSERT OR IGNORE INTO news_read (article_id, read_at, auto_marked) SELECT ?, read_at, auto_marked FROM news_read WHERE article_id = ?`
+        ).bind(canonical.id, dup.id)
+      );
+      stmts.push(env.DB.prepare('DELETE FROM news_read WHERE article_id = ?').bind(dup.id));
+      // Saved copies keep working even after the source row they pointed
+      // at is gone.
+      stmts.push(env.DB.prepare('UPDATE news_saved SET article_id = ? WHERE article_id = ?').bind(canonical.id, dup.id));
+      stmts.push(env.DB.prepare('DELETE FROM news_articles WHERE id = ?').bind(dup.id));
+    }
+    for (const stmtChunk of chunkArray(stmts, D1_MAX_PARAMS)) {
+      await env.DB.batch(stmtChunk);
+    }
+  }
+}
+
 app.get('/api/news/feeds', async (c) => {
+  await mergeDuplicateArticles(c.env);
   await applyNewsAutoRead(c.env);
   // Folders with an explicit position (news_folders, set via Settings'
   // "Folder Order") sort by that first; any folder Mike hasn't reordered
@@ -5481,6 +5565,10 @@ app.get('/api/news/articles', async (c) => {
       }
     })
   );
+  // Concurrent refreshes above are exactly the case that can race a
+  // shared story into two rows (see mergeDuplicateArticles) — clean that
+  // up before reading the list back so it's never visibly duplicated.
+  await mergeDuplicateArticles(c.env);
 
   const ids = targetFeeds.map((f) => f.id);
   const placeholders = ids.map(() => '?').join(',');
