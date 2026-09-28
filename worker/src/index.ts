@@ -7232,6 +7232,27 @@ app.delete('/api/bet-game-notes/:id', async (c) => {
 
 app.get('/api/health', (c) => c.json({ ok: true, time: now() }));
 
+// TEMPORARY, read-only — diagnosing why the Airing check isn't flagging
+// The Simpsons S38E01 / Universal Basic Guys S3E01. Reports each show's
+// tvdb_id, whether it's been resolved to a TVMaze id (plex_tvmaze_shows),
+// and any existing plex_missing_episodes row for that specific episode
+// (including a dismissed one, which the normal list hides). SELECT-only,
+// no writes. To be deleted right after use.
+app.get('/api/debug/airing-check', async (c) => {
+  const shows = await c.env.DB.prepare(
+    `SELECT s.id, s.title, s.guid, s.tvdb_id, t.tvmaze_id, t.resolved_at
+     FROM plex_items s
+     LEFT JOIN plex_tvmaze_shows t ON t.show_item_id = s.id
+     WHERE s.type = 'show' AND (s.title LIKE '%Simpsons%' OR s.title LIKE '%Universal Basic Guys%')`
+  ).all();
+  const missing = await c.env.DB.prepare(
+    `SELECT show_title, season_number, episode_number, aired_on, detected_at, dismissed
+     FROM plex_missing_episodes
+     WHERE show_title LIKE '%Simpsons%' OR show_title LIKE '%Universal Basic Guys%'`
+  ).all();
+  return c.json({ shows: shows.results, missing: missing.results });
+});
+
 // This Worker's own public URL — needed so the nightly cron can re-invoke
 // itself below. Update this if the Worker is ever renamed/redeployed
 // under a different name.
