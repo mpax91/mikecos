@@ -38,7 +38,6 @@ import { calendarIdFromIcsUrl, meetingsForDate, meetingsForRange } from './ics';
 import { describeRrule, isValidRrule, nextDueOccurrenceDate, type RecurringTaskDefinition } from './recurring';
 import { HealthParseError, parseHealthWeek } from './health';
 import { FeedParseError, parseFeed } from './news';
-import { decodeEncodedWords } from './imapClient';
 import { authGate, authRouter, resolveOrigin } from './auth';
 import { vaultRouter } from './vault';
 import { walletRouter } from './wallet';
@@ -7317,28 +7316,6 @@ app.patch('/api/bet-game-notes/:id', async (c) => {
 app.delete('/api/bet-game-notes/:id', async (c) => {
   await c.env.DB.prepare('DELETE FROM bet_game_notes WHERE id = ?').bind(c.req.param('id')).run();
   return c.json({ ok: true });
-});
-
-// TEMPORARY — one-time backfill for email_messages rows synced before
-// imapClient's RFC 2047 decoding fix, whose subject/from_name are stuck as
-// raw "=?UTF-8?q?...?=" text (a sync never re-touches an existing row's
-// subject, see email.ts's `if (!existing)` insert guard, so those rows
-// would otherwise stay mangled forever). POST-only and idempotent —
-// decodeEncodedWords is a no-op on already-plain text — removed once run.
-app.post('/api/debug/backfill-encoded-subjects', async (c) => {
-  const { results } = await c.env.DB.prepare(
-    `SELECT id, subject, from_name FROM email_messages WHERE subject LIKE '=?%' OR from_name LIKE '=?%'`
-  ).all<{ id: string; subject: string; from_name: string | null }>();
-  const rows = results ?? [];
-  const stmts = rows.map((r) =>
-    c.env.DB.prepare('UPDATE email_messages SET subject = ?, from_name = ? WHERE id = ?').bind(
-      decodeEncodedWords(r.subject),
-      r.from_name ? decodeEncodedWords(r.from_name) : r.from_name,
-      r.id
-    )
-  );
-  if (stmts.length > 0) await c.env.DB.batch(stmts);
-  return c.json({ updated: stmts.length });
 });
 
 app.get('/api/health', (c) => c.json({ ok: true, time: now() }));
