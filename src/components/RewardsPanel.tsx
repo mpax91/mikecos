@@ -14,6 +14,8 @@ import {
   bestCardForCategory,
   defaultFlatRateCard,
   findBestCardsFor,
+  topFindResults,
+  upcomingBonusesFor,
   findRelevantPerks,
   findMatchingOffers,
   resolveMerchant,
@@ -23,6 +25,14 @@ import {
 } from '../utils/rewards';
 
 const QUICK_CHIPS = ['Dining', 'Gas', 'Groceries', 'Travel', 'Drugstores', 'Streaming'];
+
+/** "2026-10-01" -> "Oct 1". Parsed as a local date on purpose — new
+ * Date("2026-10-01") is UTC midnight, which renders as Sept 30 in New York. */
+function formatStartDate(ymd: string | null | undefined): string {
+  if (!ymd) return 'soon';
+  const [y, m, d] = ymd.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
 
 type RewardsSubTab = 'best' | 'find' | 'cards';
 
@@ -116,13 +126,38 @@ export function RewardsPanel() {
         .filter((row): row is { category: string; match: RewardsMatch } => !!row.match && row.match.rate > floorRate),
     [activeCards, floorRate]
   );
-  // Below-floor cards are hidden here too — same reasoning as the category
-  // table: a 1% card is never the right answer when the default already
-  // covers everything at 2%, so it's just noise in a ranked list.
+  // Perks (rental car insurance, phone protection...) and manually-noted
+  // bank-portal offers (Chase/Amex/Discover) relevant to this query — see
+  // findRelevantPerks/findMatchingOffers in utils/rewards.ts. Neither
+  // depends on any bonus matching at all, since a perk or a targeted deal
+  // can be the actual answer even when no card earns extra cashback here.
+  const relevantPerks = useMemo(() => findRelevantPerks(activeCards, findQuery, merchants), [activeCards, findQuery, merchants]);
+  const matchingOffers = useMemo(() => findMatchingOffers(activeCards, findQuery), [activeCards, findQuery]);
+  // Only the best rate shows — anything lower is never the right answer,
+  // so it's noise. Ties at the top all show (with the card that also has
+  // a relevant perk first), and when nothing beats the default flat rate
+  // the result is simply every card tied at that floor.
   const findResults = useMemo(
-    () => findBestCardsFor(activeCards, findQuery, { merchants }).filter((m) => m.rate >= floorRate),
-    [activeCards, findQuery, floorRate, merchants]
+    () => topFindResults(findBestCardsFor(activeCards, findQuery, { merchants }), new Set(relevantPerks.map((p) => p.card.id))),
+    [activeCards, findQuery, merchants, relevantPerks]
   );
+  const topFindRate = findResults[0]?.rate ?? floorRate;
+  // A rotating bonus that starts within two weeks and would beat today's
+  // answer — "Discover 5% · starts Oct 1" in the last days of a quarter.
+  const upcomingResults = useMemo(
+    () => upcomingBonusesFor(activeCards, findQuery, topFindRate, { merchants }),
+    [activeCards, findQuery, topFindRate, merchants]
+  );
+  // The perk callout only lists perks on cards that are actually part of
+  // the answer, or perks worth knowing about when no card earns a bonus
+  // here at all (rental car coverage for "hertz") — a phone-protection
+  // perk on a 2% card isn't a reason to pick it over a 3% card that has
+  // the same protection.
+  const shownPerks = useMemo(() => {
+    const shownIds = new Set(findResults.map((m) => m.card.id));
+    const anyBonus = findResults.some((m) => m.bonus !== null);
+    return anyBonus ? relevantPerks.filter((p) => shownIds.has(p.card.id)) : relevantPerks;
+  }, [findResults, relevantPerks]);
   // Whenever the raw query itself doesn't hit a category/keyword directly,
   // the merchant directory (0058) resolves "Rhoback" -> "Online Shopping",
   // "Fios"/"T-Mobile" -> "Phone/Wireless", etc. — shown as a small
@@ -142,14 +177,14 @@ export function RewardsPanel() {
   // Shopping," Chase Travel) as a standing "if this is online" suggestion,
   // regardless of whether the query text (or a merchant-directory
   // resolution) matched it directly.
-  const onlineCards = useMemo(() => onlineEligibleCards(activeCards), [activeCards]);
-  // Perks (rental car insurance, phone protection...) and manually-noted
-  // bank-portal offers (Chase/Amex/Discover) relevant to this query — see
-  // findRelevantPerks/findMatchingOffers in utils/rewards.ts. Neither
-  // depends on any bonus matching at all, since a perk or a targeted deal
-  // can be the actual answer even when no card earns extra cashback here.
-  const relevantPerks = useMemo(() => findRelevantPerks(activeCards, findQuery, merchants), [activeCards, findQuery, merchants]);
-  const matchingOffers = useMemo(() => findMatchingOffers(activeCards, findQuery), [activeCards, findQuery]);
+  // Only when the query itself didn't land on a specific bonus — once it
+  // has (Con Edison -> Discover utilities), a generic "if it's online, use
+  // your Amazon card" suggestion is just noise. And only cards that beat
+  // the answer above.
+  const onlineCards = useMemo(() => {
+    if (findResults.some((m) => m.bonus !== null)) return [];
+    return onlineEligibleCards(activeCards).filter((m) => m.rate > topFindRate);
+  }, [activeCards, findResults, topFindRate]);
   // Nothing at all recognized this query — no bonus/keyword hit strong
   // enough to beat the floor, no merchant-directory resolution, no perk,
   // no offer. That's the moment to offer teaching MikeOS what it is,
@@ -329,6 +364,24 @@ export function RewardsPanel() {
                 ))}
               </ul>
 
+              {upcomingResults.length > 0 && (
+                <div className="rewards-find__online">
+                  <div className="rewards-find__online-title">Starting soon</div>
+                  <ul className="rewards-find__results">
+                    {upcomingResults.map((match) => (
+                      <RewardsMatchRow
+                        key={match.card.id}
+                        label={match.card.nickname}
+                        rate={match.rate}
+                        card={match.card}
+                        onOpen={setOpenCard}
+                        subtitle={`${match.bonus?.category ?? 'rotating'} · starts ${formatStartDate(match.bonus?.startsOn)}`}
+                      />
+                    ))}
+                  </ul>
+                </div>
+              )}
+
               {onlineCards.length > 0 && (
                 <div className="rewards-find__online">
                   <div className="rewards-find__online-title">If this is an online purchase</div>
@@ -347,11 +400,11 @@ export function RewardsPanel() {
                 </div>
               )}
 
-              {relevantPerks.length > 0 && (
+              {shownPerks.length > 0 && (
                 <div className="rewards-find__online">
                   <div className="rewards-find__online-title">Relevant perks (not cashback)</div>
                   <ul className="rewards-find__results">
-                    {relevantPerks.map(({ card, perk }) => (
+                    {shownPerks.map(({ card, perk }) => (
                       <li key={perk.id} className="rewards-find__perk-row" onClick={() => setOpenCard(card)}>
                         <div className="rewards-find__perk-icon">✓</div>
                         <div>

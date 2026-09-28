@@ -9,8 +9,30 @@ import type { RewardsBonus, RewardsCard, RewardsMerchant, RewardsOffer, RewardsP
 export function isBonusActiveToday(bonus: RewardsBonus): boolean {
   if (bonus.kind === 'fixed') return true;
   if (!bonus.startsOn || !bonus.endsOn) return false;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localToday();
   return bonus.startsOn <= today && today <= bonus.endsOn;
+}
+
+/** Today as YYYY-MM-DD in the device's own timezone. toISOString() is UTC,
+ * which in New York flips to "tomorrow" at 8pm — so a quarter's bonuses
+ * would switch on (and off) four hours early. */
+export function localToday(date = new Date()): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+/** A rotating bonus that hasn't started yet but starts within the next
+ * `withinDays` days — Find's "starting soon" hint, so results don't look
+ * wrong in the last days of a quarter (Discover's Q4 utilities not
+ * showing on Sept 28, say). */
+export function isBonusStartingSoon(bonus: RewardsBonus, withinDays = 14, date = new Date()): boolean {
+  if (bonus.kind !== 'rotating' || !bonus.startsOn || !bonus.endsOn) return false;
+  const today = localToday(date);
+  const horizon = new Date(date);
+  horizon.setDate(horizon.getDate() + withinDays);
+  return bonus.startsOn > today && bonus.startsOn <= localToday(horizon);
 }
 
 /** The card that wins by default whenever nothing more specific applies —
@@ -126,7 +148,7 @@ export function everydayCategories(cards: RewardsCard[]): string[] {
 export function needsQuarterUpdate(card: RewardsCard): boolean {
   const rotating = card.bonuses.filter((b) => b.kind === 'rotating' && b.startsOn && b.endsOn);
   if (rotating.length === 0) return false;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localToday();
   return !rotating.some((b) => b.endsOn! >= today);
 }
 
@@ -199,7 +221,17 @@ function bonusMatchesQuery(bonus: RewardsBonus, rawQuery: string, normQuery: str
     .split(',')
     .map((k) => normalizeForMatch(k))
     .filter(Boolean)
-    .some((k) => normQuery.includes(k) || k.includes(normQuery));
+    .some((k) => keywordMatches(k, normQuery));
+}
+
+/** A stored keyword/alias matches a query when the keyword appears inside
+ * what was typed ("rhoback" in "rhobackcom"), or when what was typed is
+ * the *start* of the keyword (a half-typed "rhob"). Only the start, not
+ * anywhere inside: otherwise "gas" matches "natural gas", "uber" matches
+ * "uber eats" and "travel" matches "chase travel", sending a plain
+ * category search to the wrong card. */
+function keywordMatches(normKeyword: string, normQuery: string): boolean {
+  return normQuery.includes(normKeyword) || normKeyword.startsWith(normQuery);
 }
 
 export interface FindOptions {
@@ -222,15 +254,31 @@ export interface FindOptions {
  * any comma-separated alias, matched loosely the same way keyword
  * matching is (alphanumeric-only, either-direction containment), so
  * "Rhoback.com" matches a merchant stored as "Rhoback" and vice versa.
- * Returns the first match; the directory is small enough (personal scale)
- * that "first" is fine rather than needing a best-match ranking. */
+ *
+ * When several merchants match, the most specific one wins rather than
+ * whichever happens to come first in the list: an exact name/alias match
+ * beats everything, then the longest name found inside the query ("uber
+ * eats" -> Uber Eats/Dining, not Uber/Transit), then a stored name that
+ * merely starts out like what's been typed so far (see keywordMatches for
+ * why only the start counts). */
 export function resolveMerchant(merchants: RewardsMerchant[] | undefined, normQuery: string): RewardsMerchant | null {
   if (!merchants || !normQuery) return null;
+  let best: RewardsMerchant | null = null;
+  let bestScore = 0;
   for (const m of merchants) {
     const names = [m.name, ...(m.aliases ? m.aliases.split(',') : [])].map(normalizeForMatch).filter(Boolean);
-    if (names.some((n) => normQuery.includes(n) || n.includes(normQuery))) return m;
+    for (const n of names) {
+      let score = 0;
+      if (n === normQuery) score = Number.MAX_SAFE_INTEGER;
+      else if (normQuery.includes(n)) score = n.length * 2;
+      else if (n.startsWith(normQuery)) score = normQuery.length * 2 - 1;
+      if (score > bestScore) {
+        bestScore = score;
+        best = m;
+      }
+    }
   }
-  return null;
+  return best;
 }
 
 /** Ranks every active card for a free-text query — a category ("dining"),
@@ -242,21 +290,29 @@ export function resolveMerchant(merchants: RewardsMerchant[] | undefined, normQu
  * rate. A card with no match at all still shows up at its base rate, so
  * the ranking always surfaces the honest fallback (e.g. a flat 2% card)
  * rather than only cards with a specific bonus. */
-export function findBestCardsFor(cards: RewardsCard[], query: string, opts: FindOptions = {}): RewardsMatch[] {
+/** Builds the "does this bonus apply to this query" test once per query —
+ * shared by the current-results ranking and the starting-soon hint so the
+ * two can never disagree about what counts as a match. */
+function queryMatcher(query: string, opts: FindOptions): ((b: RewardsBonus) => boolean) | null {
   const rawQuery = query.trim().toLowerCase();
-  if (!rawQuery) return [];
+  if (!rawQuery) return null;
   const normQuery = normalizeForMatch(rawQuery);
   const merchant = resolveMerchant(opts.merchants, normQuery);
   const resolvedCategory = merchant ? merchant.category.trim().toLowerCase() : null;
+  return (b) => {
+    if (opts.excludeOnlineOnly && b.onlineOnly) return false;
+    if (bonusMatchesQuery(b, rawQuery, normQuery)) return true;
+    return resolvedCategory !== null && b.category.toLowerCase().includes(resolvedCategory);
+  };
+}
+
+export function findBestCardsFor(cards: RewardsCard[], query: string, opts: FindOptions = {}): RewardsMatch[] {
+  const matchesQuery = queryMatcher(query, opts);
+  if (!matchesQuery) return [];
   const matches: RewardsMatch[] = [];
   for (const card of cards) {
     if (!card.active) continue;
-    const applicable = card.bonuses.filter((b) => {
-      if (!isBonusActiveToday(b)) return false;
-      if (opts.excludeOnlineOnly && b.onlineOnly) return false;
-      if (bonusMatchesQuery(b, rawQuery, normQuery)) return true;
-      return resolvedCategory !== null && b.category.toLowerCase().includes(resolvedCategory);
-    });
+    const applicable = card.bonuses.filter((b) => isBonusActiveToday(b) && matchesQuery(b));
     if (applicable.length > 0) {
       const best = applicable.reduce((a, b) => (b.rate > a.rate ? b : a));
       matches.push({ card, bonus: best, rate: best.rate });
@@ -265,6 +321,40 @@ export function findBestCardsFor(cards: RewardsCard[], query: string, opts: Find
     }
   }
   return matches.sort((a, b) => b.rate - a.rate);
+}
+
+/** What Find actually shows: only the card(s) at the single best rate.
+ * A lower-paying card is never the right answer, so it's just noise in
+ * the list — but several cards tied at the top rate all show, since any
+ * of them is equally right (Wells Fargo Active Cash and Citi Double Cash
+ * both at 2% when nothing earns a bonus, say). When the top cards tie, a
+ * card with a perk that applies to this purchase (cell phone protection
+ * for "t-mobile") is listed first, since it's the better pick at the same
+ * rate. */
+export function topFindResults(matches: RewardsMatch[], perkCardIds: Set<string> = new Set()): RewardsMatch[] {
+  if (matches.length === 0) return [];
+  const topRate = Math.max(...matches.map((m) => m.rate));
+  return matches
+    .filter((m) => m.rate === topRate)
+    .sort((a, b) => Number(perkCardIds.has(b.card.id)) - Number(perkCardIds.has(a.card.id)));
+}
+
+/** Rotating bonuses matching this query that start within the next
+ * `withinDays` days and would beat what's on top today — shown as
+ * "starts Oct 1" so the last days of a quarter don't look broken. Best
+ * rate per card, highest first. */
+export function upcomingBonusesFor(cards: RewardsCard[], query: string, beatRate: number, opts: FindOptions = {}, withinDays = 14): RewardsMatch[] {
+  const matchesQuery = queryMatcher(query, opts);
+  if (!matchesQuery) return [];
+  const out: RewardsMatch[] = [];
+  for (const card of cards) {
+    if (!card.active) continue;
+    const upcoming = card.bonuses.filter((b) => isBonusStartingSoon(b, withinDays) && b.rate > beatRate && matchesQuery(b));
+    if (upcoming.length === 0) continue;
+    const best = upcoming.reduce((a, b) => (b.rate > a.rate ? b : a));
+    out.push({ card, bonus: best, rate: best.rate });
+  }
+  return out.sort((a, b) => b.rate - a.rate);
 }
 
 /** The single best card for one known category — same ranking as
