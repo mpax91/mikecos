@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
-import type { RewardsCard, RewardsMerchant } from '../api/types';
+import type { RewardsCard, RewardsMerchant, RewardsBonus } from '../api/types';
 import { RewardsCardTile } from './RewardsCardTile';
 import { RewardsCardDetail } from './RewardsCardDetail';
 import { RewardsCardEditor } from './RewardsCardEditor';
@@ -10,8 +10,6 @@ import { ConfirmModal } from './ConfirmModal';
 import {
   carryPlan,
   cardsNeedingQuarterUpdate,
-  everydayCategories,
-  bestCardForCategory,
   defaultFlatRateCard,
   findBestCardsFor,
   topFindResults,
@@ -22,7 +20,6 @@ import {
   onlineEligibleCards,
   describeRotatingWindow,
   headlineRatesForCards,
-  type RewardsMatch,
 } from '../utils/rewards';
 
 const QUICK_CHIPS = ['Dining', 'Gas', 'Groceries', 'Travel', 'Drugstores', 'Streaming'];
@@ -116,13 +113,6 @@ export function RewardsPanel({ mode = 'home' }: { mode?: 'home' | 'manage' }) {
   // floor (2% on Wells Fargo Active Cash, say), so a category where
   // nothing beats it isn't an answer worth surfacing, it's just noise.
   const floorRate = useMemo(() => defaultFlatRateCard(activeCards)?.baseRate ?? 0, [activeCards]);
-  const categoryBests = useMemo(
-    () =>
-      everydayCategories(activeCards)
-        .map((category) => ({ category, match: bestCardForCategory(activeCards, category) }))
-        .filter((row): row is { category: string; match: RewardsMatch } => !!row.match && row.match.rate > floorRate),
-    [activeCards, floorRate]
-  );
   // Perks (rental car insurance, phone protection...) and manually-noted
   // bank-portal offers (Chase/Amex/Discover) relevant to this query — see
   // findRelevantPerks/findMatchingOffers in utils/rewards.ts. Neither
@@ -251,51 +241,6 @@ export function RewardsPanel({ mode = 'home' }: { mode?: 'home' | 'manage' }) {
 
       {cards.length > 0 && mode === 'home' && (
         <>
-          <div className="wallet-page__section">
-            <div className="wallet-page__section-title">Carry in your wallet</div>
-            {carry.length === 0 ? (
-              <div className="empty-state">Add a card to get a carry recommendation.</div>
-            ) : (
-              <div className="wallet-tile-grid">
-                {carry.map(({ card: c, reasons }) => (
-                  <RewardsCardTile
-                    key={c.id}
-                    card={c}
-                    reason={reasons.join(' · ')}
-                    onOpen={setOpenCard}
-                    onEdit={setEditing}
-                    onToggleAlwaysCarry={toggleAlwaysCarry}
-                    onDelete={setDeleting}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="wallet-page__section">
-            <div className="wallet-page__section-title">All reward cards</div>
-            {headlineRates.length === 0 ? (
-              <div className="empty-state">Add a card to see it ranked here.</div>
-            ) : (
-              <ul className="rewards-find__results">
-                {headlineRates.map(({ card: c, rate, bonus }) => (
-                  <RewardsMatchRow
-                    key={c.id}
-                    label={c.nickname}
-                    rate={rate}
-                    card={c}
-                    onOpen={setOpenCard}
-                    subtitle={
-                      bonus
-                        ? `${bonus.category}${bonus.kind === 'rotating' ? ` · ${describeRotatingWindow(bonus.startsOn, bonus.endsOn) ?? 'rotating'}` : ''}`
-                        : 'base rate'
-                    }
-                  />
-                ))}
-              </ul>
-            )}
-          </div>
-
           <div className="wallet-page__section">
             <div className="wallet-page__section-title">Find</div>
             <input
@@ -459,33 +404,37 @@ export function RewardsPanel({ mode = 'home' }: { mode?: 'home' | 'manage' }) {
           </div>
 
           <div className="wallet-page__section">
-            <div className="wallet-page__section-title">Worth switching for</div>
-            {categoryBests.length === 0 ? (
-              <div className="empty-state">
-                {floorRate > 0
-                  ? `Nothing beats your ${floorRate}% default right now — every category's covered by whatever's in your wallet already.`
-                  : "Add a card's base rate to see category recommendations."}
+            <div className="wallet-page__section-title">Carry in your wallet</div>
+            {carry.length === 0 ? (
+              <div className="empty-state">Add a card to get a carry recommendation.</div>
+            ) : (
+              <div className="wallet-tile-grid">
+                {carry.map(({ card: c, reasons }) => (
+                  <RewardsCardTile
+                    key={c.id}
+                    card={c}
+                    reason={reasons.join(' · ')}
+                    onOpen={setOpenCard}
+                    onEdit={setEditing}
+                    onToggleAlwaysCarry={toggleAlwaysCarry}
+                    onDelete={setDeleting}
+                  />
+                ))}
               </div>
+            )}
+          </div>
+
+          <div className="wallet-page__section">
+            <div className="wallet-page__section-title">All reward cards</div>
+            <div className="wallet-editor__hint" style={{ marginTop: -4, marginBottom: 8 }}>
+              What each card is actually good for, at a glance — the category leads, not the card name.
+            </div>
+            {headlineRates.length === 0 ? (
+              <div className="empty-state">Add a card to see it ranked here.</div>
             ) : (
               <ul className="rewards-find__results">
-                {categoryBests.map(({ category, match }) => (
-                  <RewardsMatchRow
-                    key={category}
-                    label={category}
-                    rate={match.rate}
-                    card={match.card}
-                    onOpen={setOpenCard}
-                    subtitle={
-                      <>
-                        {match.card.nickname}
-                        {match.bonus?.kind === 'rotating'
-                          ? ` · ${describeRotatingWindow(match.bonus.startsOn, match.bonus.endsOn) ?? 'rotating'}`
-                          : !match.bonus
-                          ? ' · base rate'
-                          : ''}
-                      </>
-                    }
-                  />
+                {headlineRates.map(({ card: c, rate, bonus }) => (
+                  <RewardsHeadlineRow key={c.id} card={c} rate={rate} bonus={bonus} onOpen={setOpenCard} />
                 ))}
               </ul>
             )}
@@ -531,10 +480,8 @@ export function RewardsPanel({ mode = 'home' }: { mode?: 'home' | 'manage' }) {
   );
 }
 
-/** One "best card" answer row — shared by the category reference table
- * (label = category, subtitle = which card and why) and the Find results
- * (label = card, subtitle = which category/merchant matched) — same
- * rate-first visual language either way, just which text goes where. */
+/** One "best card" answer row for Find — label = card, subtitle = which
+ * category/merchant matched. */
 function RewardsMatchRow({
   label,
   subtitle,
@@ -557,6 +504,41 @@ function RewardsMatchRow({
         <div className="rewards-find__result-name">{label}</div>
         <div className="rewards-find__result-reason">{subtitle}</div>
         {perks && perks.length > 0 && <div className="rewards-find__result-perks">{perks.join(' · ')}</div>}
+      </div>
+    </li>
+  );
+}
+
+/** All Reward Cards' own row — the opposite emphasis from RewardsMatchRow
+ * above, on purpose: Mike's own ask when this list shipped was "if I'm
+ * going to a store and need to check the app to see what to use, I want to
+ * be able to glance at this and instantly get the answer." Standing in a
+ * store, the category is the thing being matched against ("what's this
+ * store"), not the card's own name — so the category (or "Everyday
+ * spending" for a card's plain base rate) leads in bold, and the card name
+ * that earns it is the smaller secondary line underneath. */
+function RewardsHeadlineRow({
+  card,
+  rate,
+  bonus,
+  onOpen,
+}: {
+  card: RewardsCard;
+  rate: number;
+  bonus: RewardsBonus | null;
+  onOpen: (card: RewardsCard) => void;
+}) {
+  const heading = bonus ? bonus.category : 'Everyday spending';
+  const window = bonus?.kind === 'rotating' ? describeRotatingWindow(bonus.startsOn, bonus.endsOn) ?? 'rotating' : null;
+  return (
+    <li className="rewards-find__result" onClick={() => onOpen(card)}>
+      <div className="rewards-find__result-rate">{rate}%</div>
+      <div className="rewards-find__result-body">
+        <div className="rewards-find__result-name rewards-find__result-name--headline">
+          {heading}
+          {window && <span className="rewards-find__result-window"> · {window}</span>}
+        </div>
+        <div className="rewards-find__result-reason">{card.nickname}</div>
       </div>
     </li>
   );

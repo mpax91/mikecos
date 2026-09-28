@@ -13287,6 +13287,19 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   margin-top: 2px;
 }
 
+/* All Reward Cards' rows lead with the category, not the card name — see
+   RewardsHeadlineRow's own comment. A touch bigger/bolder than the default
+   .rewards-find__result-name so it reads as the answer at a glance. */
+.rewards-find__result-name--headline {
+  font-weight: var(--weight-semibold, 600);
+  font-size: 15px;
+}
+
+.rewards-find__result-window {
+  font-weight: var(--weight-regular, 400);
+  color: var(--color-muted);
+}
+
 .rewards-find__online {
   margin-top: 20px;
   padding-top: 16px;

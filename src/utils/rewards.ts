@@ -44,7 +44,16 @@ export function isBonusStartingSoon(bonus: RewardsBonus, withinDays = 14, date =
 export function defaultFlatRateCard(cards: RewardsCard[]): RewardsCard | null {
   const active = cards.filter((c) => c.active);
   if (active.length === 0) return null;
-  return active.reduce((best, c) => (c.baseRate > best.baseRate ? c : best));
+  // A strictly higher rate always wins. On a tie (e.g. Citi Double Cash and
+  // Wells Fargo Active Cash both at a flat 2%), the card Mike has actually
+  // marked "Always Carry" wins the tie — otherwise this fell back to
+  // whichever card happened to sort first alphabetically, which is how
+  // Citi Double Cash was outranking Mike's actual preferred catch-all.
+  return active.reduce((best, c) => {
+    if (c.baseRate > best.baseRate) return c;
+    if (c.baseRate === best.baseRate && c.alwaysCarry && !best.alwaysCarry) return c;
+    return best;
+  });
 }
 
 // The three everyday categories Mike actually swipes many times a month

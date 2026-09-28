@@ -1082,7 +1082,7 @@ export const api = {
         PaymentCard,
         'nickname' | 'cardType' | 'network' | 'issuer' | 'last4' | 'nameOnCard' | 'expiryMonth' | 'expiryYear' | 'billingZip' | 'color' | 'coverArtKey' | 'backArtKey' | 'notes' | 'rewardWorthy'
       >
-    > & { number?: string | null; cvv?: string | null; rewardsCardId?: string | null }
+    > & { number?: string | null; cvv?: string | null; pin?: string | null; rewardsCardId?: string | null }
   ) => request<PaymentCard>('/api/payment-cards/cards', { method: 'POST', body: JSON.stringify(params) }).then(resolvePaymentCard),
 
   updatePaymentCard: (
@@ -1107,7 +1107,7 @@ export const api = {
         | 'active'
         | 'sortOrder'
       >
-    > & { number?: string | null; cvv?: string | null; rewardsCardId?: string | null }
+    > & { number?: string | null; cvv?: string | null; pin?: string | null; rewardsCardId?: string | null }
   ) => request<PaymentCard>(`/api/payment-cards/cards/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }).then(resolvePaymentCard),
 
   deletePaymentCard: (id: string) => request<{ ok: true }>(`/api/payment-cards/cards/${id}`, { method: 'DELETE' }),

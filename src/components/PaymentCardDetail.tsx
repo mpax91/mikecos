@@ -11,11 +11,11 @@ import { isPhoneLabel, telHref } from '../utils/phone';
  * beyond this view being open. Details (structured facts) renders the
  * same collapsible way WalletBarcodeView already does. */
 export function PaymentCardDetail({ card, onClose, onEdit }: { card: PaymentCard; onClose: () => void; onEdit: () => void }) {
-  const [revealed, setRevealed] = useState<{ number: string | null; cvv: string | null } | null>(null);
+  const [revealed, setRevealed] = useState<{ number: string | null; cvv: string | null; pin: string | null } | null>(null);
   const [revealing, setRevealing] = useState(false);
   const [revealError, setRevealError] = useState<string | null>(null);
   const [shown, setShown] = useState(false);
-  const [copied, setCopied] = useState<'number' | 'cvv' | null>(null);
+  const [copied, setCopied] = useState<'number' | 'cvv' | 'pin' | null>(null);
   const [lightboxSide, setLightboxSide] = useState<'front' | 'back' | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [facts, setFacts] = useState<PaymentCardFact[]>([]);
@@ -51,7 +51,7 @@ export function PaymentCardDetail({ card, onClose, onEdit }: { card: PaymentCard
     }
   }
 
-  function copy(field: 'number' | 'cvv', value: string | null) {
+  function copy(field: 'number' | 'cvv' | 'pin', value: string | null) {
     if (!value) return;
     navigator.clipboard.writeText(value).then(() => {
       setCopied(field);
@@ -81,7 +81,7 @@ export function PaymentCardDetail({ card, onClose, onEdit }: { card: PaymentCard
           </div>
         </div>
 
-        {(card.hasNumber || card.hasCvv || card.last4) && (
+        {(card.hasNumber || card.hasCvv || card.hasPin || card.last4) && (
           <div className="payment-detail__secure">
             <div className="payment-detail__secure-row">
               <span>Card number</span>
@@ -93,6 +93,12 @@ export function PaymentCardDetail({ card, onClose, onEdit }: { card: PaymentCard
               <span>CVV</span>
               <span className="payment-detail__secure-value">{shown && revealed?.cvv ? revealed.cvv : card.hasCvv ? '•••' : '—'}</span>
             </div>
+            {card.hasPin && (
+              <div className="payment-detail__secure-row">
+                <span>PIN</span>
+                <span className="payment-detail__secure-value">{shown && revealed?.pin ? revealed.pin : '••••'}</span>
+              </div>
+            )}
             {expiry && (
               <div className="payment-detail__secure-row">
                 <span>Expires</span>
@@ -100,7 +106,7 @@ export function PaymentCardDetail({ card, onClose, onEdit }: { card: PaymentCard
               </div>
             )}
             <div className="payment-detail__secure-actions">
-              {(card.hasNumber || card.hasCvv) && (
+              {(card.hasNumber || card.hasCvv || card.hasPin) && (
                 <button type="button" className="wallet-barcode-view__reveal" onClick={reveal} disabled={revealing}>
                   {revealing ? 'Decrypting…' : shown ? 'Hide' : 'Reveal'}
                 </button>
@@ -113,6 +119,11 @@ export function PaymentCardDetail({ card, onClose, onEdit }: { card: PaymentCard
               {shown && revealed?.cvv && (
                 <button type="button" className="wallet-barcode-view__copy" onClick={() => copy('cvv', revealed.cvv)}>
                   {copied === 'cvv' ? 'Copied ✓' : 'Copy CVV'}
+                </button>
+              )}
+              {shown && revealed?.pin && (
+                <button type="button" className="wallet-barcode-view__copy" onClick={() => copy('pin', revealed.pin)}>
+                  {copied === 'pin' ? 'Copied ✓' : 'Copy PIN'}
                 </button>
               )}
             </div>

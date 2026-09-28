@@ -44,6 +44,7 @@ interface PaymentCardRow {
   expiry_year: number | null;
   number_enc: string | null;
   cvv_enc: string | null;
+  pin_enc: string | null;
   billing_zip: string | null;
   color: string | null;
   cover_art_key: string | null;
@@ -74,6 +75,7 @@ function cardJson(row: PaymentCardRow) {
     expiryYear: row.expiry_year,
     hasNumber: !!row.number_enc,
     hasCvv: !!row.cvv_enc,
+    hasPin: !!row.pin_enc,
     billingZip: row.billing_zip,
     color: row.color,
     coverArtKey: row.cover_art_key,
@@ -174,6 +176,7 @@ paymentCardsRouter.post('/cards', async (c) => {
       expiryYear?: number | null;
       number?: string | null;
       cvv?: string | null;
+      pin?: string | null;
       billingZip?: string | null;
       color?: string | null;
       coverArtKey?: string | null;
@@ -189,9 +192,11 @@ paymentCardsRouter.post('/cards', async (c) => {
 
   let numberEnc: string | null = null;
   let cvvEnc: string | null = null;
+  let pinEnc: string | null = null;
   try {
     if (body.number?.trim()) numberEnc = await encryptField(c.env, body.number.trim());
     if (body.cvv?.trim()) cvvEnc = await encryptField(c.env, body.cvv.trim());
+    if (body.pin?.trim()) pinEnc = await encryptField(c.env, body.pin.trim());
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : 'encryption failed' }, 500);
   }
@@ -207,8 +212,8 @@ paymentCardsRouter.post('/cards', async (c) => {
   const id = uid();
   const ts = now();
   await c.env.DB.prepare(
-    `INSERT INTO payment_cards (id, nickname, card_type, network, issuer, last4, name_on_card, expiry_month, expiry_year, number_enc, cvv_enc, billing_zip, color, cover_art_key, back_art_key, notes, reward_worthy, rewards_card_id, active, sort_order, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`
+    `INSERT INTO payment_cards (id, nickname, card_type, network, issuer, last4, name_on_card, expiry_month, expiry_year, number_enc, cvv_enc, pin_enc, billing_zip, color, cover_art_key, back_art_key, notes, reward_worthy, rewards_card_id, active, sort_order, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`
   )
     .bind(
       id,
@@ -222,6 +227,7 @@ paymentCardsRouter.post('/cards', async (c) => {
       body.expiryYear ?? null,
       numberEnc,
       cvvEnc,
+      pinEnc,
       body.billingZip?.trim() || null,
       body.color || null,
       body.coverArtKey || null,
@@ -253,6 +259,7 @@ paymentCardsRouter.patch('/cards/:id', async (c) => {
       expiryYear: number | null;
       number: string | null;
       cvv: string | null;
+      pin: string | null;
       billingZip: string | null;
       color: string | null;
       coverArtKey: string | null;
@@ -307,6 +314,13 @@ paymentCardsRouter.patch('/cards/:id', async (c) => {
   if (body.cvv !== undefined) {
     try {
       set('cvv_enc', body.cvv?.trim() ? await encryptField(c.env, body.cvv.trim()) : null);
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : 'encryption failed' }, 500);
+    }
+  }
+  if (body.pin !== undefined) {
+    try {
+      set('pin_enc', body.pin?.trim() ? await encryptField(c.env, body.pin.trim()) : null);
     } catch (err) {
       return c.json({ error: err instanceof Error ? err.message : 'encryption failed' }, 500);
     }
@@ -369,12 +383,13 @@ paymentCardsRouter.post('/cards/reorder', async (c) => {
 // update response.
 paymentCardsRouter.get('/cards/:id/reveal', async (c) => {
   const id = c.req.param('id');
-  const row = await c.env.DB.prepare('SELECT number_enc, cvv_enc FROM payment_cards WHERE id = ?').bind(id).first<{ number_enc: string | null; cvv_enc: string | null }>();
+  const row = await c.env.DB.prepare('SELECT number_enc, cvv_enc, pin_enc FROM payment_cards WHERE id = ?').bind(id).first<{ number_enc: string | null; cvv_enc: string | null; pin_enc: string | null }>();
   if (!row) return c.json({ error: 'not found' }, 404);
   try {
     const number = row.number_enc ? await decryptField(c.env, row.number_enc) : null;
     const cvv = row.cvv_enc ? await decryptField(c.env, row.cvv_enc) : null;
-    return c.json({ number, cvv });
+    const pin = row.pin_enc ? await decryptField(c.env, row.pin_enc) : null;
+    return c.json({ number, cvv, pin });
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : 'decryption failed' }, 500);
   }

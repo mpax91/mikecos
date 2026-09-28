@@ -636,6 +636,7 @@ export interface PaymentCard {
    * comes from api.revealPaymentCard(), fetched on an explicit tap. */
   hasNumber: boolean;
   hasCvv: boolean;
+  hasPin: boolean;
   billingZip: string | null;
   color: string | null;
   coverArtKey: string | null;
@@ -654,6 +655,7 @@ export interface PaymentCard {
 export interface PaymentCardSecrets {
   number: string | null;
   cvv: string | null;
+  pin: string | null;
 }
 
 // ---- Canvas boards (infinite-canvas pinboard) ----

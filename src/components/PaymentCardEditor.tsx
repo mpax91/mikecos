@@ -101,8 +101,10 @@ export function PaymentCardEditor({
   const [networkChoice, setNetworkChoice] = useState<string>(() => (card?.network && NETWORKS.includes(card.network) ? card.network : card?.network ? 'Other' : ''));
   const [numberInput, setNumberInput] = useState('');
   const [cvvInput, setCvvInput] = useState('');
+  const [pinInput, setPinInput] = useState('');
   const [clearNumber, setClearNumber] = useState(false);
   const [clearCvv, setClearCvv] = useState(false);
+  const [clearPin, setClearPin] = useState(false);
   const [rewardWorthy, setRewardWorthy] = useState(card?.rewardWorthy ?? false);
   const [rewardsChoice, setRewardsChoice] = useState<string>(card?.rewardsCardId ?? 'new');
   const [rewardsCards, setRewardsCards] = useState<RewardsCard[]>([]);
@@ -189,6 +191,8 @@ export function PaymentCardEditor({
     else if (clearNumber) payload.number = null;
     if (cvvInput.trim()) payload.cvv = cvvInput.trim();
     else if (clearCvv) payload.cvv = null;
+    if (pinInput.trim()) payload.pin = pinInput.trim();
+    else if (clearPin) payload.pin = null;
     if (rewardWorthy && rewardsChoice !== 'new') payload.rewardsCardId = rewardsChoice;
 
     try {
@@ -364,6 +368,26 @@ export function PaymentCardEditor({
                   </button>
                 )}
                 {clearCvv && <div className="wallet-editor__hint">Will be removed on save.</div>}
+              </label>
+            </div>
+            <div className="wallet-editor__row">
+              <label className="wallet-editor__field">
+                <span>PIN{card?.hasPin ? ' — on file' : ' (optional)'}</span>
+                <input
+                  value={pinInput}
+                  onChange={(e) => {
+                    setPinInput(e.target.value.replace(/\D/g, '').slice(0, 12));
+                    if (e.target.value) setClearPin(false);
+                  }}
+                  placeholder={card?.hasPin && !clearPin ? '••••' : 'Debit/ATM PIN'}
+                  inputMode="numeric"
+                />
+                {card?.hasPin && !clearPin && !pinInput && (
+                  <button type="button" className="wallet-editor__manage-link" onClick={() => setClearPin(true)}>
+                    Remove PIN on file
+                  </button>
+                )}
+                {clearPin && <div className="wallet-editor__hint">Will be removed on save.</div>}
               </label>
             </div>
           </div>

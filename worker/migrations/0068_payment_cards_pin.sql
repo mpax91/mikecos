@@ -1,0 +1,11 @@
+-- Payment Cards: an encrypted PIN field. Mike's ask specifically was debit
+-- cards ("we should also add pins to debit cards") — a debit card's PIN is
+-- the thing you actually need at a register or ATM — but the column isn't
+-- restricted to card_type = 'debit': a credit card can carry a PIN too
+-- (cash advances, chip-and-PIN abroad), and there's no reason to block
+-- that with a CHECK or a type-conditional column. Same AES-256-GCM
+-- pattern as number_enc/cvv_enc (see 0049_payment_cards.sql and
+-- cryptoField.ts), keyed by the same PAYMENT_CARD_ENC_KEY — reveal-on-tap
+-- only, via the existing GET /cards/:id/reveal endpoint, never included in
+-- the list/detail JSON.
+ALTER TABLE payment_cards ADD COLUMN pin_enc TEXT;
