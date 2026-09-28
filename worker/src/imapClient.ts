@@ -537,7 +537,7 @@ const ENCODED_WORD = /=\?([^?]+)\?([BbQq])\?([^?]*)\?=/g;
  * only by whitespace are one logical run — that whitespace is part of the
  * encoding, not real content — so it's stripped before decoding to avoid
  * inserting a stray gap into multi-word non-ASCII subjects. */
-function decodeEncodedWords(raw: string): string {
+export function decodeEncodedWords(raw: string): string {
   if (!raw.includes('=?')) return raw;
   const collapsed = raw.replace(/(\?=)[ \t]+(=\?)/g, '$1$2');
   return collapsed.replace(ENCODED_WORD, (whole, charset: string, enc: string, text: string) => {
