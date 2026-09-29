@@ -7421,6 +7421,37 @@ app.delete('/api/bet-game-notes/:id', async (c) => {
 
 app.get('/api/health', (c) => c.json({ ok: true, time: now() }));
 
+// TEMPORARY, read-only — diagnosing why Ted Lasso S04E09 / It's Always
+// Sunny S18E08 (Sept 29) aren't flagged by Airing. Same shape as the debug
+// endpoint from the previous Airing fix. SELECT-only, no writes. To be
+// deleted right after use.
+app.get('/api/debug/airing-check2', async (c) => {
+  const shows = await c.env.DB.prepare(
+    `SELECT s.id, s.title, s.guid, s.tvdb_id, t.tvmaze_id, t.resolved_at
+     FROM plex_items s
+     LEFT JOIN plex_tvmaze_shows t ON t.show_item_id = s.id
+     WHERE s.type = 'show' AND (s.title LIKE '%Ted Lasso%' OR s.title LIKE '%Always Sunny%')`
+  ).all();
+  const syncState = await c.env.DB.prepare(`SELECT state_json, updated_at FROM plex_sync_state WHERE id = 1`).first();
+  const showCounts = await c.env.DB.prepare(
+    `SELECT COUNT(*) as total, SUM(CASE WHEN tvdb_id IS NOT NULL THEN 1 ELSE 0 END) as with_tvdb
+     FROM plex_items WHERE type = 'show'`
+  ).first();
+  const resolvedCounts = await c.env.DB.prepare(`SELECT COUNT(*) as n FROM plex_tvmaze_shows WHERE tvmaze_id IS NOT NULL`).first();
+  const unresolvedSample = await c.env.DB.prepare(
+    `SELECT s.title, s.tvdb_id FROM plex_items s
+     LEFT JOIN plex_tvmaze_shows t ON t.show_item_id = s.id
+     WHERE s.type = 'show' AND s.tvdb_id IS NOT NULL AND t.show_item_id IS NULL LIMIT 5`
+  ).all();
+  return c.json({
+    shows: shows.results,
+    syncState: syncState ? { updated_at: (syncState as any).updated_at, state: JSON.parse((syncState as any).state_json) } : null,
+    showCounts: showCounts,
+    resolvedCounts: resolvedCounts,
+    unresolvedSample: unresolvedSample.results,
+  });
+});
+
 // This Worker's own public URL — needed so the nightly cron can re-invoke
 // itself below. Update this if the Worker is ever renamed/redeployed
 // under a different name.
