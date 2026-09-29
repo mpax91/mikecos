@@ -317,12 +317,20 @@ export const api = {
    * with bounded slices of the full decisions array (so one huge file never
    * rides in a single request that can be killed partway through with no
    * trace), then finish() once. See ImportCommitStartResponse's comment.
-   * mode: 'replace' (voter_file only) is what actually wipes the old voter
-   * data — start() performs that delete before the batch row exists. */
-  startContactImportCommit: (kind: 'contacts' | 'voter_file', filename: string, totalRows: number, mode?: 'merge' | 'replace') =>
+   * mode: 'replace' is what actually deletes anything — for voter_file it
+   * wipes all voter data; for contacts it removes exactly deleteContactIds
+   * (the ids from ImportPreviewResponse.replacingContacts). Either way
+   * start() performs the delete before the batch row exists. */
+  startContactImportCommit: (
+    kind: 'contacts' | 'voter_file',
+    filename: string,
+    totalRows: number,
+    mode?: 'merge' | 'replace',
+    deleteContactIds?: string[]
+  ) =>
     request<ImportCommitStartResponse>('/api/contacts/import/commit/start', {
       method: 'POST',
-      body: JSON.stringify({ kind, filename, totalRows, mode }),
+      body: JSON.stringify({ kind, filename, totalRows, mode, deleteContactIds }),
     }),
 
   commitContactImportChunk: (batchId: string, kind: 'contacts' | 'voter_file', decisions: ImportDecision[]) =>

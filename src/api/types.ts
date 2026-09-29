@@ -869,9 +869,14 @@ export interface ImportPreviewResponse {
   auto: ImportMatch[];
   review: ImportMatch[];
   fresh: ImportMatch[];
-  /** Only present when this preview was requested with mode: 'replace' —
-   * what committing it will delete before writing the new file's rows. */
+  /** voter_file + mode: 'replace' only — what committing it will delete
+   * before writing the new file's rows. */
   replacing?: { voterRecordCount: number; voterOnlyContactCount: number };
+  /** contacts + mode: 'replace' only — previously-imported contacts (source
+   * = 'contact_import') this file doesn't mention at all, by name, so
+   * Settings can show exactly who before deleting them. Pass their ids back
+   * as deleteContactIds on commit/start to actually remove them. */
+  replacingContacts?: { id: string; name: string }[];
 }
 
 export interface ImportDecision {

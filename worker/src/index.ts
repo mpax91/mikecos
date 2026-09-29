@@ -1989,6 +1989,28 @@ app.post('/api/contacts/import/preview', async (c) => {
   }
 
   const matches = await matchRecords(c.env.DB, records);
+
+  // Personal Contacts 'replace' keeps the normal merge/review/fresh matching
+  // (unlike voter_file's replace, which skips it entirely) — a contact
+  // that's still in the file should keep its id, notes, circle, and
+  // relationships rather than getting recreated from scratch. What
+  // 'replace' adds on top: any already-imported contact (source =
+  // 'contact_import') that this file doesn't mention at all — no auto or
+  // review candidate found it by email, phone, or name — is source-of-
+  // truth gone (moved, no longer a contact, whatever) and gets listed here
+  // so Settings can show Mike exactly who by name before he confirms
+  // deleting them. A manually-added contact (source = 'manual') is never
+  // eligible — this only ever removes people a past import itself created.
+  let replacingContacts: { id: string; name: string }[] | undefined;
+  if (body.kind === 'contacts' && body.mode === 'replace') {
+    const matchedIds = new Set(matches.map((m) => m.existingContactId).filter((id): id is string => !!id));
+    const { results: importedContacts } = await c.env.DB.prepare("SELECT id, name FROM contacts WHERE source = 'contact_import'").all<{
+      id: string;
+      name: string;
+    }>();
+    replacingContacts = (importedContacts ?? []).filter((row) => !matchedIds.has(row.id));
+  }
+
   return c.json({
     kind: body.kind,
     filename: body.filename,
@@ -1996,6 +2018,7 @@ app.post('/api/contacts/import/preview', async (c) => {
     auto: matches.filter((m) => m.matchType === 'auto'),
     review: matches.filter((m) => m.matchType === 'review'),
     fresh: matches.filter((m) => m.matchType === 'new'),
+    ...(replacingContacts ? { replacingContacts } : {}),
   });
 });
 
@@ -2192,7 +2215,13 @@ function voterRecordInsertStmt(db: D1Database, contactId: string, r: ParsedConta
 // every following chunk request fails, Settings can show "this import
 // never finished" instead of nothing at all.
 app.post('/api/contacts/import/commit/start', async (c) => {
-  const body = await c.req.json<{ kind: 'contacts' | 'voter_file'; filename: string; totalRows: number; mode?: 'merge' | 'replace' }>();
+  const body = await c.req.json<{
+    kind: 'contacts' | 'voter_file';
+    filename: string;
+    totalRows: number;
+    mode?: 'merge' | 'replace';
+    deleteContactIds?: string[];
+  }>();
 
   // mode: 'replace' (voter_file only, chosen alongside the matching preview
   // request above) wipes every voter_records row and every voter_file-
@@ -2207,6 +2236,36 @@ app.post('/api/contacts/import/commit/start', async (c) => {
   // that survive a future replace.
   if (body.kind === 'voter_file' && body.mode === 'replace') {
     await c.env.DB.batch([c.env.DB.prepare('DELETE FROM voter_records'), c.env.DB.prepare("DELETE FROM contacts WHERE source = 'voter_file'")]);
+  }
+
+  // Personal Contacts 'replace': deletes exactly the contacts the preview
+  // showed Mike by name (see /api/contacts/import/preview's replacingContacts
+  // comment) — re-validated here against source = 'contact_import' so a
+  // stale or tampered id list can never delete a manually-added contact,
+  // even though the id list itself came from a preview Mike already saw.
+  // Same voter_records/contact_notes/contacts cleanup DELETE /api/contacts/:id
+  // uses, just batched.
+  if (body.kind === 'contacts' && body.mode === 'replace' && body.deleteContactIds?.length) {
+    const ID_CHUNK = 50;
+    const allIds = body.deleteContactIds;
+    const validIds: string[] = [];
+    for (let i = 0; i < allIds.length; i += ID_CHUNK) {
+      const chunk = allIds.slice(i, i + ID_CHUNK);
+      const placeholders = chunk.map(() => '?').join(', ');
+      const { results } = await c.env.DB.prepare(`SELECT id FROM contacts WHERE source = 'contact_import' AND id IN (${placeholders})`)
+        .bind(...chunk)
+        .all<{ id: string }>();
+      validIds.push(...(results ?? []).map((r) => r.id));
+    }
+    const stmts: D1PreparedStatement[] = [];
+    for (let i = 0; i < validIds.length; i += ID_CHUNK) {
+      const chunk = validIds.slice(i, i + ID_CHUNK);
+      const placeholders = chunk.map(() => '?').join(', ');
+      stmts.push(c.env.DB.prepare(`DELETE FROM voter_records WHERE contact_id IN (${placeholders})`).bind(...chunk));
+      stmts.push(c.env.DB.prepare(`DELETE FROM contact_notes WHERE contact_id IN (${placeholders})`).bind(...chunk));
+      stmts.push(c.env.DB.prepare(`DELETE FROM contacts WHERE id IN (${placeholders})`).bind(...chunk));
+    }
+    if (stmts.length > 0) await c.env.DB.batch(stmts);
   }
 
   const batchId = uid();

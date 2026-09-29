@@ -26,7 +26,7 @@ function UploadCard({
   accept,
   onFile,
   busy,
-  replaceOption,
+  replaceLabel,
 }: {
   kind: Kind;
   title: string;
@@ -34,12 +34,12 @@ function UploadCard({
   accept: string;
   onFile: (file: File, kind: Kind, mode?: 'merge' | 'replace') => void;
   busy: boolean;
-  /** Voter file only — a full re-export should entirely replace the last
-   * one rather than name-match against it (which would otherwise queue
-   * nearly every returning voter for a one-click review — see the preview
-   * endpoint's own comment). Off by default: it's a destructive option, so
-   * Mike opts in per-upload rather than it being the default behavior. */
-  replaceOption?: boolean;
+  /** When set, shows a "Replace" checkbox with this label — an upload that
+   * should be treated as the full source of truth: anyone this file
+   * doesn't mention is gone (moved, no longer relevant), not just
+   * unmentioned. Off by default since it can delete; each kind's own
+   * endpoint comment covers exactly what it removes. */
+  replaceLabel?: string;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [replace, setReplace] = useState(false);
@@ -47,11 +47,10 @@ function UploadCard({
     <div className="card contact-import__card">
       <h3 className="contact-import__card-title">{title}</h3>
       <p className="contact-import__card-desc">{description}</p>
-      {replaceOption && (
+      {replaceLabel && (
         <label className="contact-import__replace-toggle">
           <input type="checkbox" checked={replace} onChange={(e) => setReplace(e.target.checked)} />
-          Replace all existing voter file data (use this for a fresh export — skips name-matching against what's
-          already imported and starts clean)
+          {replaceLabel}
         </label>
       )}
       <input
@@ -61,7 +60,7 @@ function UploadCard({
         style={{ display: 'none' }}
         onChange={(e) => {
           const file = e.target.files?.[0];
-          if (file) onFile(file, kind, replaceOption && replace ? 'replace' : undefined);
+          if (file) onFile(file, kind, replaceLabel && replace ? 'replace' : undefined);
           e.target.value = '';
         }}
       />
@@ -362,12 +361,24 @@ export function ContactImportPanel() {
   const reviewResolvedCount = preview ? preview.review.filter((_, i) => resolutions.has(i)).length : 0;
   const allReviewed = !!preview && reviewResolvedCount === preview.review.length;
 
+  // How many contacts/voter records this exact import would delete — 0 for
+  // a normal (non-replace) import, and for a contacts replace where nothing
+  // in MikeOS is actually missing from the new file (the common case Mike
+  // expects when "not much has changed").
+  const replaceDeleteCount = preview?.replacing
+    ? preview.replacing.voterOnlyContactCount
+    : preview?.replacingContacts
+      ? preview.replacingContacts.length
+      : 0;
+
   async function handleImport() {
     if (!preview || !allReviewed) return;
-    // Replace is destructive (wipes existing voter data before writing the
-    // new file), so it gets its own explicit confirm click rather than
-    // going straight from "Upload File" to deleting anything.
-    if (previewMode === 'replace' && !confirmingReplace) {
+    // Replace is destructive (wipes existing voter data, or deletes
+    // contacts missing from the new file, before writing anything), so it
+    // gets its own explicit confirm click rather than going straight from
+    // "Upload File" to deleting anything — skipped when this particular
+    // import wouldn't actually delete anyone.
+    if (previewMode === 'replace' && replaceDeleteCount > 0 && !confirmingReplace) {
       setConfirmingReplace(true);
       return;
     }
@@ -386,7 +397,13 @@ export function ContactImportPanel() {
         }),
       ];
 
-      const { batchId } = await api.startContactImportCommit(preview.kind, preview.filename, decisions.length, previewMode);
+      const { batchId } = await api.startContactImportCommit(
+        preview.kind,
+        preview.filename,
+        decisions.length,
+        previewMode,
+        previewMode === 'replace' ? preview.replacingContacts?.map((r) => r.id) : undefined
+      );
 
       let newCount = 0;
       let updatedCount = 0;
@@ -402,9 +419,11 @@ export function ContactImportPanel() {
       await api.finishContactImportCommit(batchId);
 
       setResult(
-        previewMode === 'replace'
+        previewMode === 'replace' && preview.kind === 'voter_file'
           ? `Replaced the voter file — ${newCount.toLocaleString()} voters imported from "${preview.filename}".`
-          : `Imported "${preview.filename}" — ${newCount} new, ${updatedCount} updated.`
+          : previewMode === 'replace'
+            ? `Imported "${preview.filename}" — ${newCount} new, ${updatedCount} updated, ${replaceDeleteCount.toLocaleString()} removed as no longer in the file.`
+            : `Imported "${preview.filename}" — ${newCount} new, ${updatedCount} updated.`
       );
       setPreview(null);
       setResolutions(new Map());
@@ -443,6 +462,7 @@ export function ContactImportPanel() {
           accept=".csv,.vcf,text/csv,text/vcard"
           onFile={handleFile}
           busy={busy}
+          replaceLabel="Treat this file as the full source of truth (any previously-imported contact missing from it will be deleted — manually-added contacts are never touched)"
         />
         <UploadCard
           kind="voter_file"
@@ -451,7 +471,7 @@ export function ContactImportPanel() {
           accept=".csv,text/csv"
           onFile={handleFile}
           busy={busy}
-          replaceOption
+          replaceLabel="Replace all existing voter file data (use this for a fresh export — skips name-matching against what's already imported and starts clean)"
         />
       </div>
 
@@ -465,6 +485,18 @@ export function ContactImportPanel() {
               <span>{preview.totalRows.toLocaleString()} rows in "{preview.filename}"</span>
               <span>will replace {preview.replacing.voterRecordCount.toLocaleString()} existing voter record{preview.replacing.voterRecordCount === 1 ? '' : 's'}</span>
               <span>and remove {preview.replacing.voterOnlyContactCount.toLocaleString()} voter-only contact{preview.replacing.voterOnlyContactCount === 1 ? '' : 's'}</span>
+            </div>
+          ) : preview.replacingContacts ? (
+            <div className="contact-import__preview-summary">
+              <span>{preview.totalRows.toLocaleString()} rows in "{preview.filename}"</span>
+              <span>{preview.auto.length} will update existing contacts</span>
+              <span>{preview.fresh.length} are new</span>
+              {preview.review.length > 0 && <span>{preview.review.length} need your review</span>}
+              <span>
+                {preview.replacingContacts.length === 0
+                  ? 'nothing missing from the last upload'
+                  : `${preview.replacingContacts.length} no longer in this file, will be removed`}
+              </span>
             </div>
           ) : (
             <div className="contact-import__preview-summary">
@@ -481,6 +513,29 @@ export function ContactImportPanel() {
               and imports "{preview.filename}" fresh, with no matching against what's there today. Your personal
               contacts themselves aren't deleted, only the voter data on them.
             </p>
+          )}
+
+          {preview.replacingContacts && preview.replacingContacts.length > 0 && (
+            <div className="contact-import__orphaned" style={{ margin: '0 0 14px' }}>
+              <h3 className="contact-import__card-title">
+                {preview.replacingContacts.length} Contact{preview.replacingContacts.length === 1 ? '' : 's'} Will Be Deleted
+              </h3>
+              <p className="contact-import__card-desc">
+                These were brought in by a previous Contacts import and aren't in "{preview.filename}" anymore —
+                treating this file as the source of truth means removing them. Any contact you added yourself in
+                MikeOS is never included here.
+              </p>
+              <div className="contact-import__review-list">
+                {preview.replacingContacts.slice(0, 50).map((r) => (
+                  <div key={r.id} className="contact-import__review-row">
+                    <strong>{r.name}</strong>
+                  </div>
+                ))}
+              </div>
+              {preview.replacingContacts.length > 50 && (
+                <p className="contact-import__review-hint">and {preview.replacingContacts.length - 50} more</p>
+              )}
+            </div>
           )}
 
           {preview.review.length > 0 && (
@@ -500,7 +555,7 @@ export function ContactImportPanel() {
                 />
               </div>
               <span className="contact-import__review-hint">
-                {preview.replacing ? 'Replacing…' : 'Importing…'} {progress.done.toLocaleString()} / {progress.total.toLocaleString()}
+                {previewMode === 'replace' ? 'Importing / removing…' : 'Importing…'} {progress.done.toLocaleString()} / {progress.total.toLocaleString()}
               </span>
             </div>
           )}
@@ -519,14 +574,14 @@ export function ContactImportPanel() {
             </button>
             <button className={`btn${confirmingReplace ? ' btn--danger' : ''}`} onClick={handleImport} disabled={!allReviewed || busy}>
               {busy
-                ? preview.replacing
-                  ? 'Replacing…'
+                ? previewMode === 'replace'
+                  ? 'Working…'
                   : 'Importing…'
                 : !allReviewed
                   ? `Resolve ${preview.review.length - reviewResolvedCount} more`
                   : confirmingReplace
-                    ? `Yes, delete and replace`
-                    : preview.replacing
+                    ? `Yes, delete ${replaceDeleteCount.toLocaleString()} and import`
+                    : previewMode === 'replace' && replaceDeleteCount > 0
                       ? 'Replace & Import'
                       : 'Import'}
             </button>
