@@ -7452,6 +7452,32 @@ app.get('/api/debug/airing-check2', async (c) => {
   });
 });
 
+// TEMPORARY, read-only — raw Plex API shape check. every synced show has
+// tvdb_id = NULL even after a completed sync with includeGuids=1, so the
+// previous fix's theory needs re-checking against what Plex actually
+// returns. To be deleted right after use.
+app.get('/api/debug/plex-raw', async (c) => {
+  if (!c.env.PLEX_SERVER_URL || !c.env.PLEX_TOKEN) return c.json({ error: 'Plex not connected' }, 503);
+  const base = c.env.PLEX_SERVER_URL.replace(/\/$/, '');
+  async function raw(path: string) {
+    const u = new URL(path, base + '/');
+    u.searchParams.set('X-Plex-Token', c.env.PLEX_TOKEN!);
+    u.searchParams.set('includeGuids', '1');
+    const res = await fetch(u.toString(), { headers: { Accept: 'application/json' } });
+    const text = await res.text();
+    return { status: res.status, body: text ? JSON.parse(text) : null };
+  }
+  const bulk = await raw('/library/sections/2/all');
+  const bulkTedLasso = (bulk.body?.MediaContainer?.Metadata ?? []).find((m: any) => m.ratingKey === '30322');
+  const single = await raw('/library/metadata/30322');
+  return c.json({
+    bulkStatus: bulk.status,
+    bulkTedLassoRaw: bulkTedLasso ?? null,
+    singleStatus: single.status,
+    singleTedLassoRaw: single.body?.MediaContainer?.Metadata?.[0] ?? null,
+  });
+});
+
 // This Worker's own public URL — needed so the nightly cron can re-invoke
 // itself below. Update this if the Worker is ever renamed/redeployed
 // under a different name.
