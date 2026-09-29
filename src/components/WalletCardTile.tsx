@@ -65,7 +65,7 @@ export function WalletCardTile({
         />
       </div>
       <div
-        className={`wallet-tile__art${card.artOrientation === 'portrait' ? ' wallet-tile__art--portrait' : ''}`}
+        className={`wallet-tile__art${card.coverArtOrientation === 'portrait' ? ' wallet-tile__art--portrait' : ''}`}
         style={{ background: card.coverArtUrl ? undefined : bg }}
       >
         {card.coverArtUrl ? (

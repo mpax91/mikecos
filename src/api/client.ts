@@ -977,7 +977,19 @@ export const api = {
     params: Partial<
       Pick<
         WalletCard,
-        'name' | 'category' | 'barcodeType' | 'barcodeValue' | 'displayNumber' | 'pinCode' | 'balance' | 'notes' | 'color' | 'coverArtKey' | 'backArtKey' | 'artOrientation'
+        | 'name'
+        | 'category'
+        | 'barcodeType'
+        | 'barcodeValue'
+        | 'displayNumber'
+        | 'pinCode'
+        | 'balance'
+        | 'notes'
+        | 'color'
+        | 'coverArtKey'
+        | 'backArtKey'
+        | 'coverArtOrientation'
+        | 'backArtOrientation'
       >
     > & { idNumber?: string | null }
   ) => request<WalletCard>('/api/wallet/cards', { method: 'POST', body: JSON.stringify(params) }).then(resolveWalletCard),
@@ -998,7 +1010,8 @@ export const api = {
         | 'color'
         | 'coverArtKey'
         | 'backArtKey'
-        | 'artOrientation'
+        | 'coverArtOrientation'
+        | 'backArtOrientation'
         | 'pinned'
         | 'sortOrder'
       >

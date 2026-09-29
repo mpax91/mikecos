@@ -53,7 +53,8 @@ type FormState = {
   color: string | null;
   coverArtKey: string | null;
   backArtKey: string | null;
-  artOrientation: 'landscape' | 'portrait';
+  coverArtOrientation: 'landscape' | 'portrait';
+  backArtOrientation: 'landscape' | 'portrait';
 };
 
 function toForm(card: WalletCard | null): FormState {
@@ -69,16 +70,16 @@ function toForm(card: WalletCard | null): FormState {
     color: card?.color ?? null,
     coverArtKey: card?.coverArtKey ?? null,
     backArtKey: card?.backArtKey ?? null,
-    artOrientation: card?.artOrientation ?? 'landscape',
+    coverArtOrientation: card?.coverArtOrientation ?? 'landscape',
+    backArtOrientation: card?.backArtOrientation ?? 'landscape',
   };
 }
 
 // Most cards are the standard ~241:152 landscape proportions of a real
 // physical card, so Mike never has to think about this — the editor just
-// reads the uploaded photo's own pixel dimensions and stores whichever way
-// it actually is. Front takes precedence when both images are uploaded
-// (it's the one shown in the grid tile and the barcode view's small logo);
-// back only decides it when there's no front to go by.
+// reads each uploaded photo's own pixel dimensions and stores whichever
+// way it actually is, independently for front and back (Mike's own
+// example: a card with a vertical front and a horizontal back).
 function detectOrientation(file: File): Promise<'landscape' | 'portrait'> {
   return new Promise((resolve) => {
     const url = URL.createObjectURL(file);
@@ -152,9 +153,7 @@ export function WalletCardEditor({
       setForm((f) => ({
         ...f,
         [side === 'front' ? 'coverArtKey' : 'backArtKey']: res.r2_key,
-        // Front always wins; back only sets it when there's no front image
-        // to go by (picking a back photo first, or a front-only card).
-        artOrientation: side === 'front' || !f.coverArtKey ? orientation : f.artOrientation,
+        [side === 'front' ? 'coverArtOrientation' : 'backArtOrientation']: orientation,
       }));
     } catch {
       setError("Couldn't upload that image — try again.");
@@ -186,7 +185,8 @@ export function WalletCardEditor({
       color: form.color,
       coverArtKey: form.coverArtKey,
       backArtKey: form.backArtKey,
-      artOrientation: form.artOrientation,
+      coverArtOrientation: form.coverArtOrientation,
+      backArtOrientation: form.backArtOrientation,
       ...(idNumberInput.trim() ? { idNumber: idNumberInput.trim() } : clearIdNumber ? { idNumber: null } : {}),
     };
     try {
@@ -219,7 +219,7 @@ export function WalletCardEditor({
           <div className="wallet-editor__images-row">
             <div className="wallet-editor__image-slot">
               <div
-                className={`wallet-editor__art-preview${form.artOrientation === 'portrait' ? ' wallet-editor__art-preview--portrait' : ''}`}
+                className={`wallet-editor__art-preview${form.coverArtOrientation === 'portrait' ? ' wallet-editor__art-preview--portrait' : ''}`}
                 style={{ background: frontPreview ? undefined : form.color || '#8A7B5E' }}
               >
                 {frontPreview ? <img src={frontPreview} alt="" /> : <span>{form.name.slice(0, 1).toUpperCase() || '🎫'}</span>}
@@ -238,7 +238,7 @@ export function WalletCardEditor({
             </div>
             <div className="wallet-editor__image-slot">
               <div
-                className={`wallet-editor__art-preview wallet-editor__art-preview--back${form.artOrientation === 'portrait' ? ' wallet-editor__art-preview--portrait' : ''}`}
+                className={`wallet-editor__art-preview wallet-editor__art-preview--back${form.backArtOrientation === 'portrait' ? ' wallet-editor__art-preview--portrait' : ''}`}
                 style={{ background: backPreview ? undefined : '#e4dcc7' }}
               >
                 {backPreview ? <img src={backPreview} alt="" /> : <span className="wallet-editor__art-preview-empty">Back (optional)</span>}
@@ -259,8 +259,10 @@ export function WalletCardEditor({
           <div className="wallet-editor__hint">
             The front photo becomes the card's cover art — crop tight to just the card, standard proportions (about
             241×152px, or any size in that ~8:5 ratio). Uploading a vertical card photo instead works too — it's
-            detected automatically and shown upright everywhere rather than cropped. Add a back photo too if the
-            card has anything worth seeing there (terms, a second barcode, a signature panel) — you can flip
+            detected automatically and shown upright everywhere rather than cropped, and front and back are judged
+            separately, so a card that's vertical on one side and horizontal on the other still displays correctly.
+            Add a back photo too if the card has anything worth seeing there (terms, a second barcode, a signature
+            panel) — you can flip
             between them when viewing the card.
           </div>
           <div className="wallet-editor__swatches">

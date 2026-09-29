@@ -469,12 +469,15 @@ export interface WalletCard {
   coverArtUrl: string | null;
   backArtKey: string | null;
   backArtUrl: string | null;
-  /** Detected automatically from the uploaded image's own pixel dimensions
-   * (see WalletCardEditor) — 'landscape' is the default and the common
-   * case (a real physical card's own proportions); 'portrait' is the rare
-   * vertical-card path that sizes the art box the other way instead of
-   * cropping it. Never a choice Mike makes by hand. */
-  artOrientation: 'landscape' | 'portrait';
+  /** Detected independently per side from each uploaded photo's own pixel
+   * dimensions (see WalletCardEditor) — 'landscape' is the default and the
+   * common case (a real physical card's own proportions); 'portrait' is
+   * the rare vertical path that sizes that side's art box the other way
+   * instead of cropping it. Front and back can genuinely differ (a card
+   * with a vertical front and horizontal back). Never a choice Mike makes
+   * by hand. */
+  coverArtOrientation: 'landscape' | 'portrait';
+  backArtOrientation: 'landscape' | 'portrait';
   pinned: boolean;
   sortOrder: number;
   createdAt: string;

@@ -11,19 +11,25 @@ export function CardImageLightbox({
   side,
   onSide,
   onClose,
-  orientation = 'landscape',
+  frontOrientation = 'landscape',
+  backOrientation = 'landscape',
 }: {
   frontUrl: string | null;
   backUrl: string | null;
   side: 'front' | 'back';
   onSide: (side: 'front' | 'back') => void;
   onClose: () => void;
-  /** Wallet-only — a physical payment card is always landscape, so
-   * PaymentCardDetail never passes this and gets the default. */
-  orientation?: 'landscape' | 'portrait';
+  /** Wallet-only, and independent per side (a card can be vertical on one
+   * face and horizontal on the other) — a physical payment card is always
+   * landscape both sides, so PaymentCardDetail never passes these and gets
+   * the default. */
+  frontOrientation?: 'landscape' | 'portrait';
+  backOrientation?: 'landscape' | 'portrait';
 }) {
   const hasBack = !!backUrl;
-  const src = side === 'back' && backUrl ? backUrl : frontUrl;
+  const showingBack = side === 'back' && backUrl;
+  const src = showingBack ? backUrl : frontUrl;
+  const orientation = showingBack ? backOrientation : frontOrientation;
   const swipe = useSwipe({
     onSwipeLeft: () => hasBack && onSide('front'),
     onSwipeRight: () => hasBack && onSide('back'),
