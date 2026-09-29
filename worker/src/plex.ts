@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Env } from './types';
 import { runPlexSyncChunk, PlexNotConfiguredError } from './plexSync';
-import { runPlexAiringCheck, runFullHistoryScanChunk } from './plexAiring';
+import { runAiringCheckChunk, runFullHistoryScanChunk } from './plexAiring';
 
 /** Plex library mirror — browse/search the synced catalogue, surface
  * metadata gaps, and manage aired-but-missing episode flags. See
@@ -176,9 +176,16 @@ plexRouter.post('/sync', async (c) => {
   }
 });
 
+// POST /airing-check — one bounded chunk of the nightly check (resolving
+// any show's TVMaze id that needs it, then checking the last few days for
+// aired episodes). Used to run unchunked in a single call — see
+// runAiringCheckChunk's own comment for why that broke silently on a
+// large library. Same polling shape as /sync and /airing-scan: the caller
+// (the "Check now" button, or the nightly cron's self-fetch loop) keeps
+// calling until the response says `done`.
 plexRouter.post('/airing-check', async (c) => {
   try {
-    const result = await runPlexAiringCheck(c.env);
+    const result = await runAiringCheckChunk(c.env);
     return c.json(result);
   } catch (err) {
     if (err instanceof PlexNotConfiguredError) return c.json({ error: err.message }, 503);

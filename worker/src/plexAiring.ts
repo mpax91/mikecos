@@ -30,35 +30,38 @@ function dateStr(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** Resolves (and caches) a TVMaze show id for every synced show Plex has
- * matched to a TheTVDB id, skipping ones already resolved against the
- * same tvdb_id — only a re-match in Plex (or a first-time sync) causes a
- * fresh lookup. */
-async function resolveTvmazeShowIds(env: Env): Promise<void> {
+/** Which synced shows still need a fresh TVMaze lookup — Plex has matched
+ * them to a TheTVDB id, but they're either never resolved or resolved
+ * against a since-changed tvdb_id (a re-match in Plex, most often). Pure
+ * read, used to seed runAiringCheckChunk's resolve queue. */
+async function pendingTvmazeResolves(env: Env): Promise<{ show_item_id: string; tvdb_id: string }[]> {
   const { results } = await env.DB.prepare(
     `SELECT s.id as show_item_id, s.tvdb_id
      FROM plex_items s
      LEFT JOIN plex_tvmaze_shows t ON t.show_item_id = s.id
      WHERE s.type = 'show' AND s.tvdb_id IS NOT NULL AND (t.show_item_id IS NULL OR t.tvdb_id != s.tvdb_id)`
   ).all<{ show_item_id: string; tvdb_id: string }>();
+  return results ?? [];
+}
 
-  for (const row of results ?? []) {
-    let tvmazeId: number | null = null;
-    try {
-      const show = await tvmazeGet<{ id: number }>(`/lookup/shows?thetvdb=${row.tvdb_id}`);
-      tvmazeId = show?.id ?? null;
-    } catch {
-      // A transient TVMaze failure just leaves this show unresolved for
-      // now — it's retried next run since nothing gets cached on error.
-      continue;
-    }
-    await env.DB.prepare(
-      `INSERT INTO plex_tvmaze_shows (show_item_id, tvdb_id, tvmaze_id, resolved_at) VALUES (?, ?, ?, ?)
-       ON CONFLICT(show_item_id) DO UPDATE SET tvdb_id=excluded.tvdb_id, tvmaze_id=excluded.tvmaze_id, resolved_at=excluded.resolved_at`
-    )
-      .bind(row.show_item_id, row.tvdb_id, tvmazeId, new Date().toISOString())
-      .run();
+/** Resolves one show's TVMaze id and caches it — the per-item unit of
+ * work `runAiringCheckChunk`'s resolve phase spends its budget on. */
+async function resolveOneTvmazeShow(env: Env, showItemId: string, tvdbId: string): Promise<void> {
+  let tvmazeId: number | null = null;
+  try {
+    const show = await tvmazeGet<{ id: number }>(`/lookup/shows?thetvdb=${tvdbId}`);
+    tvmazeId = show?.id ?? null;
+  } catch {
+    // A transient TVMaze failure just leaves this show unresolved for
+    // now — it's retried next run since nothing gets cached on error.
+    return;
   }
+  await env.DB.prepare(
+    `INSERT INTO plex_tvmaze_shows (show_item_id, tvdb_id, tvmaze_id, resolved_at) VALUES (?, ?, ?, ?)
+     ON CONFLICT(show_item_id) DO UPDATE SET tvdb_id=excluded.tvdb_id, tvmaze_id=excluded.tvmaze_id, resolved_at=excluded.resolved_at`
+  )
+    .bind(showItemId, tvdbId, tvmazeId, new Date().toISOString())
+    .run();
 }
 
 /** Drops any open (non-dismissed) missing-episode row whose episode has
@@ -99,18 +102,7 @@ async function hasEpisode(env: Env, showItemId: string, season: number, episode:
   return !!row;
 }
 
-/** For every show with a resolved TVMaze id, checks the last few days for
- * aired episodes and flags any that aren't in the synced library. Runs
- * shows sequentially (not in parallel) — deliberately gentle on TVMaze's
- * API rather than fast; a nightly job has no reason to hurry. */
-async function checkRecentAirings(env: Env): Promise<number> {
-  const { results: shows } = await env.DB.prepare(
-    `SELECT s.id as show_item_id, s.title as show_title, t.tvmaze_id
-     FROM plex_items s
-     JOIN plex_tvmaze_shows t ON t.show_item_id = s.id
-     WHERE s.type = 'show' AND t.tvmaze_id IS NOT NULL`
-  ).all<{ show_item_id: string; show_title: string; tvmaze_id: number }>();
-
+function recentLookbackDates(): string[] {
   const today = new Date();
   const dates: string[] = [];
   for (let i = 1; i <= LOOKBACK_DAYS; i++) {
@@ -118,29 +110,34 @@ async function checkRecentAirings(env: Env): Promise<number> {
     d.setUTCDate(d.getUTCDate() - i);
     dates.push(dateStr(d));
   }
+  return dates;
+}
 
+/** Checks one show's last few days for aired episodes and flags any that
+ * aren't in the synced library yet — the per-item unit of work
+ * `runAiringCheckChunk`'s check phase spends its budget on. Returns how
+ * many new rows it flagged. */
+async function checkOneShowRecentAirings(env: Env, showItemId: string, showTitle: string, tvmazeId: number, dates: string[]): Promise<number> {
   let flagged = 0;
-  for (const show of shows ?? []) {
-    for (const date of dates) {
-      let episodes: TvmazeEpisode[] | null = null;
-      try {
-        episodes = await tvmazeGet<TvmazeEpisode[]>(`/shows/${show.tvmaze_id}/episodesbydate?date=${date}`);
-      } catch {
-        continue; // transient failure — this date/show just gets picked up again next run
-      }
-      for (const ep of episodes ?? []) {
-        if (await hasEpisode(env, show.show_item_id, ep.season, ep.number)) continue;
-        // ON CONFLICT DO NOTHING — if Mike already dismissed this one,
-        // re-detecting it on a later run must not resurrect it.
-        const inserted = await env.DB.prepare(
-          `INSERT INTO plex_missing_episodes (id, show_item_id, show_title, season_number, episode_number, episode_name, aired_on, detected_at, dismissed)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
-           ON CONFLICT(show_item_id, season_number, episode_number) DO NOTHING`
-        )
-          .bind(crypto.randomUUID(), show.show_item_id, show.show_title, ep.season, ep.number, ep.name || null, ep.airdate, new Date().toISOString())
-          .run();
-        if (inserted.meta.changes > 0) flagged++;
-      }
+  for (const date of dates) {
+    let episodes: TvmazeEpisode[] | null = null;
+    try {
+      episodes = await tvmazeGet<TvmazeEpisode[]>(`/shows/${tvmazeId}/episodesbydate?date=${date}`);
+    } catch {
+      continue; // transient failure — this date/show just gets picked up again next run
+    }
+    for (const ep of episodes ?? []) {
+      if (await hasEpisode(env, showItemId, ep.season, ep.number)) continue;
+      // ON CONFLICT DO NOTHING — if Mike already dismissed this one,
+      // re-detecting it on a later run must not resurrect it.
+      const inserted = await env.DB.prepare(
+        `INSERT INTO plex_missing_episodes (id, show_item_id, show_title, season_number, episode_number, episode_name, aired_on, detected_at, dismissed)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
+         ON CONFLICT(show_item_id, season_number, episode_number) DO NOTHING`
+      )
+        .bind(crypto.randomUUID(), showItemId, showTitle, ep.season, ep.number, ep.name || null, ep.airdate, new Date().toISOString())
+        .run();
+      if (inserted.meta.changes > 0) flagged++;
     }
   }
   return flagged;
@@ -151,12 +148,117 @@ export interface AiringCheckResult {
   newlyFlagged: number;
 }
 
-export async function runPlexAiringCheck(env: Env): Promise<AiringCheckResult> {
-  await resolveTvmazeShowIds(env);
-  await reconcileMissingEpisodes(env);
-  const newlyFlagged = await checkRecentAirings(env);
-  const resolvedCount = await env.DB.prepare(`SELECT COUNT(*) as n FROM plex_tvmaze_shows WHERE tvmaze_id IS NOT NULL`).first<{ n: number }>();
-  return { showsResolved: resolvedCount?.n ?? 0, newlyFlagged };
+// ---- Chunked/resumable nightly Airing check ----
+//
+// This used to run everything — resolving every show's TVMaze id, then
+// checking every resolved show's last few days — in one unbounded pass
+// within a single Worker invocation, on the theory that "just the last 3
+// days" was cheap regardless of library size. Wrong at Mike's library
+// scale (669 shows): the first cold resolve pass alone is 669 sequential
+// TVMaze lookups + D1 writes, which hit a D1 connection timeout partway
+// through ("D1_ERROR: Network connection lost") — exactly the kind of
+// silent nightly failure (the cron's own try/catch just logs and moves
+// on) that let Ted Lasso S04E09 / It's Always Sunny S18E08 go unflagged
+// despite the library otherwise being fine. Same chunked/resumable shape
+// as the Plex library sync and the full-history scan now: state persists
+// in plex_airing_check_state (migrations/0069) between chunks, and the
+// caller (the "Check now" button, or the nightly cron's self-fetch loop —
+// see index.ts) keeps calling until `done`.
+
+const CHECK_SUBREQUEST_BUDGET_PER_CHUNK = 100;
+
+interface AiringCheckState {
+  phase: 'resolve' | 'reconciled' | 'check';
+  resolveQueue: { showItemId: string; tvdbId: string }[];
+  checkQueue: { showItemId: string; showTitle: string; tvmazeId: number }[];
+  dates: string[];
+  showsResolved: number;
+  newlyFlagged: number;
+}
+
+async function loadCheckState(env: Env): Promise<AiringCheckState | null> {
+  const row = await env.DB.prepare(`SELECT state_json FROM plex_airing_check_state WHERE id = 1`).first<{ state_json: string }>();
+  return row ? (JSON.parse(row.state_json) as AiringCheckState) : null;
+}
+
+async function saveCheckState(env: Env, state: AiringCheckState): Promise<void> {
+  await env.DB.prepare(
+    `INSERT INTO plex_airing_check_state (id, state_json, updated_at) VALUES (1, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET state_json = excluded.state_json, updated_at = excluded.updated_at`
+  )
+    .bind(JSON.stringify(state), new Date().toISOString())
+    .run();
+}
+
+async function clearCheckState(env: Env): Promise<void> {
+  await env.DB.prepare(`DELETE FROM plex_airing_check_state WHERE id = 1`).run();
+}
+
+export interface AiringCheckChunkResult {
+  done: boolean;
+  progress: { phase: string; showsResolved: number; newlyFlagged: number };
+  summary?: AiringCheckResult;
+}
+
+/** Does one bounded slice of the nightly Airing check and returns whether
+ * it's done — see the header comment above for why this is chunked at
+ * all. Safe to call repeatedly, including as the very first call (which
+ * initializes fresh state), until `done` comes back true. */
+export async function runAiringCheckChunk(env: Env): Promise<AiringCheckChunkResult> {
+  const loaded = await loadCheckState(env);
+  let spent = 0;
+
+  const state: AiringCheckState =
+    loaded ?? { phase: 'resolve', resolveQueue: [], checkQueue: [], dates: recentLookbackDates(), showsResolved: 0, newlyFlagged: 0 };
+  if (!loaded) {
+    state.resolveQueue = (await pendingTvmazeResolves(env)).map((r) => ({ showItemId: r.show_item_id, tvdbId: r.tvdb_id }));
+  }
+
+  while (spent < CHECK_SUBREQUEST_BUDGET_PER_CHUNK) {
+    if (state.phase === 'resolve') {
+      const next = state.resolveQueue.shift();
+      if (!next) {
+        state.phase = 'reconciled';
+        continue;
+      }
+      await resolveOneTvmazeShow(env, next.showItemId, next.tvdbId);
+      state.showsResolved++;
+      spent += 2; // one TVMaze lookup + one D1 upsert
+      continue;
+    }
+
+    if (state.phase === 'reconciled') {
+      // Drops any open missing-episode row whose episode has since shown
+      // up in the library — cheap, one query, run once per check rather
+      // than per show.
+      await reconcileMissingEpisodes(env);
+      spent++;
+      const { results: shows } = await env.DB.prepare(
+        `SELECT s.id as show_item_id, s.title as show_title, t.tvmaze_id
+         FROM plex_items s
+         JOIN plex_tvmaze_shows t ON t.show_item_id = s.id
+         WHERE s.type = 'show' AND t.tvmaze_id IS NOT NULL`
+      ).all<{ show_item_id: string; show_title: string; tvmaze_id: number }>();
+      state.checkQueue = (shows ?? []).map((s) => ({ showItemId: s.show_item_id, showTitle: s.show_title, tvmazeId: s.tvmaze_id }));
+      spent++;
+      state.phase = 'check';
+      continue;
+    }
+
+    // phase === 'check'
+    const next = state.checkQueue.shift();
+    if (!next) {
+      const summary = { showsResolved: state.showsResolved, newlyFlagged: state.newlyFlagged };
+      await clearCheckState(env);
+      return { done: true, progress: { phase: 'check', ...summary }, summary };
+    }
+    const flagged = await checkOneShowRecentAirings(env, next.showItemId, next.showTitle, next.tvmazeId, state.dates);
+    state.newlyFlagged += flagged;
+    spent += 1 + state.dates.length; // rough: one D1 read for the show plus one TVMaze call per lookback date
+  }
+
+  await saveCheckState(env, state);
+  return { done: false, progress: { phase: state.phase, showsResolved: state.showsResolved, newlyFlagged: state.newlyFlagged } };
 }
 
 // ---- Full-history scan — manually triggered, not nightly ----
@@ -212,11 +314,14 @@ export async function runFullHistoryScanChunk(env: Env): Promise<AiringScanChunk
   let state = await loadScanState(env);
 
   if (!state) {
-    // Fresh run: make sure every show's TVMaze id is as up to date as
-    // possible first, and clear out anything already fixed since the last
-    // check — same housekeeping the nightly job does — then queue up
-    // every show that has a resolved TVMaze id.
-    await resolveTvmazeShowIds(env);
+    // Fresh run: clear out anything already fixed since the last check —
+    // same housekeeping the nightly job does — then queue up every show
+    // that already has a resolved TVMaze id. Resolving ids themselves is
+    // NOT done inline here (it used to be, unbounded, which could itself
+    // time out on a large library before this function ever returned its
+    // first chunk) — run "Check now" first (or let the nightly job run)
+    // if a show was just added and needs resolving before its history can
+    // be scanned.
     await reconcileMissingEpisodes(env);
     const { results: shows } = await env.DB.prepare(
       `SELECT s.id as show_item_id, s.title as show_title, t.tvmaze_id

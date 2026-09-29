@@ -36,17 +36,28 @@ export function PlexAiringPanel() {
     }
   }
 
+  // Chunked/resumable, same polling shape as handleFullScan below — a cold
+  // first pass over the whole library (resolving TVMaze ids) is too much
+  // work for one request, which used to time out silently overnight (see
+  // worker/src/plexAiring.ts's header comment above runAiringCheckChunk).
   async function handleCheck() {
     setChecking(true);
-    setCheckMessage(null);
+    setCheckMessage('Checking…');
     setError(null);
     try {
-      const result = await api.runPlexAiringCheck();
-      setCheckMessage(
-        result.newlyFlagged > 0
-          ? `Found ${result.newlyFlagged} newly aired episode${result.newlyFlagged === 1 ? '' : 's'} not in your library yet.`
-          : 'Nothing new — up to date.'
-      );
+      for (;;) {
+        const chunk = await api.runPlexAiringCheckChunk();
+        if (chunk.done) {
+          const { newlyFlagged } = chunk.summary ?? chunk.progress;
+          setCheckMessage(
+            newlyFlagged > 0
+              ? `Found ${newlyFlagged} newly aired episode${newlyFlagged === 1 ? '' : 's'} not in your library yet.`
+              : 'Nothing new — up to date.'
+          );
+          break;
+        }
+        setCheckMessage(`Checking… ${chunk.progress.showsResolved} shows resolved`);
+      }
       load();
     } catch (e) {
       setError(e instanceof Error ? e.message.replace(/^API \d+:\s*/, '') : "Couldn't check — try again.");

@@ -44,7 +44,6 @@ import { walletRouter } from './wallet';
 import { rewardsRouter } from './rewards';
 import { paymentCardsRouter } from './paymentCards';
 import { plexRouter } from './plex';
-import { runPlexAiringCheck } from './plexAiring';
 import { emailRouter, syncAllAccounts } from './email';
 import { bookmarksRouter } from './bookmarks';
 import { cloudRouter } from './cloud';
@@ -7421,63 +7420,6 @@ app.delete('/api/bet-game-notes/:id', async (c) => {
 
 app.get('/api/health', (c) => c.json({ ok: true, time: now() }));
 
-// TEMPORARY, read-only — diagnosing why Ted Lasso S04E09 / It's Always
-// Sunny S18E08 (Sept 29) aren't flagged by Airing. Same shape as the debug
-// endpoint from the previous Airing fix. SELECT-only, no writes. To be
-// deleted right after use.
-app.get('/api/debug/airing-check2', async (c) => {
-  const shows = await c.env.DB.prepare(
-    `SELECT s.id, s.title, s.guid, s.tvdb_id, t.tvmaze_id, t.resolved_at
-     FROM plex_items s
-     LEFT JOIN plex_tvmaze_shows t ON t.show_item_id = s.id
-     WHERE s.type = 'show' AND (s.title LIKE '%Ted Lasso%' OR s.title LIKE '%Always Sunny%')`
-  ).all();
-  const syncState = await c.env.DB.prepare(`SELECT state_json, updated_at FROM plex_sync_state WHERE id = 1`).first();
-  const showCounts = await c.env.DB.prepare(
-    `SELECT COUNT(*) as total, SUM(CASE WHEN tvdb_id IS NOT NULL THEN 1 ELSE 0 END) as with_tvdb
-     FROM plex_items WHERE type = 'show'`
-  ).first();
-  const resolvedCounts = await c.env.DB.prepare(`SELECT COUNT(*) as n FROM plex_tvmaze_shows WHERE tvmaze_id IS NOT NULL`).first();
-  const unresolvedSample = await c.env.DB.prepare(
-    `SELECT s.title, s.tvdb_id FROM plex_items s
-     LEFT JOIN plex_tvmaze_shows t ON t.show_item_id = s.id
-     WHERE s.type = 'show' AND s.tvdb_id IS NOT NULL AND t.show_item_id IS NULL LIMIT 5`
-  ).all();
-  return c.json({
-    shows: shows.results,
-    syncState: syncState ? { updated_at: (syncState as any).updated_at, state: JSON.parse((syncState as any).state_json) } : null,
-    showCounts: showCounts,
-    resolvedCounts: resolvedCounts,
-    unresolvedSample: unresolvedSample.results,
-  });
-});
-
-// TEMPORARY, read-only — raw Plex API shape check. every synced show has
-// tvdb_id = NULL even after a completed sync with includeGuids=1, so the
-// previous fix's theory needs re-checking against what Plex actually
-// returns. To be deleted right after use.
-app.get('/api/debug/plex-raw', async (c) => {
-  if (!c.env.PLEX_SERVER_URL || !c.env.PLEX_TOKEN) return c.json({ error: 'Plex not connected' }, 503);
-  const base = c.env.PLEX_SERVER_URL.replace(/\/$/, '');
-  async function raw(path: string) {
-    const u = new URL(path, base + '/');
-    u.searchParams.set('X-Plex-Token', c.env.PLEX_TOKEN!);
-    u.searchParams.set('includeGuids', '1');
-    const res = await fetch(u.toString(), { headers: { Accept: 'application/json' } });
-    const text = await res.text();
-    return { status: res.status, body: text ? JSON.parse(text) : null };
-  }
-  const bulk = await raw('/library/sections/2/all');
-  const bulkTedLasso = (bulk.body?.MediaContainer?.Metadata ?? []).find((m: any) => m.ratingKey === '30322');
-  const single = await raw('/library/metadata/30322');
-  return c.json({
-    bulkStatus: bulk.status,
-    bulkTedLassoRaw: bulkTedLasso ?? null,
-    singleStatus: single.status,
-    singleTedLassoRaw: single.body?.MediaContainer?.Metadata?.[0] ?? null,
-  });
-});
-
 // This Worker's own public URL — needed so the nightly cron can re-invoke
 // itself below. Update this if the Worker is ever renamed/redeployed
 // under a different name.
@@ -7537,7 +7479,19 @@ export default {
       console.error('Plex library sync failed', err);
     }
     try {
-      await runPlexAiringCheck(env);
+      // Same self-fetch chunking as the library sync above, for the same
+      // reason — see runAiringCheckChunk's own comment for the D1 timeout
+      // this used to silently hit on a large library, which is exactly
+      // how Ted Lasso S04E09 / It's Always Sunny S18E08 went unflagged.
+      for (let i = 0; i < MAX_SYNC_CHUNKS; i++) {
+        const res = await fetch(`${WORKER_SELF_URL}/api/plex/airing-check`, { method: 'POST' });
+        if (!res.ok) {
+          console.error('Plex airing check chunk failed', res.status, await res.text());
+          break;
+        }
+        const chunk = await res.json<{ done: boolean }>();
+        if (chunk.done) break;
+      }
     } catch (err) {
       console.error('Plex airing check failed', err);
     }

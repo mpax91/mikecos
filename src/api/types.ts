@@ -1933,9 +1933,15 @@ export interface PlexSyncChunkResult {
   summary?: PlexSyncResult;
 }
 
-export interface PlexAiringCheckResult {
-  showsResolved: number;
-  newlyFlagged: number;
+// One bounded chunk of the nightly Airing check (see
+// worker/src/plexAiring.ts's header comment above runAiringCheckChunk for
+// why this is chunked — a large library's first cold TVMaze-resolve pass
+// alone can exceed a single request). Same polling shape as
+// PlexSyncChunkResult: the caller keeps calling the endpoint until `done`.
+export interface PlexAiringCheckChunkResult {
+  done: boolean;
+  progress: { phase: string; showsResolved: number; newlyFlagged: number };
+  summary?: { showsResolved: number; newlyFlagged: number };
 }
 
 // One bounded chunk of the manually-triggered full-history scan (see
