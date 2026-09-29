@@ -122,6 +122,23 @@ jobs:
             exit 0
           fi
           printf '%s' "$EMAIL_ACCOUNT_ENC_KEY" | npx wrangler secret put EMAIL_ACCOUNT_ENC_KEY
+            - name: Set ID Card encryption key
+        # AES-256-GCM key for Wallet's ID cards (wallet_cards.id_number_enc —
+        # see worker/src/cryptoField.ts and worker/src/wallet.ts). Generate
+        # one with `openssl rand -base64 32` (a fresh key, separate from the
+        # other *_ENC_KEY secrets) and add it as the WALLET_CARD_ENC_KEY repo
+        # secret; until then this step just skips, and saving an ID card
+        # number returns a clear 500 instead of saving.
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          WALLET_CARD_ENC_KEY: ${{ secrets.WALLET_CARD_ENC_KEY }}
+        run: |
+          if [ -z "$WALLET_CARD_ENC_KEY" ]; then
+            echo "WALLET_CARD_ENC_KEY not set — skipping (ID card numbers won't save until this repo secret is added)."
+            exit 0
+          fi
+          printf '%s' "$WALLET_CARD_ENC_KEY" | npx wrangler secret put WALLET_CARD_ENC_KEY
       - name: Set Plex secrets
         # The URL Mike's Plex Media Server is reachable at (Remote Access
         # address or a Cloudflare Tunnel hostname) and its X-Plex-Token —
