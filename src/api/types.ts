@@ -869,6 +869,9 @@ export interface ImportPreviewResponse {
   auto: ImportMatch[];
   review: ImportMatch[];
   fresh: ImportMatch[];
+  /** Only present when this preview was requested with mode: 'replace' —
+   * what committing it will delete before writing the new file's rows. */
+  replacing?: { voterRecordCount: number; voterOnlyContactCount: number };
 }
 
 export interface ImportDecision {

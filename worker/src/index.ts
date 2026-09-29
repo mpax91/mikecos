@@ -1953,13 +1953,39 @@ async function matchRecords(db: D1Database, records: ParsedContactRecord[]): Pro
 // anything, so Settings can show counts and the review queue before
 // anything touches the database.
 app.post('/api/contacts/import/preview', async (c) => {
-  const body = await c.req.json<{ content: string; filename: string; kind: 'contacts' | 'voter_file' }>();
+  const body = await c.req.json<{ content: string; filename: string; kind: 'contacts' | 'voter_file'; mode?: 'merge' | 'replace' }>();
   if (!body.content) return c.json({ error: 'content required' }, 400);
   const isVCard = /BEGIN:VCARD/i.test(body.content.slice(0, 2000)) || /\.vcf$/i.test(body.filename);
 
   const records = body.kind === 'voter_file' ? parseVoterCsv(body.content) : isVCard ? parseVCard(body.content) : parseContactsCsv(body.content);
   if (records.length === 0) {
     return c.json({ error: "No rows recognized — check the file has a header row with a name column, or that it's a valid vCard export" }, 400);
+  }
+
+  // 'replace' is voter_file-only — a full re-export (e.g. a new GEN cut)
+  // that should entirely supersede the last one rather than name-match
+  // against it. Matching a voter file against itself would otherwise put
+  // nearly every returning voter into the one-click review queue (they
+  // already exist, but only as a plain name match, which is never
+  // auto-applied), which doesn't scale to a several-thousand-row roll. So
+  // skip matchRecords entirely here — everything comes back as 'fresh',
+  // and commit/start does the actual replace (see its own comment) before
+  // any of these rows are written. Surfacing what's about to be deleted
+  // (replacing) is what lets Settings show Mike a real confirmation before
+  // committing to it.
+  if (body.kind === 'voter_file' && body.mode === 'replace') {
+    const voterRecordCount = (await c.env.DB.prepare('SELECT COUNT(*) as n FROM voter_records').first<{ n: number }>())?.n ?? 0;
+    const voterOnlyContactCount =
+      (await c.env.DB.prepare("SELECT COUNT(*) as n FROM contacts WHERE source = 'voter_file'").first<{ n: number }>())?.n ?? 0;
+    return c.json({
+      kind: body.kind,
+      filename: body.filename,
+      totalRows: records.length,
+      auto: [],
+      review: [],
+      fresh: records.map((record) => ({ record, matchType: 'new' as const })),
+      replacing: { voterRecordCount, voterOnlyContactCount },
+    });
   }
 
   const matches = await matchRecords(c.env.DB, records);
@@ -2166,7 +2192,23 @@ function voterRecordInsertStmt(db: D1Database, contactId: string, r: ParsedConta
 // every following chunk request fails, Settings can show "this import
 // never finished" instead of nothing at all.
 app.post('/api/contacts/import/commit/start', async (c) => {
-  const body = await c.req.json<{ kind: 'contacts' | 'voter_file'; filename: string; totalRows: number }>();
+  const body = await c.req.json<{ kind: 'contacts' | 'voter_file'; filename: string; totalRows: number; mode?: 'merge' | 'replace' }>();
+
+  // mode: 'replace' (voter_file only, chosen alongside the matching preview
+  // request above) wipes every voter_records row and every voter_file-
+  // sourced contact BEFORE the batch row exists, so an interrupted replace
+  // still shows up as "Incomplete" in history rather than looking like it
+  // silently deleted everything and imported nothing. Personal contacts
+  // (source != 'voter_file') are never touched — only the voter data that
+  // was attached to them (via a past merge) is cleared, same as for a
+  // standalone voter-only contact. This is the one-time "blow away
+  // whatever voter matching existed before" Mike asked for; it's on him
+  // (and a later feature) to re-establish durable personal<->voter links
+  // that survive a future replace.
+  if (body.kind === 'voter_file' && body.mode === 'replace') {
+    await c.env.DB.batch([c.env.DB.prepare('DELETE FROM voter_records'), c.env.DB.prepare("DELETE FROM contacts WHERE source = 'voter_file'")]);
+  }
+
   const batchId = uid();
   await c.env.DB.prepare(
     'INSERT INTO import_batches (id, kind, filename, new_count, updated_count, status, total_rows, created_at) VALUES (?, ?, ?, 0, 0, ?, ?, ?)'

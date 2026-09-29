@@ -307,20 +307,22 @@ export const api = {
   deleteContactConnection: (contactId: string, connectionId: string) =>
     request<{ ok: true }>(`/api/contacts/${contactId}/connections/${connectionId}`, { method: 'DELETE' }),
 
-  previewContactImport: (content: string, filename: string, kind: 'contacts' | 'voter_file') =>
+  previewContactImport: (content: string, filename: string, kind: 'contacts' | 'voter_file', mode?: 'merge' | 'replace') =>
     request<ImportPreviewResponse>('/api/contacts/import/preview', {
       method: 'POST',
-      body: JSON.stringify({ content, filename, kind }),
+      body: JSON.stringify({ content, filename, kind, mode }),
     }),
 
   /** Chunked commit flow — call start() once, then commitChunk() repeatedly
    * with bounded slices of the full decisions array (so one huge file never
    * rides in a single request that can be killed partway through with no
-   * trace), then finish() once. See ImportCommitStartResponse's comment. */
-  startContactImportCommit: (kind: 'contacts' | 'voter_file', filename: string, totalRows: number) =>
+   * trace), then finish() once. See ImportCommitStartResponse's comment.
+   * mode: 'replace' (voter_file only) is what actually wipes the old voter
+   * data — start() performs that delete before the batch row exists. */
+  startContactImportCommit: (kind: 'contacts' | 'voter_file', filename: string, totalRows: number, mode?: 'merge' | 'replace') =>
     request<ImportCommitStartResponse>('/api/contacts/import/commit/start', {
       method: 'POST',
-      body: JSON.stringify({ kind, filename, totalRows }),
+      body: JSON.stringify({ kind, filename, totalRows, mode }),
     }),
 
   commitContactImportChunk: (batchId: string, kind: 'contacts' | 'voter_file', decisions: ImportDecision[]) =>

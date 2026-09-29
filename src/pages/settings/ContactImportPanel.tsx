@@ -26,19 +26,34 @@ function UploadCard({
   accept,
   onFile,
   busy,
+  replaceOption,
 }: {
   kind: Kind;
   title: string;
   description: string;
   accept: string;
-  onFile: (file: File, kind: Kind) => void;
+  onFile: (file: File, kind: Kind, mode?: 'merge' | 'replace') => void;
   busy: boolean;
+  /** Voter file only — a full re-export should entirely replace the last
+   * one rather than name-match against it (which would otherwise queue
+   * nearly every returning voter for a one-click review — see the preview
+   * endpoint's own comment). Off by default: it's a destructive option, so
+   * Mike opts in per-upload rather than it being the default behavior. */
+  replaceOption?: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const [replace, setReplace] = useState(false);
   return (
     <div className="card contact-import__card">
       <h3 className="contact-import__card-title">{title}</h3>
       <p className="contact-import__card-desc">{description}</p>
+      {replaceOption && (
+        <label className="contact-import__replace-toggle">
+          <input type="checkbox" checked={replace} onChange={(e) => setReplace(e.target.checked)} />
+          Replace all existing voter file data (use this for a fresh export — skips name-matching against what's
+          already imported and starts clean)
+        </label>
+      )}
       <input
         ref={inputRef}
         type="file"
@@ -46,7 +61,7 @@ function UploadCard({
         style={{ display: 'none' }}
         onChange={(e) => {
           const file = e.target.files?.[0];
-          if (file) onFile(file, kind);
+          if (file) onFile(file, kind, replaceOption && replace ? 'replace' : undefined);
           e.target.value = '';
         }}
       />
@@ -170,6 +185,8 @@ export function ContactImportPanel() {
   const [duplicates, setDuplicates] = useState<DuplicateCandidate[] | null>(null);
   const [mergingVoterId, setMergingVoterId] = useState<string | null>(null);
   const [showAllDuplicates, setShowAllDuplicates] = useState(false);
+  const [previewMode, setPreviewMode] = useState<'merge' | 'replace' | undefined>(undefined);
+  const [confirmingReplace, setConfirmingReplace] = useState(false);
 
   function loadHistory() {
     api.listImportHistory().then(setHistory).catch(() => {});
@@ -315,15 +332,17 @@ export function ContactImportPanel() {
     }
   }
 
-  async function handleFile(file: File, kind: Kind) {
+  async function handleFile(file: File, kind: Kind, mode?: 'merge' | 'replace') {
     setError(null);
     setResult(null);
     setPreview(null);
     setResolutions(new Map());
+    setConfirmingReplace(false);
+    setPreviewMode(mode);
     setBusy(true);
     try {
       const content = await file.text();
-      const p = await api.previewContactImport(content, file.name, kind);
+      const p = await api.previewContactImport(content, file.name, kind, mode);
       setPreview(p);
     } catch (e) {
       setError(String(e));
@@ -345,6 +364,13 @@ export function ContactImportPanel() {
 
   async function handleImport() {
     if (!preview || !allReviewed) return;
+    // Replace is destructive (wipes existing voter data before writing the
+    // new file), so it gets its own explicit confirm click rather than
+    // going straight from "Upload File" to deleting anything.
+    if (previewMode === 'replace' && !confirmingReplace) {
+      setConfirmingReplace(true);
+      return;
+    }
     setBusy(true);
     setError(null);
     setProgress(null);
@@ -360,7 +386,7 @@ export function ContactImportPanel() {
         }),
       ];
 
-      const { batchId } = await api.startContactImportCommit(preview.kind, preview.filename, decisions.length);
+      const { batchId } = await api.startContactImportCommit(preview.kind, preview.filename, decisions.length, previewMode);
 
       let newCount = 0;
       let updatedCount = 0;
@@ -375,11 +401,18 @@ export function ContactImportPanel() {
 
       await api.finishContactImportCommit(batchId);
 
-      setResult(`Imported "${preview.filename}" — ${newCount} new, ${updatedCount} updated.`);
+      setResult(
+        previewMode === 'replace'
+          ? `Replaced the voter file — ${newCount.toLocaleString()} voters imported from "${preview.filename}".`
+          : `Imported "${preview.filename}" — ${newCount} new, ${updatedCount} updated.`
+      );
       setPreview(null);
       setResolutions(new Map());
+      setPreviewMode(undefined);
+      setConfirmingReplace(false);
       loadHistory();
       loadOrphaned();
+      loadDuplicates();
     } catch (e) {
       setError(
         `${String(e)} — the import may be incomplete. Check Import History below; if it shows "Incomplete", ` +
@@ -418,6 +451,7 @@ export function ContactImportPanel() {
           accept=".csv,text/csv"
           onFile={handleFile}
           busy={busy}
+          replaceOption
         />
       </div>
 
@@ -426,12 +460,28 @@ export function ContactImportPanel() {
 
       {preview && (
         <div className="contact-import__preview">
-          <div className="contact-import__preview-summary">
-            <span>{preview.totalRows} rows in "{preview.filename}"</span>
-            <span>{preview.auto.length} will update existing contacts</span>
-            <span>{preview.fresh.length} are new</span>
-            {preview.review.length > 0 && <span>{preview.review.length} need your review</span>}
-          </div>
+          {preview.replacing ? (
+            <div className="contact-import__preview-summary">
+              <span>{preview.totalRows.toLocaleString()} rows in "{preview.filename}"</span>
+              <span>will replace {preview.replacing.voterRecordCount.toLocaleString()} existing voter record{preview.replacing.voterRecordCount === 1 ? '' : 's'}</span>
+              <span>and remove {preview.replacing.voterOnlyContactCount.toLocaleString()} voter-only contact{preview.replacing.voterOnlyContactCount === 1 ? '' : 's'}</span>
+            </div>
+          ) : (
+            <div className="contact-import__preview-summary">
+              <span>{preview.totalRows} rows in "{preview.filename}"</span>
+              <span>{preview.auto.length} will update existing contacts</span>
+              <span>{preview.fresh.length} are new</span>
+              {preview.review.length > 0 && <span>{preview.review.length} need your review</span>}
+            </div>
+          )}
+
+          {preview.replacing && (
+            <p className="contact-import__card-desc">
+              This deletes all current voter data — including any attached to a personal contact via a past merge —
+              and imports "{preview.filename}" fresh, with no matching against what's there today. Your personal
+              contacts themselves aren't deleted, only the voter data on them.
+            </p>
+          )}
 
           {preview.review.length > 0 && (
             <div className="contact-import__review-list">
@@ -450,17 +500,35 @@ export function ContactImportPanel() {
                 />
               </div>
               <span className="contact-import__review-hint">
-                Importing… {progress.done.toLocaleString()} / {progress.total.toLocaleString()}
+                {preview.replacing ? 'Replacing…' : 'Importing…'} {progress.done.toLocaleString()} / {progress.total.toLocaleString()}
               </span>
             </div>
           )}
 
           <div className="modal__actions" style={{ marginTop: 12 }}>
-            <button className="btn btn--ghost" onClick={() => setPreview(null)} disabled={busy}>
+            <button
+              className="btn btn--ghost"
+              onClick={() => {
+                setPreview(null);
+                setConfirmingReplace(false);
+                setPreviewMode(undefined);
+              }}
+              disabled={busy}
+            >
               Cancel
             </button>
-            <button className="btn" onClick={handleImport} disabled={!allReviewed || busy}>
-              {busy ? 'Importing…' : allReviewed ? 'Import' : `Resolve ${preview.review.length - reviewResolvedCount} more`}
+            <button className={`btn${confirmingReplace ? ' btn--danger' : ''}`} onClick={handleImport} disabled={!allReviewed || busy}>
+              {busy
+                ? preview.replacing
+                  ? 'Replacing…'
+                  : 'Importing…'
+                : !allReviewed
+                  ? `Resolve ${preview.review.length - reviewResolvedCount} more`
+                  : confirmingReplace
+                    ? `Yes, delete and replace`
+                    : preview.replacing
+                      ? 'Replace & Import'
+                      : 'Import'}
             </button>
           </div>
         </div>
