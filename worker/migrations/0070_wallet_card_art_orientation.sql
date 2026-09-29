@@ -1,0 +1,13 @@
+-- Wallet: most cards' front/back photos are landscape (the ~241:152 ratio
+-- a physical credit/loyalty card actually has), which is why every art
+-- box in the UI — the grid tile, the barcode view's small logo, the full-
+-- size lightbox, the editor preview — is hardcoded to that ratio with
+-- object-fit: cover. A vertical card (some gym passes, state IDs, event
+-- badges) forced into that box gets the top and bottom cropped off rather
+-- than shown. Rather than make Mike pick an orientation by hand for every
+-- card, the editor detects it automatically from the uploaded image's own
+-- pixel dimensions (see WalletCardEditor's handleImagePick) and stores it
+-- here so every render site can size its box the other way around instead
+-- of guessing from the image after the fact. Landscape stays the default —
+-- this is explicitly the rare-card path, not a redesign of the common one.
+ALTER TABLE wallet_cards ADD COLUMN art_orientation TEXT NOT NULL DEFAULT 'landscape';

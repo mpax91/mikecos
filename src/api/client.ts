@@ -975,7 +975,10 @@ export const api = {
 
   createWalletCard: (
     params: Partial<
-      Pick<WalletCard, 'name' | 'category' | 'barcodeType' | 'barcodeValue' | 'displayNumber' | 'pinCode' | 'balance' | 'notes' | 'color' | 'coverArtKey' | 'backArtKey'>
+      Pick<
+        WalletCard,
+        'name' | 'category' | 'barcodeType' | 'barcodeValue' | 'displayNumber' | 'pinCode' | 'balance' | 'notes' | 'color' | 'coverArtKey' | 'backArtKey' | 'artOrientation'
+      >
     > & { idNumber?: string | null }
   ) => request<WalletCard>('/api/wallet/cards', { method: 'POST', body: JSON.stringify(params) }).then(resolveWalletCard),
 
@@ -984,7 +987,20 @@ export const api = {
     patch: Partial<
       Pick<
         WalletCard,
-        'name' | 'category' | 'barcodeType' | 'barcodeValue' | 'displayNumber' | 'pinCode' | 'balance' | 'notes' | 'color' | 'coverArtKey' | 'backArtKey' | 'pinned' | 'sortOrder'
+        | 'name'
+        | 'category'
+        | 'barcodeType'
+        | 'barcodeValue'
+        | 'displayNumber'
+        | 'pinCode'
+        | 'balance'
+        | 'notes'
+        | 'color'
+        | 'coverArtKey'
+        | 'backArtKey'
+        | 'artOrientation'
+        | 'pinned'
+        | 'sortOrder'
       >
     > & { idNumber?: string | null }
   ) => request<WalletCard>(`/api/wallet/cards/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }).then(resolveWalletCard),

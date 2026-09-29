@@ -53,6 +53,7 @@ type FormState = {
   color: string | null;
   coverArtKey: string | null;
   backArtKey: string | null;
+  artOrientation: 'landscape' | 'portrait';
 };
 
 function toForm(card: WalletCard | null): FormState {
@@ -68,7 +69,30 @@ function toForm(card: WalletCard | null): FormState {
     color: card?.color ?? null,
     coverArtKey: card?.coverArtKey ?? null,
     backArtKey: card?.backArtKey ?? null,
+    artOrientation: card?.artOrientation ?? 'landscape',
   };
+}
+
+// Most cards are the standard ~241:152 landscape proportions of a real
+// physical card, so Mike never has to think about this — the editor just
+// reads the uploaded photo's own pixel dimensions and stores whichever way
+// it actually is. Front takes precedence when both images are uploaded
+// (it's the one shown in the grid tile and the barcode view's small logo);
+// back only decides it when there's no front to go by.
+function detectOrientation(file: File): Promise<'landscape' | 'portrait'> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(img.naturalHeight > img.naturalWidth ? 'portrait' : 'landscape');
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve('landscape'); // can't read it — fall back to the common case rather than block the upload
+    };
+    img.src = url;
+  });
 }
 
 /** Add/edit modal for a single Wallet card. Front/back image, the core
@@ -124,8 +148,14 @@ export function WalletCardEditor({
     const setUploading = side === 'front' ? setUploadingFront : setUploadingBack;
     setUploading(true);
     try {
-      const res = await api.uploadInline(file);
-      set(side === 'front' ? 'coverArtKey' : 'backArtKey', res.r2_key);
+      const [res, orientation] = await Promise.all([api.uploadInline(file), detectOrientation(file)]);
+      setForm((f) => ({
+        ...f,
+        [side === 'front' ? 'coverArtKey' : 'backArtKey']: res.r2_key,
+        // Front always wins; back only sets it when there's no front image
+        // to go by (picking a back photo first, or a front-only card).
+        artOrientation: side === 'front' || !f.coverArtKey ? orientation : f.artOrientation,
+      }));
     } catch {
       setError("Couldn't upload that image — try again.");
     } finally {
@@ -156,6 +186,7 @@ export function WalletCardEditor({
       color: form.color,
       coverArtKey: form.coverArtKey,
       backArtKey: form.backArtKey,
+      artOrientation: form.artOrientation,
       ...(idNumberInput.trim() ? { idNumber: idNumberInput.trim() } : clearIdNumber ? { idNumber: null } : {}),
     };
     try {
@@ -187,7 +218,10 @@ export function WalletCardEditor({
         <div className="wallet-editor__body">
           <div className="wallet-editor__images-row">
             <div className="wallet-editor__image-slot">
-              <div className="wallet-editor__art-preview" style={{ background: frontPreview ? undefined : form.color || '#8A7B5E' }}>
+              <div
+                className={`wallet-editor__art-preview${form.artOrientation === 'portrait' ? ' wallet-editor__art-preview--portrait' : ''}`}
+                style={{ background: frontPreview ? undefined : form.color || '#8A7B5E' }}
+              >
                 {frontPreview ? <img src={frontPreview} alt="" /> : <span>{form.name.slice(0, 1).toUpperCase() || '🎫'}</span>}
               </div>
               <input ref={frontInputRef} type="file" accept="image/*" onChange={(e) => handleImagePick('front', e)} style={{ display: 'none' }} />
@@ -203,7 +237,10 @@ export function WalletCardEditor({
               </div>
             </div>
             <div className="wallet-editor__image-slot">
-              <div className="wallet-editor__art-preview wallet-editor__art-preview--back" style={{ background: backPreview ? undefined : '#e4dcc7' }}>
+              <div
+                className={`wallet-editor__art-preview wallet-editor__art-preview--back${form.artOrientation === 'portrait' ? ' wallet-editor__art-preview--portrait' : ''}`}
+                style={{ background: backPreview ? undefined : '#e4dcc7' }}
+              >
                 {backPreview ? <img src={backPreview} alt="" /> : <span className="wallet-editor__art-preview-empty">Back (optional)</span>}
               </div>
               <input ref={backInputRef} type="file" accept="image/*" onChange={(e) => handleImagePick('back', e)} style={{ display: 'none' }} />
@@ -221,8 +258,10 @@ export function WalletCardEditor({
           </div>
           <div className="wallet-editor__hint">
             The front photo becomes the card's cover art — crop tight to just the card, standard proportions (about
-            241×152px, or any size in that ~8:5 ratio). Add a back photo too if the card has anything worth seeing
-            there (terms, a second barcode, a signature panel) — you can flip between them when viewing the card.
+            241×152px, or any size in that ~8:5 ratio). Uploading a vertical card photo instead works too — it's
+            detected automatically and shown upright everywhere rather than cropped. Add a back photo too if the
+            card has anything worth seeing there (terms, a second barcode, a signature panel) — you can flip
+            between them when viewing the card.
           </div>
           <div className="wallet-editor__swatches">
             {SWATCHES.map((sw) => (

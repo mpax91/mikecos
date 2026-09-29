@@ -11,6 +11,14 @@ function normalizeBarcodeType(v: unknown, fallback: BarcodeType): BarcodeType {
   return (BARCODE_TYPES as readonly string[]).includes(v as string) ? (v as BarcodeType) : fallback;
 }
 
+// See migrations/0070_wallet_card_art_orientation.sql — the editor detects
+// this from the uploaded image's own pixel dimensions, Mike never picks it.
+const ART_ORIENTATIONS = ['landscape', 'portrait'] as const;
+type ArtOrientation = (typeof ART_ORIENTATIONS)[number];
+function normalizeOrientation(v: unknown, fallback: ArtOrientation): ArtOrientation {
+  return (ART_ORIENTATIONS as readonly string[]).includes(v as string) ? (v as ArtOrientation) : fallback;
+}
+
 /** Wallet — Phase 1 (loyalty/membership/pass/gift cards). See
  * migrations/0045_wallet.sql for why this is its own flat table rather than
  * an entities-based type. Mounted at /api/wallet. */
@@ -30,6 +38,7 @@ interface WalletCardRow {
   cover_art_key: string | null;
   cover_art_mime: string | null;
   back_art_key: string | null;
+  art_orientation: string;
   pinned: number;
   sort_order: number;
   created_at: string;
@@ -68,6 +77,7 @@ function cardJson(row: WalletCardRow) {
     coverArtUrl: row.cover_art_key ? `/api/files/${row.cover_art_key}` : null,
     backArtKey: row.back_art_key,
     backArtUrl: row.back_art_key ? `/api/files/${row.back_art_key}` : null,
+    artOrientation: row.art_orientation,
     pinned: row.pinned === 1,
     sortOrder: row.sort_order,
     createdAt: row.created_at,
@@ -104,12 +114,14 @@ walletRouter.post('/cards', async (c) => {
     coverArtKey?: string | null;
     coverArtMime?: string | null;
     backArtKey?: string | null;
+    artOrientation?: string;
     idNumber?: string | null;
   }>().catch(() => ({}) as Record<string, never>);
   const name = body.name?.trim();
   if (!name) return c.json({ error: 'name is required' }, 400);
   const category = body.category?.trim() || 'Other';
   const barcodeType = normalizeBarcodeType(body.barcodeType, 'code128');
+  const artOrientation = normalizeOrientation(body.artOrientation, 'landscape');
 
   let idNumberEnc: string | null = null;
   try {
@@ -122,8 +134,8 @@ walletRouter.post('/cards', async (c) => {
   const id = uid();
   const ts = now();
   await c.env.DB.prepare(
-    `INSERT INTO wallet_cards (id, name, category, barcode_type, barcode_value, display_number, pin_code, balance, notes, color, cover_art_key, cover_art_mime, back_art_key, pinned, sort_order, created_at, updated_at, id_number_enc)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`
+    `INSERT INTO wallet_cards (id, name, category, barcode_type, barcode_value, display_number, pin_code, balance, notes, color, cover_art_key, cover_art_mime, back_art_key, art_orientation, pinned, sort_order, created_at, updated_at, id_number_enc)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`
   )
     .bind(
       id,
@@ -139,6 +151,7 @@ walletRouter.post('/cards', async (c) => {
       body.coverArtKey || null,
       body.coverArtMime || null,
       body.backArtKey || null,
+      artOrientation,
       (maxPos?.m ?? -1) + 1,
       ts,
       ts,
@@ -166,6 +179,7 @@ walletRouter.patch('/cards/:id', async (c) => {
       coverArtKey: string | null;
       coverArtMime: string | null;
       backArtKey: string | null;
+      artOrientation: string;
       pinned: boolean;
       sortOrder: number;
       idNumber: string | null;
@@ -202,6 +216,7 @@ walletRouter.patch('/cards/:id', async (c) => {
   if (body.coverArtKey !== undefined) set('cover_art_key', body.coverArtKey || null);
   if (body.coverArtMime !== undefined) set('cover_art_mime', body.coverArtMime || null);
   if (body.backArtKey !== undefined) set('back_art_key', body.backArtKey || null);
+  if (body.artOrientation !== undefined) set('art_orientation', normalizeOrientation(body.artOrientation, existing.art_orientation as ArtOrientation));
   if (body.pinned !== undefined) set('pinned', body.pinned ? 1 : 0);
   if (body.sortOrder !== undefined) set('sort_order', body.sortOrder);
 

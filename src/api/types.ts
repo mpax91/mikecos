@@ -469,6 +469,12 @@ export interface WalletCard {
   coverArtUrl: string | null;
   backArtKey: string | null;
   backArtUrl: string | null;
+  /** Detected automatically from the uploaded image's own pixel dimensions
+   * (see WalletCardEditor) — 'landscape' is the default and the common
+   * case (a real physical card's own proportions); 'portrait' is the rare
+   * vertical-card path that sizes the art box the other way instead of
+   * cropping it. Never a choice Mike makes by hand. */
+  artOrientation: 'landscape' | 'portrait';
   pinned: boolean;
   sortOrder: number;
   createdAt: string;

@@ -12565,6 +12565,15 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   overflow: hidden;
 }
 
+/* A vertical card's own photo (see migrations/0070) — the inverse ratio,
+   so it shows upright and uncropped instead of the landscape box above
+   slicing off its top and bottom. Grid rows size to their tallest tile
+   automatically, so a taller card here doesn't break the layout — it's
+   just the rare exception among mostly-landscape neighbors. */
+.wallet-tile__art--portrait {
+  aspect-ratio: 152 / 241;
+}
+
 .wallet-tile__art-img {
   width: 100%;
   height: 100%;
@@ -12653,6 +12662,15 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   object-fit: cover;
   margin-bottom: 4px;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+}
+
+/* Sized off height instead of width here (see migrations/0070) — a 76px-
+   wide portrait box would tower over the rest of the header, so this
+   keeps roughly the same visual footprint, just turned the other way. */
+.wallet-barcode-view__logo--portrait {
+  width: auto;
+  height: 76px;
+  aspect-ratio: 152 / 241;
 }
 
 .wallet-barcode-view__name {
@@ -12856,6 +12874,12 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   object-fit: cover;
 }
 
+/* See migrations/0070 — flips to match whatever orientation was detected
+   from the uploaded photo, so the preview never crops a vertical card. */
+.wallet-editor__art-preview--portrait {
+  aspect-ratio: 152 / 241;
+}
+
 .wallet-editor__art-controls {
   display: flex;
   flex-direction: column;
@@ -12983,6 +13007,17 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   overflow: hidden;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
   cursor: grab;
+}
+
+/* Sized off viewport height instead of width here (see migrations/0070) —
+   the landscape box above sizes from width because it's always wider than
+   tall; a portrait card sized the same way would blow past the screen's
+   height on a phone, so this constrains the tall dimension instead and
+   lets width follow from it. */
+.wallet-lightbox__image-wrap--portrait {
+  width: auto;
+  height: min(76vh, 640px);
+  aspect-ratio: 152 / 241;
 }
 
 .wallet-lightbox__image-wrap img {

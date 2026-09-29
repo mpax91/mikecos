@@ -139,7 +139,11 @@ export function WalletBarcodeView({ card, onClose, onEdit }: { card: WalletCard;
         <div className="wallet-barcode-view__header">
           {card.coverArtUrl && (
             <button type="button" className="wallet-barcode-view__logo-btn" onClick={() => setLightboxSide('front')} aria-label="View card image larger">
-              <img src={card.coverArtUrl} alt="" className="wallet-barcode-view__logo" />
+              <img
+                src={card.coverArtUrl}
+                alt=""
+                className={`wallet-barcode-view__logo${card.artOrientation === 'portrait' ? ' wallet-barcode-view__logo--portrait' : ''}`}
+              />
             </button>
           )}
           <div className="wallet-barcode-view__name">{card.name}</div>
@@ -250,7 +254,14 @@ export function WalletBarcodeView({ card, onClose, onEdit }: { card: WalletCard;
       </div>
 
       {lightboxSide && (
-        <CardImageLightbox frontUrl={card.coverArtUrl} backUrl={card.backArtUrl} side={lightboxSide} onSide={setLightboxSide} onClose={() => setLightboxSide(null)} />
+        <CardImageLightbox
+          frontUrl={card.coverArtUrl}
+          backUrl={card.backArtUrl}
+          side={lightboxSide}
+          onSide={setLightboxSide}
+          onClose={() => setLightboxSide(null)}
+          orientation={card.artOrientation}
+        />
       )}
     </div>
   );

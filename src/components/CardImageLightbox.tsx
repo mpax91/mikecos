@@ -11,12 +11,16 @@ export function CardImageLightbox({
   side,
   onSide,
   onClose,
+  orientation = 'landscape',
 }: {
   frontUrl: string | null;
   backUrl: string | null;
   side: 'front' | 'back';
   onSide: (side: 'front' | 'back') => void;
   onClose: () => void;
+  /** Wallet-only — a physical payment card is always landscape, so
+   * PaymentCardDetail never passes this and gets the default. */
+  orientation?: 'landscape' | 'portrait';
 }) {
   const hasBack = !!backUrl;
   const src = side === 'back' && backUrl ? backUrl : frontUrl;
@@ -30,7 +34,11 @@ export function CardImageLightbox({
       <button type="button" className="wallet-lightbox__close" onClick={onClose} aria-label="Close">
         ✕
       </button>
-      <div className="wallet-lightbox__image-wrap" onClick={(e) => e.stopPropagation()} {...swipe}>
+      <div
+        className={`wallet-lightbox__image-wrap${orientation === 'portrait' ? ' wallet-lightbox__image-wrap--portrait' : ''}`}
+        onClick={(e) => e.stopPropagation()}
+        {...swipe}
+      >
         {src && <img src={src} alt="" />}
       </div>
       {hasBack && (

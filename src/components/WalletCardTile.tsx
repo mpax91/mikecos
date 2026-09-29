@@ -64,7 +64,10 @@ export function WalletCardTile({
           ]}
         />
       </div>
-      <div className="wallet-tile__art" style={{ background: card.coverArtUrl ? undefined : bg }}>
+      <div
+        className={`wallet-tile__art${card.artOrientation === 'portrait' ? ' wallet-tile__art--portrait' : ''}`}
+        style={{ background: card.coverArtUrl ? undefined : bg }}
+      >
         {card.coverArtUrl ? (
           <img src={card.coverArtUrl} alt="" className="wallet-tile__art-img" />
         ) : (
