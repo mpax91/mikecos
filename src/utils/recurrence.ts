@@ -5,7 +5,7 @@
  * hatch for anything these presets can't express — the raw RRULE text box
  * only shows up for that case. */
 
-export type RecurrencePreset = 'daily' | 'weekly' | 'monthly' | 'annually' | 'weekday' | 'custom';
+export type RecurrencePreset = 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'annually' | 'weekday' | 'custom';
 
 export const WEEKDAY_CODES = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
 
@@ -58,6 +58,12 @@ export function presetToRrule(preset: RecurrencePreset, dtstart: string): string
       const pos = isLast ? -1 : n;
       return `FREQ=MONTHLY;BYDAY=${pos}${weekdayCodeOf(dtstart)}`;
     }
+    case 'quarterly':
+      // Every 3 months on dtstart's own day-of-month (RRULE's implicit
+      // BYMONTHDAY behavior from DTSTART) — e.g. review card rewards every
+      // Jan/Apr/Jul/Oct 1st if dtstart is Jan 1. Matches how "monthly" above
+      // anchors to dtstart rather than a fixed day Mike has to re-pick.
+      return 'FREQ=MONTHLY;INTERVAL=3';
     case 'annually':
       return 'FREQ=YEARLY';
     case 'weekday':
@@ -78,6 +84,8 @@ export function presetLabel(preset: RecurrencePreset, dtstart: string): string {
       const word = isLast ? 'last' : ORDINALS[n - 1] ?? `${n}th`;
       return `Monthly on the ${word} ${weekdayNameOf(dtstart)}`;
     }
+    case 'quarterly':
+      return `Quarterly, starting ${monthDayNameOf(dtstart)}`;
     case 'annually':
       return `Annually on ${monthDayNameOf(dtstart)}`;
     case 'weekday':
@@ -87,7 +95,7 @@ export function presetLabel(preset: RecurrencePreset, dtstart: string): string {
   }
 }
 
-export const RECURRENCE_PRESETS: RecurrencePreset[] = ['daily', 'weekly', 'monthly', 'annually', 'weekday', 'custom'];
+export const RECURRENCE_PRESETS: RecurrencePreset[] = ['daily', 'weekly', 'monthly', 'quarterly', 'annually', 'weekday', 'custom'];
 
 /** Reverse-matches a stored RRULE string back to one of the presets above
  * (ignoring whitespace/case), for pre-selecting the right dropdown option
