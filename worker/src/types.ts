@@ -658,6 +658,8 @@ export interface BarItemRow {
   drink_window_start: number | null;
   drink_window_end: number | null;
   notes: string | null;
+  price: number | null;
+  source: string | null; // a store name, or "Gift" — freeform, see 0081_bar_item_price_store.sql
   photo_key: string | null;
   photo_mime: string | null;
   photo_orientation: string;

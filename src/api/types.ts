@@ -1982,6 +1982,8 @@ export interface BarItem {
   drinkWindowStart: number | null;
   drinkWindowEnd: number | null;
   notes: string | null;
+  price: number | null;
+  source: string | null; // a store name, or "Gift"
   photoKey: string | null;
   photoOrientation: 'landscape' | 'portrait';
   createdAt: string;

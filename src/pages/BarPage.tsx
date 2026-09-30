@@ -19,6 +19,10 @@ const TAB_META: Record<Tab, { label: string; icon: string; addLabel: string }> =
   top: { label: 'Top Rated', icon: '⭐', addLabel: '' },
 };
 
+function formatUSD(v: number): string {
+  return `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
 function parseBulkLines(text: string): { name: string; category: string | null }[] {
   return text
     .split('\n')
@@ -233,6 +237,11 @@ export function BarPage() {
                       {item.vintage ? ` (${item.vintage})` : ''}
                     </div>
                     <div className="bar-item-card__meta">{[item.category, item.producer, item.region].filter(Boolean).join(' · ')}</div>
+                    {(item.price != null || item.source) && (
+                      <div className="bar-item-card__meta">
+                        {[item.price != null ? formatUSD(item.price) : null, item.source].filter(Boolean).join(' · ')}
+                      </div>
+                    )}
                     {(item.drinkWindowStart || item.drinkWindowEnd) && (
                       <div className="bar-item-card__window">
                         Drink {item.drinkWindowStart ?? '?'}–{item.drinkWindowEnd ?? '?'}

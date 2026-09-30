@@ -42,6 +42,8 @@ function itemJson(r: BarItemRow) {
     drinkWindowStart: r.drink_window_start,
     drinkWindowEnd: r.drink_window_end,
     notes: r.notes,
+    price: r.price,
+    source: r.source,
     photoKey: r.photo_key,
     photoOrientation: r.photo_orientation,
     createdAt: r.created_at,
@@ -114,6 +116,8 @@ interface ItemBody {
   drinkWindowStart?: number | null;
   drinkWindowEnd?: number | null;
   notes?: string | null;
+  price?: number | null;
+  source?: string | null;
   photoKey?: string | null;
   photoMime?: string | null;
   photoOrientation?: string;
@@ -131,8 +135,8 @@ barRouter.post('/items', async (c) => {
 
   await db(c)
     .prepare(
-      `INSERT INTO bar_items (id, type, name, category, producer, vintage, region, quantity, drink_window_start, drink_window_end, notes, photo_key, photo_mime, photo_orientation, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO bar_items (id, type, name, category, producer, vintage, region, quantity, drink_window_start, drink_window_end, notes, price, source, photo_key, photo_mime, photo_orientation, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       id,
@@ -146,6 +150,8 @@ barRouter.post('/items', async (c) => {
       body.drinkWindowStart ?? null,
       body.drinkWindowEnd ?? null,
       body.notes?.trim() || null,
+      body.price ?? null,
+      body.source?.trim() || null,
       body.photoKey || null,
       body.photoMime || null,
       photoOrientation,
@@ -238,6 +244,14 @@ barRouter.patch('/items/:id', async (c) => {
   if (body.notes !== undefined) {
     sets.push('notes = ?');
     binds.push(body.notes?.trim() || null);
+  }
+  if (body.price !== undefined) {
+    sets.push('price = ?');
+    binds.push(body.price ?? null);
+  }
+  if (body.source !== undefined) {
+    sets.push('source = ?');
+    binds.push(body.source?.trim() || null);
   }
   if (body.photoKey !== undefined) {
     sets.push('photo_key = ?');

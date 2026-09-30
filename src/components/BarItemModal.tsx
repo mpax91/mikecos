@@ -5,10 +5,18 @@ import { Modal } from './Modal';
 
 const SPIRIT_CATEGORIES = ['Gin', 'Vodka', 'Whiskey', 'Bourbon', 'Scotch', 'Rum', 'Tequila', 'Mezcal', 'Liqueur', 'Brandy & Cognac', 'Amaro', 'Other'];
 const WINE_VARIETALS = [
-  'Cabernet Sauvignon', 'Pinot Noir', 'Merlot', 'Syrah/Shiraz', 'Malbec', 'Zinfandel', 'Sangiovese', 'Nebbiolo', 'Gamay', 'Grenache',
+  'Cabernet Sauvignon', 'Pinot Noir', 'Merlot', 'Syrah/Shiraz', 'Malbec', 'Zinfandel', 'Gamay', 'Grenache',
+  // Italian reds — this is most of what actually gets drunk here, so this list leans heavily Italian rather
+  // than treating it as an afterthought next to the usual Napa/Bordeaux staples above.
+  'Sangiovese', 'Nebbiolo', 'Barbera', 'Dolcetto', 'Primitivo', "Nero d'Avola", 'Aglianico', 'Montepulciano',
+  'Corvina (Valpolicella/Amarone)', 'Nerello Mascalese', 'Negroamaro', 'Sagrantino', 'Teroldego', 'Lagrein', 'Cannonau',
   'Chardonnay', 'Sauvignon Blanc', 'Riesling', 'Pinot Grigio', 'Champagne/Sparkling', 'Rosé', 'Red Blend', 'White Blend',
 ];
 const BEER_STYLES = ['IPA', 'Pale Ale', 'Lager', 'Pilsner', 'Stout', 'Porter', 'Wheat', 'Sour', 'Belgian', 'Amber', 'Other'];
+// "Gift" sits first since it's the one non-store option Mike wants offered
+// right alongside real store names — same freeform-with-suggestions pattern
+// as category, so typing any other store is still always allowed.
+const SOURCE_SUGGESTIONS = ['Gift', 'Total Wine', 'Costco', 'BevMo', "Trader Joe's", 'Local wine shop', 'Winery direct', 'Duty free'];
 
 const TYPE_ICON: Record<BarItemType, string> = { spirit: '🥃', wine: '🍷', beer: '🍺' };
 
@@ -50,6 +58,8 @@ export interface BarItemFormValue {
   drinkWindowStart: number | null;
   drinkWindowEnd: number | null;
   notes: string | null;
+  price: number | null;
+  source: string | null;
   photoKey: string | null;
   photoOrientation: 'landscape' | 'portrait';
 }
@@ -80,6 +90,8 @@ export function BarItemModal({
   const [drinkStart, setDrinkStart] = useState(initial?.drinkWindowStart != null ? String(initial.drinkWindowStart) : '');
   const [drinkEnd, setDrinkEnd] = useState(initial?.drinkWindowEnd != null ? String(initial.drinkWindowEnd) : '');
   const [notes, setNotes] = useState(initial?.notes ?? '');
+  const [price, setPrice] = useState(initial?.price != null ? String(initial.price) : '');
+  const [source, setSource] = useState(initial?.source ?? '');
   const [photoKey, setPhotoKey] = useState(initial?.photoKey ?? null);
   const [photoOrientation, setPhotoOrientation] = useState<'landscape' | 'portrait'>(initial?.photoOrientation ?? 'portrait');
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
@@ -115,6 +127,8 @@ export function BarItemModal({
       drinkWindowStart: drinkStart.trim() ? Number(drinkStart) : null,
       drinkWindowEnd: drinkEnd.trim() ? Number(drinkEnd) : null,
       notes: notes.trim() || null,
+      price: price.trim() ? Number(price) : null,
+      source: source.trim() || null,
       photoKey,
       photoOrientation,
     });
@@ -192,6 +206,22 @@ export function BarItemModal({
         <span>Quantity on hand</span>
         <input type="number" min={0} value={quantity} onChange={(e) => setQuantity(e.target.value)} />
       </label>
+
+      <div className="bar-item-modal__row">
+        <label className="wallet-editor__field">
+          <span>Price (optional)</span>
+          <input type="number" min={0} step="0.01" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="24.99" />
+        </label>
+        <label className="wallet-editor__field">
+          <span>Store — or Gift (optional)</span>
+          <input value={source} onChange={(e) => setSource(e.target.value)} list="bar-source-options" placeholder="Where'd it come from?" />
+          <datalist id="bar-source-options">
+            {SOURCE_SUGGESTIONS.map((s) => (
+              <option key={s} value={s} />
+            ))}
+          </datalist>
+        </label>
+      </div>
 
       <label className="wallet-editor__field">
         <span>Notes</span>

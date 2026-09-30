@@ -1282,6 +1282,8 @@ export const api = {
     drinkWindowStart?: number | null;
     drinkWindowEnd?: number | null;
     notes?: string | null;
+    price?: number | null;
+    source?: string | null;
     photoKey?: string | null;
     photoMime?: string | null;
     photoOrientation?: 'landscape' | 'portrait';
@@ -1299,6 +1301,8 @@ export const api = {
       drinkWindowStart: number | null;
       drinkWindowEnd: number | null;
       notes: string | null;
+      price: number | null;
+      source: string | null;
       photoKey: string | null;
       photoMime: string | null;
       photoOrientation: 'landscape' | 'portrait';
