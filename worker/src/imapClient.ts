@@ -426,14 +426,30 @@ export class ImapClient {
     }
   }
 
-  /** Removes the \Inbox label (Gmail's archive) or sets/clears \Seen — the
-   * two write operations Inbox needs. Gmail's IMAP maps "remove from
-   * INBOX" to the X-GM-LABELS extension when given -X-GM-LABELS (\Inbox),
-   * which is the correct archive action (same as Thunderbird's own Archive
-   * button) rather than a generic IMAP MOVE, which would need a second
-   * destination-folder round trip. */
+  /** Archives by marking \Deleted and expunging the message from the
+   * currently-selected INBOX. This looks like a real delete, but isn't one:
+   * Gmail specially intercepts "delete + expunge from INBOX" to mean
+   * "remove the \Inbox label" (archive) rather than actually deleting the
+   * message, which still lives on under All Mail — this is Gmail's actual
+   * documented/standard IMAP archive technique (what Thunderbird's own
+   * Archive button does against a Gmail account).
+   *
+   * This used to try `-X-GM-LABELS (\Inbox)` instead, which reads as the
+   * more direct approach, but is wrong: confirmed empirically 2026-09-30
+   * (see the debug-archive endpoint) that Gmail accepts that STORE and
+   * returns OK — even with an untagged FETCH response, which made the old
+   * storeMatched() check above think it had succeeded — without actually
+   * removing the message from Inbox. \Inbox isn't a real settable label
+   * the way \Trash/\Important/\Starred are; Gmail just silently no-ops it. */
   async archive(uid: number): Promise<void> {
-    await this.storeAndConfirm(uid, '-X-GM-LABELS (\\Inbox)', 'archive');
+    const res1 = await this.command(`UID STORE ${uid} +FLAGS.SILENT (\\Deleted)`);
+    if (res1.status !== 'OK') throw new ImapProtocolError(`archive (mark deleted) failed: ${res1.text || res1.status}`);
+    const res2 = await this.command(`UID EXPUNGE ${uid}`);
+    if (res2.status !== 'OK') throw new ImapProtocolError(`archive (expunge) failed: ${res2.text || res2.status}`);
+    const expunged = res2.untagged.some((line) => line[1] === 'EXPUNGE');
+    if (!expunged) {
+      throw new ImapUidMismatchError(`archive: UID EXPUNGE ${uid} returned OK but nothing was expunged`);
+    }
   }
 
   /** UID of the message currently carrying this Gmail message id, or null
@@ -457,12 +473,14 @@ export class ImapClient {
     return null;
   }
 
-  /** Real delete — moves the message to Gmail's Trash, same mechanism as
-   * archive() (a special-use label assigned via the X-GM-LABELS
-   * extension), which Gmail treats as "move this message's location",
-   * removing it from Inbox/All Mail the same as clicking Delete in Gmail
-   * itself. Gmail auto-purges Trash after 30 days; this doesn't touch that
-   * timer or bypass it. */
+  /** Real delete — moves the message to Gmail's Trash via the X-GM-LABELS
+   * extension. Unlike \Inbox (see archive()'s comment), \Trash genuinely is
+   * a settable label per Gmail's docs, and storeAndConfirm's untagged-FETCH
+   * check gives real confidence here — but this hasn't been independently
+   * verified against live Gmail the way archive() now has (2026-09-30,
+   * debug-archive endpoint). If trash ever turns out to have the same
+   * silent-no-op problem \Inbox did, the fix is the same shape: mark
+   * \Deleted and UID EXPUNGE while "[Gmail]/Trash" (not INBOX) is selected. */
   async trash(uid: number): Promise<void> {
     await this.storeAndConfirm(uid, '+X-GM-LABELS (\\Trash)', 'trash');
   }
@@ -470,7 +488,17 @@ export class ImapClient {
   /** Undo for archive() — adds the \Inbox label back. Only needed when the
    * Undo toast (see email.ts's /messages/:id/undo) loses the race with the
    * sync cron: the common case cancels the still-queued pending action
-   * instead and never touches the real mailbox at all. */
+   * instead and never touches the real mailbox at all.
+   *
+   * NOT YET FIXED for the same reason archive() needed fixing: \Inbox is
+   * the same reserved, not-really-settable label there too, so this STORE
+   * likely no-ops exactly like the old archive() did, silently failing to
+   * restore the message. Since archive() no longer removes the message via
+   * X-GM-LABELS at all, restoring it back can't be a label add either — it
+   * needs to COPY the message from "[Gmail]/All Mail" (where it still
+   * lives after being expunged from INBOX) back into INBOX. Left as-is for
+   * now since this is the rare post-sync-race path, not what Mike hit; flag
+   * for a follow-up rather than shipping an unverified rewrite of it here. */
   async restoreToInbox(uid: number): Promise<void> {
     await this.storeAndConfirm(uid, '+X-GM-LABELS (\\Inbox)', 'restoreToInbox');
   }
@@ -479,7 +507,8 @@ export class ImapClient {
    * as restoreToInbox, but also has to remove \Trash, not just add \Inbox
    * back, or Gmail leaves the message filed in both places. Two STORE
    * commands rather than one: RFC 3501 STORE takes a single data-item, so
-   * a combined "+X-GM-LABELS (\Inbox) -X-GM-LABELS (\Trash)" isn't valid. */
+   * a combined "+X-GM-LABELS (\Inbox) -X-GM-LABELS (\Trash)" isn't valid.
+   * Same caveat as restoreToInbox above re: \Inbox possibly no-op'ing. */
   async untrash(uid: number): Promise<void> {
     await this.storeAndConfirm(uid, '-X-GM-LABELS (\\Trash)', 'untrash (remove Trash)');
     await this.storeAndConfirm(uid, '+X-GM-LABELS (\\Inbox)', 'untrash (add Inbox)');
