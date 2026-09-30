@@ -96,6 +96,40 @@ mediaCatalogRouter.post('/items', async (c) => {
   return c.json(itemJson(row!), 201);
 });
 
+const BULK_CHUNK_SIZE = 100; // stays well under D1's per-batch statement cap
+
+// POST /items/bulk — { format, rows: [{ title, author? }] }, one format
+// applied to the whole batch. The "dump in hundreds of books at once"
+// path (see MediaCatalogPanel's bulk-import modal) — entering them one
+// at a time isn't realistic for an existing shelf, so this is the actual
+// getting-started mechanism, with individual add/edit staying for
+// one-offs after the fact.
+mediaCatalogRouter.post('/items/bulk', async (c) => {
+  const body = await c.req.json<{ format?: string; rows?: { title?: string; author?: string | null }[] }>();
+  if (!isFormat(body.format)) return c.json({ error: `format must be one of ${FORMATS.join(', ')}` }, 400);
+  const rows = (body.rows ?? []).map((r) => ({ title: r.title?.trim() ?? '', author: r.author?.trim() || null })).filter((r) => r.title);
+  if (rows.length === 0) return c.json({ error: 'rows is required' }, 400);
+
+  const ts = new Date().toISOString();
+  const toInsert = rows.map((r) => ({ id: crypto.randomUUID(), ...r }));
+  for (let i = 0; i < toInsert.length; i += BULK_CHUNK_SIZE) {
+    const chunk = toInsert.slice(i, i + BULK_CHUNK_SIZE);
+    await c.env.DB.batch(
+      chunk.map((r) =>
+        c.env.DB.prepare(`INSERT INTO media_items (id, title, author, format, notes, created_at, updated_at) VALUES (?, ?, ?, ?, NULL, ?, ?)`).bind(
+          r.id,
+          r.title,
+          r.author,
+          body.format,
+          ts,
+          ts
+        )
+      )
+    );
+  }
+  return c.json({ created: toInsert.length }, 201);
+});
+
 mediaCatalogRouter.patch('/items/:id', async (c) => {
   const id = c.req.param('id');
   const existing = await c.env.DB.prepare('SELECT * FROM media_items WHERE id = ?').bind(id).first<MediaItemRow>();

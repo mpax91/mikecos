@@ -11,6 +11,27 @@ const FORMAT_LABEL: Record<MediaCatalogFormat, string> = {
   audiobook: 'Audiobook',
 };
 
+/** One row per non-blank line. A tab or " | " splits title from author —
+ * a tab because pasting a column (or two) straight out of a spreadsheet/
+ * Goodreads export preserves real tab characters between cells, and " | "
+ * as the manual equivalent for typing it by hand. Deliberately NOT
+ * splitting on a plain comma or dash — plenty of real titles contain
+ * both ("Sapiens: A Brief History..., " a subtitle after a colon, etc.),
+ * so guessing there would mis-split more often than it helps. No author
+ * on a line just means no author gets set, same as filling nothing in
+ * the single-item form. */
+function parseBulkLines(text: string): { title: string; author: string | null }[] {
+  return text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const parts = line.includes('\t') ? line.split('\t') : line.split(' | ');
+      return { title: parts[0].trim(), author: parts[1]?.trim() || null };
+    })
+    .filter((r) => r.title);
+}
+
 /** Settings' entry point for the Media section's physical/digital
  * catalog (see worker/migrations/0073_media_catalog.sql) — Mike said
  * he's happy to add these by hand as things come in, but wanted the
@@ -30,6 +51,12 @@ export function MediaCatalogPanel() {
   const [deleting, setDeleting] = useState<MediaCatalogItem | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkFormat, setBulkFormat] = useState<MediaCatalogFormat>('physical_book');
+  const [bulkText, setBulkText] = useState('');
+  const [bulkError, setBulkError] = useState<string | null>(null);
+  const [bulkImporting, setBulkImporting] = useState(false);
+  const [bulkDone, setBulkDone] = useState<number | null>(null);
 
   function load() {
     api
@@ -99,6 +126,32 @@ export function MediaCatalogPanel() {
     setDeleting(null);
   }
 
+  function openBulk() {
+    setBulkFormat('physical_book');
+    setBulkText('');
+    setBulkError(null);
+    setBulkDone(null);
+    setBulkOpen(true);
+  }
+
+  const bulkRows = parseBulkLines(bulkText);
+
+  async function handleBulkImport() {
+    if (bulkRows.length === 0) return;
+    setBulkImporting(true);
+    setBulkError(null);
+    try {
+      const res = await api.bulkCreateMediaCatalogItems(bulkFormat, bulkRows);
+      setBulkDone(res.created);
+      setBulkText('');
+      load();
+    } catch (e) {
+      setBulkError(String(e));
+    } finally {
+      setBulkImporting(false);
+    }
+  }
+
   if (error) return <div className="empty-state">Couldn't load the catalog: {error}</div>;
   if (!items) return <div className="empty-state">Loading…</div>;
 
@@ -106,13 +159,19 @@ export function MediaCatalogPanel() {
     <div className="settings-page__section">
       <div className="toolbar-row">
         <h2 className="settings-page__section-title">Media Catalog</h2>
-        <button className="btn" onClick={openAdd}>
-          + Add Item
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn--ghost" onClick={openBulk}>
+            Bulk Import
+          </button>
+          <button className="btn" onClick={openAdd}>
+            + Add Item
+          </button>
+        </div>
       </div>
       <p className="settings-page__section-hint">
         Physical books, eBooks, and audiobooks that live outside Plex — the Media section shows these under its Physical/Digital
-        filters alongside your Plex library. Purely a catalog: no read/listened status, just what you own and where.
+        filters alongside your Plex library. Purely a catalog: no read/listened status, just what you own and where. Got a
+        whole shelf to add at once? Use Bulk Import rather than adding one at a time.
       </p>
 
       {items.length === 0 ? (
@@ -183,6 +242,55 @@ export function MediaCatalogPanel() {
           onConfirm={() => handleDelete(deleting)}
           onCancel={() => setDeleting(null)}
         />
+      )}
+
+      {bulkOpen && (
+        <Modal title="Bulk Import" onClose={() => setBulkOpen(false)}>
+          <p className="settings-page__section-hint" style={{ marginTop: 0 }}>
+            Paste one book per line — a title alone is fine, or paste two columns straight out of a spreadsheet (title, then
+            author) and the tab between them is picked up automatically. Typing by hand, separate title and author with{' '}
+            <code>|</code>. Everything pasted here gets the same format, so do one shelf/list at a time if it's mixed.
+          </p>
+          <label className="wallet-editor__field">
+            <span>Format for this batch</span>
+            <select value={bulkFormat} onChange={(e) => setBulkFormat(e.target.value as MediaCatalogFormat)}>
+              {(Object.keys(FORMAT_LABEL) as MediaCatalogFormat[]).map((f) => (
+                <option key={f} value={f}>
+                  {FORMAT_LABEL[f]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="wallet-editor__field">
+            <span>Books</span>
+            <textarea
+              autoFocus
+              value={bulkText}
+              onChange={(e) => {
+                setBulkText(e.target.value);
+                setBulkDone(null);
+              }}
+              rows={10}
+              placeholder={'Atomic Habits\nSapiens | Yuval Noah Harari\nThe Hobbit'}
+              style={{ fontFamily: 'monospace', fontSize: 12.5 }}
+            />
+          </label>
+          <div className="wallet-editor__hint">
+            {bulkRows.length > 0
+              ? `${bulkRows.length.toLocaleString()} item${bulkRows.length === 1 ? '' : 's'} will be added as ${FORMAT_LABEL[bulkFormat]}.`
+              : 'Nothing to import yet.'}
+          </div>
+          {bulkDone !== null && <div className="wallet-editor__hint">Added {bulkDone.toLocaleString()} items.</div>}
+          {bulkError && <div className="settings-page__rrule-error">{bulkError}</div>}
+          <div className="modal__actions">
+            <button className="btn btn--ghost" onClick={() => setBulkOpen(false)}>
+              {bulkDone !== null ? 'Done' : 'Cancel'}
+            </button>
+            <button className="btn" onClick={handleBulkImport} disabled={bulkRows.length === 0 || bulkImporting}>
+              {bulkImporting ? 'Importing…' : `Import ${bulkRows.length > 0 ? bulkRows.length.toLocaleString() : ''}`}
+            </button>
+          </div>
+        </Modal>
       )}
     </div>
   );

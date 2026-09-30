@@ -1254,6 +1254,12 @@ export const api = {
 
   deleteMediaCatalogItem: (id: string) => request<{ ok: true }>(`/api/media/items/${id}`, { method: 'DELETE' }),
 
+  /** Bulk-import — one format applied to the whole pasted batch, the
+   * getting-started path for a shelf of hundreds rather than adding one
+   * at a time. See mediaCatalog.ts's header comment on the endpoint. */
+  bulkCreateMediaCatalogItems: (format: MediaCatalogFormat, rows: { title: string; author?: string | null }[]) =>
+    request<{ created: number }>('/api/media/items/bulk', { method: 'POST', body: JSON.stringify({ format, rows }) }),
+
   // ---- Inbox ----
 
   listEmailAccounts: () => request<EmailAccount[]>('/api/email/accounts').then((accounts) => accounts.map(resolveEmailAccount)),
