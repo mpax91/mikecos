@@ -64,11 +64,45 @@ async function resolveOneTvmazeShow(env: Env, showItemId: string, tvdbId: string
     .run();
 }
 
+/** Marks a "Download <Show> SxxExx" task done (if it's still open) —
+ * shared by reconciliation (the episode showed up) and dismissal (Mike
+ * said he doesn't want it), which land on different outcomes below. */
+export async function completeEpisodeTask(env: Env, taskId: string): Promise<void> {
+  await env.DB.prepare(`UPDATE entities SET status = 'done', updated_at = ? WHERE id = ? AND type = 'task' AND status = 'open'`)
+    .bind(new Date().toISOString(), taskId)
+    .run();
+}
+
+/** Deletes a "Download <Show> SxxExx" task outright — used on dismissal,
+ * where Mike is saying he doesn't want this episode at all, so "done"
+ * (which reads as "I got it") would be the wrong signal. */
+export async function deleteEpisodeTask(env: Env, taskId: string): Promise<void> {
+  await env.DB.prepare(`DELETE FROM entities WHERE id = ? AND type = 'task'`).bind(taskId).run();
+}
+
 /** Drops any open (non-dismissed) missing-episode row whose episode has
  * since actually shown up in the synced library — run on every check so
  * a download Mike already did stops nagging, regardless of how old the
- * flag was. */
+ * flag was. Also completes that episode's download task, if it had one,
+ * rather than leaving it open now that the episode is actually in hand. */
 async function reconcileMissingEpisodes(env: Env): Promise<void> {
+  const { results: resolved } = await env.DB.prepare(
+    `SELECT id, task_id FROM plex_missing_episodes
+     WHERE dismissed = 0
+     AND task_id IS NOT NULL
+     AND EXISTS (
+       SELECT 1 FROM plex_items e
+       JOIN plex_items se ON e.parent_id = se.id
+       WHERE se.parent_id = plex_missing_episodes.show_item_id
+         AND e.type = 'episode'
+         AND e.season_number = plex_missing_episodes.season_number
+         AND e.episode_number = plex_missing_episodes.episode_number
+     )`
+  ).all<{ id: string; task_id: string }>();
+  for (const row of resolved ?? []) {
+    await completeEpisodeTask(env, row.task_id);
+  }
+
   await env.DB.prepare(
     `DELETE FROM plex_missing_episodes
      WHERE dismissed = 0
@@ -102,6 +136,37 @@ async function hasEpisode(env: Env, showItemId: string, season: number, episode:
   return !!row;
 }
 
+function pad2(n: number): string {
+  return String(n).padStart(2, '0');
+}
+
+/** Creates the "Download <Show> SxxExx" task for a newly-flagged episode
+ * and links it back onto that missing-episode row (via task_id) so
+ * reconciliation/dismissal can find and close it later. A standalone
+ * top-level task — same "addressable at the root, no project" shape the
+ * recurring-task spawner uses for a definition with no project_id —
+ * since a missing episode isn't naturally under any existing MikeOS
+ * project. Due today, the day the check actually ran and found it, which
+ * in practice is always the morning after the episode aired (see
+ * recentLookbackDates/LOOKBACK_DAYS): that's what puts it in front of
+ * Mike on his next Today view rather than backdating it to the air date
+ * itself and landing it in Overdue immediately. */
+async function createEpisodeTask(env: Env, missingEpisodeId: string, showTitle: string, season: number, episode: number): Promise<void> {
+  const taskId = crypto.randomUUID();
+  const ts = new Date().toISOString();
+  const today = dateStr(new Date());
+  const maxPos = await env.DB.prepare(`SELECT COALESCE(MAX(position), -1) as m FROM entities WHERE parent_id IS NULL AND type = 'task'`).first<{
+    m: number;
+  }>();
+  await env.DB.prepare(
+    `INSERT INTO entities (id, type, title, parent_id, is_top_level, status, position, due_date, last_touched, created_at, updated_at)
+     VALUES (?, 'task', ?, NULL, 1, 'open', ?, ?, ?, ?, ?)`
+  )
+    .bind(taskId, `Download ${showTitle} S${pad2(season)}E${pad2(episode)}`, (maxPos?.m ?? -1) + 1, today, ts, ts, ts)
+    .run();
+  await env.DB.prepare(`UPDATE plex_missing_episodes SET task_id = ? WHERE id = ?`).bind(taskId, missingEpisodeId).run();
+}
+
 function recentLookbackDates(): string[] {
   const today = new Date();
   const dates: string[] = [];
@@ -129,15 +194,20 @@ async function checkOneShowRecentAirings(env: Env, showItemId: string, showTitle
     for (const ep of episodes ?? []) {
       if (await hasEpisode(env, showItemId, ep.season, ep.number)) continue;
       // ON CONFLICT DO NOTHING — if Mike already dismissed this one,
-      // re-detecting it on a later run must not resurrect it.
+      // re-detecting it on a later run must not resurrect it (and must
+      // not spawn a second download task for it either).
+      const missingEpisodeId = crypto.randomUUID();
       const inserted = await env.DB.prepare(
         `INSERT INTO plex_missing_episodes (id, show_item_id, show_title, season_number, episode_number, episode_name, aired_on, detected_at, dismissed)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
          ON CONFLICT(show_item_id, season_number, episode_number) DO NOTHING`
       )
-        .bind(crypto.randomUUID(), showItemId, showTitle, ep.season, ep.number, ep.name || null, ep.airdate, new Date().toISOString())
+        .bind(missingEpisodeId, showItemId, showTitle, ep.season, ep.number, ep.name || null, ep.airdate, new Date().toISOString())
         .run();
-      if (inserted.meta.changes > 0) flagged++;
+      if (inserted.meta.changes > 0) {
+        flagged++;
+        await createEpisodeTask(env, missingEpisodeId, showTitle, ep.season, ep.number);
+      }
     }
   }
   return flagged;
@@ -356,6 +426,12 @@ export async function runFullHistoryScanChunk(env: Env): Promise<AiringScanChunk
         continue;
       }
       spent++;
+      // Deliberately doesn't spawn a download task the way the nightly
+      // check's flags do (see createEpisodeTask) — a first full-history
+      // scan on a library this size can surface a large batch of old
+      // gaps at once, and dropping dozens of tasks into Today in one shot
+      // would swamp it. These still show up in the Airing panel itself;
+      // they just don't self-add to the task list.
       const inserted = await env.DB.prepare(
         `INSERT INTO plex_missing_episodes (id, show_item_id, show_title, season_number, episode_number, episode_name, aired_on, detected_at, dismissed)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)

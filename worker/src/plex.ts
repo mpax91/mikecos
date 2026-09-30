@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Env } from './types';
 import { runPlexSyncChunk, PlexNotConfiguredError } from './plexSync';
-import { runAiringCheckChunk, runFullHistoryScanChunk } from './plexAiring';
+import { runAiringCheckChunk, runFullHistoryScanChunk, deleteEpisodeTask } from './plexAiring';
 
 /** Plex library mirror — browse/search the synced catalogue, surface
  * metadata gaps, and manage aired-but-missing episode flags. See
@@ -288,6 +288,7 @@ interface MissingEpisodeRow {
   aired_on: string;
   detected_at: string;
   dismissed: number;
+  task_id: string | null;
 }
 
 function missingEpisodeJson(r: MissingEpisodeRow) {
@@ -314,6 +315,15 @@ plexRouter.patch('/missing-episodes/:id', async (c) => {
   const body = await c.req.json<{ dismissed?: boolean }>();
   if (body.dismissed !== undefined) {
     await c.env.DB.prepare('UPDATE plex_missing_episodes SET dismissed = ? WHERE id = ?').bind(body.dismissed ? 1 : 0, id).run();
+    // Dismissing means "I don't want this episode" — not "I got it" — so
+    // its download task (if the nightly check spawned one) is deleted
+    // outright rather than marked done. See plexAiring.ts's
+    // completeEpisodeTask/deleteEpisodeTask for the reconcile-vs-dismiss
+    // split.
+    if (body.dismissed) {
+      const existing = await c.env.DB.prepare('SELECT task_id FROM plex_missing_episodes WHERE id = ?').bind(id).first<{ task_id: string | null }>();
+      if (existing?.task_id) await deleteEpisodeTask(c.env, existing.task_id);
+    }
   }
   const row = await c.env.DB.prepare('SELECT * FROM plex_missing_episodes WHERE id = ?').bind(id).first<MissingEpisodeRow>();
   if (!row) return c.json({ error: 'not found' }, 404);
