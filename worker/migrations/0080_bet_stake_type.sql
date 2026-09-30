@@ -1,0 +1,17 @@
+-- Free bet / bonus bet tracking. A wager placed with a sportsbook's free
+-- bet credit (what Mike calls a "bet reset token") behaves differently
+-- from a cash wager in exactly one way that matters for balance math: if
+-- it LOSES, no real money is deducted — the stake was never Mike's cash to
+-- begin with. If it WINS, computeProfit (src/utils/bets.ts) already
+-- returns the right number without any special-casing: American-odds
+-- profit is stake-exclusive by construction (the formula gives "winnings
+-- above the stake", never stake+winnings), which is exactly the free-bet
+-- payout rule too (stake not returned). Push/void already contribute 0
+-- either way. So the only behavior this column needs to change is one
+-- branch of computeProfit's loss case.
+--
+-- 'cash' is the default so every bet logged before this migration, and any
+-- new bet where the field is left alone, keeps today's math exactly as it
+-- is. No CHECK constraint, same as bets.result above it — validated in the
+-- worker route handler instead (see BET_STAKE_TYPES in worker/src/index.ts).
+ALTER TABLE bets ADD COLUMN stake_type TEXT NOT NULL DEFAULT 'cash';

@@ -49,15 +49,30 @@ function americanOddsProfit(wager: number, odds: number): number {
 
 /** The one place profit is computed — never stored, always derived (see
  * migration 0032's comment). `manual_profit` overrides the math entirely
- * when set, for odds boosts/free bets/promos where the actual payout
- * doesn't match a plain calculation from odds+wager. A push or void always
- * returns the stake, so profit is 0 regardless of odds — unless a manual
- * override says otherwise (e.g. a partial void). */
+ * when set, for odds boosts/promos where the actual payout doesn't match a
+ * plain calculation from odds+wager. A push or void always returns the
+ * stake, so profit is 0 regardless of odds — unless a manual override says
+ * otherwise (e.g. a partial void).
+ *
+ * stake_type ('cash' vs 'free_bet', see 0080_bet_stake_type.sql) only
+ * changes the LOSS branch: a free bet's stake was the sportsbook's credit,
+ * not Mike's own money, so losing one costs nothing real — 0, not -wager.
+ * A won free bet needs no special-casing at all: americanOddsProfit
+ * already returns stake-exclusive winnings (never stake+winnings), which
+ * is exactly how a free bet actually pays out (stake not returned). */
 export function computeProfit(bet: Bet): number {
   if (bet.manual_profit != null) return bet.manual_profit;
   if (bet.result === 'win') return americanOddsProfit(bet.wager, bet.odds);
-  if (bet.result === 'loss') return -bet.wager;
+  if (bet.result === 'loss') return bet.stake_type === 'free_bet' ? 0 : -bet.wager;
   return 0; // push | void
+}
+
+// Shared by the bet log form and the Settings balances panel — a plain
+// local-timezone YYYY-MM-DD, not `new Date().toISOString()`'s UTC date
+// (which drifts a day off after ~8pm Eastern).
+export function todayLocalISODash(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 export function formatOdds(odds: number): string {

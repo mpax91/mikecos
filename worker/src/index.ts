@@ -6721,16 +6721,23 @@ app.get('/api/briefing', async (c) => {
 // household connections, the Journal's pulled-in data). At personal-bet-log
 // scale there's no reason to duplicate that math on the server.
 const BET_RESULTS = ['win', 'loss', 'push', 'void'];
+const BET_STAKE_TYPES = ['cash', 'free_bet']; // see 0080_bet_stake_type.sql
 
 // Same American-odds payout math as computeProfit in src/utils/bets.ts —
 // duplicated here (not imported; the worker and frontend are separate
 // builds) because GET /api/journal/:date needs a day's net profit and
 // isn't going to make the frontend recompute it from a separate fetch.
 // Keep in sync with the frontend copy if the payout rule ever changes.
+//
+// A free-bet-funded loss costs nothing real (the stake was the
+// sportsbook's credit, not Mike's cash) — the only branch that needs to
+// know stake_type. A win already comes out right with no special-casing:
+// this formula returns stake-exclusive profit either way, which matches
+// how a free bet actually pays out (stake not returned).
 function computeBetProfit(bet: Bet): number {
   if (bet.manual_profit != null) return bet.manual_profit;
   if (bet.result === 'win') return bet.odds > 0 ? bet.wager * (bet.odds / 100) : bet.wager * (100 / Math.abs(bet.odds));
-  if (bet.result === 'loss') return -bet.wager;
+  if (bet.result === 'loss') return bet.stake_type === 'free_bet' ? 0 : -bet.wager;
   return 0; // push | void
 }
 
@@ -6818,6 +6825,9 @@ app.post('/api/bets', async (c) => {
   if (typeof body.odds !== 'number' || !Number.isFinite(body.odds) || body.odds === 0) return c.json({ error: 'odds must be a non-zero number (American odds, e.g. -110 or 150)' }, 400);
   if (typeof body.wager !== 'number' || !Number.isFinite(body.wager) || body.wager <= 0) return c.json({ error: 'wager must be a positive number' }, 400);
   if (!body.result || !BET_RESULTS.includes(body.result)) return c.json({ error: `result must be one of ${BET_RESULTS.join(', ')}` }, 400);
+  if (body.stake_type !== undefined && !BET_STAKE_TYPES.includes(body.stake_type)) {
+    return c.json({ error: `stake_type must be one of ${BET_STAKE_TYPES.join(', ')}` }, 400);
+  }
 
   const isParlay = PARLAY_BET_TYPES.includes(body.bet_type.trim());
   let legs: BetLegInput[] = [];
@@ -6830,10 +6840,25 @@ app.post('/api/bets', async (c) => {
   const id = uid();
   const ts = now();
   await c.env.DB.prepare(
-    `INSERT INTO bets (id, date, sport, sportsbook, bet_type, pick, odds, wager, result, manual_profit, notes, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO bets (id, date, sport, sportsbook, bet_type, pick, odds, wager, result, stake_type, manual_profit, notes, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
-    .bind(id, body.date, body.sport.trim(), body.sportsbook.trim(), body.bet_type.trim(), body.pick?.trim() || null, body.odds, body.wager, body.result, body.manual_profit ?? null, body.notes?.trim() || null, ts, ts)
+    .bind(
+      id,
+      body.date,
+      body.sport.trim(),
+      body.sportsbook.trim(),
+      body.bet_type.trim(),
+      body.pick?.trim() || null,
+      body.odds,
+      body.wager,
+      body.result,
+      body.stake_type ?? 'cash',
+      body.manual_profit ?? null,
+      body.notes?.trim() || null,
+      ts,
+      ts
+    )
     .run();
   if (isParlay) await replaceLegs(c.env, id, legs);
   const bet = await c.env.DB.prepare('SELECT * FROM bets WHERE id = ?').bind(id).first<Bet>();
@@ -6848,6 +6873,9 @@ app.patch('/api/bets/:id', async (c) => {
   if (!existing) return c.json({ error: 'not found' }, 404);
 
   if (body.result !== undefined && !BET_RESULTS.includes(body.result)) return c.json({ error: `result must be one of ${BET_RESULTS.join(', ')}` }, 400);
+  if (body.stake_type !== undefined && !BET_STAKE_TYPES.includes(body.stake_type)) {
+    return c.json({ error: `stake_type must be one of ${BET_STAKE_TYPES.join(', ')}` }, 400);
+  }
   if (body.odds !== undefined && (typeof body.odds !== 'number' || !Number.isFinite(body.odds) || body.odds === 0)) return c.json({ error: 'odds must be a non-zero number' }, 400);
   if (body.wager !== undefined && (typeof body.wager !== 'number' || !Number.isFinite(body.wager) || body.wager <= 0)) return c.json({ error: 'wager must be a positive number' }, 400);
 
@@ -6864,7 +6892,7 @@ app.patch('/api/bets/:id', async (c) => {
   }
 
   const fields: [string, unknown][] = [];
-  const simple: (keyof Bet)[] = ['date', 'sport', 'sportsbook', 'bet_type', 'odds', 'wager', 'result'];
+  const simple: (keyof Bet)[] = ['date', 'sport', 'sportsbook', 'bet_type', 'odds', 'wager', 'result', 'stake_type'];
   for (const key of simple) {
     if (key in body) fields.push([key, (body as Record<string, unknown>)[key]]);
   }

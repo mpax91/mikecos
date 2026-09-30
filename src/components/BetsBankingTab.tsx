@@ -1,16 +1,11 @@
 import { useMemo, useState } from 'react';
 import type { Bet, BetTransaction, BetTransactionType } from '../api/types';
 import { BET_TRANSACTION_TYPES } from '../api/types';
-import { bankingTotals, formatMoney, sportsbookBalances } from '../utils/bets';
+import { bankingTotals, formatMoney, sportsbookBalances, todayLocalISODash } from '../utils/bets';
 import { COMMON_SPORTSBOOKS } from '../utils/bets';
 import { Modal } from './Modal';
 import { ConfirmModal } from './ConfirmModal';
 import { KebabMenu } from './KebabMenu';
-
-function todayLocalISODash(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
 
 function transactionLabel(type: BetTransactionType): string {
   return BET_TRANSACTION_TYPES.find((t) => t.value === type)?.label ?? type;

@@ -1644,6 +1644,13 @@ export interface BetLeg {
   created_at: string;
 }
 
+export type BetStakeType = 'cash' | 'free_bet';
+
+export const BET_STAKE_TYPES: { value: BetStakeType; label: string }[] = [
+  { value: 'cash', label: 'Cash' },
+  { value: 'free_bet', label: 'Free bet / bonus bet' },
+];
+
 export interface Bet {
   id: string;
   date: string; // 'YYYY-MM-DD'
@@ -1654,6 +1661,7 @@ export interface Bet {
   odds: number; // American odds
   wager: number;
   result: BetResult;
+  stake_type: BetStakeType; // 'cash' (default) | 'free_bet' — see worker/migrations/0080_bet_stake_type.sql
   manual_profit: number | null;
   notes: string | null;
   legs: BetLeg[];

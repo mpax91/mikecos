@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
-import type { Bet, BetLeg, BetPromo, BetResult, BetTransaction } from '../api/types';
+import { BET_STAKE_TYPES, type Bet, type BetLeg, type BetPromo, type BetResult, type BetStakeType, type BetTransaction } from '../api/types';
 import { useReportTabMeta } from '../contexts/TabsContext';
 import type { Granularity } from '../utils/healthPeriods';
 import {
@@ -25,6 +25,7 @@ import {
   pickAccuracyBySport,
   resultLabel,
   sportsbookBalances,
+  todayLocalISODash,
   winRateByParlaySize,
   type AggregatedBetPeriod,
   type BetGroupStat,
@@ -127,11 +128,6 @@ function PickAccuracyTable({ title, rows }: { title: string; rows: PickAccuracyS
   );
 }
 
-function todayLocalISODash(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
 type LegDraft = { sport: string; bet_type: string; pick: string; line: string; over_under: '' | 'over' | 'under'; odds: string; result: BetResult };
 
 function emptyLegDraft(): LegDraft {
@@ -164,6 +160,7 @@ function BetFormModal({ bet, onClose, onSave }: { bet: Bet | null; onClose: () =
   const [odds, setOdds] = useState(bet ? String(bet.odds) : '');
   const [wager, setWager] = useState(bet ? String(bet.wager) : '');
   const [result, setResult] = useState<BetResult>(bet?.result ?? 'win');
+  const [stakeType, setStakeType] = useState<BetStakeType>(bet?.stake_type ?? 'cash');
   const [notes, setNotes] = useState(bet?.notes ?? '');
   const [showOverride, setShowOverride] = useState(bet?.manual_profit != null);
   const [manualProfit, setManualProfit] = useState(bet?.manual_profit != null ? String(bet.manual_profit) : '');
@@ -177,7 +174,13 @@ function BetFormModal({ bet, onClose, onSave }: { bet: Bet | null; onClose: () =
   const wagerNum = Number(wager);
   const previewProfit =
     Number.isFinite(oddsNum) && oddsNum !== 0 && Number.isFinite(wagerNum) && wagerNum > 0
-      ? computeProfit({ odds: oddsNum, wager: wagerNum, result, manual_profit: showOverride && manualProfit !== '' ? Number(manualProfit) : null } as Bet)
+      ? computeProfit({
+          odds: oddsNum,
+          wager: wagerNum,
+          result,
+          stake_type: stakeType,
+          manual_profit: showOverride && manualProfit !== '' ? Number(manualProfit) : null,
+        } as Bet)
       : null;
 
   function updateLeg(i: number, patch: Partial<LegDraft>) {
@@ -222,6 +225,7 @@ function BetFormModal({ bet, onClose, onSave }: { bet: Bet | null; onClose: () =
         odds: oddsNum,
         wager: wagerNum,
         result,
+        stake_type: stakeType,
         manual_profit: showOverride && manualProfit !== '' ? Number(manualProfit) : null,
         notes: notes.trim() || undefined,
         legs: legsPayload,
@@ -286,6 +290,19 @@ function BetFormModal({ bet, onClose, onSave }: { bet: Bet | null; onClose: () =
             <input placeholder="25" inputMode="decimal" value={wager} onChange={(e) => setWager(e.target.value)} />
           </label>
         </div>
+        <label className="bets-form__field">
+          <span>Funded with</span>
+          <select value={stakeType} onChange={(e) => setStakeType(e.target.value as BetStakeType)}>
+            {BET_STAKE_TYPES.map((t) => (
+              <option key={t.value} value={t.value}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+          {stakeType === 'free_bet' && (
+            <span className="bets-form__hint">A loss here won't be counted against your real balance — the stake wasn't your cash. A win still pays out normally (stake not returned, same as the sportsbook's own rule).</span>
+          )}
+        </label>
         <label className="bets-form__field">
           <span>Result</span>
           <select value={result} onChange={(e) => setResult(e.target.value as BetResult)}>
@@ -488,6 +505,7 @@ function LogTab({ bets, onEdit, onDelete }: { bets: Bet[]; onEdit: (b: Bet) => v
                   <span className="bets-log__pick">{bet.pick || (bet.legs.length > 0 ? `${bet.legs.length}-leg ${bet.bet_type}` : `${bet.sport} ${bet.bet_type}`)}</span>
                   <span className="bets-log__meta">
                     {bet.sport} · {bet.sportsbook} · {formatOdds(bet.odds)} · {formatMoney(bet.wager)}
+                    {bet.stake_type === 'free_bet' && <span className="bets-log__freebet"> · Free bet</span>}
                   </span>
                   {bet.legs.length > 0 && (
                     <span className="bets-log__legs">

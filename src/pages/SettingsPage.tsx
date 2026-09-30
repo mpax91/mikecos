@@ -15,6 +15,7 @@ import { NewsFeedsPanel } from './settings/NewsFeedsPanel';
 import { HabitsPanel } from './settings/HabitsPanel';
 import { RewardsMerchantsPanel } from './settings/RewardsMerchantsPanel';
 import { EmailAccountsPanel } from './settings/EmailAccountsPanel';
+import { BetsBalancesPanel } from './settings/BetsBalancesPanel';
 
 interface Category {
   id: string;
@@ -41,6 +42,7 @@ const CATEGORIES: Category[] = [
   { id: 'media-catalog', label: 'Media Catalog', icon: '📚' },
   { id: 'email-accounts', label: 'Email Accounts', icon: '📥' },
   { id: 'rewards-merchants', label: 'Rewards Merchants', icon: '🏷️' },
+  { id: 'bets-balances', label: 'Bets Balances', icon: '🎰' },
   { id: 'habits', label: 'Habits', icon: '📈' },
   { id: 'news-feeds', label: 'News Feeds', icon: '📰' },
   { id: 'contact-import', label: 'Contact Import', icon: '👤' },
@@ -96,6 +98,7 @@ export function SettingsPage() {
           {active === 'media-catalog' && <MediaCatalogPanel />}
           {active === 'email-accounts' && <EmailAccountsPanel />}
           {active === 'rewards-merchants' && <RewardsMerchantsPanel />}
+          {active === 'bets-balances' && <BetsBalancesPanel />}
           {active === 'habits' && <HabitsPanel />}
           {active === 'news-feeds' && <NewsFeedsPanel />}
           {active === 'contact-import' && <ContactImportPanel />}

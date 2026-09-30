@@ -424,6 +424,7 @@ export interface NewsSettingsRow {
 // ---- Sports betting dashboard (0032_bets.sql) ----
 
 export type BetResult = 'win' | 'loss' | 'push' | 'void';
+export type BetStakeType = 'cash' | 'free_bet';
 
 export interface Bet {
   id: string;
@@ -435,6 +436,7 @@ export interface Bet {
   odds: number; // American odds
   wager: number;
   result: BetResult;
+  stake_type: BetStakeType; // 'cash' (default) | 'free_bet' — see 0080_bet_stake_type.sql
   manual_profit: number | null;
   notes: string | null;
   created_at: string;
