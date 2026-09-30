@@ -1,10 +1,25 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { api } from '../api/client';
-import type { HomeFixture, HomeFixtureType, HomeRoom } from '../api/types';
+import type { HomeFixture, HomeFixtureType, HomeRoom, HomeWallItem, HomeWallItemType } from '../api/types';
 import { formatFeetInches } from '../lib/homeUnits';
+import {
+  type Point,
+  boundingBox,
+  normalizeShape,
+  polygonToSvgPoints,
+  wallSegment,
+  pointAlongWall,
+  offsetOnWall,
+  inwardNormal,
+  dragWall,
+  insertNotch,
+  relocateAfterShapeChange,
+} from '../lib/homeGeometry';
 import { ConfirmModal } from './ConfirmModal';
 import { HomeRoomModal, type HomeRoomFormValue } from './HomeRoomModal';
 import { HomeFixtureModal, type HomeFixtureFormValue, FIXTURE_TYPE_LABEL } from './HomeFixtureModal';
+import { HomeWallItemModal, type HomeWallItemFormValue } from './HomeWallItemModal';
 import { KebabMenu } from './KebabMenu';
 
 const MIN_SCALE = 0.5;
@@ -12,6 +27,7 @@ const MAX_SCALE = 15;
 const DEFAULT_SCALE = 3; // CSS pixels per inch
 const ROOM_GAP_IN = 24; // gap between auto-placed new rooms, in inches
 const CLICK_THRESHOLD_PX = 4; // pointer movement under this = a click, not a drag
+const DEFAULT_WALL_ITEM_WIDTH: Record<HomeWallItemType, number> = { door: 30, window: 36 };
 
 const FIXTURE_TYPES: HomeFixtureType[] = ['appliance', 'furniture', 'outlet', 'switch', 'fixture'];
 const FIXTURE_ICON: Record<HomeFixtureType, string> = { appliance: '🔌', furniture: '🪑', outlet: '⏚', switch: '💡', fixture: '✦' };
@@ -25,16 +41,56 @@ interface Pan {
   y: number;
 }
 
-/** The to-scale floor canvas for one floor — rooms drawn as rectangles
- * sized to their real width/depth (in inches, at `scale` CSS px per inch),
- * with fixtures (appliance/furniture/outlet/switch/fixture) positioned
- * inside them. Pan/zoom/drag interaction mirrors CanvasBoardPage's proven
- * engine (see that file's header comments) — same math, reinterpreted so
- * "world coordinates" are inches instead of arbitrary board pixels, which
- * is what makes the map literally to-scale rather than just a diagram. */
+/** A small "what do you want on this wall?" menu, opened by clicking
+ * (not dragging) a wall — portaled to <body> and positioned at the
+ * click's screen coordinates, styled the same as KebabMenu's dropdown
+ * so it needs no CSS of its own. */
+function WallMenu({ x, y, onAddDoor, onAddWindow, onAddCorner, onClose }: { x: number; y: number; onAddDoor: () => void; onAddWindow: () => void; onAddCorner: () => void; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    function onDocDown(e: MouseEvent) {
+      if (ref.current?.contains(e.target as Node)) return;
+      onClose();
+    }
+    document.addEventListener('mousedown', onDocDown);
+    return () => document.removeEventListener('mousedown', onDocDown);
+  }, [onClose]);
+  return createPortal(
+    <div ref={ref} className="kebab-menu__dropdown card" style={{ position: 'fixed', top: y, left: x }} onClick={(e) => e.stopPropagation()}>
+      <div className="kebab-menu__item" onClick={onAddDoor}>
+        + Door
+      </div>
+      <div className="kebab-menu__item" onClick={onAddWindow}>
+        + Window
+      </div>
+      <div className="kebab-menu__item" onClick={onAddCorner}>
+        + Add Corner
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+/** The to-scale floor canvas for one floor — rooms drawn as rectilinear
+ * polygons (an SVG overlay sized to their bounding box, in inches at
+ * `scale` CSS px per inch — see src/lib/homeGeometry.ts), with doors and
+ * windows mounted along their walls and fixtures positioned inside.
+ * Pan/zoom/drag interaction mirrors CanvasBoardPage's proven engine (see
+ * that file's header comments) — same math, reinterpreted so "world
+ * coordinates" are inches instead of arbitrary board pixels, which is
+ * what makes the map literally to-scale rather than just a diagram.
+ *
+ * Fixtures only ever deal with a room's bounding box (x/y relative to
+ * room.x/room.y), never its polygon shape — a deliberate isolation so
+ * reshaping a room into an L never touches fixture placement math.
+ * Reshaping itself is wall-based: drag a wall perpendicular to itself to
+ * move it (dragWall), or click a wall for a menu that can split it into
+ * a new draggable notch (insertNotch). See homeGeometry.ts's header for
+ * why this is wall-based rather than corner-based. */
 export function HomeFloorCanvas({ floorId }: { floorId: string }) {
   const [rooms, setRooms] = useState<HomeRoom[] | null>(null);
   const [fixtures, setFixtures] = useState<HomeFixture[] | null>(null);
+  const [wallItems, setWallItems] = useState<HomeWallItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const [view, setView] = useState<{ pan: Pan; scale: number }>({ pan: { x: 40, y: 40 }, scale: DEFAULT_SCALE });
@@ -44,13 +100,17 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
   const [deletingRoom, setDeletingRoom] = useState<HomeRoom | null>(null);
   const [fixtureModal, setFixtureModal] = useState<{ type: HomeFixtureType; roomId: string; initial?: HomeFixture } | null>(null);
   const [deletingFixture, setDeletingFixture] = useState<HomeFixture | null>(null);
+  const [wallItemModal, setWallItemModal] = useState<{ type: HomeWallItemType; roomId: string; wallIndex: number; offset: number; initial?: HomeWallItem } | null>(null);
+  const [deletingWallItem, setDeletingWallItem] = useState<HomeWallItem | null>(null);
+  const [wallMenu, setWallMenu] = useState<{ roomId: string; wallIndex: number; offset: number; screenX: number; screenY: number } | null>(null);
 
   const viewportRef = useRef<HTMLDivElement>(null);
   const gesture = useRef<
     | { kind: 'pan'; startX: number; startY: number; startPan: Pan; moved: number }
     | { kind: 'room-drag'; roomId: string; startX: number; startY: number; startRoomX: number; startRoomY: number; moved: number }
-    | { kind: 'room-resize'; roomId: string; startX: number; startY: number; startWidth: number; startDepth: number }
     | { kind: 'fixture-drag'; fixtureId: string; startX: number; startY: number; startFixtureX: number; startFixtureY: number; moved: number }
+    | { kind: 'wall-drag'; roomId: string; wallIndex: number; startX: number; startY: number; startPoints: Point[]; startRoomX: number; startRoomY: number; rawPoints: Point[]; moved: number }
+    | { kind: 'wallitem-drag'; itemId: string; startX: number; startY: number; startOffset: number; wallIndex: number; roomId: string; moved: number }
     | null
   >(null);
 
@@ -60,6 +120,7 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
       .then((res) => {
         setRooms(res.rooms);
         setFixtures(res.fixtures);
+        setWallItems(res.wallItems);
       })
       .catch((e) => setError(String(e)));
   }, [floorId]);
@@ -98,6 +159,12 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
     return () => el.removeEventListener('wheel', onWheel);
   }, [rooms]);
 
+  /** Screen (clientX/Y) → floor-absolute inches, given the current pan/zoom. */
+  function screenToWorld(clientX: number, clientY: number): Point {
+    const rect = viewportRef.current!.getBoundingClientRect();
+    return { x: (clientX - rect.left - pan.x) / scale, y: (clientY - rect.top - pan.y) / scale };
+  }
+
   function handleBackgroundPointerDown(e: React.PointerEvent) {
     if (e.button !== 0 && e.button !== 1) return;
     if (e.button === 1) e.preventDefault();
@@ -107,15 +174,16 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
 
   function handleRoomPointerDown(room: HomeRoom, e: React.PointerEvent) {
     if (e.button !== 0) return;
-    if ((e.target as Element).closest('.kebab-menu, .home-room__resize-handle')) return;
+    if ((e.target as Element).closest('.kebab-menu, .home-room__wall-hit, .home-wall-item')) return;
     e.stopPropagation();
     gesture.current = { kind: 'room-drag', roomId: room.id, startX: e.clientX, startY: e.clientY, startRoomX: room.x, startRoomY: room.y, moved: 0 };
     (e.target as Element).setPointerCapture(e.pointerId);
   }
 
-  function handleRoomResizeStart(room: HomeRoom, e: React.PointerEvent) {
+  function handleWallPointerDown(room: HomeRoom, wallIndex: number, e: React.PointerEvent) {
+    if (e.button !== 0) return;
     e.stopPropagation();
-    gesture.current = { kind: 'room-resize', roomId: room.id, startX: e.clientX, startY: e.clientY, startWidth: room.width, startDepth: room.depth };
+    gesture.current = { kind: 'wall-drag', roomId: room.id, wallIndex, startX: e.clientX, startY: e.clientY, startPoints: room.points, startRoomX: room.x, startRoomY: room.y, rawPoints: room.points, moved: 0 };
     (e.target as Element).setPointerCapture(e.pointerId);
   }
 
@@ -123,6 +191,13 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
     if (e.button !== 0) return;
     e.stopPropagation();
     gesture.current = { kind: 'fixture-drag', fixtureId: fixture.id, startX: e.clientX, startY: e.clientY, startFixtureX: fixture.x, startFixtureY: fixture.y, moved: 0 };
+    (e.target as Element).setPointerCapture(e.pointerId);
+  }
+
+  function handleWallItemPointerDown(item: HomeWallItem, e: React.PointerEvent) {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    gesture.current = { kind: 'wallitem-drag', itemId: item.id, startX: e.clientX, startY: e.clientY, startOffset: item.offset, wallIndex: item.wallIndex, roomId: item.roomId, moved: 0 };
     (e.target as Element).setPointerCapture(e.pointerId);
   }
 
@@ -139,12 +214,22 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
       const x = Math.max(0, Math.round(g.startRoomX + dx));
       const y = Math.max(0, Math.round(g.startRoomY + dy));
       setRooms((prev) => (prev ? prev.map((r) => (r.id === g.roomId ? { ...r, x, y } : r)) : prev));
-    } else if (g.kind === 'room-resize') {
+    } else if (g.kind === 'wall-drag') {
+      g.moved += Math.abs(e.movementX) + Math.abs(e.movementY);
       const dx = (e.clientX - g.startX) / scale;
       const dy = (e.clientY - g.startY) / scale;
-      const width = Math.max(12, Math.round(g.startWidth + dx));
-      const depth = Math.max(12, Math.round(g.startDepth + dy));
-      setRooms((prev) => (prev ? prev.map((r) => (r.id === g.roomId ? { ...r, width, depth } : r)) : prev));
+      const { nx, ny } = inwardNormal(g.startPoints, g.wallIndex);
+      const delta = dx * nx + dy * ny;
+      const raw = dragWall(g.startPoints, g.wallIndex, delta);
+      g.rawPoints = raw;
+      const { points, dx: shiftX, dy: shiftY } = normalizeShape(raw);
+      const bbox = boundingBox(points);
+      const roomX = g.startRoomX + shiftX;
+      const roomY = g.startRoomY + shiftY;
+      setRooms((prev) => (prev ? prev.map((r) => (r.id === g.roomId ? { ...r, points, width: bbox.width, depth: bbox.depth, x: roomX, y: roomY } : r)) : prev));
+      if (shiftX || shiftY) {
+        setFixtures((prev) => (prev ? prev.map((f) => (f.roomId === g.roomId ? { ...f, x: f.x - shiftX, y: f.y - shiftY } : f)) : prev));
+      }
     } else if (g.kind === 'fixture-drag') {
       g.moved += Math.abs(e.movementX) + Math.abs(e.movementY);
       const dx = (e.clientX - g.startX) / scale;
@@ -152,6 +237,18 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
       const x = Math.max(0, Math.round(g.startFixtureX + dx));
       const y = Math.max(0, Math.round(g.startFixtureY + dy));
       setFixtures((prev) => (prev ? prev.map((f) => (f.id === g.fixtureId ? { ...f, x, y } : f)) : prev));
+    } else if (g.kind === 'wallitem-drag') {
+      g.moved += Math.abs(e.movementX) + Math.abs(e.movementY);
+      const room = rooms?.find((r) => r.id === g.roomId);
+      const item = wallItems?.find((w) => w.id === g.itemId);
+      if (!room || !item) return;
+      const { a, b, horizontal, length } = wallSegment(room.points, g.wallIndex);
+      const dir = horizontal ? Math.sign(b.x - a.x) || 1 : Math.sign(b.y - a.y) || 1;
+      const dx = (e.clientX - g.startX) / scale;
+      const dy = (e.clientY - g.startY) / scale;
+      const deltaAlong = (horizontal ? dx : dy) * dir;
+      const offset = clamp(Math.round(g.startOffset + deltaAlong), 0, Math.max(0, length - item.width));
+      setWallItems((prev) => (prev ? prev.map((w) => (w.id === g.itemId ? { ...w, offset } : w)) : prev));
     }
   }
 
@@ -167,10 +264,28 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
         return;
       }
       api.updateHomeRoom(room.id, { x: room.x, y: room.y }).catch(() => load());
-    } else if (g.kind === 'room-resize') {
+    } else if (g.kind === 'wall-drag') {
       const room = rooms?.find((r) => r.id === g.roomId);
       if (!room) return;
-      api.updateHomeRoom(room.id, { width: room.width, depth: room.depth }).catch(() => load());
+      if (g.moved < CLICK_THRESHOLD_PX) {
+        const local = screenToWorld(g.startX, g.startY);
+        const offset = offsetOnWall(g.startPoints, g.wallIndex, { x: local.x - g.startRoomX, y: local.y - g.startRoomY });
+        setWallMenu({ roomId: g.roomId, wallIndex: g.wallIndex, offset, screenX: g.startX, screenY: g.startY });
+        return;
+      }
+      // Re-anchor any doors/windows on this room's walls to whichever edge
+      // of the reshaped polygon now passes through where they actually
+      // sit — see relocateAfterShapeChange's header for why this works
+      // for both a wall drag (lengths change) and a notch (indices shift).
+      const roomWallItems = (wallItems ?? []).filter((w) => w.roomId === g.roomId);
+      for (const item of roomWallItems) {
+        const { wallIndex, offset } = relocateAfterShapeChange(g.startPoints, g.rawPoints, item.wallIndex, item.offset);
+        if (wallIndex !== item.wallIndex || offset !== item.offset) {
+          setWallItems((prev) => (prev ? prev.map((w) => (w.id === item.id ? { ...w, wallIndex, offset } : w)) : prev));
+          api.updateHomeWallItem(item.id, { wallIndex, offset }).catch(() => load());
+        }
+      }
+      api.updateHomeRoom(room.id, { points: room.points, x: room.x, y: room.y }).catch(() => load());
     } else if (g.kind === 'fixture-drag') {
       const fixture = fixtures?.find((f) => f.id === g.fixtureId);
       if (!fixture) return;
@@ -179,6 +294,14 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
         return;
       }
       api.updateHomeFixture(fixture.id, { x: fixture.x, y: fixture.y }).catch(() => load());
+    } else if (g.kind === 'wallitem-drag') {
+      const item = wallItems?.find((w) => w.id === g.itemId);
+      if (!item) return;
+      if (g.moved < CLICK_THRESHOLD_PX) {
+        setWallItemModal({ type: item.type, roomId: item.roomId, wallIndex: item.wallIndex, offset: item.offset, initial: item });
+        return;
+      }
+      api.updateHomeWallItem(item.id, { offset: item.offset }).catch(() => load());
     }
   }
 
@@ -202,6 +325,7 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
     if (!deletingRoom) return;
     setRooms((prev) => (prev ? prev.filter((r) => r.id !== deletingRoom.id) : prev));
     setFixtures((prev) => (prev ? prev.filter((f) => f.roomId !== deletingRoom.id) : prev));
+    setWallItems((prev) => (prev ? prev.filter((w) => w.roomId !== deletingRoom.id) : prev));
     await api.deleteHomeRoom(deletingRoom.id);
     setDeletingRoom(null);
     setRoomModal(null);
@@ -234,12 +358,69 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
     setFixtureModal(null);
   }
 
+  function openAddWallItem(type: HomeWallItemType) {
+    if (!wallMenu) return;
+    const room = rooms?.find((r) => r.id === wallMenu.roomId);
+    if (!room) return;
+    const { length } = wallSegment(room.points, wallMenu.wallIndex);
+    const width = Math.min(DEFAULT_WALL_ITEM_WIDTH[type], Math.max(1, length));
+    const offset = clamp(Math.round(wallMenu.offset - width / 2), 0, Math.max(0, length - width));
+    setWallItemModal({ type, roomId: wallMenu.roomId, wallIndex: wallMenu.wallIndex, offset });
+    setWallMenu(null);
+  }
+
+  function addCorner() {
+    if (!wallMenu) return;
+    const room = rooms?.find((r) => r.id === wallMenu.roomId);
+    if (!room) return;
+    const oldPoints = room.points;
+    const newPointsRaw = insertNotch(oldPoints, wallMenu.wallIndex, wallMenu.offset);
+    const { points, dx, dy } = normalizeShape(newPointsRaw);
+    const bbox = boundingBox(points);
+    const roomX = room.x + dx;
+    const roomY = room.y + dy;
+    setRooms((prev) => (prev ? prev.map((r) => (r.id === room.id ? { ...r, points, width: bbox.width, depth: bbox.depth, x: roomX, y: roomY } : r)) : prev));
+    if (dx || dy) {
+      setFixtures((prev) => (prev ? prev.map((f) => (f.roomId === room.id ? { ...f, x: f.x - dx, y: f.y - dy } : f)) : prev));
+    }
+    const roomWallItems = (wallItems ?? []).filter((w) => w.roomId === room.id);
+    for (const item of roomWallItems) {
+      const relocated = relocateAfterShapeChange(oldPoints, newPointsRaw, item.wallIndex, item.offset);
+      if (relocated.wallIndex !== item.wallIndex || relocated.offset !== item.offset) {
+        setWallItems((prev) => (prev ? prev.map((w) => (w.id === item.id ? { ...w, ...relocated } : w)) : prev));
+        api.updateHomeWallItem(item.id, relocated).catch(() => load());
+      }
+    }
+    api.updateHomeRoom(room.id, { points, x: roomX, y: roomY }).catch(() => load());
+    setWallMenu(null);
+  }
+
+  async function saveWallItem(value: HomeWallItemFormValue) {
+    if (!wallItemModal) return;
+    if (wallItemModal.initial) {
+      const updated = await api.updateHomeWallItem(wallItemModal.initial.id, value);
+      setWallItems((prev) => (prev ? prev.map((w) => (w.id === updated.id ? updated : w)) : prev));
+    } else {
+      const created = await api.createHomeWallItem(wallItemModal.roomId, { type: wallItemModal.type, wallIndex: wallItemModal.wallIndex, offset: wallItemModal.offset, ...value });
+      setWallItems((prev) => (prev ? [...prev, created] : [created]));
+    }
+    setWallItemModal(null);
+  }
+
+  async function confirmDeleteWallItem() {
+    if (!deletingWallItem) return;
+    setWallItems((prev) => (prev ? prev.filter((w) => w.id !== deletingWallItem.id) : prev));
+    await api.deleteHomeWallItem(deletingWallItem.id);
+    setDeletingWallItem(null);
+    setWallItemModal(null);
+  }
+
   function resetView() {
     setView({ pan: { x: 40, y: 40 }, scale: DEFAULT_SCALE });
   }
 
   if (error) return <div className="empty-state">Couldn't load this floor: {error}</div>;
-  if (!rooms || !fixtures) return <div className="empty-state">Loading…</div>;
+  if (!rooms || !fixtures || !wallItems) return <div className="empty-state">Loading…</div>;
 
   return (
     <div className="home-canvas">
@@ -247,7 +428,9 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
         <button type="button" className="btn btn--ghost btn--sm" onClick={openAddRoom}>
           + Add Room
         </button>
-        <span className="home-canvas__hint">Scroll to pan · Ctrl/Cmd+scroll to zoom · click a room's ⋯ to add appliances, furniture, outlets, switches</span>
+        <span className="home-canvas__hint">
+          Scroll to pan · Ctrl/Cmd+scroll to zoom · drag a wall to reshape · click a wall for doors/windows/corners · click a room's ⋯ for appliances, furniture, outlets, switches
+        </span>
         <button type="button" className="btn btn--ghost btn--sm" onClick={resetView} style={{ marginLeft: 'auto' }}>
           Reset View
         </button>
@@ -268,6 +451,7 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
           )}
           {rooms.map((room) => {
             const roomFixtures = fixtures.filter((f) => f.roomId === room.id);
+            const roomWallItems = wallItems.filter((w) => w.roomId === room.id);
             return (
               <div
                 key={room.id}
@@ -275,6 +459,71 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
                 style={{ left: room.x, top: room.y, width: room.width, height: room.depth }}
                 onPointerDown={(e) => handleRoomPointerDown(room, e)}
               >
+                <svg className="home-room__svg" width={room.width} height={room.depth} viewBox={`0 0 ${room.width} ${room.depth}`}>
+                  <polygon points={polygonToSvgPoints(room.points)} className="home-room__fill" />
+                  {room.points.map((_, i) => {
+                    const seg = wallSegment(room.points, i);
+                    return (
+                      <g key={i}>
+                        <line x1={seg.a.x} y1={seg.a.y} x2={seg.b.x} y2={seg.b.y} className="home-room__wall" />
+                        <line
+                          x1={seg.a.x}
+                          y1={seg.a.y}
+                          x2={seg.b.x}
+                          y2={seg.b.y}
+                          className="home-room__wall-hit"
+                          style={{ cursor: seg.horizontal ? 'ns-resize' : 'ew-resize' }}
+                          onPointerDown={(e) => handleWallPointerDown(room, i, e)}
+                        />
+                      </g>
+                    );
+                  })}
+                  {roomWallItems.map((item) => {
+                    const start = pointAlongWall(room.points, item.wallIndex, item.offset);
+                    const end = pointAlongWall(room.points, item.wallIndex, item.offset + item.width);
+                    const { horizontal } = wallSegment(room.points, item.wallIndex);
+                    const { nx, ny } = inwardNormal(room.points, item.wallIndex);
+                    const gapPad = 3;
+                    const gx1 = horizontal ? start.x - Math.sign(end.x - start.x) * gapPad : start.x;
+                    const gy1 = horizontal ? start.y : start.y - Math.sign(end.y - start.y) * gapPad;
+                    const gx2 = horizontal ? end.x + Math.sign(end.x - start.x) * gapPad : end.x;
+                    const gy2 = horizontal ? end.y : end.y + Math.sign(end.y - start.y) * gapPad;
+                    return (
+                      <g key={item.id}>
+                        <line x1={gx1} y1={gy1} x2={gx2} y2={gy2} className="home-wall-item__gap" />
+                        {item.type === 'door' ? (
+                          (() => {
+                            const hinge = item.swing === 'right' ? end : start;
+                            const openPoint = { x: hinge.x + nx * item.width, y: hinge.y + ny * item.width };
+                            return (
+                              <>
+                                <line x1={hinge.x} y1={hinge.y} x2={openPoint.x} y2={openPoint.y} className="home-wall-item__leaf" />
+                                <path
+                                  d={`M ${item.swing === 'right' ? start.x : end.x} ${item.swing === 'right' ? start.y : end.y} A ${item.width} ${item.width} 0 0 ${item.swing === 'right' ? 0 : 1} ${openPoint.x} ${openPoint.y}`}
+                                  className="home-wall-item__arc"
+                                />
+                              </>
+                            );
+                          })()
+                        ) : (
+                          <>
+                            <line x1={start.x + nx * 2.5} y1={start.y + ny * 2.5} x2={end.x + nx * 2.5} y2={end.y + ny * 2.5} className="home-wall-item__window-line" />
+                            <line x1={start.x - nx * 2.5} y1={start.y - ny * 2.5} x2={end.x - nx * 2.5} y2={end.y - ny * 2.5} className="home-wall-item__window-line" />
+                          </>
+                        )}
+                        <line
+                          x1={start.x}
+                          y1={start.y}
+                          x2={end.x}
+                          y2={end.y}
+                          className="home-wall-item__hit"
+                          style={{ cursor: horizontal ? 'ew-resize' : 'ns-resize' }}
+                          onPointerDown={(e) => handleWallItemPointerDown(item, e)}
+                        />
+                      </g>
+                    );
+                  })}
+                </svg>
                 <div className="home-room__header" style={{ transform: `scale(${1 / scale})`, transformOrigin: 'top left' }}>
                   <span className="home-room__title">{room.name}</span>
                   <span className="home-room__dims">
@@ -308,12 +557,22 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
                     </span>
                   </div>
                 ))}
-                <div className="home-room__resize-handle" onPointerDown={(e) => handleRoomResizeStart(room, e)} style={{ transform: `scale(${1 / scale})`, transformOrigin: 'bottom right' }} />
               </div>
             );
           })}
         </div>
       </div>
+
+      {wallMenu && (
+        <WallMenu
+          x={wallMenu.screenX}
+          y={wallMenu.screenY}
+          onAddDoor={() => openAddWallItem('door')}
+          onAddWindow={() => openAddWallItem('window')}
+          onAddCorner={addCorner}
+          onClose={() => setWallMenu(null)}
+        />
+      )}
 
       {roomModal && (
         <HomeRoomModal
@@ -327,7 +586,7 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
       {deletingRoom && (
         <ConfirmModal
           title="Delete this room?"
-          body={`"${deletingRoom.name}" and every appliance, furniture, outlet, switch, and fixture placed in it will be permanently deleted. Any linked Vault entries are kept.`}
+          body={`"${deletingRoom.name}" and every appliance, furniture, outlet, switch, fixture, door, and window placed in it will be permanently deleted. Any linked Vault entries are kept.`}
           onConfirm={confirmDeleteRoom}
           onCancel={() => setDeletingRoom(null)}
         />
@@ -349,6 +608,25 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
           body={`"${deletingFixture.label}" will be permanently removed from the map. Any linked Vault entry is kept.`}
           onConfirm={confirmDeleteFixture}
           onCancel={() => setDeletingFixture(null)}
+        />
+      )}
+
+      {wallItemModal && (
+        <HomeWallItemModal
+          type={wallItemModal.type}
+          initial={wallItemModal.initial}
+          onSave={saveWallItem}
+          onDelete={wallItemModal.initial ? () => setDeletingWallItem(wallItemModal.initial!) : undefined}
+          onClose={() => setWallItemModal(null)}
+        />
+      )}
+
+      {deletingWallItem && (
+        <ConfirmModal
+          title={`Delete this ${deletingWallItem.type}?`}
+          body={`"${deletingWallItem.label}" will be permanently removed from the map. Any linked Vault entry is kept.`}
+          onConfirm={confirmDeleteWallItem}
+          onCancel={() => setDeletingWallItem(null)}
         />
       )}
     </div>

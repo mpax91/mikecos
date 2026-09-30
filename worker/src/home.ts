@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import type { ElectricalBreakerRow, ElectricalPanelRow, Env, HomeFixtureRow, HomeFixtureType, HomeRoomRow, HomeFloorRow } from './types';
+import type { ElectricalBreakerRow, ElectricalPanelRow, Env, HomeFixtureRow, HomeFixtureType, HomeRoomRow, HomeFloorRow, HomeWallItemRow, HomeWallItemType } from './types';
 
 const now = () => new Date().toISOString();
 const uid = () => crypto.randomUUID();
@@ -27,6 +27,47 @@ function isFixtureType(v: unknown): v is HomeFixtureType {
   return typeof v === 'string' && (FIXTURE_TYPES as readonly string[]).includes(v);
 }
 
+const WALL_ITEM_TYPES: readonly HomeWallItemType[] = ['door', 'window'];
+function isWallItemType(v: unknown): v is HomeWallItemType {
+  return typeof v === 'string' && (WALL_ITEM_TYPES as readonly string[]).includes(v);
+}
+
+interface ShapePoint {
+  x: number;
+  y: number;
+}
+
+function rectanglePoints(width: number, depth: number): ShapePoint[] {
+  return [
+    { x: 0, y: 0 },
+    { x: width, y: 0 },
+    { x: width, y: depth },
+    { x: 0, y: depth },
+  ];
+}
+
+// A room's points are the source of truth for its shape (see
+// 0078_home_room_shapes.sql); width/depth stay in sync as their bounding
+// box so every place that only cares about "roughly how big" (auto-
+// placing a new room next to this one, a fixture's default stagger
+// position) doesn't need to know polygon math at all.
+function boundingBoxOf(points: ShapePoint[]): { width: number; depth: number } {
+  const xs = points.map((p) => p.x);
+  const ys = points.map((p) => p.y);
+  return { width: Math.max(...xs) - Math.min(...xs), depth: Math.max(...ys) - Math.min(...ys) };
+}
+
+function parsePoints(raw: string | null, width: number, depth: number): ShapePoint[] {
+  if (!raw) return rectanglePoints(width, depth);
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length >= 4) return parsed;
+  } catch {
+    // fall through to rectangle default
+  }
+  return rectanglePoints(width, depth);
+}
+
 function floorJson(r: HomeFloorRow) {
   return { id: r.id, name: r.name, position: r.position, createdAt: r.created_at, updatedAt: r.updated_at };
 }
@@ -40,6 +81,25 @@ function roomJson(r: HomeRoomRow) {
     y: r.y,
     width: r.width,
     depth: r.depth,
+    points: parsePoints(r.points, r.width, r.depth),
+    notes: r.notes,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
+}
+
+function wallItemJson(r: HomeWallItemRow & { vault_entry_title?: string | null }) {
+  return {
+    id: r.id,
+    roomId: r.room_id,
+    type: r.type,
+    label: r.label,
+    wallIndex: r.wall_index,
+    offset: r.offset,
+    width: r.width,
+    swing: r.swing,
+    vaultEntryId: r.vault_entry_id,
+    vaultEntryTitle: r.vault_entry_title ?? null,
     notes: r.notes,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
@@ -135,6 +195,7 @@ homeRouter.delete('/floors/:id', async (c) => {
   const id = c.req.param('id');
   await db(c).batch([
     db(c).prepare('DELETE FROM home_fixtures WHERE room_id IN (SELECT id FROM home_rooms WHERE floor_id = ?)').bind(id),
+    db(c).prepare('DELETE FROM home_wall_items WHERE room_id IN (SELECT id FROM home_rooms WHERE floor_id = ?)').bind(id),
     db(c).prepare('DELETE FROM home_rooms WHERE floor_id = ?').bind(id),
     db(c).prepare('DELETE FROM home_floors WHERE id = ?').bind(id),
   ]);
@@ -154,6 +215,7 @@ homeRouter.get('/floors/:id/layout', async (c) => {
   const rooms = await db(c).prepare('SELECT * FROM home_rooms WHERE floor_id = ? ORDER BY created_at ASC').bind(floorId).all<HomeRoomRow>();
   const roomIds = (rooms.results ?? []).map((r) => r.id);
   let fixtures: ReturnType<typeof fixtureJson>[] = [];
+  let wallItems: ReturnType<typeof wallItemJson>[] = [];
   if (roomIds.length) {
     const placeholders = roomIds.map(() => '?').join(', ');
     const { results } = await db(c)
@@ -168,8 +230,20 @@ homeRouter.get('/floors/:id/layout', async (c) => {
       .bind(...roomIds)
       .all<HomeFixtureRow & { vault_entry_title: string | null; breaker_number: string | null; breaker_label: string | null }>();
     fixtures = (results ?? []).map(fixtureJson);
+
+    const wallItemRows = await db(c)
+      .prepare(
+        `SELECT w.*, e.title as vault_entry_title
+         FROM home_wall_items w
+         LEFT JOIN entities e ON e.id = w.vault_entry_id
+         WHERE w.room_id IN (${placeholders})
+         ORDER BY w.created_at ASC`
+      )
+      .bind(...roomIds)
+      .all<HomeWallItemRow & { vault_entry_title: string | null }>();
+    wallItems = (wallItemRows.results ?? []).map(wallItemJson);
   }
-  return c.json({ floor: floorJson(floor), rooms: (rooms.results ?? []).map(roomJson), fixtures });
+  return c.json({ floor: floorJson(floor), rooms: (rooms.results ?? []).map(roomJson), fixtures, wallItems });
 });
 
 // ---- Rooms ----
@@ -180,6 +254,7 @@ interface RoomBody {
   y?: number;
   width?: number;
   depth?: number;
+  points?: ShapePoint[];
   notes?: string | null;
 }
 
@@ -191,11 +266,15 @@ homeRouter.post('/floors/:floorId/rooms', async (c) => {
   if (!body.name?.trim()) return c.json({ error: 'name is required' }, 400);
   if (!body.width || body.width <= 0 || !body.depth || body.depth <= 0) return c.json({ error: 'width and depth (in inches) are required' }, 400);
 
+  // A room always starts as a plain rectangle — its shape only becomes a
+  // polygon once reshaped on the canvas (see HomeFloorCanvas / homeGeometry.ts).
+  const points = rectanglePoints(Math.round(body.width), Math.round(body.depth));
+
   const id = uid();
   const ts = now();
   await db(c)
-    .prepare('INSERT INTO home_rooms (id, floor_id, name, x, y, width, depth, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    .bind(id, floorId, body.name.trim(), Math.round(body.x ?? 0), Math.round(body.y ?? 0), Math.round(body.width), Math.round(body.depth), body.notes?.trim() || null, ts, ts)
+    .prepare('INSERT INTO home_rooms (id, floor_id, name, x, y, width, depth, points, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .bind(id, floorId, body.name.trim(), Math.round(body.x ?? 0), Math.round(body.y ?? 0), Math.round(body.width), Math.round(body.depth), JSON.stringify(points), body.notes?.trim() || null, ts, ts)
     .run();
   const row = await db(c).prepare('SELECT * FROM home_rooms WHERE id = ?').bind(id).first<HomeRoomRow>();
   return c.json(roomJson(row!), 201);
@@ -221,15 +300,25 @@ homeRouter.patch('/rooms/:id', async (c) => {
     sets.push('y = ?');
     binds.push(Math.round(body.y));
   }
-  if (body.width !== undefined) {
-    if (body.width <= 0) return c.json({ error: 'width must be positive' }, 400);
-    sets.push('width = ?');
-    binds.push(Math.round(body.width));
-  }
-  if (body.depth !== undefined) {
-    if (body.depth <= 0) return c.json({ error: 'depth must be positive' }, 400);
-    sets.push('depth = ?');
-    binds.push(Math.round(body.depth));
+  if (body.points !== undefined) {
+    // The canvas sends the reshaped polygon directly (wall drag, notch
+    // insert) — width/depth are re-derived from it so every other query
+    // that only reads the bounding box stays correct without the
+    // frontend having to compute and send it separately.
+    if (!Array.isArray(body.points) || body.points.length < 4) return c.json({ error: 'points must have at least 4 vertices' }, 400);
+    const bbox = boundingBoxOf(body.points);
+    sets.push('points = ?', 'width = ?', 'depth = ?');
+    binds.push(JSON.stringify(body.points), Math.round(bbox.width), Math.round(bbox.depth));
+  } else if (body.width !== undefined || body.depth !== undefined) {
+    // Editing width/depth numerically (the room modal, for a still-simple
+    // rectangle) regenerates points as a plain rectangle — this is only
+    // meaningful for a room that hasn't been reshaped into a polygon yet.
+    if (body.width !== undefined && body.width <= 0) return c.json({ error: 'width must be positive' }, 400);
+    if (body.depth !== undefined && body.depth <= 0) return c.json({ error: 'depth must be positive' }, 400);
+    const width = Math.round(body.width ?? existing.width);
+    const depth = Math.round(body.depth ?? existing.depth);
+    sets.push('width = ?', 'depth = ?', 'points = ?');
+    binds.push(width, depth, JSON.stringify(rectanglePoints(width, depth)));
   }
   if (body.notes !== undefined) {
     sets.push('notes = ?');
@@ -246,7 +335,115 @@ homeRouter.patch('/rooms/:id', async (c) => {
 
 homeRouter.delete('/rooms/:id', async (c) => {
   const id = c.req.param('id');
-  await db(c).batch([db(c).prepare('DELETE FROM home_fixtures WHERE room_id = ?').bind(id), db(c).prepare('DELETE FROM home_rooms WHERE id = ?').bind(id)]);
+  await db(c).batch([
+    db(c).prepare('DELETE FROM home_fixtures WHERE room_id = ?').bind(id),
+    db(c).prepare('DELETE FROM home_wall_items WHERE room_id = ?').bind(id),
+    db(c).prepare('DELETE FROM home_rooms WHERE id = ?').bind(id),
+  ]);
+  return c.json({ ok: true });
+});
+
+// ---- Wall items (doors/windows) ----
+
+interface WallItemBody {
+  type?: string;
+  label?: string;
+  wallIndex?: number;
+  offset?: number;
+  width?: number;
+  swing?: 'left' | 'right' | null;
+  vaultEntryId?: string | null;
+  notes?: string | null;
+}
+
+async function wallItemWithJoin(c: { env: Env }, id: string) {
+  return db(c)
+    .prepare(`SELECT w.*, e.title as vault_entry_title FROM home_wall_items w LEFT JOIN entities e ON e.id = w.vault_entry_id WHERE w.id = ?`)
+    .bind(id)
+    .first<HomeWallItemRow & { vault_entry_title: string | null }>();
+}
+
+homeRouter.post('/rooms/:roomId/wall-items', async (c) => {
+  const roomId = c.req.param('roomId');
+  const room = await db(c).prepare('SELECT id FROM home_rooms WHERE id = ?').bind(roomId).first<{ id: string }>();
+  if (!room) return c.json({ error: 'room not found' }, 404);
+  const body = await c.req.json<WallItemBody>();
+  if (!isWallItemType(body.type)) return c.json({ error: `type must be one of ${WALL_ITEM_TYPES.join(', ')}` }, 400);
+  if (!body.label?.trim()) return c.json({ error: 'label is required' }, 400);
+
+  const id = uid();
+  const ts = now();
+  await db(c)
+    .prepare(
+      `INSERT INTO home_wall_items (id, room_id, type, label, wall_index, offset, width, swing, vault_entry_id, notes, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .bind(
+      id,
+      roomId,
+      body.type,
+      body.label.trim(),
+      Math.round(body.wallIndex ?? 0),
+      Math.round(body.offset ?? 0),
+      Math.round(body.width ?? 30),
+      body.type === 'door' ? body.swing ?? 'left' : null,
+      body.vaultEntryId || null,
+      body.notes?.trim() || null,
+      ts,
+      ts
+    )
+    .run();
+  const row = await wallItemWithJoin(c, id);
+  return c.json(wallItemJson(row!), 201);
+});
+
+homeRouter.patch('/wall-items/:id', async (c) => {
+  const id = c.req.param('id');
+  const existing = await db(c).prepare('SELECT * FROM home_wall_items WHERE id = ?').bind(id).first<HomeWallItemRow>();
+  if (!existing) return c.json({ error: 'not found' }, 404);
+  const body = await c.req.json<WallItemBody>();
+  const sets: string[] = [];
+  const binds: unknown[] = [];
+  if (body.label !== undefined) {
+    if (!body.label.trim()) return c.json({ error: 'label cannot be blank' }, 400);
+    sets.push('label = ?');
+    binds.push(body.label.trim());
+  }
+  if (body.wallIndex !== undefined) {
+    sets.push('wall_index = ?');
+    binds.push(Math.round(body.wallIndex));
+  }
+  if (body.offset !== undefined) {
+    sets.push('offset = ?');
+    binds.push(Math.round(body.offset));
+  }
+  if (body.width !== undefined) {
+    sets.push('width = ?');
+    binds.push(Math.max(1, Math.round(body.width)));
+  }
+  if (body.swing !== undefined && existing.type === 'door') {
+    sets.push('swing = ?');
+    binds.push(body.swing ?? 'left');
+  }
+  if (body.vaultEntryId !== undefined) {
+    sets.push('vault_entry_id = ?');
+    binds.push(body.vaultEntryId || null);
+  }
+  if (body.notes !== undefined) {
+    sets.push('notes = ?');
+    binds.push(body.notes?.trim() || null);
+  }
+  if (sets.length) {
+    sets.push('updated_at = ?');
+    binds.push(now(), id);
+    await db(c).prepare(`UPDATE home_wall_items SET ${sets.join(', ')} WHERE id = ?`).bind(...binds).run();
+  }
+  const row = await wallItemWithJoin(c, id);
+  return c.json(wallItemJson(row!));
+});
+
+homeRouter.delete('/wall-items/:id', async (c) => {
+  await db(c).prepare('DELETE FROM home_wall_items WHERE id = ?').bind(c.req.param('id')).run();
   return c.json({ ok: true });
 });
 

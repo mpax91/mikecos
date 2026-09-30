@@ -695,6 +695,7 @@ export interface HomeRoomRow {
   y: number;
   width: number;
   depth: number;
+  points: string | null; // JSON Point[] — see 0078_home_room_shapes.sql; width/depth stay the shape's bounding box
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -715,6 +716,23 @@ export interface HomeFixtureRow {
   breaker_id: string | null;
   smart_device: number; // 0/1
   smart_notes: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type HomeWallItemType = 'door' | 'window';
+
+export interface HomeWallItemRow {
+  id: string;
+  room_id: string;
+  type: HomeWallItemType;
+  label: string;
+  wall_index: number;
+  offset: number;
+  width: number;
+  swing: 'left' | 'right' | null; // doors only
+  vault_entry_id: string | null;
   notes: string | null;
   created_at: string;
   updated_at: string;

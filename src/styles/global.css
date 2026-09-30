@@ -15016,16 +15016,94 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 }
 
 /* A room draws literally to scale (width/depth are CSS px = inches ×
-   scale), so its own chrome — title, dims, kebab trigger, resize handle —
-   counter-scales by 1/scale to stay a fixed, legible screen size at every
-   zoom level instead of ballooning or vanishing with the room itself. */
+   scale), so its own chrome — title, dims, kebab trigger — counter-scales
+   by 1/scale to stay a fixed, legible screen size at every zoom level
+   instead of ballooning or vanishing with the room itself. The shape
+   itself (fill + walls, rectilinear polygon per src/lib/homeGeometry.ts)
+   is drawn by the SVG below, sized to the room's own bounding box in the
+   same inch units as everything else on the canvas — 1 SVG unit = 1 inch
+   = 1 CSS px before the shared world transform scales it. */
 .home-room {
   position: absolute;
   box-sizing: border-box;
-  border: 1.5px solid var(--color-accent);
-  background: rgba(47, 74, 60, 0.05);
-  border-radius: 3px;
   cursor: grab;
+}
+
+.home-room__svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.home-room__fill {
+  fill: rgba(47, 74, 60, 0.05);
+  stroke: none;
+}
+
+.home-room__wall {
+  fill: none;
+  stroke: var(--color-accent);
+  stroke-width: 1.5px;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+/* A fat, invisible hit target riding along each wall — much easier to
+   grab than the 1.5px visible stroke, especially at low zoom. Cursor
+   hints "drag perpendicular to this wall"; click (no drag) opens
+   WallMenu instead, decided in HomeFloorCanvas by how far the pointer
+   actually moved. */
+.home-room__wall-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 10px;
+  vector-effect: non-scaling-stroke;
+  pointer-events: stroke;
+}
+
+/* A door/window "erases" a short span of wall — drawn in the viewport's
+   own background so the break reads as an opening — then the leaf/arc or
+   window lines draw on top of that gap. */
+.home-wall-item__gap {
+  stroke: var(--color-sidebar);
+  stroke-width: 4px;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.home-wall-item__leaf {
+  stroke: var(--color-image-accent);
+  stroke-width: 1.5px;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.home-wall-item__arc {
+  fill: none;
+  stroke: var(--color-image-accent);
+  stroke-width: 1px;
+  stroke-dasharray: 3 2;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.home-wall-item__window-line {
+  stroke: var(--color-doc);
+  stroke-width: 1.5px;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+/* Fat invisible hit target along a door/window's own span — drag along
+   the wall to reposition (offset only, never off its own wall); click to
+   edit. */
+.home-wall-item__hit {
+  stroke: transparent;
+  stroke-width: 10px;
+  vector-effect: non-scaling-stroke;
+  pointer-events: stroke;
 }
 
 .home-room__header {
@@ -15053,23 +15131,6 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   font-size: 11px;
   color: var(--color-muted);
   font-variant-numeric: tabular-nums;
-}
-
-.home-room__resize-handle {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  transform-origin: bottom right;
-  width: 14px;
-  height: 14px;
-  cursor: nwse-resize;
-  border-right: 3px solid var(--color-accent);
-  border-bottom: 3px solid var(--color-accent);
-  opacity: 0.6;
-}
-
-.home-room__resize-handle:hover {
-  opacity: 1;
 }
 
 /* Fixtures are nested inside their room's DOM element and positioned

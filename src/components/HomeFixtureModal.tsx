@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import type { ElectricalBreaker, ElectricalPanel, Entity, HomeFixture, HomeFixtureType } from '../api/types';
+import type { ElectricalBreaker, ElectricalPanel, HomeFixture, HomeFixtureType } from '../api/types';
 import { feetInchesToInches, inchesToFeet, inchesRemainder } from '../lib/homeUnits';
 import { Modal } from './Modal';
+import { VaultLinkPicker } from './VaultLinkPicker';
 
 export const FIXTURE_TYPE_LABEL: Record<HomeFixtureType, string> = {
   appliance: 'Appliance',
@@ -65,9 +66,6 @@ export function HomeFixtureModal({
 
   const [vaultEntryId, setVaultEntryId] = useState(initial?.vaultEntryId ?? null);
   const [vaultEntryTitle, setVaultEntryTitle] = useState(initial?.vaultEntryTitle ?? null);
-  const [vaultQuery, setVaultQuery] = useState('');
-  const [vaultEntries, setVaultEntries] = useState<Entity[] | null>(null);
-  const [vaultPickerOpen, setVaultPickerOpen] = useState(false);
 
   const [breakerId, setBreakerId] = useState(initial?.breakerId ?? null);
   const [panels, setPanels] = useState<ElectricalPanel[] | null>(null);
@@ -76,10 +74,6 @@ export function HomeFixtureModal({
   const hasFootprint = HAS_FOOTPRINT.includes(type);
   const hasBreaker = HAS_BREAKER.includes(type);
   const hasSmart = HAS_SMART.includes(type);
-
-  useEffect(() => {
-    if (vaultPickerOpen && vaultEntries === null) api.listVaultEntries().then(setVaultEntries).catch(() => setVaultEntries([]));
-  }, [vaultPickerOpen, vaultEntries]);
 
   useEffect(() => {
     if (!hasBreaker) return;
@@ -97,15 +91,6 @@ export function HomeFixtureModal({
   const width = feetInchesToInches(widthFt, widthIn);
   const depth = feetInchesToInches(depthFt, depthIn);
   const valid = label.trim().length > 0;
-
-  const filteredVaultEntries = (vaultEntries ?? []).filter((e) => e.title.toLowerCase().includes(vaultQuery.trim().toLowerCase())).slice(0, 25);
-
-  async function createAndLinkVaultEntry() {
-    const created = await api.createVaultEntry({ title: label.trim() || 'Untitled Entry' });
-    setVaultEntryId(created.id);
-    setVaultEntryTitle(created.title);
-    setVaultPickerOpen(false);
-  }
 
   function save() {
     if (!valid) return;
@@ -156,67 +141,17 @@ export function HomeFixtureModal({
         </div>
       )}
 
-      <div className="wallet-editor__field">
-        <span>Vault entry</span>
-        {vaultEntryId && !vaultPickerOpen ? (
-          <div className="home-vault-link">
-            <span>{vaultEntryTitle ?? 'Linked entry'}</span>
-            <button type="button" className="btn btn--ghost btn--sm" onClick={() => setVaultPickerOpen(true)}>
-              Change
-            </button>
-            <button
-              type="button"
-              className="btn btn--ghost btn--sm"
-              onClick={() => {
-                setVaultEntryId(null);
-                setVaultEntryTitle(null);
-              }}
-            >
-              Unlink
-            </button>
-          </div>
-        ) : vaultPickerOpen ? (
-          <div className="home-vault-picker">
-            <input
-              autoFocus
-              value={vaultQuery}
-              onChange={(e) => setVaultQuery(e.target.value)}
-              placeholder="Search Vault entries…"
-            />
-            <button type="button" className="btn btn--ghost btn--sm" onClick={createAndLinkVaultEntry}>
-              + Create new Vault entry{label.trim() ? ` "${label.trim()}"` : ''}
-            </button>
-            {vaultEntries === null ? (
-              <div className="home-vault-picker__hint">Loading…</div>
-            ) : filteredVaultEntries.length === 0 ? (
-              <div className="home-vault-picker__hint">No matches.</div>
-            ) : (
-              <div className="home-vault-picker__list">
-                {filteredVaultEntries.map((e) => (
-                  <button
-                    key={e.id}
-                    type="button"
-                    className="home-vault-picker__item"
-                    onClick={() => {
-                      setVaultEntryId(e.id);
-                      setVaultEntryTitle(e.title);
-                      setVaultPickerOpen(false);
-                    }}
-                  >
-                    {e.title}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        ) : (
-          <button type="button" className="btn btn--ghost btn--sm" style={{ alignSelf: 'flex-start' }} onClick={() => setVaultPickerOpen(true)}>
-            Link or create a Vault entry
-          </button>
-        )}
-        <div className="wallet-editor__hint">
-          Purchase info, serial number, and the manual all live on the Vault entry — this just points at it so clicking the fixture takes you straight there.
-        </div>
+      <VaultLinkPicker
+        vaultEntryId={vaultEntryId}
+        vaultEntryTitle={vaultEntryTitle}
+        suggestedTitle={label}
+        onChange={(v) => {
+          setVaultEntryId(v.vaultEntryId);
+          setVaultEntryTitle(v.vaultEntryTitle);
+        }}
+      />
+      <div className="wallet-editor__hint" style={{ marginTop: -8 }}>
+        Purchase info, serial number, and the manual all live on the Vault entry — this just points at it so clicking the fixture takes you straight there.
       </div>
 
       {hasBreaker && (

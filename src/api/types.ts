@@ -2043,6 +2043,11 @@ export interface HomeFloor {
   updatedAt: string;
 }
 
+export interface HomePoint {
+  x: number;
+  y: number;
+}
+
 export interface HomeRoom {
   id: string;
   floorId: string;
@@ -2051,6 +2056,25 @@ export interface HomeRoom {
   y: number;
   width: number;
   depth: number;
+  points: HomePoint[]; // the room's real shape — rectilinear polygon, inches, relative to (x,y)'s bounding box. See src/lib/homeGeometry.ts.
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type HomeWallItemType = 'door' | 'window';
+
+export interface HomeWallItem {
+  id: string;
+  roomId: string;
+  type: HomeWallItemType;
+  label: string;
+  wallIndex: number;
+  offset: number;
+  width: number;
+  swing: 'left' | 'right' | null; // doors only
+  vaultEntryId: string | null;
+  vaultEntryTitle: string | null;
   notes: string | null;
   createdAt: string;
   updatedAt: string;
@@ -2083,6 +2107,7 @@ export interface HomeFloorLayout {
   floor: HomeFloor;
   rooms: HomeRoom[];
   fixtures: HomeFixture[];
+  wallItems: HomeWallItem[];
 }
 
 export interface ElectricalPanel {

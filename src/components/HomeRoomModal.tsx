@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { HomeRoom } from '../api/types';
-import { feetInchesToInches, inchesToFeet, inchesRemainder } from '../lib/homeUnits';
+import { feetInchesToInches, inchesToFeet, inchesRemainder, formatFeetInches } from '../lib/homeUnits';
+import { roomHasCustomShape } from '../lib/homeGeometry';
 import { Modal } from './Modal';
 
 export interface HomeRoomFormValue {
@@ -32,13 +33,15 @@ export function HomeRoomModal({
   const [depthIn, setDepthIn] = useState(initial ? String(inchesRemainder(initial.depth)) : '');
   const [notes, setNotes] = useState(initial?.notes ?? '');
 
+  const customShape = initial ? roomHasCustomShape(initial.points) : false;
+
   const width = feetInchesToInches(widthFt, widthIn);
   const depth = feetInchesToInches(depthFt, depthIn);
-  const valid = name.trim() && width > 0 && depth > 0;
+  const valid = name.trim() && (customShape || (width > 0 && depth > 0));
 
   function save() {
     if (!valid) return;
-    onSave({ name: name.trim(), width, depth, notes: notes.trim() || null });
+    onSave({ name: name.trim(), width: customShape ? initial!.width : width, depth: customShape ? initial!.depth : depth, notes: notes.trim() || null });
   }
 
   return (
@@ -48,26 +51,32 @@ export function HomeRoomModal({
         <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Kitchen, Primary Bedroom" />
       </label>
 
-      <div className="bar-item-modal__row">
-        <label className="wallet-editor__field">
-          <span>Width</span>
-          <div className="home-feet-inches">
-            <input type="number" min={0} value={widthFt} onChange={(e) => setWidthFt(e.target.value)} placeholder="12" />
-            <span>ft</span>
-            <input type="number" min={0} max={11} value={widthIn} onChange={(e) => setWidthIn(e.target.value)} placeholder="6" />
-            <span>in</span>
-          </div>
-        </label>
-        <label className="wallet-editor__field">
-          <span>Depth</span>
-          <div className="home-feet-inches">
-            <input type="number" min={0} value={depthFt} onChange={(e) => setDepthFt(e.target.value)} placeholder="14" />
-            <span>ft</span>
-            <input type="number" min={0} max={11} value={depthIn} onChange={(e) => setDepthIn(e.target.value)} placeholder="0" />
-            <span>in</span>
-          </div>
-        </label>
-      </div>
+      {customShape ? (
+        <div className="wallet-editor__hint">
+          This room's been shaped on the canvas ({formatFeetInches(initial!.width)} × {formatFeetInches(initial!.depth)} bounding box) — drag its walls there to resize. Name and notes only here.
+        </div>
+      ) : (
+        <div className="bar-item-modal__row">
+          <label className="wallet-editor__field">
+            <span>Width</span>
+            <div className="home-feet-inches">
+              <input type="number" min={0} value={widthFt} onChange={(e) => setWidthFt(e.target.value)} placeholder="12" />
+              <span>ft</span>
+              <input type="number" min={0} max={11} value={widthIn} onChange={(e) => setWidthIn(e.target.value)} placeholder="6" />
+              <span>in</span>
+            </div>
+          </label>
+          <label className="wallet-editor__field">
+            <span>Depth</span>
+            <div className="home-feet-inches">
+              <input type="number" min={0} value={depthFt} onChange={(e) => setDepthFt(e.target.value)} placeholder="14" />
+              <span>ft</span>
+              <input type="number" min={0} max={11} value={depthIn} onChange={(e) => setDepthIn(e.target.value)} placeholder="0" />
+              <span>in</span>
+            </div>
+          </label>
+        </div>
+      )}
 
       <label className="wallet-editor__field">
         <span>Notes</span>
