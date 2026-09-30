@@ -44,6 +44,7 @@ import { walletRouter } from './wallet';
 import { rewardsRouter } from './rewards';
 import { paymentCardsRouter } from './paymentCards';
 import { plexRouter } from './plex';
+import { mediaCatalogRouter } from './mediaCatalog';
 import { emailRouter, syncAllAccounts } from './email';
 import { bookmarksRouter } from './bookmarks';
 import { cloudRouter } from './cloud';
@@ -73,6 +74,7 @@ app.route('/api/wallet', walletRouter);
 app.route('/api/rewards', rewardsRouter);
 app.route('/api/payment-cards', paymentCardsRouter);
 app.route('/api/plex', plexRouter);
+app.route('/api/media', mediaCatalogRouter);
 app.route('/api/email', emailRouter);
 app.route('/api/bookmarks', bookmarksRouter);
 app.route('/api/cloud', cloudRouter);
@@ -5894,13 +5896,17 @@ app.get('/api/top-news', async (c) => {
 // status lifecycle or folder nesting; see VaultPage's own header comment),
 // and showing its children under a "📁 Projects" chip read as "there's a
 // Project here" when there wasn't one.
-// 'plex' rides along at the end rather than sitting with the other twelve:
-// it's not a chip-narrowing group like the rest (see CHIP_GROUPS on the
-// frontend) but an opt-in checkbox exactly like 'contacts', *and* its
-// underlying table is far bigger than anything else searched here, so
-// `runSearch` gates it behind its own explicit flag (like `includeArchived`)
-// rather than running it just because scope defaults to "everything".
-const SEARCH_GROUPS = ['notes', 'jots', 'lists', 'projects', 'vault', 'wallet', 'rewards', 'payment_cards', 'boards', 'contacts', 'journal', 'meeting_notes', 'links', 'plex'] as const;
+// 'media' rides along at the end rather than sitting with the other
+// twelve: it's not a chip-narrowing group like the rest (see CHIP_GROUPS
+// on the frontend) but an opt-in checkbox exactly like 'contacts', *and*
+// its underlying table (plex_items, mainly — media_items is tiny) is far
+// bigger than anything else searched here, so `runSearch` gates it behind
+// its own explicit flag (like `includeArchived`) rather than running it
+// just because scope defaults to "everything". Covers all three of the
+// Media section's sources (Plex, physical, digital) as one group/one
+// checkbox — see mediaCatalog.ts's header comment for why physical/
+// digital are a separate table rather than living in plex_items itself.
+const SEARCH_GROUPS = ['notes', 'jots', 'lists', 'projects', 'vault', 'wallet', 'rewards', 'payment_cards', 'boards', 'contacts', 'journal', 'meeting_notes', 'links', 'media'] as const;
 type SearchGroup = (typeof SEARCH_GROUPS)[number];
 
 interface SearchResult {
@@ -5956,7 +5962,7 @@ interface SearchGroupResultRow {
 // stops asking SQLite to LIKE-match more than a safe prefix of it.
 const MAX_LIKE_PATTERN_TERM_LENGTH = 40;
 
-async function runSearch(db: D1Database, q: string, scope: Set<SearchGroup>, includeArchived: boolean, includePlex: boolean): Promise<SearchGroupResultRow[]> {
+async function runSearch(db: D1Database, q: string, scope: Set<SearchGroup>, includeArchived: boolean, includeMedia: boolean): Promise<SearchGroupResultRow[]> {
   const like = `%${q.slice(0, MAX_LIKE_PATTERN_TERM_LENGTH)}%`;
   const results: SearchResult[] = [];
 
@@ -5972,10 +5978,10 @@ async function runSearch(db: D1Database, q: string, scope: Set<SearchGroup>, inc
   // Requires both the group AND the explicit opt-in flag — plex_items can
   // run into the tens of thousands of rows for a large library, so unlike
   // every other group here this one only runs a query when Mike has
-  // actually checked the "Plex" box, not on every keystroke by default.
-  const wantsPlex = scope.has('plex') && includePlex;
+  // actually checked the "Media" box, not on every keystroke by default.
+  const wantsMedia = scope.has('media') && includeMedia;
 
-  const [entityRows, boardRows, boardItemRows, contactRows, contactNoteRows, journalRows, meetingRows, linkRows, walletRows, rewardsCardRows, rewardsBonusRows, rewardsPerkRows, paymentCardRows, plexRows] = await Promise.all([
+  const [entityRows, boardRows, boardItemRows, contactRows, contactNoteRows, journalRows, meetingRows, linkRows, walletRows, rewardsCardRows, rewardsBonusRows, rewardsPerkRows, paymentCardRows, plexRows, mediaCatalogRows] = await Promise.all([
     wantsEntities
       ? db
           .prepare(
@@ -6063,7 +6069,7 @@ async function runSearch(db: D1Database, q: string, scope: Set<SearchGroup>, inc
     // Title only — Plex's own catalogue has no notes/body text to search,
     // and matching on file_path would surface Mike's server directory
     // structure in search results, which isn't useful to anyone here.
-    wantsPlex
+    wantsMedia
       ? db
           .prepare(
             `SELECT p.id, p.library_id, p.type, p.title, p.year, p.plex_updated_at, l.title as library_title
@@ -6072,6 +6078,19 @@ async function runSearch(db: D1Database, q: string, scope: Set<SearchGroup>, inc
           )
           .bind(like)
           .all<{ id: string; library_id: string; type: string; title: string; year: number | null; plex_updated_at: string | null; library_title: string }>()
+      : Promise.resolve({ results: [] as any[] }),
+    // Hand-entered physical/digital catalog — same opt-in gate as the
+    // Plex query above (they're one "Media" checkbox), even though this
+    // table is small; keeping both under one flag is simpler than a
+    // second opt-in Mike would have to also remember exists.
+    wantsMedia
+      ? db.prepare(`SELECT id, title, author, format, updated_at FROM media_items WHERE title LIKE ? OR author LIKE ? ORDER BY updated_at DESC LIMIT 40`).bind(like, like).all<{
+          id: string;
+          title: string;
+          author: string | null;
+          format: string;
+          updated_at: string;
+        }>()
       : Promise.resolve({ results: [] as any[] }),
   ]);
 
@@ -6321,20 +6340,40 @@ async function runSearch(db: D1Database, q: string, scope: Set<SearchGroup>, inc
     });
   }
 
-  // ---- plex ----
+  // ---- media (Plex + the hand-entered physical/digital catalog) ----
   for (const p of plexRows.results ?? []) {
     const score = matchScore(p.title, null, q);
     if (score === 0) continue;
     results.push({
       id: p.id,
       kind: p.type,
-      group: 'plex',
+      group: 'media',
       title: p.year ? `${p.title} (${p.year})` : p.title,
       snippet: p.library_title,
       parentTitle: null,
-      path: '/plex',
+      path: '/media',
       openId: p.id,
       updatedAt: p.plex_updated_at ?? '1970-01-01',
+      score,
+    });
+  }
+  const MEDIA_FORMAT_LABEL: Record<string, string> = { physical_book: 'Physical Book', ebook: 'eBook', audiobook: 'Audiobook' };
+  for (const m of mediaCatalogRows.results ?? []) {
+    const score = matchScore(m.title, m.author, q);
+    if (score === 0) continue;
+    // Prefixed so MediaLibraryPanel's location.state handling can tell a
+    // hand-entered catalog id apart from a Plex item id without them ever
+    // needing to share an id space — see its openId effect.
+    results.push({
+      id: m.id,
+      kind: 'media_item',
+      group: 'media',
+      title: m.title,
+      snippet: [m.author, MEDIA_FORMAT_LABEL[m.format] ?? m.format].filter(Boolean).join(' · '),
+      parentTitle: null,
+      path: '/media',
+      openId: `catalog:${m.id}`,
+      updatedAt: m.updated_at,
       score,
     });
   }
@@ -6362,9 +6401,9 @@ app.get('/api/search', async (c) => {
     scopeParam ? (scopeParam.split(',').filter((s) => (SEARCH_GROUPS as readonly string[]).includes(s)) as SearchGroup[]) : SEARCH_GROUPS
   );
   const includeArchived = c.req.query('archived') === '1';
-  const includePlex = c.req.query('plex') === '1';
+  const includeMedia = c.req.query('media') === '1';
 
-  const groups = await runSearch(c.env.DB, q, scope, includeArchived, includePlex);
+  const groups = await runSearch(c.env.DB, q, scope, includeArchived, includeMedia);
   return c.json({ groups });
 });
 

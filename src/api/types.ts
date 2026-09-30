@@ -1510,7 +1510,7 @@ export interface NewsSavedArticle {
 
 // ---- Global search (Cmd/Ctrl+K palette) ----
 
-export type SearchGroupKey = 'notes' | 'jots' | 'lists' | 'projects' | 'vault' | 'wallet' | 'rewards' | 'payment_cards' | 'boards' | 'contacts' | 'journal' | 'meeting_notes' | 'links' | 'plex';
+export type SearchGroupKey = 'notes' | 'jots' | 'lists' | 'projects' | 'vault' | 'wallet' | 'rewards' | 'payment_cards' | 'boards' | 'contacts' | 'journal' | 'meeting_notes' | 'links' | 'media';
 
 export interface SearchResult {
   id: string;
@@ -1926,6 +1926,23 @@ export interface PlexMissingEpisode {
   airedOn: string;
   detectedAt: string;
   dismissed: boolean;
+}
+
+// The hand-entered physical/digital catalog — see worker/migrations/
+// 0073_media_catalog.sql and worker/src/mediaCatalog.ts. Deliberately just
+// a catalog (title/author/format/notes), no read/listened status.
+export type MediaCatalogFormat = 'physical_book' | 'ebook' | 'audiobook';
+export type MediaSource = 'plex' | 'physical' | 'digital';
+
+export interface MediaCatalogItem {
+  id: string;
+  title: string;
+  author: string | null;
+  format: MediaCatalogFormat;
+  source: 'physical' | 'digital'; // derived from format — see sourceForFormat in mediaCatalog.ts
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface PlexSyncResult {

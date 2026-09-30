@@ -24,7 +24,7 @@ import { CloudPage } from './pages/CloudPage';
 import { VaultPage } from './pages/VaultPage';
 import { VaultRollupsPage } from './pages/VaultRollupsPage';
 import { WalletPage } from './pages/WalletPage';
-import { PlexPage } from './pages/PlexPage';
+import { MediaPage } from './pages/MediaPage';
 import { HabitsPage } from './pages/HabitsPage';
 import { InboxPage } from './pages/InboxPage';
 import { ListsPage } from './pages/ListsPage';
@@ -83,7 +83,7 @@ export default function App() {
             <Route path="/vault/rollups" element={<VaultRollupsPage />} />
             <Route path="/vault/:id" element={<VaultPage />} />
             <Route path="/wallet" element={<WalletPage />} />
-            <Route path="/plex" element={<PlexPage />} />
+            <Route path="/media" element={<MediaPage />} />
             <Route path="/habits" element={<HabitsPage />} />
             <Route path="/inbox" element={<InboxPage />} />
             <Route path="/lists" element={<ListsPage />} />

@@ -149,12 +149,37 @@ plexRouter.get('/items/:id', async (c) => {
 // GET /thumb/:id — proxies Plex's own artwork through the Worker so the
 // frontend never needs the Plex token client-side. Long cache since art
 // essentially never changes once matched.
+// GET /thumb/:id?w=&h= — proxies Plex's own artwork, resized on the way
+// through when w/h are given. The Media grid always passes its actual
+// display size (see MediaLibraryPanel's THUMB_* constants) rather than
+// pulling down Plex's full-resolution poster for a ~90px tile — that
+// mismatch was the real source of the grid feeling slow to load, not the
+// grid density itself. Uses Plex's own `/photo/:/transcode` endpoint
+// (its standard on-the-fly image resize) rather than fetching full-res
+// and resizing here, so the bytes crossing the wire are already small.
 plexRouter.get('/thumb/:id', async (c) => {
   const row = await c.env.DB.prepare('SELECT thumb_key FROM plex_items WHERE id = ?').bind(c.req.param('id')).first<{ thumb_key: string | null }>();
   if (!row?.thumb_key) return c.notFound();
   if (!c.env.PLEX_SERVER_URL || !c.env.PLEX_TOKEN) return c.json({ error: 'Plex not connected' }, 503);
-  const url = new URL(row.thumb_key, c.env.PLEX_SERVER_URL.replace(/\/$/, '') + '/');
-  url.searchParams.set('X-Plex-Token', c.env.PLEX_TOKEN);
+  const serverBase = c.env.PLEX_SERVER_URL.replace(/\/$/, '') + '/';
+  const w = c.req.query('w');
+  const h = c.req.query('h');
+
+  let url: URL;
+  if (w || h) {
+    const sourceUrl = new URL(row.thumb_key, serverBase);
+    sourceUrl.searchParams.set('X-Plex-Token', c.env.PLEX_TOKEN);
+    url = new URL('/photo/:/transcode', serverBase);
+    url.searchParams.set('width', w || h || '200');
+    url.searchParams.set('height', h || w || '200');
+    url.searchParams.set('minSize', '1');
+    url.searchParams.set('url', sourceUrl.pathname + sourceUrl.search);
+    url.searchParams.set('X-Plex-Token', c.env.PLEX_TOKEN);
+  } else {
+    url = new URL(row.thumb_key, serverBase);
+    url.searchParams.set('X-Plex-Token', c.env.PLEX_TOKEN);
+  }
+
   const res = await fetch(url.toString());
   if (!res.ok) return c.notFound();
   return new Response(res.body, { headers: { 'content-type': res.headers.get('content-type') ?? 'image/jpeg', 'cache-control': 'public, max-age=86400' } });

@@ -24,12 +24,12 @@ const GROUP_META: Record<SearchGroupKey, { label: string; icon: string }> = {
   journal: { label: 'Journal', icon: '📔' },
   meeting_notes: { label: 'Meeting Notes', icon: '🗓️' },
   links: { label: 'Links', icon: '🔗' },
-  plex: { label: 'Plex', icon: '🎬' },
+  media: { label: 'Media', icon: '🎬' },
 };
-// Render order for results (includes Contacts and Plex); CHIP_GROUPS is the
+// Render order for results (includes Contacts and Media); CHIP_GROUPS is the
 // narrowing chip row and deliberately leaves both out — see visibleGroups'
 // comment for why each is a separate on/off checkbox instead.
-const GROUP_ORDER: SearchGroupKey[] = ['notes', 'jots', 'lists', 'projects', 'vault', 'wallet', 'rewards', 'payment_cards', 'boards', 'contacts', 'journal', 'meeting_notes', 'links', 'plex'];
+const GROUP_ORDER: SearchGroupKey[] = ['notes', 'jots', 'lists', 'projects', 'vault', 'wallet', 'rewards', 'payment_cards', 'boards', 'contacts', 'journal', 'meeting_notes', 'links', 'media'];
 const CHIP_GROUPS: SearchGroupKey[] = ['notes', 'jots', 'lists', 'projects', 'vault', 'wallet', 'rewards', 'payment_cards', 'boards', 'journal', 'meeting_notes', 'links'];
 const DEFAULT_VISIBLE_PER_GROUP = 4;
 
@@ -69,7 +69,7 @@ export function SearchPalette() {
   const [expanded, setExpanded] = useState<Set<SearchGroupKey>>(new Set());
   const [includeArchived, setIncludeArchived] = useState(false);
   const [includeContacts, setIncludeContacts] = useState(false);
-  const [includePlex, setIncludePlex] = useState(false);
+  const [includeMedia, setIncludeMedia] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<number | null>(null);
@@ -123,7 +123,7 @@ export function SearchPalette() {
       const seq = ++requestSeq.current;
       setLoading(true);
       api
-        .search(q, [], includeArchived, includePlex)
+        .search(q, [], includeArchived, includeMedia)
         .then((res) => {
           if (seq !== requestSeq.current) return; // a newer keystroke already superseded this response
           setGroups(res.groups);
@@ -137,25 +137,25 @@ export function SearchPalette() {
     return () => {
       if (debounceRef.current) window.clearTimeout(debounceRef.current);
     };
-  }, [query, includeArchived, includePlex, open]);
+  }, [query, includeArchived, includeMedia, open]);
 
   const visibleGroups = useMemo(() => {
     if (!groups) return [];
-    // Contacts and Plex are both separate on/off checkboxes, not part of
+    // Contacts and Media are both separate on/off checkboxes, not part of
     // the chip narrowing — Contacts because there are enough of them that
-    // including every hit by default drowns out everything else, Plex
-    // because the underlying library can be huge and the backend doesn't
-    // even run that query unless the box is checked (see api.search). The
-    // other chips stay pure, uniform AND-narrowing: no chips active shows
-    // everything (except Contacts/Plex); one or more active narrows to
-    // just that selection.
+    // including every hit by default drowns out everything else, Media
+    // because the underlying Plex library can be huge and the backend
+    // doesn't even run that query unless the box is checked (see
+    // api.search). The other chips stay pure, uniform AND-narrowing: no
+    // chips active shows everything (except Contacts/Media); one or more
+    // active narrows to just that selection.
     const filtered = groups.filter((g) => {
       if (g.key === 'contacts') return includeContacts;
-      if (g.key === 'plex') return includePlex;
+      if (g.key === 'media') return includeMedia;
       return activeChips.size === 0 || activeChips.has(g.key);
     });
     return GROUP_ORDER.map((key) => filtered.find((g) => g.key === key)).filter((g): g is SearchGroupResult => !!g && g.results.length > 0);
-  }, [groups, activeChips, includeContacts, includePlex]);
+  }, [groups, activeChips, includeContacts, includeMedia]);
 
   const flatRows: FlatRow[] = useMemo(() => {
     const rows: FlatRow[] = [];
@@ -253,8 +253,8 @@ export function SearchPalette() {
               Contacts
             </label>
             <label className="search-palette__archived-toggle">
-              <input type="checkbox" checked={includePlex} onChange={(e) => setIncludePlex(e.target.checked)} />
-              Plex
+              <input type="checkbox" checked={includeMedia} onChange={(e) => setIncludeMedia(e.target.checked)} />
+              Media
             </label>
           </div>
         </div>

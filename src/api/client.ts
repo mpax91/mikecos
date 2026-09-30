@@ -1,6 +1,6 @@
 import type { AuthenticationResponseJSON, PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON, RegistrationResponseJSON } from '@simplewebauthn/browser';
 import type { AuthCredentialSummary, AuthStatus, Bet, BetLeg, BetGameNote, BetPromo, BetPromoStatus, BetScheduleGame, BetTransaction, BetTransactionType, VaultEntryDetail, VaultFact, BriefingResponse, CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, CreditScoreEntry, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitDirection, HabitEvent, HabitLog, HabitSummary, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsFeedsResponse, NewsFolder, NewsSavedArticle, NewsSettings, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, VoterFieldsBackfillChunkResponse,
-  ContactAskResponse, BetGameEnrichment, VaultFactLabel, VaultRollupGroup, WalletCard, WalletCardFact, WalletCategory, WalletCardIdSecret, RewardsCard, RewardsBonus, RewardsPerk, RewardsImportResult, RewardsMerchant, RewardsOffer, PaymentCard, PaymentCardFact, PaymentCardSecrets, PlexLibrary, PlexItem, PlexItemDetail, PlexIssue, PlexMissingEpisode, PlexSyncChunkResult, PlexAiringCheckChunkResult, PlexAiringScanChunkResult, WeatherResponse, WeekResponse, EmailAccount, EmailInboxFeed, EmailPeekResult, EmailSyncResult, BookmarksResponse, BookmarksImportResult, CloudProviderId, CloudProviderInfo, CloudAccount, CloudBrowseResponse, CloudSearchResponse } from './types';
+  ContactAskResponse, BetGameEnrichment, VaultFactLabel, VaultRollupGroup, WalletCard, WalletCardFact, WalletCategory, WalletCardIdSecret, RewardsCard, RewardsBonus, RewardsPerk, RewardsImportResult, RewardsMerchant, RewardsOffer, PaymentCard, PaymentCardFact, PaymentCardSecrets, PlexLibrary, PlexItem, PlexItemDetail, PlexIssue, PlexMissingEpisode, PlexSyncChunkResult, PlexAiringCheckChunkResult, PlexAiringScanChunkResult, MediaCatalogItem, MediaCatalogFormat, WeatherResponse, WeekResponse, EmailAccount, EmailInboxFeed, EmailPeekResult, EmailSyncResult, BookmarksResponse, BookmarksImportResult, CloudProviderId, CloudProviderInfo, CloudAccount, CloudBrowseResponse, CloudSearchResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -177,14 +177,15 @@ export const api = {
 
   /** Global search (Cmd/Ctrl+K palette). `scope` empty/omitted searches
    * every group; pass a subset to narrow (combinable, e.g. ['jots','notes']).
-   * `includePlex` is a separate opt-in flag rather than just adding 'plex'
-   * to scope — plex_items can be huge, so the backend only runs that query
-   * when this is explicitly true, not on every keystroke by default. */
-  search: (q: string, scope: SearchGroupKey[] = [], includeArchived = false, includePlex = false) => {
+   * `includeMedia` is a separate opt-in flag rather than just adding
+   * 'media' to scope — plex_items can be huge, so the backend only runs
+   * that query (Plex + the physical/digital catalog together) when this
+   * is explicitly true, not on every keystroke by default. */
+  search: (q: string, scope: SearchGroupKey[] = [], includeArchived = false, includeMedia = false) => {
     const params = new URLSearchParams({ q });
     if (scope.length) params.set('scope', scope.join(','));
     if (includeArchived) params.set('archived', '1');
-    if (includePlex) params.set('plex', '1');
+    if (includeMedia) params.set('media', '1');
     return request<SearchResponse>(`/api/search?${params.toString()}`);
   },
 
@@ -1201,7 +1202,7 @@ export const api = {
     // Flattens a library's root listing straight to one item type instead
     // of the usual top-level grouping (e.g. Audiobooks: straight to book
     // titles ("album"s in Plex's own model) rather than authors first —
-    // see PlexLibraryPanel. Ignored by the backend outside the root
+    // see MediaLibraryPanel. Ignored by the backend outside the root
     // (libraryId set, no parentId) case.
     if (params.type) qs.set('type', params.type);
     return request<PlexItem[]>(`/api/plex/items?${qs.toString()}`);
@@ -1209,9 +1210,14 @@ export const api = {
 
   getPlexItem: (id: string) => request<PlexItemDetail>(`/api/plex/items/${id}`),
 
-  plexThumbUrl: (id: string) => `${API_BASE}/api/plex/thumb/${id}`,
+  // `w`/`h` request an on-the-fly resized image from Plex instead of its
+  // full-resolution poster — pass the tile's actual display size (see
+  // MediaLibraryPanel's THUMB_* constants; posters are 2:3, so both
+  // dimensions matter). Omit for the full-res image (used by the detail
+  // modal, which actually displays it that large).
+  plexThumbUrl: (id: string, w?: number, h?: number) => `${API_BASE}/api/plex/thumb/${id}${w || h ? `?w=${w ?? ''}&h=${h ?? ''}` : ''}`,
 
-  // One bounded chunk — the caller (PlexLibraryPanel) polls this
+  // One bounded chunk — the caller (MediaLibraryPanel) polls this
   // repeatedly until the response says `done`. See worker/src/plexSync.ts.
   syncPlexLibraryChunk: () => request<PlexSyncChunkResult>('/api/plex/sync', { method: 'POST' }),
 
@@ -1228,6 +1234,25 @@ export const api = {
 
   dismissPlexMissingEpisode: (id: string, dismissed: boolean) =>
     request<PlexMissingEpisode>(`/api/plex/missing-episodes/${id}`, { method: 'PATCH', body: JSON.stringify({ dismissed }) }),
+
+  // ---- Media catalog: hand-entered physical/digital items (0073_media_catalog.sql) ----
+
+  listMediaCatalog: (params: { q?: string; format?: 'physical' | 'digital' | MediaCatalogFormat } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.q) qs.set('q', params.q);
+    if (params.format) qs.set('format', params.format);
+    return request<MediaCatalogItem[]>(`/api/media/items?${qs.toString()}`);
+  },
+
+  getMediaCatalogItem: (id: string) => request<MediaCatalogItem>(`/api/media/items/${id}`),
+
+  createMediaCatalogItem: (item: { title: string; author?: string | null; format: MediaCatalogFormat; notes?: string | null }) =>
+    request<MediaCatalogItem>('/api/media/items', { method: 'POST', body: JSON.stringify(item) }),
+
+  updateMediaCatalogItem: (id: string, patch: Partial<{ title: string; author: string | null; format: MediaCatalogFormat; notes: string | null }>) =>
+    request<MediaCatalogItem>(`/api/media/items/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+
+  deleteMediaCatalogItem: (id: string) => request<{ ok: true }>(`/api/media/items/${id}`, { method: 'DELETE' }),
 
   // ---- Inbox ----
 

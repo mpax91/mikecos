@@ -69,7 +69,7 @@ export function PlexAiringPanel() {
   // A full-history scan walks every show's *entire* TVMaze episode list
   // (not just the last few days), so a large library takes several
   // bounded chunks — same polling shape as the Plex library sync itself
-  // (see PlexLibraryPanel's handleSync). Manually triggered only: this is
+  // (see MediaLibraryPanel's handleSync). Manually triggered only: this is
   // for "I just added a bunch of stuff, make sure nothing's missing", not
   // a nightly job, since it's a lot more TVMaze/D1 work than the cheap
   // recent-days check above.

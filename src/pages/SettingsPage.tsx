@@ -9,6 +9,7 @@ import { QuickLinksPanel } from './settings/QuickLinksPanel';
 import { BookmarksImportPanel } from './settings/BookmarksImportPanel';
 import { CloudStoragePanel } from './settings/CloudStoragePanel';
 import { WalletCategoriesPanel } from './settings/WalletCategoriesPanel';
+import { MediaCatalogPanel } from './settings/MediaCatalogPanel';
 import { SecurityPanel } from './settings/SecurityPanel';
 import { NewsFeedsPanel } from './settings/NewsFeedsPanel';
 import { HabitsPanel } from './settings/HabitsPanel';
@@ -37,6 +38,7 @@ const CATEGORIES: Category[] = [
   { id: 'links', label: 'Links', icon: '🔗' },
   { id: 'cloud', label: 'Cloud Storage', icon: '☁️' },
   { id: 'wallet', label: 'Wallet Categories', icon: '🎫' },
+  { id: 'media-catalog', label: 'Media Catalog', icon: '📚' },
   { id: 'email-accounts', label: 'Email Accounts', icon: '📥' },
   { id: 'rewards-merchants', label: 'Rewards Merchants', icon: '🏷️' },
   { id: 'habits', label: 'Habits', icon: '📈' },
@@ -91,6 +93,7 @@ export function SettingsPage() {
           )}
           {active === 'cloud' && <CloudStoragePanel />}
           {active === 'wallet' && <WalletCategoriesPanel />}
+          {active === 'media-catalog' && <MediaCatalogPanel />}
           {active === 'email-accounts' && <EmailAccountsPanel />}
           {active === 'rewards-merchants' && <RewardsMerchantsPanel />}
           {active === 'habits' && <HabitsPanel />}

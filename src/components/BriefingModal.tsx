@@ -387,7 +387,7 @@ export function BriefingModal() {
                 ))}
                 {data.insights.missingEpisodes.map((ep) => (
                   <li key={ep.id}>
-                    <button type="button" className="briefing-modal__link-btn" onClick={() => goTo('/plex?tab=airing')}>
+                    <button type="button" className="briefing-modal__link-btn" onClick={() => goTo('/media?tab=airing')}>
                       🎬 {ep.show_title} {String(ep.season_number).padStart(2, '0')}×{String(ep.episode_number).padStart(2, '0')} — aired{' '}
                       {daysAgoLabel(ep.aired_on, date)}, not in your library
                     </button>
