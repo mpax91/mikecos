@@ -656,6 +656,9 @@ export interface BarItemRow {
   drink_window_start: number | null;
   drink_window_end: number | null;
   notes: string | null;
+  photo_key: string | null;
+  photo_mime: string | null;
+  photo_orientation: string;
   created_at: string;
   updated_at: string;
 }

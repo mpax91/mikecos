@@ -219,17 +219,26 @@ export function BarPage() {
           {shown.map((item) => (
             <div key={item.id} className="bar-item-card">
               <div className="bar-item-card__header">
-                <div>
-                  <div className="bar-item-card__name">
-                    {item.name}
-                    {item.vintage ? ` (${item.vintage})` : ''}
-                  </div>
-                  <div className="bar-item-card__meta">{[item.category, item.producer, item.region].filter(Boolean).join(' · ')}</div>
-                  {(item.drinkWindowStart || item.drinkWindowEnd) && (
-                    <div className="bar-item-card__window">
-                      Drink {item.drinkWindowStart ?? '?'}–{item.drinkWindowEnd ?? '?'}
-                    </div>
+                <div className="bar-item-card__header-main">
+                  {item.photoKey && (
+                    <img
+                      className={`bar-item-card__photo${item.photoOrientation === 'landscape' ? ' bar-item-card__photo--landscape' : ''}`}
+                      src={api.fileUrl(item.photoKey)}
+                      alt=""
+                    />
                   )}
+                  <div>
+                    <div className="bar-item-card__name">
+                      {item.name}
+                      {item.vintage ? ` (${item.vintage})` : ''}
+                    </div>
+                    <div className="bar-item-card__meta">{[item.category, item.producer, item.region].filter(Boolean).join(' · ')}</div>
+                    {(item.drinkWindowStart || item.drinkWindowEnd) && (
+                      <div className="bar-item-card__window">
+                        Drink {item.drinkWindowStart ?? '?'}–{item.drinkWindowEnd ?? '?'}
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <KebabMenu
                   items={[

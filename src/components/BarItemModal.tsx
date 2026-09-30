@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { api } from '../api/client';
 import type { BarItem, BarItemType } from '../api/types';
 import { Modal } from './Modal';
 
@@ -9,10 +10,33 @@ const WINE_VARIETALS = [
 ];
 const BEER_STYLES = ['IPA', 'Pale Ale', 'Lager', 'Pilsner', 'Stout', 'Porter', 'Wheat', 'Sour', 'Belgian', 'Amber', 'Other'];
 
+const TYPE_ICON: Record<BarItemType, string> = { spirit: '🥃', wine: '🍷', beer: '🍺' };
+
 function categoryOptions(type: BarItemType): string[] {
   if (type === 'spirit') return SPIRIT_CATEGORIES;
   if (type === 'wine') return WINE_VARIETALS;
   return BEER_STYLES;
+}
+
+// Most bottle photos are vertical, so that's the fallback if dimensions
+// can't be read — but it's always detected from the actual uploaded image
+// (front label shot, a case, whatever Mike points the camera at), same
+// pattern as Wallet card art (see WalletCardEditor.tsx's detectOrientation
+// — Mike never picks this himself).
+function detectOrientation(file: File): Promise<'landscape' | 'portrait'> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(img.naturalHeight >= img.naturalWidth ? 'portrait' : 'landscape');
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve('portrait');
+    };
+    img.src = url;
+  });
 }
 
 export interface BarItemFormValue {
@@ -26,6 +50,8 @@ export interface BarItemFormValue {
   drinkWindowStart: number | null;
   drinkWindowEnd: number | null;
   notes: string | null;
+  photoKey: string | null;
+  photoOrientation: 'landscape' | 'portrait';
 }
 
 /** Add/edit a Bar item — same fields regardless of type except wine gets
@@ -54,9 +80,27 @@ export function BarItemModal({
   const [drinkStart, setDrinkStart] = useState(initial?.drinkWindowStart != null ? String(initial.drinkWindowStart) : '');
   const [drinkEnd, setDrinkEnd] = useState(initial?.drinkWindowEnd != null ? String(initial.drinkWindowEnd) : '');
   const [notes, setNotes] = useState(initial?.notes ?? '');
+  const [photoKey, setPhotoKey] = useState(initial?.photoKey ?? null);
+  const [photoOrientation, setPhotoOrientation] = useState<'landscape' | 'portrait'>(initial?.photoOrientation ?? 'portrait');
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const photoInputRef = useRef<HTMLInputElement>(null);
 
   const isWine = type === 'wine';
   const datalistId = `bar-category-options-${type}`;
+
+  async function handlePhotoPick(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setUploadingPhoto(true);
+    try {
+      const [res, orientation] = await Promise.all([api.uploadInline(file), detectOrientation(file)]);
+      setPhotoKey(res.r2_key);
+      setPhotoOrientation(orientation);
+    } finally {
+      setUploadingPhoto(false);
+    }
+  }
 
   function save() {
     if (!name.trim()) return;
@@ -71,13 +115,34 @@ export function BarItemModal({
       drinkWindowStart: drinkStart.trim() ? Number(drinkStart) : null,
       drinkWindowEnd: drinkEnd.trim() ? Number(drinkEnd) : null,
       notes: notes.trim() || null,
+      photoKey,
+      photoOrientation,
     });
   }
 
   const typeLabel = type === 'spirit' ? 'Spirit' : type === 'wine' ? 'Wine' : 'Beer';
 
+  const photoPreview = photoKey ? api.fileUrl(photoKey) : null;
+
   return (
     <Modal title={initial ? `Edit "${initial.name}"` : `Add a ${typeLabel}`} onClose={onClose}>
+      <div className="wallet-editor__image-slot" style={{ marginBottom: 12 }}>
+        <div className={`bar-item-modal__photo-preview${photoOrientation === 'landscape' ? ' bar-item-modal__photo-preview--landscape' : ''}`}>
+          {photoPreview ? <img src={photoPreview} alt="" /> : <span>{TYPE_ICON[type]}</span>}
+        </div>
+        <input ref={photoInputRef} type="file" accept="image/*" onChange={handlePhotoPick} style={{ display: 'none' }} />
+        <div className="wallet-editor__image-actions">
+          <button type="button" className="btn btn--ghost" onClick={() => photoInputRef.current?.click()} disabled={uploadingPhoto}>
+            {uploadingPhoto ? 'Uploading…' : photoKey ? 'Replace photo' : 'Add a photo'}
+          </button>
+          {photoKey && (
+            <button type="button" className="btn btn--ghost" onClick={() => setPhotoKey(null)}>
+              Remove
+            </button>
+          )}
+        </div>
+      </div>
+
       <label className="wallet-editor__field">
         <span>Name</span>
         <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={isWine ? 'e.g. Produttori del Barbaresco' : 'e.g. Hendrick’s Gin'} />

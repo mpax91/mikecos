@@ -14522,6 +14522,29 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   gap: 8px;
 }
 
+.bar-item-card__header-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+/* Bottle/can photo thumbnail — portrait by default (most bottles), flips
+   to landscape when that's what was detected from the uploaded image. See
+   migrations/0076_bar_photos.sql. */
+.bar-item-card__photo {
+  width: 34px;
+  aspect-ratio: 152 / 241;
+  object-fit: cover;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.bar-item-card__photo--landscape {
+  width: 54px;
+  aspect-ratio: 241 / 152;
+}
+
 .bar-item-card__name {
   font-weight: var(--weight-medium);
   font-size: 14px;
@@ -14603,6 +14626,35 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
+}
+
+/* Photo preview in the add/edit modal — portrait by default, same
+   auto-detected-orientation pattern as Wallet card art
+   (.wallet-editor__art-preview), just sized for a bottle rather than a
+   card. */
+.bar-item-modal__photo-preview {
+  width: 88px;
+  aspect-ratio: 152 / 241;
+  border-radius: 8px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: var(--color-card-bg);
+  border: var(--border-hairline);
+  font-size: 28px;
+}
+
+.bar-item-modal__photo-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.bar-item-modal__photo-preview--landscape {
+  width: 140px;
+  aspect-ratio: 241 / 152;
 }
 
 /* ---- Star rating ---- */

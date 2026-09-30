@@ -9,6 +9,15 @@ function isType(v: unknown): v is BarItemType {
   return typeof v === 'string' && (TYPES as readonly string[]).includes(v);
 }
 
+// See migrations/0076_bar_photos.sql — the editor detects this from the
+// uploaded photo's own pixel dimensions, same pattern as Wallet card art
+// (worker/src/wallet.ts), Mike never picks it.
+const ART_ORIENTATIONS = ['landscape', 'portrait'] as const;
+type ArtOrientation = (typeof ART_ORIENTATIONS)[number];
+function normalizeOrientation(v: unknown, fallback: ArtOrientation): ArtOrientation {
+  return (ART_ORIENTATIONS as readonly string[]).includes(v as string) ? (v as ArtOrientation) : fallback;
+}
+
 /** The Bar — home spirits/wine/beer inventory plus a Vivino/Untappd-style
  * tasting log. Mounted at /api/bar. See 0075_bar.sql for the two-table
  * shape (bar_items = the thing you own/track, bar_tastings = each time you
@@ -33,6 +42,8 @@ function itemJson(r: BarItemRow) {
     drinkWindowStart: r.drink_window_start,
     drinkWindowEnd: r.drink_window_end,
     notes: r.notes,
+    photoKey: r.photo_key,
+    photoOrientation: r.photo_orientation,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -103,6 +114,9 @@ interface ItemBody {
   drinkWindowStart?: number | null;
   drinkWindowEnd?: number | null;
   notes?: string | null;
+  photoKey?: string | null;
+  photoMime?: string | null;
+  photoOrientation?: string;
 }
 
 barRouter.post('/items', async (c) => {
@@ -113,11 +127,12 @@ barRouter.post('/items', async (c) => {
   const id = uid();
   const ts = now();
   const quantity = Number.isFinite(body.quantity) ? Math.max(0, Math.trunc(body.quantity as number)) : 1;
+  const photoOrientation = normalizeOrientation(body.photoOrientation, 'portrait');
 
   await db(c)
     .prepare(
-      `INSERT INTO bar_items (id, type, name, category, producer, vintage, region, quantity, drink_window_start, drink_window_end, notes, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO bar_items (id, type, name, category, producer, vintage, region, quantity, drink_window_start, drink_window_end, notes, photo_key, photo_mime, photo_orientation, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       id,
@@ -131,6 +146,9 @@ barRouter.post('/items', async (c) => {
       body.drinkWindowStart ?? null,
       body.drinkWindowEnd ?? null,
       body.notes?.trim() || null,
+      body.photoKey || null,
+      body.photoMime || null,
+      photoOrientation,
       ts,
       ts
     )
@@ -175,6 +193,13 @@ barRouter.patch('/items/:id', async (c) => {
   if (!existing) return c.json({ error: 'not found' }, 404);
 
   const body = await c.req.json<ItemBody>();
+
+  // Delete the old R2 object when the photo is replaced or removed — same
+  // orphan-avoidance as wallet.ts's cover/back art replace logic.
+  if (body.photoKey !== undefined && existing.photo_key && existing.photo_key !== body.photoKey) {
+    await c.env.FILES.delete(existing.photo_key).catch(() => {});
+  }
+
   const sets: string[] = [];
   const binds: unknown[] = [];
   if (body.name !== undefined) {
@@ -214,6 +239,18 @@ barRouter.patch('/items/:id', async (c) => {
     sets.push('notes = ?');
     binds.push(body.notes?.trim() || null);
   }
+  if (body.photoKey !== undefined) {
+    sets.push('photo_key = ?');
+    binds.push(body.photoKey || null);
+  }
+  if (body.photoMime !== undefined) {
+    sets.push('photo_mime = ?');
+    binds.push(body.photoMime || null);
+  }
+  if (body.photoOrientation !== undefined) {
+    sets.push('photo_orientation = ?');
+    binds.push(normalizeOrientation(body.photoOrientation, existing.photo_orientation as ArtOrientation));
+  }
   if (sets.length) {
     sets.push('updated_at = ?');
     binds.push(now(), id);
@@ -241,6 +278,8 @@ barRouter.post('/items/:id/quantity', async (c) => {
 
 barRouter.delete('/items/:id', async (c) => {
   const id = c.req.param('id');
+  const existing = await db(c).prepare('SELECT photo_key FROM bar_items WHERE id = ?').bind(id).first<{ photo_key: string | null }>();
+  if (existing?.photo_key) await c.env.FILES.delete(existing.photo_key).catch(() => {});
   await db(c).batch([
     db(c).prepare('DELETE FROM bar_tastings WHERE item_id = ?').bind(id),
     db(c).prepare('DELETE FROM bar_items WHERE id = ?').bind(id),

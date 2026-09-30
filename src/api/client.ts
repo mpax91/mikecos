@@ -1282,6 +1282,9 @@ export const api = {
     drinkWindowStart?: number | null;
     drinkWindowEnd?: number | null;
     notes?: string | null;
+    photoKey?: string | null;
+    photoMime?: string | null;
+    photoOrientation?: 'landscape' | 'portrait';
   }) => request<BarItem>('/api/bar/items', { method: 'POST', body: JSON.stringify(item) }),
 
   updateBarItem: (
@@ -1296,6 +1299,9 @@ export const api = {
       drinkWindowStart: number | null;
       drinkWindowEnd: number | null;
       notes: string | null;
+      photoKey: string | null;
+      photoMime: string | null;
+      photoOrientation: 'landscape' | 'portrait';
     }>
   ) => request<BarItem>(`/api/bar/items/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
 

@@ -1974,6 +1974,8 @@ export interface BarItem {
   drinkWindowStart: number | null;
   drinkWindowEnd: number | null;
   notes: string | null;
+  photoKey: string | null;
+  photoOrientation: 'landscape' | 'portrait';
   createdAt: string;
   updatedAt: string;
 }
