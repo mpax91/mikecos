@@ -77,7 +77,7 @@ export function HomePage() {
   const activeFloor = floors.find((f) => f.id === tab) ?? null;
 
   return (
-    <div>
+    <div className="home-page">
       <div className="toolbar-row">
         <h1 className="heading-serif" style={{ fontSize: 24, margin: 0 }}>
           Home
@@ -106,13 +106,15 @@ export function HomePage() {
         </button>
       </div>
 
-      {floors.length === 0 && tab !== 'electrical' ? (
-        <div className="empty-state empty-state--section">No floors yet — Add Floor to start mapping your house (Basement, 1st Floor, whatever you've got).</div>
-      ) : tab === 'electrical' ? (
-        <HomeElectricalPage />
-      ) : activeFloor ? (
-        <HomeFloorCanvas key={activeFloor.id} floorId={activeFloor.id} />
-      ) : null}
+      <div className="home-page__body">
+        {floors.length === 0 && tab !== 'electrical' ? (
+          <div className="empty-state empty-state--section">No floors yet — Add Floor to start mapping your house (Basement, 1st Floor, whatever you've got).</div>
+        ) : tab === 'electrical' ? (
+          <HomeElectricalPage />
+        ) : activeFloor ? (
+          <HomeFloorCanvas key={activeFloor.id} floorId={activeFloor.id} />
+        ) : null}
+      </div>
 
       {floorModal && (
         <Modal title={floorModal === 'new' ? 'Add Floor' : `Rename "${floorModal.name}"`} onClose={() => setFloorModal(null)}>

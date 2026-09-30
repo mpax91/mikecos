@@ -14934,6 +14934,26 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 
 /* ---- Floor canvas ---- */
 
+/* HomePage's own top-level wrapper — unlike CanvasBoardPage (whose
+   top-level return IS .canvas-board, a direct child of .main__content),
+   Home nests its canvas below a floor-tabs row it shares with the
+   non-canvas Electrical tab. .home-canvas's height:calc(100% + 64px)
+   trick needs a percentage-resolvable ancestor chain, so this wrapper
+   and .home-page__body below turn that chain back into definite flex
+   heights instead of the auto-height block div it'd otherwise sit in. */
+.home-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.home-page__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 /* Same edge-to-edge treatment as .canvas-board — cancels .main__content's
    padding so the pan/zoom viewport fills the available space. */
 .home-canvas {
