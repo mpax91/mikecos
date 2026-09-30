@@ -1,6 +1,6 @@
 import type { AuthenticationResponseJSON, PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON, RegistrationResponseJSON } from '@simplewebauthn/browser';
 import type { AuthCredentialSummary, AuthStatus, Bet, BetLeg, BetGameNote, BetPromo, BetPromoStatus, BetScheduleGame, BetTransaction, BetTransactionType, VaultEntryDetail, VaultFact, BriefingResponse, CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, CreditScoreEntry, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitDirection, HabitEvent, HabitLog, HabitSummary, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsFeedsResponse, NewsFolder, NewsSavedArticle, NewsSettings, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, VoterFieldsBackfillChunkResponse,
-  ContactAskResponse, BetGameEnrichment, VaultFactLabel, VaultRollupGroup, WalletCard, WalletCardFact, WalletCategory, WalletCardIdSecret, RewardsCard, RewardsBonus, RewardsPerk, RewardsImportResult, RewardsMerchant, RewardsOffer, PaymentCard, PaymentCardFact, PaymentCardSecrets, PlexLibrary, PlexItem, PlexItemDetail, PlexIssue, PlexMissingEpisode, PlexSyncChunkResult, PlexAiringCheckChunkResult, PlexAiringScanChunkResult, MediaCatalogItem, MediaCatalogFormat, WeatherResponse, WeekResponse, EmailAccount, EmailInboxFeed, EmailPeekResult, EmailSyncResult, BookmarksResponse, BookmarksImportResult, CloudProviderId, CloudProviderInfo, CloudAccount, CloudBrowseResponse, CloudSearchResponse } from './types';
+  ContactAskResponse, BetGameEnrichment, VaultFactLabel, VaultRollupGroup, WalletCard, WalletCardFact, WalletCategory, WalletCardIdSecret, RewardsCard, RewardsBonus, RewardsPerk, RewardsImportResult, RewardsMerchant, RewardsOffer, PaymentCard, PaymentCardFact, PaymentCardSecrets, PlexLibrary, PlexItem, PlexItemDetail, PlexIssue, PlexMissingEpisode, PlexSyncChunkResult, PlexAiringCheckChunkResult, PlexAiringScanChunkResult, MediaCatalogItem, MediaCatalogFormat, BarItem, BarItemDetail, BarItemType, BarTasting, BarTopTastingEntry, WeatherResponse, WeekResponse, EmailAccount, EmailInboxFeed, EmailPeekResult, EmailSyncResult, BookmarksResponse, BookmarksImportResult, CloudProviderId, CloudProviderInfo, CloudAccount, CloudBrowseResponse, CloudSearchResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -1259,6 +1259,76 @@ export const api = {
    * at a time. See mediaCatalog.ts's header comment on the endpoint. */
   bulkCreateMediaCatalogItems: (format: MediaCatalogFormat, rows: { title: string; author?: string | null }[]) =>
     request<{ created: number }>('/api/media/items/bulk', { method: 'POST', body: JSON.stringify({ format, rows }) }),
+
+  // ---- The Bar: spirits/wine/beer inventory + tastings (0075_bar.sql) ----
+
+  listBarItems: (params: { type?: BarItemType; q?: string } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.type) qs.set('type', params.type);
+    if (params.q) qs.set('q', params.q);
+    return request<BarItem[]>(`/api/bar/items?${qs.toString()}`);
+  },
+
+  getBarItem: (id: string) => request<BarItemDetail>(`/api/bar/items/${id}`),
+
+  createBarItem: (item: {
+    type: BarItemType;
+    name: string;
+    category?: string | null;
+    producer?: string | null;
+    vintage?: number | null;
+    region?: string | null;
+    quantity?: number;
+    drinkWindowStart?: number | null;
+    drinkWindowEnd?: number | null;
+    notes?: string | null;
+  }) => request<BarItem>('/api/bar/items', { method: 'POST', body: JSON.stringify(item) }),
+
+  updateBarItem: (
+    id: string,
+    patch: Partial<{
+      name: string;
+      category: string | null;
+      producer: string | null;
+      vintage: number | null;
+      region: string | null;
+      quantity: number;
+      drinkWindowStart: number | null;
+      drinkWindowEnd: number | null;
+      notes: string | null;
+    }>
+  ) => request<BarItem>(`/api/bar/items/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+
+  adjustBarItemQuantity: (id: string, delta: number) =>
+    request<BarItem>(`/api/bar/items/${id}/quantity`, { method: 'POST', body: JSON.stringify({ delta }) }),
+
+  deleteBarItem: (id: string) => request<{ ok: true }>(`/api/bar/items/${id}`, { method: 'DELETE' }),
+
+  /** Bulk-import — one type applied to the whole pasted batch, same shape
+   * as the Media Catalog's bulk import. */
+  bulkCreateBarItems: (type: BarItemType, rows: { name: string; category?: string | null }[]) =>
+    request<{ created: number }>('/api/bar/items/bulk', { method: 'POST', body: JSON.stringify({ type, rows }) }),
+
+  createBarTasting: (
+    itemId: string,
+    tasting: { consumedAt?: string | null; score?: number | null; tags?: string[]; notes?: string | null; buyAgain?: boolean | null }
+  ) => request<BarTasting>(`/api/bar/items/${itemId}/tastings`, { method: 'POST', body: JSON.stringify(tasting) }),
+
+  updateBarTasting: (
+    id: string,
+    patch: Partial<{ consumedAt: string | null; score: number | null; tags: string[]; notes: string | null; buyAgain: boolean | null }>
+  ) => request<BarTasting>(`/api/bar/tastings/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+
+  deleteBarTasting: (id: string) => request<{ ok: true }>(`/api/bar/tastings/${id}`, { method: 'DELETE' }),
+
+  /** Every scored tasting across the whole Bar, highest score first — the
+   * shopping-reference list, works even for items currently out of stock. */
+  getTopBarTastings: (params: { type?: BarItemType; limit?: number } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.type) qs.set('type', params.type);
+    if (params.limit) qs.set('limit', String(params.limit));
+    return request<BarTopTastingEntry[]>(`/api/bar/tastings/top?${qs.toString()}`);
+  },
 
   // ---- Inbox ----
 

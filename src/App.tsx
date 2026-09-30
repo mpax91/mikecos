@@ -25,6 +25,7 @@ import { VaultPage } from './pages/VaultPage';
 import { VaultRollupsPage } from './pages/VaultRollupsPage';
 import { WalletPage } from './pages/WalletPage';
 import { MediaPage } from './pages/MediaPage';
+import { BarPage } from './pages/BarPage';
 import { HabitsPage } from './pages/HabitsPage';
 import { InboxPage } from './pages/InboxPage';
 import { ListsPage } from './pages/ListsPage';
@@ -84,6 +85,7 @@ export default function App() {
             <Route path="/vault/:id" element={<VaultPage />} />
             <Route path="/wallet" element={<WalletPage />} />
             <Route path="/media" element={<MediaPage />} />
+            <Route path="/bar" element={<BarPage />} />
             <Route path="/habits" element={<HabitsPage />} />
             <Route path="/inbox" element={<InboxPage />} />
             <Route path="/lists" element={<ListsPage />} />

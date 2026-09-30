@@ -1956,6 +1956,56 @@ export interface PlexSyncResult {
   totalItems: number;
 }
 
+// ---- The Bar (worker/migrations/0075_bar.sql) — home spirits/wine/beer
+// inventory plus a Vivino/Untappd-style tasting log. See that migration's
+// comment for why bar_items and bar_tastings are separate tables.
+
+export type BarItemType = 'spirit' | 'wine' | 'beer';
+
+export interface BarItem {
+  id: string;
+  type: BarItemType;
+  name: string;
+  category: string | null;
+  producer: string | null;
+  vintage: number | null;
+  region: string | null;
+  quantity: number;
+  drinkWindowStart: number | null;
+  drinkWindowEnd: number | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BarItemDetail extends BarItem {
+  tastings: BarTasting[];
+}
+
+export interface BarTasting {
+  id: string;
+  itemId: string;
+  consumedAt: string | null;
+  score: number | null; // 0.5-5.0 in 0.5 steps
+  tags: string[];
+  notes: string | null;
+  buyAgain: boolean | null;
+  createdAt: string;
+}
+
+export interface BarTopTastingEntry extends BarTasting {
+  item: {
+    id: string;
+    name: string;
+    type: BarItemType;
+    category: string | null;
+    producer: string | null;
+    vintage: number | null;
+    region: string | null;
+    quantity: number;
+  };
+}
+
 // One bounded chunk of the sync — a large library takes several of these
 // (see worker/src/plexSync.ts's header comment on why it's chunked at
 // all). The caller keeps calling the endpoint until `done` is true.

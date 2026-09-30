@@ -14462,3 +14462,323 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   font-size: 12px;
   font-weight: 400;
 }
+
+/* ---- The Bar: spirits/wine/beer inventory + tastings (0075_bar.sql) ---- */
+
+.bar-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 4px 0 16px;
+  border-bottom: var(--border-hairline);
+  padding-bottom: 10px;
+}
+
+.bar-tabs__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: var(--border-hairline);
+  background: var(--color-card-bg);
+  color: var(--color-muted);
+  font-size: 13px;
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+}
+
+.bar-tabs__tab.is-active {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-accent-text);
+}
+
+.bar-tabs__count {
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+.bar-item-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.bar-item-card {
+  background: var(--color-card-bg);
+  border: var(--border-hairline);
+  border-radius: var(--radius-card);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bar-item-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.bar-item-card__name {
+  font-weight: var(--weight-medium);
+  font-size: 14px;
+}
+
+.bar-item-card__meta {
+  font-size: 12px;
+  color: var(--color-muted);
+  margin-top: 2px;
+}
+
+.bar-item-card__window {
+  font-size: 11px;
+  color: var(--color-accent-secondary);
+  margin-top: 4px;
+  font-weight: var(--weight-medium);
+}
+
+.bar-item-card__notes {
+  font-size: 12px;
+  color: var(--color-muted);
+  white-space: pre-wrap;
+}
+
+.bar-item-card__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: auto;
+  padding-top: 4px;
+}
+
+.bar-item-card__qty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bar-item-card__qty button {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: var(--border-hairline);
+  background: #fff;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bar-item-card__qty button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.bar-item-card__qty span {
+  min-width: 18px;
+  text-align: center;
+  font-weight: var(--weight-medium);
+  font-size: 13px;
+}
+
+.bar-item-card__tastings-link {
+  border: none;
+  background: none;
+  color: var(--color-accent-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+
+.bar-item-card__tastings-link:hover {
+  text-decoration: underline;
+}
+
+.bar-item-modal__row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+/* ---- Star rating ---- */
+
+.star-rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.star-rating__star {
+  position: relative;
+  display: inline-block;
+  width: var(--star-size, 20px);
+  height: var(--star-size, 20px);
+  font-size: var(--star-size, 20px);
+  line-height: 1;
+}
+
+.star-rating__star-empty,
+.star-rating__star-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.star-rating__star-empty {
+  color: var(--color-muted);
+  opacity: 0.35;
+}
+
+.star-rating__star-fill {
+  color: var(--color-accent-secondary);
+  width: 0%;
+}
+
+.star-rating__hit {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 50%;
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.star-rating__hit--left {
+  left: 0;
+}
+
+.star-rating__hit--right {
+  right: 0;
+}
+
+.star-rating__value {
+  font-size: 12px;
+  color: var(--color-muted);
+  font-weight: var(--weight-medium);
+}
+
+/* ---- Tasting entry + history ---- */
+
+.bar-tasting__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.bar-tasting__buy-again {
+  display: flex;
+  gap: 8px;
+}
+
+.chip--static {
+  cursor: default;
+}
+
+.bar-tasting-history__toolbar {
+  margin-bottom: 10px;
+}
+
+.bar-tasting-history__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.bar-tasting-history__row {
+  border: var(--border-hairline);
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.bar-tasting-history__row:hover {
+  background: var(--color-card-bg);
+}
+
+.bar-tasting-history__row-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.bar-tasting-history__date {
+  font-size: 12px;
+  color: var(--color-muted);
+  font-weight: var(--weight-medium);
+}
+
+.bar-tasting-history__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.bar-tasting-history__notes {
+  font-size: 12px;
+  color: var(--color-muted);
+  margin-top: 6px;
+  white-space: pre-wrap;
+}
+
+/* ---- Top Rated ---- */
+
+.bar-top-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bar-top-list__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: var(--border-hairline);
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: var(--color-card-bg);
+}
+
+.bar-top-list__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.bar-top-list__name {
+  font-weight: var(--weight-medium);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bar-top-list__meta {
+  font-size: 11px;
+  color: var(--color-muted);
+}
+
+.bar-top-list__score {
+  flex-shrink: 0;
+}
+
+.bar-top-list__stock {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--color-muted);
+  min-width: 80px;
+  text-align: right;
+}

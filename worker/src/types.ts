@@ -636,3 +636,37 @@ export interface VaultCredentialRow {
   created_at: string;
   updated_at: string;
 }
+
+// ---- The Bar (0075_bar.sql) — home spirits/wine/beer inventory + a
+// Vivino/Untappd-style tasting log. See that migration's comment for why
+// this is one shared items table across all three types plus a separate
+// tastings table decoupled from current stock.
+
+export type BarItemType = 'spirit' | 'wine' | 'beer';
+
+export interface BarItemRow {
+  id: string;
+  type: BarItemType;
+  name: string;
+  category: string | null;
+  producer: string | null;
+  vintage: number | null;
+  region: string | null;
+  quantity: number;
+  drink_window_start: number | null;
+  drink_window_end: number | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BarTastingRow {
+  id: string;
+  item_id: string;
+  consumed_at: string | null;
+  score: number | null;
+  tags: string | null; // JSON-encoded string[]
+  notes: string | null;
+  buy_again: number | null; // 0/1/null
+  created_at: string;
+}
