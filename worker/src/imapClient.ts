@@ -212,6 +212,10 @@ async function readResponseLine(r: ByteReader): Promise<{ tag: string; items: Im
 
 export class ImapAuthError extends Error {}
 export class ImapProtocolError extends Error {}
+/** Thrown by the UID STORE helpers when the command came back OK but didn't
+ * actually touch a message — see storeMatched()'s own comment for why this
+ * needs to be checked explicitly rather than trusting the tagged status. */
+export class ImapUidMismatchError extends Error {}
 
 export class ImapClient {
   private socket: ReturnType<typeof connect> | null = null;
@@ -393,6 +397,35 @@ export class ImapClient {
     return '';
   }
 
+  /** RFC 3501 is explicit that `UID STORE` completes with a plain tagged OK
+   * even when the UID set matched zero messages on the server — "no such
+   * message" is not itself an error, it's just nothing to do. That means a
+   * stale/incorrect UID (e.g. this client's own stored UID drifting from
+   * Gmail's current one for any reason) looks identical, at the tagged-
+   * response level, to a real success: OK either way. The only way to tell
+   * them apart is whether the server actually sent back an untagged FETCH
+   * response for that UID — Gmail always includes one, carrying the
+   * updated X-GM-LABELS/FLAGS, when a STORE genuinely changed a message. */
+  private storeMatched(res: { untagged: ImapToken[][] }, uid: number): boolean {
+    return res.untagged.some((line) => {
+      if (line[1] !== 'FETCH') return false;
+      const attrs = line[2];
+      if (!Array.isArray(attrs)) return false;
+      for (let i = 0; i < attrs.length; i += 2) {
+        if (attrs[i] === 'UID' && String(attrs[i + 1]) === String(uid)) return true;
+      }
+      return false;
+    });
+  }
+
+  private async storeAndConfirm(uid: number, item: string, label: string): Promise<void> {
+    const res = await this.command(`UID STORE ${uid} ${item}`);
+    if (res.status !== 'OK') throw new ImapProtocolError(`${label} failed: ${res.text || res.status}`);
+    if (!this.storeMatched(res, uid)) {
+      throw new ImapUidMismatchError(`${label}: UID STORE ${uid} returned OK but matched no message`);
+    }
+  }
+
   /** Removes the \Inbox label (Gmail's archive) or sets/clears \Seen — the
    * two write operations Inbox needs. Gmail's IMAP maps "remove from
    * INBOX" to the X-GM-LABELS extension when given -X-GM-LABELS (\Inbox),
@@ -400,8 +433,28 @@ export class ImapClient {
    * button) rather than a generic IMAP MOVE, which would need a second
    * destination-folder round trip. */
   async archive(uid: number): Promise<void> {
-    const res = await this.command(`UID STORE ${uid} -X-GM-LABELS (\\Inbox)`);
-    if (res.status !== 'OK') throw new ImapProtocolError(`archive failed: ${res.text || res.status}`);
+    await this.storeAndConfirm(uid, '-X-GM-LABELS (\\Inbox)', 'archive');
+  }
+
+  /** UID of the message currently carrying this Gmail message id, or null
+   * if none is found — X-GM-MSGID is stable for a message's whole lifetime
+   * (survives moves/label changes) even when its IMAP UID has drifted,
+   * which is exactly what this is for: re-resolving the correct UID after
+   * a STORE comes back having matched nothing (see storeAndConfirm). */
+  async searchByGmMsgId(gmMsgId: string): Promise<number | null> {
+    const res = await this.command(`UID SEARCH X-GM-MSGID ${gmMsgId}`);
+    if (res.status !== 'OK') throw new ImapProtocolError(`SEARCH X-GM-MSGID failed: ${res.text || res.status}`);
+    for (const line of res.untagged) {
+      if (line[0] === 'SEARCH') {
+        for (const item of line.slice(1)) {
+          if (typeof item === 'string') {
+            const n = parseInt(item, 10);
+            if (!Number.isNaN(n)) return n;
+          }
+        }
+      }
+    }
+    return null;
   }
 
   /** Real delete — moves the message to Gmail's Trash, same mechanism as
@@ -411,8 +464,7 @@ export class ImapClient {
    * itself. Gmail auto-purges Trash after 30 days; this doesn't touch that
    * timer or bypass it. */
   async trash(uid: number): Promise<void> {
-    const res = await this.command(`UID STORE ${uid} +X-GM-LABELS (\\Trash)`);
-    if (res.status !== 'OK') throw new ImapProtocolError(`trash failed: ${res.text || res.status}`);
+    await this.storeAndConfirm(uid, '+X-GM-LABELS (\\Trash)', 'trash');
   }
 
   /** Undo for archive() — adds the \Inbox label back. Only needed when the
@@ -420,8 +472,7 @@ export class ImapClient {
    * sync cron: the common case cancels the still-queued pending action
    * instead and never touches the real mailbox at all. */
   async restoreToInbox(uid: number): Promise<void> {
-    const res = await this.command(`UID STORE ${uid} +X-GM-LABELS (\\Inbox)`);
-    if (res.status !== 'OK') throw new ImapProtocolError(`restoreToInbox failed: ${res.text || res.status}`);
+    await this.storeAndConfirm(uid, '+X-GM-LABELS (\\Inbox)', 'restoreToInbox');
   }
 
   /** Undo for trash() — same "only if the sync already beat us to it" case
@@ -430,16 +481,24 @@ export class ImapClient {
    * commands rather than one: RFC 3501 STORE takes a single data-item, so
    * a combined "+X-GM-LABELS (\Inbox) -X-GM-LABELS (\Trash)" isn't valid. */
   async untrash(uid: number): Promise<void> {
-    const res1 = await this.command(`UID STORE ${uid} -X-GM-LABELS (\\Trash)`);
-    if (res1.status !== 'OK') throw new ImapProtocolError(`untrash (remove Trash) failed: ${res1.text || res1.status}`);
-    const res2 = await this.command(`UID STORE ${uid} +X-GM-LABELS (\\Inbox)`);
-    if (res2.status !== 'OK') throw new ImapProtocolError(`untrash (add Inbox) failed: ${res2.text || res2.status}`);
+    await this.storeAndConfirm(uid, '-X-GM-LABELS (\\Trash)', 'untrash (remove Trash)');
+    await this.storeAndConfirm(uid, '+X-GM-LABELS (\\Inbox)', 'untrash (add Inbox)');
   }
 
   async setSeen(uid: number, seen: boolean): Promise<void> {
     const op = seen ? '+FLAGS.SILENT' : '-FLAGS.SILENT';
-    const res = await this.command(`UID STORE ${uid} ${op} (\\Seen)`);
+    // .SILENT normally suppresses the server's untagged FETCH response (by
+    // design, so a client that just set a flag it already knows the value
+    // of doesn't get it echoed back) — which would make storeMatched's
+    // "did an untagged FETCH reference this UID" check unreliable here.
+    // Gmail still sends one on a real match regardless, but to keep this
+    // check meaningful for a possible future non-Gmail server, ask without
+    // .SILENT and just not do anything with the (now-redundant) FETCH data.
+    const res = await this.command(`UID STORE ${uid} ${op.replace('.SILENT', '')} (\\Seen)`);
     if (res.status !== 'OK') throw new ImapProtocolError(`mark ${seen ? 'read' : 'unread'} failed: ${res.text || res.status}`);
+    if (!this.storeMatched(res, uid)) {
+      throw new ImapUidMismatchError(`mark ${seen ? 'read' : 'unread'}: UID STORE ${uid} returned OK but matched no message`);
+    }
   }
 
   /** Diagnostic only — not used by the regular sync path (see

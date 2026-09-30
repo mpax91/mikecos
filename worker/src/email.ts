@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Env } from './types';
 import { encryptField, decryptField, EncryptionNotConfiguredError } from './cryptoField';
-import { ImapClient, parseHeaderBlock, type ParsedAddress } from './imapClient';
+import { ImapClient, ImapUidMismatchError, parseHeaderBlock, type ParsedAddress } from './imapClient';
 import { sendMail } from './smtpClient';
 import { parseMimeMessageToParts, decodeSnippet } from './mimeParser';
 
@@ -754,21 +754,40 @@ emailRouter.post('/messages/:id/forward', async (c) => {
 
 // ---- Sync engine (cron + manual "Sync now") ----
 
+async function runImapAction(client: ImapClient, action: string, uidValue: number): Promise<void> {
+  if (action === 'archive') await client.archive(uidValue);
+  else if (action === 'trash') await client.trash(uidValue);
+  else if (action === 'mark_read') await client.setSeen(uidValue, true);
+  else if (action === 'mark_unread') await client.setSeen(uidValue, false);
+}
+
 async function applyPendingActions(env: Env, client: ImapClient, accountId: string): Promise<void> {
   const { results } = await env.DB.prepare(
-    `SELECT pa.id as action_id, pa.action, pa.message_id, m.uid
+    `SELECT pa.id as action_id, pa.action, pa.message_id, m.uid, m.gm_msgid
      FROM email_pending_actions pa JOIN email_messages m ON m.id = pa.message_id
      WHERE pa.account_id = ? AND pa.applied_at IS NULL`
   )
     .bind(accountId)
-    .all<{ action_id: string; action: string; message_id: string; uid: number }>();
+    .all<{ action_id: string; action: string; message_id: string; uid: number; gm_msgid: string }>();
 
   for (const row of results ?? []) {
     try {
-      if (row.action === 'archive') await client.archive(row.uid);
-      else if (row.action === 'trash') await client.trash(row.uid);
-      else if (row.action === 'mark_read') await client.setSeen(row.uid, true);
-      else if (row.action === 'mark_unread') await client.setSeen(row.uid, false);
+      try {
+        await runImapAction(client, row.action, row.uid);
+      } catch (err) {
+        // A STORE that comes back OK but matches no message (see
+        // imapClient.ts's storeMatched) means the UID we had on file for
+        // this message has drifted from Gmail's current one — this is the
+        // bug behind archived messages silently reappearing (GH: reported
+        // by Mike 2026-09-30). Re-resolve the real UID from the message's
+        // stable X-GM-MSGID, persist the correction, and retry once before
+        // giving up for this tick.
+        if (!(err instanceof ImapUidMismatchError)) throw err;
+        const freshUid = row.gm_msgid ? await client.searchByGmMsgId(row.gm_msgid) : null;
+        if (freshUid == null) throw err; // message genuinely isn't in this mailbox anymore — nothing to retry
+        await env.DB.prepare('UPDATE email_messages SET uid = ? WHERE id = ?').bind(freshUid, row.message_id).run();
+        await runImapAction(client, row.action, freshUid);
+      }
       await env.DB.prepare('UPDATE email_pending_actions SET applied_at = ? WHERE id = ?').bind(now(), row.action_id).run();
     } catch (err) {
       // Left unapplied — retried on the next sync tick. One bad action
