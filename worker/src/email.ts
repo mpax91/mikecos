@@ -296,6 +296,80 @@ emailRouter.get('/accounts/:id/debug-inbox', async (c) => {
   }
 });
 
+// Read-only diagnostic for the "archived message reappears, and is still
+// in the real Gmail inbox too" bug (reported by Mike 2026-09-30, after the
+// UID-mismatch self-heal in 4ba153d didn't fix it). Shows every pending
+// action for the account — applied or not, with its retry count and
+// recorded error (see applyPendingActions) — plus, for ones still pointing
+// at a real message, that message's LIVE X-GM-LABELS straight from Gmail,
+// so "did the STORE actually land on Gmail's side" is answerable directly
+// instead of inferred from MikeOS's own local state.
+emailRouter.get('/accounts/:id/debug-archive', async (c) => {
+  const id = c.req.param('id');
+  const account = await c.env.DB.prepare('SELECT * FROM email_accounts WHERE id = ?').bind(id).first<EmailAccountRow>();
+  if (!account) return c.json({ error: 'not found' }, 404);
+
+  const actions = (
+    await c.env.DB.prepare(
+      `SELECT pa.id, pa.action, pa.created_at, pa.applied_at, pa.attempts, pa.last_error, pa.last_attempted_at,
+              m.uid, m.gm_msgid, m.subject, m.in_inbox
+       FROM email_pending_actions pa JOIN email_messages m ON m.id = pa.message_id
+       WHERE pa.account_id = ?
+       ORDER BY pa.created_at DESC
+       LIMIT 20`
+    )
+      .bind(id)
+      .all<{
+        id: string;
+        action: string;
+        created_at: string;
+        applied_at: string | null;
+        attempts: number;
+        last_error: string | null;
+        last_attempted_at: string | null;
+        uid: number;
+        gm_msgid: string;
+        subject: string;
+        in_inbox: number;
+      }>()
+  ).results ?? [];
+
+  let live: { uid: number; flags: string[]; gmLabels: string[]; subject: string }[] = [];
+  let liveError: string | null = null;
+  try {
+    const pass = await decryptField(c.env, account.app_password_enc, 'EMAIL_ACCOUNT_ENC_KEY');
+    const client = new ImapClient();
+    await client.connect(account.imap_host, account.imap_port);
+    await client.login(account.email, pass);
+    await client.selectInbox();
+    const uidSet = [...new Set(actions.map((a) => a.uid))].join(',');
+    live = await client.fetchLabelsDebug(uidSet);
+    await client.logout();
+  } catch (err) {
+    liveError = err instanceof Error ? err.message : String(err);
+  }
+  const byUid = new Map(live.map((r) => [r.uid, r]));
+
+  return c.json({
+    accountEmail: account.email,
+    liveError,
+    actions: actions.map((a) => ({
+      action: a.action,
+      subject: a.subject,
+      createdAt: a.created_at,
+      appliedAt: a.applied_at,
+      attempts: a.attempts,
+      lastError: a.last_error,
+      lastAttemptedAt: a.last_attempted_at,
+      storedUid: a.uid,
+      inInboxLocally: !!a.in_inbox,
+      liveGmLabels: byUid.get(a.uid)?.gmLabels ?? null,
+      liveFlags: byUid.get(a.uid)?.flags ?? null,
+      stillMatchedLive: byUid.has(a.uid),
+    })),
+  });
+});
+
 // Manual "Sync now" — the same sync a cron tick runs, callable on demand
 // from Settings or the Inbox feed's own refresh button.
 emailRouter.post('/sync', async (c) => {
@@ -792,7 +866,15 @@ async function applyPendingActions(env: Env, client: ImapClient, accountId: stri
     } catch (err) {
       // Left unapplied — retried on the next sync tick. One bad action
       // (e.g. a since-deleted message) shouldn't block the rest of the
-      // queue or this account's inbox sync below.
+      // queue or this account's inbox sync below. Recorded on the row
+      // itself (not just console.error'd) so it's visible from
+      // /accounts/:id/debug-archive without needing production log access —
+      // this is exactly the visibility gap that made the reappearing-
+      // archive bug hard to pin down from outside the Worker.
+      const errText = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+      await env.DB.prepare('UPDATE email_pending_actions SET attempts = attempts + 1, last_error = ?, last_attempted_at = ? WHERE id = ?')
+        .bind(errText, now(), row.action_id)
+        .run();
       console.error('email pending action failed', accountId, row.action, err);
     }
   }
