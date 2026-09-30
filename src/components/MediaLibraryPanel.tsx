@@ -5,6 +5,7 @@ import type { PlexItem, PlexItemDetail, PlexLibrary, MediaCatalogItem, MediaCata
 import { formatRelativeTime } from '../utils/formatRelativeTime';
 import { KebabMenu } from './KebabMenu';
 import { Modal } from './Modal';
+import { ConfirmModal } from './ConfirmModal';
 
 const CONTAINER_TYPES = new Set(['show', 'season', 'artist', 'album']);
 
@@ -109,6 +110,7 @@ export function MediaLibraryPanel() {
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [detail, setDetail] = useState<PlexItemDetail | null>(null);
   const [catalogDetail, setCatalogDetail] = useState<MediaCatalogItem | null>(null);
+  const [confirmDeleteItem, setConfirmDeleteItem] = useState<MediaCatalogItem | null>(null);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
@@ -247,7 +249,6 @@ export function MediaLibraryPanel() {
   }
 
   async function deleteCatalogItem(item: MediaCatalogItem) {
-    if (!window.confirm(`Remove "${item.title}" from the catalog?`)) return;
     await api.deleteMediaCatalogItem(item.id);
     setCatalogItems((prev) => (prev ? prev.filter((i) => i.id !== item.id) : prev));
     setAllCatalogHits((prev) => prev.filter((i) => i.id !== item.id));
@@ -351,7 +352,7 @@ export function MediaLibraryPanel() {
         <KebabMenu
           items={[
             { label: 'View / Edit', onClick: () => setCatalogDetail(item) },
-            { label: 'Delete', onClick: () => deleteCatalogItem(item), danger: true, separatorBefore: true },
+            { label: 'Delete', onClick: () => setConfirmDeleteItem(item), danger: true, separatorBefore: true },
           ]}
         />
       </div>
@@ -626,9 +627,21 @@ export function MediaLibraryPanel() {
             setAllCatalogHits((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
           }}
           onDeleted={() => {
+            setConfirmDeleteItem(catalogDetail);
             setCatalogDetail(null);
-            deleteCatalogItem(catalogDetail);
           }}
+        />
+      )}
+
+      {confirmDeleteItem && (
+        <ConfirmModal
+          title="Remove this item?"
+          body={`"${confirmDeleteItem.title}" will be removed from the catalog.`}
+          onConfirm={() => {
+            deleteCatalogItem(confirmDeleteItem);
+            setConfirmDeleteItem(null);
+          }}
+          onCancel={() => setConfirmDeleteItem(null)}
         />
       )}
     </div>
