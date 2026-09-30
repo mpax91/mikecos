@@ -837,12 +837,12 @@ async function runImapAction(client: ImapClient, action: string, uidValue: numbe
 
 async function applyPendingActions(env: Env, client: ImapClient, accountId: string): Promise<void> {
   const { results } = await env.DB.prepare(
-    `SELECT pa.id as action_id, pa.action, pa.message_id, m.uid, m.gm_msgid
+    `SELECT pa.id as action_id, pa.action, pa.message_id, m.uid, m.gm_msgid, m.in_inbox
      FROM email_pending_actions pa JOIN email_messages m ON m.id = pa.message_id
      WHERE pa.account_id = ? AND pa.applied_at IS NULL`
   )
     .bind(accountId)
-    .all<{ action_id: string; action: string; message_id: string; uid: number; gm_msgid: string }>();
+    .all<{ action_id: string; action: string; message_id: string; uid: number; gm_msgid: string; in_inbox: number }>();
 
   for (const row of results ?? []) {
     try {
@@ -858,9 +858,23 @@ async function applyPendingActions(env: Env, client: ImapClient, accountId: stri
         // giving up for this tick.
         if (!(err instanceof ImapUidMismatchError)) throw err;
         const freshUid = row.gm_msgid ? await client.searchByGmMsgId(row.gm_msgid) : null;
-        if (freshUid == null) throw err; // message genuinely isn't in this mailbox anymore — nothing to retry
-        await env.DB.prepare('UPDATE email_messages SET uid = ? WHERE id = ?').bind(freshUid, row.message_id).run();
-        await runImapAction(client, row.action, freshUid);
+        if (freshUid == null) {
+          // The message isn't findable in this mailbox at all anymore —
+          // if MikeOS's own local state already reflects that (in_inbox=0,
+          // for an archive/trash action), the action already took effect
+          // (most likely from an earlier attempt that genuinely succeeded
+          // but got a false-negative confirmation — see archive()'s
+          // history) and there's nothing left to retry. Only a real,
+          // still-unresolved mismatch should keep retrying.
+          if (!row.in_inbox && (row.action === 'archive' || row.action === 'trash')) {
+            // fall through — treated as already applied below
+          } else {
+            throw err;
+          }
+        } else {
+          await env.DB.prepare('UPDATE email_messages SET uid = ? WHERE id = ?').bind(freshUid, row.message_id).run();
+          await runImapAction(client, row.action, freshUid);
+        }
       }
       await env.DB.prepare('UPDATE email_pending_actions SET applied_at = ? WHERE id = ?').bind(now(), row.action_id).run();
     } catch (err) {
