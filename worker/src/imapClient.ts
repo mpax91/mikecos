@@ -440,16 +440,26 @@ export class ImapClient {
    * returns OK — even with an untagged FETCH response, which made the old
    * storeMatched() check above think it had succeeded — without actually
    * removing the message from Inbox. \Inbox isn't a real settable label
-   * the way \Trash/\Important/\Starred are; Gmail just silently no-ops it. */
+   * the way \Trash/\Important/\Starred are; Gmail just silently no-ops it.
+   *
+   * Confirmation is done at the STORE step, not by looking for an untagged
+   * EXPUNGE response after the EXPUNGE command: empirically (2026-09-30,
+   * live against Mike's account) Gmail's UID EXPUNGE doesn't reliably echo
+   * one back the way storeMatched() expects from a STORE, even though the
+   * expunge genuinely happens — a first version of this fix treated that
+   * missing echo as failure and kept the (already-successful) action
+   * retrying forever. The STORE for +FLAGS (\Deleted) is dropped without
+   * .SILENT instead, specifically so storeMatched() can confirm it landed
+   * on a real message before the EXPUNGE, whose own tagged OK is then
+   * trusted on its own. */
   async archive(uid: number): Promise<void> {
-    const res1 = await this.command(`UID STORE ${uid} +FLAGS.SILENT (\\Deleted)`);
+    const res1 = await this.command(`UID STORE ${uid} +FLAGS (\\Deleted)`);
     if (res1.status !== 'OK') throw new ImapProtocolError(`archive (mark deleted) failed: ${res1.text || res1.status}`);
+    if (!this.storeMatched(res1, uid)) {
+      throw new ImapUidMismatchError(`archive: UID STORE ${uid} (mark deleted) returned OK but matched no message`);
+    }
     const res2 = await this.command(`UID EXPUNGE ${uid}`);
     if (res2.status !== 'OK') throw new ImapProtocolError(`archive (expunge) failed: ${res2.text || res2.status}`);
-    const expunged = res2.untagged.some((line) => line[1] === 'EXPUNGE');
-    if (!expunged) {
-      throw new ImapUidMismatchError(`archive: UID EXPUNGE ${uid} returned OK but nothing was expunged`);
-    }
   }
 
   /** UID of the message currently carrying this Gmail message id, or null
