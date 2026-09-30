@@ -1842,6 +1842,10 @@ export interface VaultFact {
   value: string | null;
   position: number;
   created_at: string;
+  // Auto-detected from the value server-side (a date, a "$" amount) —
+  // never user-set. See detectFactValue in worker/src/vault.ts.
+  value_type?: 'date' | 'currency' | null;
+  value_norm?: string | null;
 }
 
 export interface VaultEntryDetail extends Entity {
@@ -1853,6 +1857,8 @@ export interface VaultRollupEntry {
   entryId: string;
   entryTitle: string;
   value: string | null;
+  valueType?: 'date' | 'currency' | null;
+  valueNorm?: string | null;
 }
 
 export interface VaultRollupGroup {

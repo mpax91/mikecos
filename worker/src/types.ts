@@ -618,6 +618,11 @@ export interface VaultFactRow {
   value: string | null;
   position: number;
   created_at: string;
+  // Auto-detected, never user-set — see detectFactValue in vault.ts and
+  // 0074_vault_fact_types.sql. value_norm is an ISO date (YYYY-MM-DD) when
+  // value_type='date', or a plain numeric string when value_type='currency'.
+  value_type: 'date' | 'currency' | null;
+  value_norm: string | null;
 }
 
 // ---- Vault Passwords (0041_vault_passwords.sql) — the credential fields

@@ -32,6 +32,51 @@ function db(c: { env: Env }) {
   return c.env.DB;
 }
 
+// ---- Auto-detected fact typing — no picker, no schema to set up first;
+// this just recognizes a couple of shapes Mike already types naturally
+// (a date, a dollar amount) so Rollups can filter by year or amount
+// instead of only raw text. Deliberately conservative: currency requires
+// an explicit "$" so plain numbers (order #s, VINs, serials, quantities)
+// never misfire, and dates are matched against a short allowlist of
+// explicit formats rather than JS's very permissive Date.parse (which
+// would happily treat a bare "2026" or a 2-digit quantity as a date). ----
+
+const MONTH_ABBRS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+
+function toIsoDate(y: number, mo: number, d: number): string | null {
+  if (y < 1000 || y > 9999 || mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${y}-${pad(mo)}-${pad(d)}`;
+}
+
+export function detectFactValue(rawValue: string | null | undefined): { type: 'date' | 'currency' | null; norm: string | null } {
+  const value = rawValue?.trim();
+  if (!value) return { type: null, norm: null };
+
+  const currencyMatch = value.match(/^\$\s*(-?\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?)$/);
+  if (currencyMatch) {
+    const num = Number(currencyMatch[1].replace(/,/g, ''));
+    if (!Number.isNaN(num)) return { type: 'currency', norm: String(num) };
+  }
+
+  let m: RegExpMatchArray | null;
+  if ((m = value.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/))) {
+    const iso = toIsoDate(Number(m[3]), Number(m[1]), Number(m[2]));
+    if (iso) return { type: 'date', norm: iso };
+  } else if ((m = value.match(/^(\d{4})-(\d{2})-(\d{2})$/))) {
+    const iso = toIsoDate(Number(m[1]), Number(m[2]), Number(m[3]));
+    if (iso) return { type: 'date', norm: iso };
+  } else if ((m = value.match(/^([A-Za-z]+)\.?\s+(\d{1,2}),?\s+(\d{4})$/))) {
+    const monthIdx = MONTH_ABBRS.indexOf(m[1].toLowerCase().slice(0, 3));
+    if (monthIdx >= 0) {
+      const iso = toIsoDate(Number(m[3]), monthIdx + 1, Number(m[2]));
+      if (iso) return { type: 'date', norm: iso };
+    }
+  }
+
+  return { type: null, norm: null };
+}
+
 /** Recomputes an entry's search_text from its title, freeform note body,
  * and every quick-fact label/value it currently carries — so a Vault entry
  * is findable by account number, VIN, etc. through the same search_text
@@ -163,9 +208,11 @@ vaultRouter.post('/entries/:id/facts', async (c) => {
   if (!label) return c.json({ error: 'label is required' }, 400);
   const maxPos = await db(c).prepare('SELECT COALESCE(MAX(position), -1) as m FROM vault_facts WHERE entry_id = ?').bind(entryId).first<{ m: number }>();
   const id = uid();
+  const value = body.value?.trim() || null;
+  const detected = detectFactValue(value);
   await db(c)
-    .prepare('INSERT INTO vault_facts (id, entry_id, label, value, position, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-    .bind(id, entryId, label, body.value?.trim() || null, (maxPos?.m ?? -1) + 1, now())
+    .prepare('INSERT INTO vault_facts (id, entry_id, label, value, position, created_at, value_type, value_norm) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    .bind(id, entryId, label, value, (maxPos?.m ?? -1) + 1, now(), detected.type, detected.norm)
     .run();
   await db(c).prepare('UPDATE entities SET last_touched = ? WHERE id = ?').bind(now(), entryId).run();
   await reindexEntry(c, entryId);
@@ -211,8 +258,10 @@ vaultRouter.patch('/facts/:id', async (c) => {
     binds.push(label);
   }
   if (body.value !== undefined) {
-    sets.push('value = ?');
-    binds.push(body.value?.trim() || null);
+    const value = body.value?.trim() || null;
+    const detected = detectFactValue(value);
+    sets.push('value = ?', 'value_type = ?', 'value_norm = ?');
+    binds.push(value, detected.type, detected.norm);
   }
   if (sets.length) {
     binds.push(id);
@@ -331,17 +380,34 @@ vaultRouter.patch('/passwords/:id', async (c) => {
 vaultRouter.get('/facts/rollup', async (c) => {
   const rows = await db(c)
     .prepare(
-      `SELECT vf.id as fact_id, vf.label, vf.value, vf.entry_id, e.title as entry_title, e.pinned as entry_pinned
+      `SELECT vf.id as fact_id, vf.label, vf.value, vf.value_type, vf.value_norm, vf.entry_id, e.title as entry_title, e.pinned as entry_pinned
        FROM vault_facts vf
        JOIN entities e ON e.id = vf.entry_id AND e.type = 'vault_entry'
        ORDER BY vf.label COLLATE NOCASE, e.title COLLATE NOCASE`
     )
-    .all<{ fact_id: string; label: string; value: string | null; entry_id: string; entry_title: string; entry_pinned: number }>();
+    .all<{
+      fact_id: string;
+      label: string;
+      value: string | null;
+      value_type: 'date' | 'currency' | null;
+      value_norm: string | null;
+      entry_id: string;
+      entry_title: string;
+      entry_pinned: number;
+    }>();
 
   type Group = {
     key: string;
     labelCounts: Map<string, number>;
-    items: { fact_id: string; label: string; value: string | null; entry_id: string; entry_title: string }[];
+    items: {
+      fact_id: string;
+      label: string;
+      value: string | null;
+      value_type: 'date' | 'currency' | null;
+      value_norm: string | null;
+      entry_id: string;
+      entry_title: string;
+    }[];
   };
   const groups = new Map<string, Group>();
 
@@ -354,7 +420,15 @@ vaultRouter.get('/facts/rollup', async (c) => {
       groups.set(key, g);
     }
     g.labelCounts.set(r.label, (g.labelCounts.get(r.label) ?? 0) + 1);
-    g.items.push({ fact_id: r.fact_id, label: r.label, value: r.value, entry_id: r.entry_id, entry_title: r.entry_title || 'Untitled Entry' });
+    g.items.push({
+      fact_id: r.fact_id,
+      label: r.label,
+      value: r.value,
+      value_type: r.value_type,
+      value_norm: r.value_norm,
+      entry_id: r.entry_id,
+      entry_title: r.entry_title || 'Untitled Entry',
+    });
   }
 
   const result = Array.from(groups.values())
@@ -363,7 +437,14 @@ vaultRouter.get('/facts/rollup', async (c) => {
       return {
         label: displayLabel,
         count: g.items.length,
-        entries: g.items.map((i) => ({ factId: i.fact_id, entryId: i.entry_id, entryTitle: i.entry_title, value: i.value })),
+        entries: g.items.map((i) => ({
+          factId: i.fact_id,
+          entryId: i.entry_id,
+          entryTitle: i.entry_title,
+          value: i.value,
+          valueType: i.value_type,
+          valueNorm: i.value_norm,
+        })),
       };
     })
     .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));

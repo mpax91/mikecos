@@ -12330,6 +12330,42 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 
 /* ---- Vault rollups: every Quick Fact across the Vault, grouped by label ---- */
 
+.vault-rollup-value-filter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0;
+  max-width: 420px;
+}
+
+.vault-rollup-value-filter__input {
+  flex: 1;
+  padding: 7px 10px;
+  border: var(--border-hairline);
+  border-radius: 6px;
+  background: #fff;
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.vault-rollup-value-filter__input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.vault-rollup-value-filter__clear {
+  border: none;
+  background: none;
+  color: var(--color-muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 4px 6px;
+}
+
+.vault-rollup-value-filter__clear:hover {
+  color: var(--color-text);
+}
+
 .vault-rollup-filters {
   display: flex;
   align-items: center;
