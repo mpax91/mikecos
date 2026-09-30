@@ -14834,3 +14834,359 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   min-width: 80px;
   text-align: right;
 }
+
+/* ---- Home (to-scale floor plan: rooms, fixtures, electrical) ---- */
+/* See worker/migrations/0077_home.sql for the data model. The canvas reuses
+   .canvas-board's pan/zoom engine conventions (world transform, viewport
+   dot-grid) but under its own .home-canvas__* namespace, since rooms/
+   fixtures render very differently from board cards (nested, to-scale,
+   feet/inches labels that un-scale themselves at every zoom level). */
+
+.home-feet-inches {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.home-feet-inches input {
+  width: 52px;
+  flex: 0 0 auto;
+}
+
+.home-feet-inches span {
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.home-checkbox-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  margin: 10px 0;
+  cursor: pointer;
+}
+
+.home-vault-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: var(--border-hairline);
+  border-radius: 8px;
+  background: var(--color-card-bg);
+  font-size: 13px;
+}
+
+.home-vault-link span {
+  flex: 1;
+  font-weight: var(--weight-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-vault-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: var(--border-hairline);
+  border-radius: 8px;
+  background: var(--color-sidebar);
+}
+
+.home-vault-picker__hint {
+  font-size: 12px;
+  color: var(--color-muted);
+  padding: 4px 2px;
+}
+
+.home-vault-picker__list {
+  display: flex;
+  flex-direction: column;
+  max-height: 160px;
+  overflow-y: auto;
+  border: var(--border-hairline);
+  border-radius: 6px;
+  background: var(--color-card-bg);
+}
+
+.home-vault-picker__item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: none;
+  padding: 7px 10px;
+  font-size: 13px;
+  cursor: pointer;
+  border-bottom: var(--border-hairline);
+}
+
+.home-vault-picker__item:last-child {
+  border-bottom: none;
+}
+
+.home-vault-picker__item:hover {
+  background: var(--color-sidebar);
+}
+
+/* ---- Floor canvas ---- */
+
+/* Same edge-to-edge treatment as .canvas-board — cancels .main__content's
+   padding so the pan/zoom viewport fills the available space. */
+.home-canvas {
+  margin: -32px -40px;
+  width: calc(100% + 80px);
+  height: calc(100% + 64px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.home-canvas__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 16px;
+  border-bottom: var(--border-hairline);
+  background: var(--color-paper);
+  flex: 0 0 auto;
+}
+
+.home-canvas__hint {
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.home-canvas__viewport {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+  cursor: grab;
+  background-color: var(--color-sidebar);
+  background-image: radial-gradient(var(--color-border) 1px, transparent 1px);
+  background-size: 22px 22px;
+  touch-action: none;
+}
+
+.home-canvas__world {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.home-canvas__empty {
+  position: absolute;
+  top: 24px;
+  left: 24px;
+  width: max-content;
+  max-width: 320px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--color-muted);
+  background: var(--color-paper);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-card);
+  padding: 16px 20px;
+  pointer-events: none;
+}
+
+/* A room draws literally to scale (width/depth are CSS px = inches ×
+   scale), so its own chrome — title, dims, kebab trigger, resize handle —
+   counter-scales by 1/scale to stay a fixed, legible screen size at every
+   zoom level instead of ballooning or vanishing with the room itself. */
+.home-room {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1.5px solid var(--color-accent);
+  background: rgba(47, 74, 60, 0.05);
+  border-radius: 3px;
+  cursor: grab;
+}
+
+.home-room__header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: top left;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  background: var(--color-card-bg);
+  border: var(--border-hairline);
+  border-radius: 0 0 6px 0;
+  padding: 3px 6px;
+  box-shadow: 0 1px 3px rgba(46, 42, 34, 0.12);
+}
+
+.home-room__title {
+  font-weight: var(--weight-medium);
+  font-size: 12px;
+}
+
+.home-room__dims {
+  font-size: 11px;
+  color: var(--color-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.home-room__resize-handle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  transform-origin: bottom right;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+  border-right: 3px solid var(--color-accent);
+  border-bottom: 3px solid var(--color-accent);
+  opacity: 0.6;
+}
+
+.home-room__resize-handle:hover {
+  opacity: 1;
+}
+
+/* Fixtures are nested inside their room's DOM element and positioned
+   room-relative, so dragging/resizing the room carries them along for
+   free via the shared transform — see HomeFloorCanvas.tsx's header
+   comment. Each type gets a distinct accent so the map reads at a glance
+   without opening anything. */
+.home-fixture {
+  position: absolute;
+  box-sizing: border-box;
+  border-radius: 3px;
+  border: 1.5px solid var(--color-border);
+  background: var(--color-card-bg);
+  cursor: grab;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+
+.home-fixture--appliance {
+  border-color: var(--color-accent);
+  background: rgba(47, 74, 60, 0.12);
+}
+
+.home-fixture--furniture {
+  border-color: var(--color-accent-secondary);
+  background: rgba(184, 99, 47, 0.1);
+}
+
+.home-fixture--outlet {
+  border-color: var(--color-image-accent);
+  background: rgba(63, 124, 172, 0.12);
+}
+
+.home-fixture--switch {
+  border-color: var(--color-postit-border);
+  background: rgba(246, 222, 124, 0.35);
+}
+
+.home-fixture--fixture {
+  border-color: var(--color-doc);
+  background: rgba(43, 87, 154, 0.1);
+}
+
+.home-fixture__inner {
+  transform-origin: top left;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  padding: 2px 5px;
+  font-size: 11px;
+}
+
+.home-fixture__icon {
+  font-size: 12px;
+  line-height: 1;
+}
+
+.home-fixture__label {
+  font-weight: var(--weight-medium);
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.home-fixture__badges {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.home-fixture__badge {
+  font-size: 10px;
+  line-height: 1;
+}
+
+/* ---- Electrical (panels & breakers) ---- */
+
+.home-electrical__panel-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.home-breaker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.home-breaker-row {
+  border: var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: var(--color-card-bg);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.home-breaker-row__main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.home-breaker-row__number {
+  font-weight: var(--weight-medium);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-accent-secondary);
+  min-width: 34px;
+}
+
+.home-breaker-row__label {
+  flex: 1;
+  font-size: 13px;
+}
+
+.home-breaker-row__amps {
+  font-size: 11px;
+  color: var(--color-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.home-breaker-row__fixtures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.home-breaker-row__empty {
+  font-size: 12px;
+  color: var(--color-placeholder);
+}
+
+.home-breaker-row__fixture-loc {
+  color: var(--color-muted);
+}

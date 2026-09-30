@@ -1,6 +1,6 @@
 import type { AuthenticationResponseJSON, PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON, RegistrationResponseJSON } from '@simplewebauthn/browser';
 import type { AuthCredentialSummary, AuthStatus, Bet, BetLeg, BetGameNote, BetPromo, BetPromoStatus, BetScheduleGame, BetTransaction, BetTransactionType, VaultEntryDetail, VaultFact, BriefingResponse, CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, CreditScoreEntry, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitDirection, HabitEvent, HabitLog, HabitSummary, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsFeedsResponse, NewsFolder, NewsSavedArticle, NewsSettings, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, VoterFieldsBackfillChunkResponse,
-  ContactAskResponse, BetGameEnrichment, VaultFactLabel, VaultRollupGroup, WalletCard, WalletCardFact, WalletCategory, WalletCardIdSecret, RewardsCard, RewardsBonus, RewardsPerk, RewardsImportResult, RewardsMerchant, RewardsOffer, PaymentCard, PaymentCardFact, PaymentCardSecrets, PlexLibrary, PlexItem, PlexItemDetail, PlexIssue, PlexMissingEpisode, PlexSyncChunkResult, PlexAiringCheckChunkResult, PlexAiringScanChunkResult, MediaCatalogItem, MediaCatalogFormat, BarItem, BarItemDetail, BarItemType, BarTasting, BarTopTastingEntry, WeatherResponse, WeekResponse, EmailAccount, EmailInboxFeed, EmailPeekResult, EmailSyncResult, BookmarksResponse, BookmarksImportResult, CloudProviderId, CloudProviderInfo, CloudAccount, CloudBrowseResponse, CloudSearchResponse } from './types';
+  ContactAskResponse, BetGameEnrichment, VaultFactLabel, VaultRollupGroup, WalletCard, WalletCardFact, WalletCategory, WalletCardIdSecret, RewardsCard, RewardsBonus, RewardsPerk, RewardsImportResult, RewardsMerchant, RewardsOffer, PaymentCard, PaymentCardFact, PaymentCardSecrets, PlexLibrary, PlexItem, PlexItemDetail, PlexIssue, PlexMissingEpisode, PlexSyncChunkResult, PlexAiringCheckChunkResult, PlexAiringScanChunkResult, MediaCatalogItem, MediaCatalogFormat, BarItem, BarItemDetail, BarItemType, BarTasting, BarTopTastingEntry, HomeFloor, HomeFloorLayout, HomeRoom, HomeFixture, HomeFixtureType, ElectricalPanel, ElectricalBreaker, ElectricalBreakerWithFixtures, WeatherResponse, WeekResponse, EmailAccount, EmailInboxFeed, EmailPeekResult, EmailSyncResult, BookmarksResponse, BookmarksImportResult, CloudProviderId, CloudProviderInfo, CloudAccount, CloudBrowseResponse, CloudSearchResponse } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -1407,4 +1407,87 @@ export const api = {
 
   forwardEmail: (id: string, data: { to: string; note?: string }) =>
     request<{ ok: true }>(`/api/email/messages/${id}/forward`, { method: 'POST', body: JSON.stringify(data) }),
+
+  // ---- Home: a to-scale digital floor plan (0077_home.sql) ----
+
+  listHomeFloors: () => request<HomeFloor[]>('/api/home/floors'),
+
+  createHomeFloor: (name: string) => request<HomeFloor>('/api/home/floors', { method: 'POST', body: JSON.stringify({ name }) }),
+
+  updateHomeFloor: (id: string, patch: Partial<{ name: string; position: number }>) =>
+    request<HomeFloor>(`/api/home/floors/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+
+  deleteHomeFloor: (id: string) => request<{ ok: true }>(`/api/home/floors/${id}`, { method: 'DELETE' }),
+
+  /** Everything the floor canvas needs in one call: the floor, its rooms,
+   * and every fixture in those rooms (already joined with Vault title /
+   * breaker label). */
+  getHomeFloorLayout: (floorId: string) => request<HomeFloorLayout>(`/api/home/floors/${floorId}/layout`),
+
+  createHomeRoom: (
+    floorId: string,
+    room: { name: string; x?: number; y?: number; width: number; depth: number; notes?: string | null }
+  ) => request<HomeRoom>(`/api/home/floors/${floorId}/rooms`, { method: 'POST', body: JSON.stringify(room) }),
+
+  updateHomeRoom: (id: string, patch: Partial<{ name: string; x: number; y: number; width: number; depth: number; notes: string | null }>) =>
+    request<HomeRoom>(`/api/home/rooms/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+
+  deleteHomeRoom: (id: string) => request<{ ok: true }>(`/api/home/rooms/${id}`, { method: 'DELETE' }),
+
+  createHomeFixture: (
+    roomId: string,
+    fixture: {
+      type: HomeFixtureType;
+      label: string;
+      x?: number;
+      y?: number;
+      width?: number;
+      depth?: number;
+      vaultEntryId?: string | null;
+      breakerId?: string | null;
+      smartDevice?: boolean;
+      smartNotes?: string | null;
+      notes?: string | null;
+    }
+  ) => request<HomeFixture>(`/api/home/rooms/${roomId}/fixtures`, { method: 'POST', body: JSON.stringify(fixture) }),
+
+  updateHomeFixture: (
+    id: string,
+    patch: Partial<{
+      label: string;
+      x: number;
+      y: number;
+      width: number;
+      depth: number;
+      vaultEntryId: string | null;
+      breakerId: string | null;
+      smartDevice: boolean;
+      smartNotes: string | null;
+      notes: string | null;
+    }>
+  ) => request<HomeFixture>(`/api/home/fixtures/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+
+  deleteHomeFixture: (id: string) => request<{ ok: true }>(`/api/home/fixtures/${id}`, { method: 'DELETE' }),
+
+  listElectricalPanels: () => request<ElectricalPanel[]>('/api/home/panels'),
+
+  createElectricalPanel: (panel: { name: string; locationNotes?: string | null }) =>
+    request<ElectricalPanel>('/api/home/panels', { method: 'POST', body: JSON.stringify(panel) }),
+
+  updateElectricalPanel: (id: string, patch: Partial<{ name: string; locationNotes: string | null }>) =>
+    request<ElectricalPanel>(`/api/home/panels/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+
+  deleteElectricalPanel: (id: string) => request<{ ok: true }>(`/api/home/panels/${id}`, { method: 'DELETE' }),
+
+  /** A panel's breakers, each with the fixtures assigned to it — the
+   * "what's on breaker 14" reverse lookup. */
+  listElectricalBreakers: (panelId: string) => request<ElectricalBreakerWithFixtures[]>(`/api/home/panels/${panelId}/breakers`),
+
+  createElectricalBreaker: (panelId: string, breaker: { number: string; label?: string | null; amperage?: number | null }) =>
+    request<ElectricalBreaker>(`/api/home/panels/${panelId}/breakers`, { method: 'POST', body: JSON.stringify(breaker) }),
+
+  updateElectricalBreaker: (id: string, patch: Partial<{ number: string; label: string | null; amperage: number | null }>) =>
+    request<ElectricalBreaker>(`/api/home/breakers/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+
+  deleteElectricalBreaker: (id: string) => request<{ ok: true }>(`/api/home/breakers/${id}`, { method: 'DELETE' }),
 };

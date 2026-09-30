@@ -673,3 +673,67 @@ export interface BarTastingRow {
   buy_again: number | null; // 0/1/null
   created_at: string;
 }
+
+// ---- Home: a to-scale digital floor plan (0077_home.sql). See
+// worker/src/home.ts for the full design rationale — floors contain rooms,
+// rooms contain fixtures (appliance/furniture/outlet/switch/fixture), and
+// outlets/switches can be assigned to a breaker on an electrical panel. ----
+
+export interface HomeFloorRow {
+  id: string;
+  name: string;
+  position: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface HomeRoomRow {
+  id: string;
+  floor_id: string;
+  name: string;
+  x: number;
+  y: number;
+  width: number;
+  depth: number;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type HomeFixtureType = 'appliance' | 'furniture' | 'outlet' | 'switch' | 'fixture';
+
+export interface HomeFixtureRow {
+  id: string;
+  room_id: string;
+  type: HomeFixtureType;
+  label: string;
+  x: number;
+  y: number;
+  width: number;
+  depth: number;
+  vault_entry_id: string | null;
+  breaker_id: string | null;
+  smart_device: number; // 0/1
+  smart_notes: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ElectricalPanelRow {
+  id: string;
+  name: string;
+  location_notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ElectricalBreakerRow {
+  id: string;
+  panel_id: string;
+  number: string;
+  label: string | null;
+  amperage: number | null;
+  created_at: string;
+  updated_at: string;
+}

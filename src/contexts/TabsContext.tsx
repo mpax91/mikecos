@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ContextMenu, type ContextMenuItem } from '../components/ContextMenu';
 
-export type TabKind = 'today' | 'projects-list' | 'notes-list' | 'jots-list' | 'settings' | 'project' | 'folder' | 'note' | 'stats' | 'boards-list' | 'board' | 'contacts-list' | 'contact' | 'journal' | 'dashboard' | 'news' | 'links' | 'lists-list' | 'list' | 'vault-list' | 'vault' | 'vault-rollups' | 'wallet-list' | 'bets' | 'media-list' | 'bar-list' | 'habits' | 'inbox' | 'cloud';
+export type TabKind = 'today' | 'projects-list' | 'notes-list' | 'jots-list' | 'settings' | 'project' | 'folder' | 'note' | 'stats' | 'boards-list' | 'board' | 'contacts-list' | 'contact' | 'journal' | 'dashboard' | 'news' | 'links' | 'lists-list' | 'list' | 'vault-list' | 'vault' | 'vault-rollups' | 'wallet-list' | 'bets' | 'media-list' | 'bar-list' | 'home-list' | 'habits' | 'inbox' | 'cloud';
 
 export interface Tab {
   id: string;
@@ -40,6 +40,7 @@ function inferTabMeta(path: string): { kind: TabKind; title: string } {
   if (path === '/wallet') return { kind: 'wallet-list', title: 'Wallet' };
   if (path === '/media') return { kind: 'media-list', title: 'Media' };
   if (path === '/bar') return { kind: 'bar-list', title: 'Bar' };
+  if (path === '/home') return { kind: 'home-list', title: 'Home' };
   if (path === '/habits') return { kind: 'habits', title: 'Habits' };
   if (path.startsWith('/projects/')) return { kind: 'project', title: 'Project' };
   if (path.startsWith('/notes/')) return { kind: 'note', title: 'Note' };
@@ -307,6 +308,7 @@ export function tabIcon(kind: TabKind): string {
   if (kind === 'wallet-list') return '🎫';
   if (kind === 'media-list') return '🎬';
   if (kind === 'bar-list') return '🍷';
+  if (kind === 'home-list') return '🏠';
   if (kind === 'habits') return '🎯';
   if (kind === 'inbox') return '📥';
   return kind === 'notes-list' || kind === 'note' ? '📝' : '📁';

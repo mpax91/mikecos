@@ -71,6 +71,7 @@ const SIDEBAR_SECTIONS: NavSectionDef[] = [
       { path: '/wallet', label: 'Wallet', kind: 'wallet-list' },
       { path: '/media', label: 'Media', kind: 'media-list' },
       { path: '/bar', label: 'Bar', kind: 'bar-list' },
+      { path: '/home', label: 'Home', kind: 'home-list' },
       { path: '/links', label: 'Links', kind: 'links' },
       { path: '/cloud', label: 'Cloud', kind: 'cloud' },
       { path: '/contacts', label: 'Contacts', kind: 'contacts-list' },

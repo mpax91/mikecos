@@ -2028,6 +2028,85 @@ export interface PlexAiringCheckChunkResult {
   summary?: { showsResolved: number; newlyFlagged: number };
 }
 
+// ---- Home: a to-scale digital floor plan (0077_home.sql). Every
+// dimension (room width/depth, fixture footprint, x/y position) is in
+// whole inches — the canvas draws everything proportionally, so a
+// fixture's footprint really is to scale against the room it's in. A
+// fixture's x/y is relative to its own room's top-left corner, not the
+// floor, so dragging a room carries its fixtures with it for free. ----
+
+export interface HomeFloor {
+  id: string;
+  name: string;
+  position: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HomeRoom {
+  id: string;
+  floorId: string;
+  name: string;
+  x: number;
+  y: number;
+  width: number;
+  depth: number;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type HomeFixtureType = 'appliance' | 'furniture' | 'outlet' | 'switch' | 'fixture';
+
+export interface HomeFixture {
+  id: string;
+  roomId: string;
+  type: HomeFixtureType;
+  label: string;
+  x: number;
+  y: number;
+  width: number;
+  depth: number;
+  vaultEntryId: string | null;
+  vaultEntryTitle: string | null;
+  breakerId: string | null;
+  breakerNumber: string | null;
+  breakerLabel: string | null;
+  smartDevice: boolean;
+  smartNotes: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HomeFloorLayout {
+  floor: HomeFloor;
+  rooms: HomeRoom[];
+  fixtures: HomeFixture[];
+}
+
+export interface ElectricalPanel {
+  id: string;
+  name: string;
+  locationNotes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ElectricalBreaker {
+  id: string;
+  panelId: string;
+  number: string;
+  label: string | null;
+  amperage: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ElectricalBreakerWithFixtures extends ElectricalBreaker {
+  fixtures: { id: string; label: string; type: HomeFixtureType; roomName: string; floorName: string }[];
+}
+
 // One bounded chunk of the manually-triggered full-history scan (see
 // worker/src/plexAiring.ts's header comment above runFullHistoryScanChunk
 // for why this one's chunked and the nightly check above isn't). The
