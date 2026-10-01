@@ -335,6 +335,57 @@ plexRouter.get('/missing-episodes', async (c) => {
   return c.json((results ?? []).map(missingEpisodeJson));
 });
 
+// GET /airing-debug?title=<substring> — read-only troubleshooting for
+// "why didn't this show's new episode show up in Airing": for every show
+// whose title matches, reports its own matched/tvdb_id state, whether
+// plexAiring.ts has resolved it to a TVMaze id yet (and when), and any
+// missing-episode rows (flagged or dismissed) already on file for it.
+// Also echoes the nightly check's own resumable state (see
+// runAiringCheckChunk) so a run that got cut off mid-library shows up as
+// a non-null row with items still queued, rather than needing a log dive.
+// Not used by the UI — a plain diagnostic, hit directly when needed.
+plexRouter.get('/airing-debug', async (c) => {
+  const title = c.req.query('title')?.trim();
+  if (!title) return c.json({ error: 'title is required' }, 400);
+
+  const { results: shows } = await c.env.DB.prepare(`SELECT id, title, guid, tvdb_id FROM plex_items WHERE type = 'show' AND title LIKE ?`)
+    .bind(`%${title}%`)
+    .all<{ id: string; title: string; guid: string | null; tvdb_id: string | null }>();
+
+  const out = [];
+  for (const s of shows ?? []) {
+    const tvmaze = await c.env.DB.prepare('SELECT tvdb_id, tvmaze_id, resolved_at FROM plex_tvmaze_shows WHERE show_item_id = ?')
+      .bind(s.id)
+      .first<{ tvdb_id: string; tvmaze_id: number | null; resolved_at: string }>();
+    const { results: missing } = await c.env.DB.prepare(
+      'SELECT season_number, episode_number, episode_name, aired_on, detected_at, dismissed FROM plex_missing_episodes WHERE show_item_id = ? ORDER BY aired_on DESC LIMIT 10'
+    )
+      .bind(s.id)
+      .all<{ season_number: number; episode_number: number; episode_name: string | null; aired_on: string; detected_at: string; dismissed: number }>();
+    out.push({
+      id: s.id,
+      title: s.title,
+      matched: !!s.guid && !s.guid.startsWith('local://'),
+      guid: s.guid,
+      tvdbId: s.tvdb_id,
+      tvmazeResolved: tvmaze ?? null,
+      missingEpisodes: (missing ?? []).map((m) => ({ ...m, dismissed: m.dismissed === 1 })),
+    });
+  }
+
+  const checkState = await c.env.DB.prepare('SELECT state_json, updated_at FROM plex_airing_check_state WHERE id = 1').first<{
+    state_json: string;
+    updated_at: string;
+  }>();
+
+  return c.json({
+    shows: out,
+    inProgressNightlyCheck: checkState
+      ? { updatedAt: checkState.updated_at, ...JSON.parse(checkState.state_json) }
+      : null, // null = no interrupted run on file; last run completed and cleared its state
+  });
+});
+
 plexRouter.patch('/missing-episodes/:id', async (c) => {
   const id = c.req.param('id');
   const body = await c.req.json<{ dismissed?: boolean }>();
