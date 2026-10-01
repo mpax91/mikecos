@@ -9327,6 +9327,13 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   flex-direction: column;
 }
 
+/* Inside the collapsible .bets-workspace__section wrapper (padding: 0,
+   same as the sport sections) the list needs its own padding — the header
+   button already carries its own. */
+.bets-workspace__promo-list--section {
+  padding: 0 16px 14px;
+}
+
 .bets-workspace__promo-row {
   display: flex;
   align-items: center;

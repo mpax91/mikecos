@@ -26,6 +26,10 @@ function formatKickoff(iso: string | null): string {
 
 const COLUMNS_KEY = 'mikeos-bets-workspace-columns';
 const COLLAPSED_KEY = 'mikeos-bets-workspace-collapsed';
+// A sport's section is keyed by its own name (NFL, NHL, …) in the same
+// `collapsed` set — this key stands in for the Promos section so it can
+// collapse the same way without colliding with an actual sport name.
+const PROMOS_SECTION_KEY = '__promos__';
 // Mike's default tipper roster — matches the "Tipper" tab of his old sheet,
 // swapping out the two he doesn't use anymore (Sportsline, CBS Props) for
 // ChatGPT and Claude. Only applied the very first time (nothing saved yet);
@@ -1289,30 +1293,36 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
       )}
 
       {sortedActivePromos.length > 0 && (
-        <div className="bets-breakdown card" style={{ marginTop: 12 }}>
-          <div className="bets-breakdown__title">Promos available today</div>
-          <div className="bets-workspace__promo-list">
-            {sortedActivePromos.map((p) => (
-              <div key={p.id} className="bets-workspace__promo-row">
-                <span className="bets-workspace__promo-row-type">{p.promo_type}</span>
-                <div className="bets-workspace__promo-row-main">
-                  <div className="bets-workspace__promo-row-headline">
-                    <strong>{p.sportsbook}</strong> {p.description}
-                  </div>
-                  {(p.legs || p.odds || p.amount) && (
-                    <div className="bets-workspace__promo-row-detail">
-                      {[p.legs ? `${p.legs} legs` : null, p.odds, p.amount].filter(Boolean).join(' · ')}
+        <div className="bets-workspace__section card" style={{ marginTop: 12 }}>
+          <button type="button" className="bets-workspace__section-header" onClick={() => toggleCollapse(PROMOS_SECTION_KEY)}>
+            <span className={`bets-workspace__chevron${collapsed.has(PROMOS_SECTION_KEY) ? ' is-collapsed' : ''}`}>▾</span>
+            <span className="bets-workspace__section-title">Promos Available Today</span>
+            <span className="bets-workspace__section-count">{sortedActivePromos.length}</span>
+          </button>
+          {!collapsed.has(PROMOS_SECTION_KEY) && (
+            <div className="bets-workspace__promo-list bets-workspace__promo-list--section">
+              {sortedActivePromos.map((p) => (
+                <div key={p.id} className="bets-workspace__promo-row">
+                  <span className="bets-workspace__promo-row-type">{p.promo_type}</span>
+                  <div className="bets-workspace__promo-row-main">
+                    <div className="bets-workspace__promo-row-headline">
+                      <strong>{p.sportsbook}</strong> {p.description}
                     </div>
+                    {(p.legs || p.odds || p.amount) && (
+                      <div className="bets-workspace__promo-row-detail">
+                        {[p.legs ? `${p.legs} legs` : null, p.odds, p.amount].filter(Boolean).join(' · ')}
+                      </div>
+                    )}
+                  </div>
+                  {p.expires_at && (
+                    <span className={`bets-workspace__promo-row-expiry${p.expires_at === date ? ' is-today' : ''}`}>
+                      {formatExpiryLabel(p.expires_at, date)}
+                    </span>
                   )}
                 </div>
-                {p.expires_at && (
-                  <span className={`bets-workspace__promo-row-expiry${p.expires_at === date ? ' is-today' : ''}`}>
-                    {formatExpiryLabel(p.expires_at, date)}
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
