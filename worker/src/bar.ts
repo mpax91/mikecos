@@ -38,6 +38,8 @@ function itemJson(r: BarItemRow) {
     producer: r.producer,
     vintage: r.vintage,
     region: r.region,
+    color: r.color,
+    geo: r.geo,
     quantity: r.quantity,
     drinkWindowStart: r.drink_window_start,
     drinkWindowEnd: r.drink_window_end,
@@ -83,8 +85,8 @@ barRouter.get('/items', async (c) => {
     binds.push(type);
   }
   if (q) {
-    clauses.push('(name LIKE ? OR producer LIKE ? OR category LIKE ? OR region LIKE ?)');
-    binds.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`);
+    clauses.push('(name LIKE ? OR producer LIKE ? OR category LIKE ? OR region LIKE ? OR color LIKE ? OR geo LIKE ?)');
+    binds.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`);
   }
   const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
   const { results } = await db(c)
@@ -112,6 +114,8 @@ interface ItemBody {
   producer?: string | null;
   vintage?: number | null;
   region?: string | null;
+  color?: string | null;
+  geo?: string | null;
   quantity?: number;
   drinkWindowStart?: number | null;
   drinkWindowEnd?: number | null;
@@ -135,8 +139,8 @@ barRouter.post('/items', async (c) => {
 
   await db(c)
     .prepare(
-      `INSERT INTO bar_items (id, type, name, category, producer, vintage, region, quantity, drink_window_start, drink_window_end, notes, price, source, photo_key, photo_mime, photo_orientation, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO bar_items (id, type, name, category, producer, vintage, region, color, geo, quantity, drink_window_start, drink_window_end, notes, price, source, photo_key, photo_mime, photo_orientation, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       id,
@@ -146,6 +150,8 @@ barRouter.post('/items', async (c) => {
       body.producer?.trim() || null,
       body.vintage ?? null,
       body.region?.trim() || null,
+      body.color?.trim() || null,
+      body.geo?.trim() || null,
       quantity,
       body.drinkWindowStart ?? null,
       body.drinkWindowEnd ?? null,
@@ -228,6 +234,14 @@ barRouter.patch('/items/:id', async (c) => {
   if (body.region !== undefined) {
     sets.push('region = ?');
     binds.push(body.region?.trim() || null);
+  }
+  if (body.color !== undefined) {
+    sets.push('color = ?');
+    binds.push(body.color?.trim() || null);
+  }
+  if (body.geo !== undefined) {
+    sets.push('geo = ?');
+    binds.push(body.geo?.trim() || null);
   }
   if (body.quantity !== undefined) {
     sets.push('quantity = ?');
@@ -401,7 +415,7 @@ barRouter.get('/tastings/top', async (c) => {
   const { results } = await db(c)
     .prepare(
       `SELECT bt.*, bi.name as item_name, bi.type as item_type, bi.category as item_category, bi.producer as item_producer,
-              bi.vintage as item_vintage, bi.region as item_region, bi.quantity as item_quantity
+              bi.vintage as item_vintage, bi.region as item_region, bi.color as item_color, bi.geo as item_geo, bi.quantity as item_quantity
        FROM bar_tastings bt
        JOIN bar_items bi ON bi.id = bt.item_id
        WHERE ${clauses.join(' AND ')}
@@ -417,6 +431,8 @@ barRouter.get('/tastings/top', async (c) => {
         item_producer: string | null;
         item_vintage: number | null;
         item_region: string | null;
+        item_color: string | null;
+        item_geo: string | null;
         item_quantity: number;
       }
     >();
@@ -432,6 +448,8 @@ barRouter.get('/tastings/top', async (c) => {
         producer: r.item_producer,
         vintage: r.item_vintage,
         region: r.item_region,
+        color: r.item_color,
+        geo: r.item_geo,
         quantity: r.item_quantity,
       },
     }))

@@ -654,6 +654,8 @@ export interface BarItemRow {
   producer: string | null;
   vintage: number | null;
   region: string | null;
+  color: string | null; // wine only — see 0083_bar_item_color_geo.sql
+  geo: string | null;   // wine only — country of origin
   quantity: number;
   drink_window_start: number | null;
   drink_window_end: number | null;

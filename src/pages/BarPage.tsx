@@ -48,6 +48,9 @@ export function BarPage() {
   const [detailFor, setDetailFor] = useState<BarItem | null>(null);
   const [tastingHistoryFor, setTastingHistoryFor] = useState<BarItemDetail | null>(null);
   const [search, setSearch] = useState('');
+  const [colorFilter, setColorFilter] = useState<string | null>(null);
+  const [geoFilter, setGeoFilter] = useState<string | null>(null);
+  const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
 
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkText, setBulkText] = useState('');
@@ -56,6 +59,17 @@ export function BarPage() {
   const [bulkDone, setBulkDone] = useState<number | null>(null);
 
   useReportTabMeta('Bar', 'bar-list');
+
+  // Filters are scoped to whichever tab is open (a Color pick on Wine means
+  // nothing on Spirits) — switching tabs clears them rather than carrying
+  // over a filter that'd just silently empty the next tab's grid.
+  function switchTab(t: Tab) {
+    setTab(t);
+    setSearch('');
+    setColorFilter(null);
+    setGeoFilter(null);
+    setCategoryFilter(null);
+  }
 
   const loadItems = useCallback(() => {
     api.listBarItems().then(setItems).catch((e) => setError(String(e)));
@@ -175,10 +189,34 @@ export function BarPage() {
   if (error) return <div className="empty-state">Couldn't load the Bar: {error}</div>;
 
   const byTab = tab === 'top' ? [] : (items ?? []).filter((i) => i.type === tab);
+
+  // Filter chip options are drawn from what's actually in this tab's rack
+  // rather than the full fixed dropdown vocab — no point offering a Geo
+  // chip for a country Mike has zero bottles from.
+  function uniqueSorted(values: (string | null)[]): string[] {
+    return Array.from(new Set(values.filter((v): v is string => !!v))).sort((a, b) => a.localeCompare(b));
+  }
+  const colorOptions = tab === 'wine' ? uniqueSorted(byTab.map((i) => i.color)) : [];
+  const geoOptions = tab === 'wine' ? uniqueSorted(byTab.map((i) => i.geo)) : [];
+  const categoryOptions = uniqueSorted(byTab.map((i) => i.category));
+  const categoryFilterLabel = tab === 'wine' ? 'Type' : tab === 'beer' ? 'Style' : 'Category';
+
+  let filtered = byTab;
+  if (colorFilter) filtered = filtered.filter((i) => i.color === colorFilter);
+  if (geoFilter) filtered = filtered.filter((i) => i.geo === geoFilter);
+  if (categoryFilter) filtered = filtered.filter((i) => i.category === categoryFilter);
   const searchQuery = search.trim().toLowerCase();
   const shown = searchQuery
-    ? byTab.filter((i) => [i.name, i.category, i.producer, i.region].filter(Boolean).join(' ').toLowerCase().includes(searchQuery))
-    : byTab;
+    ? filtered.filter((i) => [i.name, i.category, i.producer, i.color, i.geo].filter(Boolean).join(' ').toLowerCase().includes(searchQuery))
+    : filtered;
+  const filtersActive = Boolean(search.trim() || colorFilter || geoFilter || categoryFilter);
+
+  function clearFilters() {
+    setSearch('');
+    setColorFilter(null);
+    setGeoFilter(null);
+    setCategoryFilter(null);
+  }
 
   return (
     <div>
@@ -200,7 +238,7 @@ export function BarPage() {
 
       <div className="bar-tabs">
         {(Object.keys(TAB_META) as Tab[]).map((t) => (
-          <button key={t} type="button" className={`bar-tabs__tab${tab === t ? ' is-active' : ''}`} onClick={() => setTab(t)}>
+          <button key={t} type="button" className={`bar-tabs__tab${tab === t ? ' is-active' : ''}`} onClick={() => switchTab(t)}>
             <span>{TAB_META[t].icon}</span> {TAB_META[t].label}
             {t !== 'top' && items && <span className="bar-tabs__count">{items.filter((i) => i.type === t).length}</span>}
           </button>
@@ -215,6 +253,75 @@ export function BarPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
+      )}
+
+      {tab !== 'top' && byTab.length > 0 && (categoryOptions.length > 1 || colorOptions.length > 1 || geoOptions.length > 1) && (
+        <div className="bar-filters">
+          {colorOptions.length > 1 && (
+            <div className="bar-filters__group">
+              <span className="bar-filters__label">Color</span>
+              <div className="wallet-page__chips">
+                <button type="button" className={`wallet-page__chip${colorFilter === null ? ' is-active' : ''}`} onClick={() => setColorFilter(null)}>
+                  All
+                </button>
+                {colorOptions.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    className={`wallet-page__chip${colorFilter === c ? ' is-active' : ''}`}
+                    onClick={() => setColorFilter(colorFilter === c ? null : c)}
+                  >
+                    {c}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {geoOptions.length > 1 && (
+            <div className="bar-filters__group">
+              <span className="bar-filters__label">Geo</span>
+              <div className="wallet-page__chips">
+                <button type="button" className={`wallet-page__chip${geoFilter === null ? ' is-active' : ''}`} onClick={() => setGeoFilter(null)}>
+                  All
+                </button>
+                {geoOptions.map((g) => (
+                  <button
+                    key={g}
+                    type="button"
+                    className={`wallet-page__chip${geoFilter === g ? ' is-active' : ''}`}
+                    onClick={() => setGeoFilter(geoFilter === g ? null : g)}
+                  >
+                    {g}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {categoryOptions.length > 1 && (
+            <div className="bar-filters__group">
+              <span className="bar-filters__label">{categoryFilterLabel}</span>
+              <div className="wallet-page__chips">
+                <button
+                  type="button"
+                  className={`wallet-page__chip${categoryFilter === null ? ' is-active' : ''}`}
+                  onClick={() => setCategoryFilter(null)}
+                >
+                  All
+                </button>
+                {categoryOptions.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    className={`wallet-page__chip${categoryFilter === c ? ' is-active' : ''}`}
+                    onClick={() => setCategoryFilter(categoryFilter === c ? null : c)}
+                  >
+                    {c}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       {tab === 'top' ? (
@@ -235,7 +342,7 @@ export function BarPage() {
                     {t.item.vintage ? ` (${t.item.vintage})` : ''}
                   </span>
                   <span className="bar-top-list__meta">
-                    {[TAB_META[t.item.type].icon, t.item.category, t.item.producer, t.item.region].filter(Boolean).join(' · ')}
+                    {[TAB_META[t.item.type].icon, t.item.color, t.item.geo, t.item.category, t.item.producer].filter(Boolean).join(' · ')}
                   </span>
                 </div>
                 <div className="bar-top-list__score">
@@ -254,7 +361,18 @@ export function BarPage() {
           in quickly.
         </div>
       ) : shown.length === 0 ? (
-        <div className="empty-state empty-state--section">No {TAB_META[tab].label.toLowerCase()} match "{search.trim()}".</div>
+        <div className="empty-state empty-state--section">
+          No {TAB_META[tab].label.toLowerCase()} match{filtersActive ? ' these filters' : ''}
+          {search.trim() ? ` "${search.trim()}"` : ''}.
+          {filtersActive && (
+            <>
+              {' '}
+              <button type="button" className="btn btn--ghost" onClick={clearFilters} style={{ marginLeft: 6 }}>
+                Clear filters
+              </button>
+            </>
+          )}
+        </div>
       ) : (
         <div className="bar-item-tile-grid">
           {shown.map((item) => (
@@ -279,7 +397,9 @@ export function BarPage() {
                 {item.name}
                 {item.vintage ? ` (${item.vintage})` : ''}
               </div>
-              {item.category && <div className="bar-item-tile__sub">{item.category}</div>}
+              {(item.color || item.category) && (
+                <div className="bar-item-tile__sub">{[item.color, item.category].filter(Boolean).join(' · ')}</div>
+              )}
             </button>
           ))}
         </div>

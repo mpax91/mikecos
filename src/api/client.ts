@@ -1282,6 +1282,8 @@ export const api = {
     producer?: string | null;
     vintage?: number | null;
     region?: string | null;
+    color?: string | null;
+    geo?: string | null;
     quantity?: number;
     drinkWindowStart?: number | null;
     drinkWindowEnd?: number | null;
@@ -1301,6 +1303,8 @@ export const api = {
       producer: string | null;
       vintage: number | null;
       region: string | null;
+      color: string | null;
+      geo: string | null;
       quantity: number;
       drinkWindowStart: number | null;
       drinkWindowEnd: number | null;

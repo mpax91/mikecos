@@ -3,26 +3,51 @@ import { api } from '../api/client';
 import type { BarItem, BarItemType } from '../api/types';
 import { Modal } from './Modal';
 
+// Every one of these is now a real locked dropdown, not free text with
+// suggestions — the whole point of this redesign is that "Type"/"Category"/
+// "Color"/"Geo" are a small, consistent vocabulary so Mike can actually
+// filter on them later ("all my red wines", "all Barolos", "all vodkas")
+// instead of hoping he typed the same thing twice.
 const SPIRIT_CATEGORIES = ['Gin', 'Vodka', 'Whiskey', 'Bourbon', 'Scotch', 'Rum', 'Tequila', 'Mezcal', 'Liqueur', 'Brandy & Cognac', 'Amaro', 'Other'];
-const WINE_VARIETALS = [
-  'Cabernet Sauvignon', 'Pinot Noir', 'Merlot', 'Syrah/Shiraz', 'Malbec', 'Zinfandel', 'Gamay', 'Grenache',
-  // Italian reds — this is most of what actually gets drunk here, so this list leans heavily Italian rather
-  // than treating it as an afterthought next to the usual Napa/Bordeaux staples above.
-  'Sangiovese', 'Nebbiolo', 'Barbera', 'Dolcetto', 'Primitivo', "Nero d'Avola", 'Aglianico', 'Montepulciano',
-  'Corvina (Valpolicella/Amarone)', 'Nerello Mascalese', 'Negroamaro', 'Sagrantino', 'Teroldego', 'Lagrein', 'Cannonau',
-  'Chardonnay', 'Sauvignon Blanc', 'Riesling', 'Pinot Grigio', 'Champagne/Sparkling', 'Rosé', 'Red Blend', 'White Blend',
+
+const WINE_COLORS = ['Red', 'White', 'Rosé', 'Sparkling', 'Orange'];
+
+// Country-level only — on purpose. Mike's old finer "Region" field
+// (e.g. "Piedmont, Italy") is dropped; Type below is often itself a
+// sub-region (Barolo literally is one), and country is what's actually
+// worth filtering by.
+const WINE_GEO = ['Italy', 'France', 'USA', 'Spain', 'Portugal', 'Argentina', 'Chile', 'Germany', 'Australia', 'New Zealand', 'Other'];
+
+// "Type" deliberately mixes appellations (Barolo, Chianti — place-based
+// names) with grape varietals (Cabernet Sauvignon, Pinot Noir) in one flat
+// list, because that's genuinely how a bottle gets described out loud —
+// nobody says "Nebbiolo" when they mean the Barolo in the rack. Still
+// leans Italian, same as the old varietal list did, since that's most of
+// what's actually in the rack.
+const WINE_TYPES = [
+  'Barolo', "Barbera d'Alba", 'Chianti', 'Chianti Classico', 'Brunello di Montalcino', 'Vino Nobile di Montepulciano',
+  'Amarone della Valpolicella', 'Valpolicella', 'Soave', 'Primitivo di Manduria', "Nero d'Avola", 'Aglianico',
+  'Montepulciano d’Abruzzo', 'Prosecco',
+  'Bordeaux Blend', 'Burgundy (Red)', 'Burgundy (White)', 'Châteauneuf-du-Pape', 'Côtes du Rhône', 'Beaujolais', 'Champagne', 'Sancerre',
+  'Rioja', 'Ribera del Duero', 'Priorat', 'Cava', 'Port',
+  'Cabernet Sauvignon', 'Pinot Noir', 'Merlot', 'Syrah/Shiraz', 'Malbec', 'Zinfandel', 'Grenache',
+  'Chardonnay', 'Sauvignon Blanc', 'Riesling', 'Pinot Grigio',
+  'Red Blend', 'White Blend', 'Other',
 ];
+
 const BEER_STYLES = ['IPA', 'Pale Ale', 'Lager', 'Pilsner', 'Stout', 'Porter', 'Wheat', 'Sour', 'Belgian', 'Amber', 'Other'];
+
 // "Gift" sits first since it's the one non-store option Mike wants offered
 // right alongside real store names — same freeform-with-suggestions pattern
-// as category, so typing any other store is still always allowed.
+// as before (Store is the one field that stays free text — a store name is
+// genuinely open-ended, unlike the category-style fields above).
 const SOURCE_SUGGESTIONS = ['Gift', 'Total Wine', 'Costco', 'BevMo', "Trader Joe's", 'Local wine shop', 'Winery direct', 'Duty free'];
 
 const TYPE_ICON: Record<BarItemType, string> = { spirit: '🥃', wine: '🍷', beer: '🍺' };
 
 function categoryOptions(type: BarItemType): string[] {
   if (type === 'spirit') return SPIRIT_CATEGORIES;
-  if (type === 'wine') return WINE_VARIETALS;
+  if (type === 'wine') return WINE_TYPES;
   return BEER_STYLES;
 }
 
@@ -53,7 +78,8 @@ export interface BarItemFormValue {
   category: string | null;
   producer: string | null;
   vintage: number | null;
-  region: string | null;
+  color: string | null;
+  geo: string | null;
   quantity: number;
   drinkWindowStart: number | null;
   drinkWindowEnd: number | null;
@@ -64,12 +90,13 @@ export interface BarItemFormValue {
   photoOrientation: 'landscape' | 'portrait';
 }
 
-/** Add/edit a Bar item — same fields regardless of type except wine gets
- * vintage/region/drink-window, since those genuinely don't apply to a
- * bottle of gin or a six-pack. Category is a free-text input with a
- * datalist of common values per type (native, no custom autocomplete
- * component needed) rather than a locked dropdown — Mike's own naming for
- * a varietal/style should always be allowed through. */
+/** Add/edit a Bar item. Category/Type/Color/Geo are all locked dropdowns
+ * (a small fixed vocabulary) rather than free text — that's what makes
+ * "show me all my red wines" or "all my Barolos" actually work later on
+ * the Bar page's filters, instead of depending on Mike having typed the
+ * same word the same way every time. Wine gets the extra Color/Geo/vintage/
+ * drink-window fields, since those genuinely don't apply to a bottle of
+ * gin or a six-pack. */
 export function BarItemModal({
   type,
   initial,
@@ -83,9 +110,10 @@ export function BarItemModal({
 }) {
   const [name, setName] = useState(initial?.name ?? '');
   const [category, setCategory] = useState(initial?.category ?? '');
+  const [color, setColor] = useState(initial?.color ?? '');
+  const [geo, setGeo] = useState(initial?.geo ?? '');
   const [producer, setProducer] = useState(initial?.producer ?? '');
   const [vintage, setVintage] = useState(initial?.vintage != null ? String(initial.vintage) : '');
-  const [region, setRegion] = useState(initial?.region ?? '');
   const [quantity, setQuantity] = useState(initial?.quantity != null ? String(initial.quantity) : '1');
   const [drinkStart, setDrinkStart] = useState(initial?.drinkWindowStart != null ? String(initial.drinkWindowStart) : '');
   const [drinkEnd, setDrinkEnd] = useState(initial?.drinkWindowEnd != null ? String(initial.drinkWindowEnd) : '');
@@ -98,7 +126,6 @@ export function BarItemModal({
   const photoInputRef = useRef<HTMLInputElement>(null);
 
   const isWine = type === 'wine';
-  const datalistId = `bar-category-options-${type}`;
 
   async function handlePhotoPick(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -119,10 +146,11 @@ export function BarItemModal({
     onSave({
       type,
       name: name.trim(),
-      category: category.trim() || null,
+      category: category || null,
       producer: producer.trim() || null,
       vintage: vintage.trim() ? Number(vintage) : null,
-      region: region.trim() || null,
+      color: isWine ? color || null : null,
+      geo: isWine ? geo || null : null,
       quantity: quantity.trim() ? Math.max(0, Math.trunc(Number(quantity))) : 1,
       drinkWindowStart: drinkStart.trim() ? Number(drinkStart) : null,
       drinkWindowEnd: drinkEnd.trim() ? Number(drinkEnd) : null,
@@ -135,6 +163,7 @@ export function BarItemModal({
   }
 
   const typeLabel = type === 'spirit' ? 'Spirit' : type === 'wine' ? 'Wine' : 'Beer';
+  const categoryLabel = isWine ? 'Type' : type === 'beer' ? 'Style' : 'Category';
 
   const photoPreview = photoKey ? api.fileUrl(photoKey) : null;
 
@@ -162,15 +191,52 @@ export function BarItemModal({
         <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={isWine ? 'e.g. Produttori del Barbaresco' : 'e.g. Hendrick’s Gin'} />
       </label>
 
-      <label className="wallet-editor__field">
-        <span>{isWine ? 'Varietal / blend' : type === 'beer' ? 'Style' : 'Category'}</span>
-        <input value={category} onChange={(e) => setCategory(e.target.value)} list={datalistId} placeholder="Start typing or pick a suggestion" />
-        <datalist id={datalistId}>
-          {categoryOptions(type).map((c) => (
-            <option key={c} value={c} />
-          ))}
-        </datalist>
-      </label>
+      {isWine && (
+        <div className="bar-item-modal__row">
+          <label className="wallet-editor__field">
+            <span>Color</span>
+            <select value={color} onChange={(e) => setColor(e.target.value)}>
+              <option value="">Select…</option>
+              {WINE_COLORS.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="wallet-editor__field">
+            <span>Geo</span>
+            <select value={geo} onChange={(e) => setGeo(e.target.value)}>
+              <option value="">Select…</option>
+              {WINE_GEO.map((g) => (
+                <option key={g} value={g}>
+                  {g}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      )}
+
+      <div className="bar-item-modal__row">
+        <label className="wallet-editor__field">
+          <span>{categoryLabel}</span>
+          <select value={category} onChange={(e) => setCategory(e.target.value)}>
+            <option value="">Select…</option>
+            {categoryOptions(type).map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </label>
+        {isWine && (
+          <label className="wallet-editor__field">
+            <span>Year</span>
+            <input type="number" value={vintage} onChange={(e) => setVintage(e.target.value)} placeholder="2021" />
+          </label>
+        )}
+      </div>
 
       <label className="wallet-editor__field">
         <span>{isWine ? 'Producer / winery' : type === 'beer' ? 'Brewery' : 'Distillery'}</span>
@@ -178,28 +244,16 @@ export function BarItemModal({
       </label>
 
       {isWine && (
-        <>
-          <div className="bar-item-modal__row">
-            <label className="wallet-editor__field">
-              <span>Vintage</span>
-              <input type="number" value={vintage} onChange={(e) => setVintage(e.target.value)} placeholder="2021" />
-            </label>
-            <label className="wallet-editor__field">
-              <span>Region</span>
-              <input value={region} onChange={(e) => setRegion(e.target.value)} placeholder="e.g. Piedmont, Italy" />
-            </label>
-          </div>
-          <div className="bar-item-modal__row">
-            <label className="wallet-editor__field">
-              <span>Drink window — from</span>
-              <input type="number" value={drinkStart} onChange={(e) => setDrinkStart(e.target.value)} placeholder="2028" />
-            </label>
-            <label className="wallet-editor__field">
-              <span>Drink window — to</span>
-              <input type="number" value={drinkEnd} onChange={(e) => setDrinkEnd(e.target.value)} placeholder="2029" />
-            </label>
-          </div>
-        </>
+        <div className="bar-item-modal__row">
+          <label className="wallet-editor__field">
+            <span>Drink window — from (optional)</span>
+            <input type="number" value={drinkStart} onChange={(e) => setDrinkStart(e.target.value)} placeholder="2028" />
+          </label>
+          <label className="wallet-editor__field">
+            <span>Drink window — to (optional)</span>
+            <input type="number" value={drinkEnd} onChange={(e) => setDrinkEnd(e.target.value)} placeholder="2029" />
+          </label>
+        </div>
       )}
 
       <label className="wallet-editor__field">

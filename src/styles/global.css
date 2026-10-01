@@ -14605,6 +14605,38 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   opacity: 0.8;
 }
 
+/* ---- Bar filter chips — Color/Geo/Type(Category) rows above the grid,
+   built from whichever values are actually present on this tab's items
+   (see BarPage's colorOptions/geoOptions/categoryOptions), reusing Wallet's
+   own chip look (.wallet-page__chip) for visual consistency. ---- */
+.bar-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.bar-filters__group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.bar-filters__label {
+  font-size: 11px;
+  font-weight: var(--weight-medium);
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  width: 42px;
+  flex-shrink: 0;
+}
+
+.bar-filters__group .wallet-page__chips {
+  margin-bottom: 0;
+}
+
 /* ---- Bar item tiles — a compact, browsable grid (was a dense card-per-
    bottle list with every field inline; the grid is now a glanceable rack
    of thumbnails — name, vintage, and quantity only — click any tile for

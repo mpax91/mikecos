@@ -38,9 +38,10 @@ export function BarItemDetailModal({
         )}
         <div className="bar-item-detail__body">
           {item.vintage && <div className="bar-item-detail__vintage">{item.vintage}</div>}
-          {(item.category || item.producer || item.region) && (
-            <div className="bar-item-detail__meta">{[item.category, item.producer, item.region].filter(Boolean).join(' · ')}</div>
+          {(item.color || item.geo || item.category) && (
+            <div className="bar-item-detail__meta">{[item.color, item.geo, item.category].filter(Boolean).join(' · ')}</div>
           )}
+          {item.producer && <div className="bar-item-detail__meta">{item.producer}</div>}
           {(item.price != null || item.source) && (
             <div className="bar-item-detail__meta">{[item.price != null ? formatUSD(item.price) : null, item.source].filter(Boolean).join(' · ')}</div>
           )}

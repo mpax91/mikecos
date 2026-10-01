@@ -1980,10 +1980,14 @@ export interface BarItem {
   id: string;
   type: BarItemType;
   name: string;
-  category: string | null;
+  category: string | null; // spirit: base spirit; wine: "Type" (appellation/varietal); beer: style — all now locked dropdowns
   producer: string | null;
   vintage: number | null;
+  /** Deprecated — superseded by `geo` (country-level) below. Kept so old
+   * rows' data isn't lost, but no longer shown or edited in the UI. */
   region: string | null;
+  color: string | null; // wine only: Red/White/Rosé/Sparkling/Orange
+  geo: string | null;   // wine only: country of origin, e.g. Italy/France/USA
   quantity: number;
   drinkWindowStart: number | null;
   drinkWindowEnd: number | null;
@@ -2020,6 +2024,8 @@ export interface BarTopTastingEntry extends BarTasting {
     producer: string | null;
     vintage: number | null;
     region: string | null;
+    color: string | null;
+    geo: string | null;
     quantity: number;
   };
 }
