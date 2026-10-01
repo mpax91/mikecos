@@ -119,7 +119,7 @@ function groupByTitle(hits: UnifiedHit[]): Map<string, UnifiedHit[]> {
  * this view can still edit/delete an entry inline for quick fixes. */
 export function MediaLibraryPanel() {
   const location = useLocation();
-  const [scope, setScope] = useState<SourceScope>('plex');
+  const [scope, setScope] = useState<SourceScope>('all');
   const [libraries, setLibraries] = useState<PlexLibrary[] | null>(null);
   const [libraryId, setLibraryId] = useState<string | null>(null);
   const [parentId, setParentId] = useState<string | null>(null);
@@ -137,6 +137,7 @@ export function MediaLibraryPanel() {
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [catalogCounts, setCatalogCounts] = useState<Record<MediaCatalogFormat, number> | null>(null);
 
   const loadLibraries = useCallback(() => {
     api
@@ -148,8 +149,25 @@ export function MediaLibraryPanel() {
       .catch((e) => setError(String(e)));
   }, [libraryId]);
 
+  // Whole-catalog counts for the Media landing page's stats row and the
+  // Physical/Digital tabs' section totals — fetched once up front rather
+  // than derived from whatever's currently filtered/searched, so these
+  // numbers always reflect everything Mike's catalogued, not just what's
+  // on screen right now.
+  const loadCatalogCounts = useCallback(() => {
+    api
+      .listMediaCatalog({})
+      .then((allItems) => {
+        const counts: Record<MediaCatalogFormat, number> = { physical_book: 0, ebook: 0, audiobook: 0 };
+        for (const item of allItems) counts[item.format] += 1;
+        setCatalogCounts(counts);
+      })
+      .catch((e) => setError(String(e)));
+  }, []);
+
   useEffect(() => {
     loadLibraries();
+    loadCatalogCounts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -278,6 +296,7 @@ export function MediaLibraryPanel() {
     setCatalogItems((prev) => (prev ? prev.filter((i) => i.id !== item.id) : prev));
     setAllCatalogHits((prev) => prev.filter((i) => i.id !== item.id));
     if (catalogDetail?.id === item.id) setCatalogDetail(null);
+    loadCatalogCounts();
   }
 
   // Only built (and only rendered) while searching in the Plex scope —
@@ -505,6 +524,15 @@ export function MediaLibraryPanel() {
             </div>
             <input className="plex-search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search…" />
           </div>
+
+          {catalogCounts && (
+            <div className="media-stats-row">
+              <div className="media-stats-chip">
+                {scope === 'physical' ? 'Physical' : 'Digital'}{' '}
+                <strong>{(scope === 'physical' ? catalogCounts.physical_book : catalogCounts.ebook + catalogCounts.audiobook).toLocaleString()}</strong>
+              </div>
+            </div>
+          )}
           {!catalogItems ? (
             <div className="empty-state">Loading…</div>
           ) : catalogItems.length === 0 ? (
@@ -526,6 +554,23 @@ export function MediaLibraryPanel() {
               autoFocus
             />
           </div>
+
+          {libraries && catalogCounts && (
+            <div className="media-stats-row">
+              {libraries.map((l) => (
+                <div className="media-stats-chip" key={l.id}>
+                  {l.title} <strong>{l.itemCount.toLocaleString()}</strong>
+                </div>
+              ))}
+              <div className="media-stats-chip">
+                eBooks <strong>{catalogCounts.ebook.toLocaleString()}</strong>
+              </div>
+              <div className="media-stats-chip">
+                Physical Books <strong>{catalogCounts.physical_book.toLocaleString()}</strong>
+              </div>
+            </div>
+          )}
+
           {!debouncedQuery ? (
             <div className="empty-state">Search to look across everything, or pick Plex, Physical, or Digital above to browse just one.</div>
           ) : unifiedGroups.size === 0 && allPlexHits.length === 0 && allCatalogHits.length === 0 ? (
@@ -650,6 +695,7 @@ export function MediaLibraryPanel() {
             setCatalogDetail(updated);
             setCatalogItems((prev) => (prev ? prev.map((i) => (i.id === updated.id ? updated : i)) : prev));
             setAllCatalogHits((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
+            loadCatalogCounts(); // a format edit (e.g. ebook -> physical) moves it between Physical and Digital's totals
           }}
           onDeleted={() => {
             setConfirmDeleteItem(catalogDetail);

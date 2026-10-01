@@ -13638,6 +13638,34 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   gap: 10px;
 }
 
+/* ---- Media section: at-a-glance counts under the search box — the
+   "All" landing view gets one chip per Plex library plus eBooks/Physical
+   Books, Physical/Digital each get a single chip for just their own
+   total. Styled like plex-library-chip but non-interactive (plain divs,
+   not buttons) — these are a summary, not another filter. ---- */
+
+.media-stats-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.media-stats-chip {
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: var(--border-hairline);
+  background: #fff;
+  font-size: 12.5px;
+  color: var(--color-muted);
+}
+
+.media-stats-chip strong {
+  color: var(--color-ink, #2a2a2a);
+  font-weight: var(--weight-medium);
+  margin-left: 2px;
+}
+
 /* ---- Media section: source scope (Plex / Physical / Digital / All) ---- */
 
 .plex-scope-chips {
