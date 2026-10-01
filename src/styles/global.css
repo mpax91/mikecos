@@ -14605,82 +14605,166 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   opacity: 0.8;
 }
 
-.bar-item-grid {
+/* ---- Bar item tiles — a compact, browsable grid (was a dense card-per-
+   bottle list with every field inline; the grid is now a glanceable rack
+   of thumbnails — name, vintage, and quantity only — click any tile for
+   everything else via BarItemDetailModal). ---- */
+.bar-item-tile-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
   gap: 12px;
 }
 
-.bar-item-card {
+.bar-item-tile {
   background: var(--color-card-bg);
   border: var(--border-hairline);
   border-radius: var(--radius-card);
-  padding: 12px;
+  padding: 8px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
 }
 
-.bar-item-card__header {
+.bar-item-tile__photo-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 152 / 241;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--color-page-bg);
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 8px;
+  align-items: center;
+  justify-content: center;
 }
 
-.bar-item-card__header-main {
+.bar-item-tile__photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* A landscape bottle/can photo (see migrations/0076_bar_photos.sql)
+   still sits inside the portrait frame above — cover, not contain, so the
+   grid stays a tidy rack of same-sized tiles regardless of what shape any
+   given photo happens to be. */
+.bar-item-tile__photo--landscape {
+  aspect-ratio: auto;
+}
+
+.bar-item-tile__photo-icon {
+  font-size: 28px;
+}
+
+.bar-item-tile__qty-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  min-width: 18px;
+  text-align: center;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: var(--weight-medium);
+}
+
+.bar-item-tile__qty-badge.is-empty {
+  background: rgba(192, 57, 43, 0.85);
+}
+
+.bar-item-tile__name {
+  font-weight: var(--weight-medium);
+  font-size: 12.5px;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.bar-item-tile__sub {
+  font-size: 11px;
+  color: var(--color-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- Bar item detail modal — everything the compact tile leaves out ---- */
+.bar-item-detail {
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  min-width: 0;
+  gap: 14px;
 }
 
-/* Bottle/can photo thumbnail — portrait by default (most bottles), flips
-   to landscape when that's what was detected from the uploaded image. See
-   migrations/0076_bar_photos.sql. */
-.bar-item-card__photo {
-  width: 34px;
+.bar-item-detail__photo {
+  width: 110px;
   aspect-ratio: 152 / 241;
   object-fit: cover;
-  border-radius: 6px;
+  border-radius: 8px;
   flex-shrink: 0;
 }
 
-.bar-item-card__photo--landscape {
-  width: 54px;
+.bar-item-detail__photo--landscape {
   aspect-ratio: 241 / 152;
 }
 
-.bar-item-card__name {
+.bar-item-detail__body {
+  min-width: 0;
+  flex: 1;
+}
+
+.bar-item-detail__vintage {
+  font-size: 13px;
+  color: var(--color-muted);
+  margin-bottom: 2px;
+}
+
+.bar-item-detail__meta {
+  font-size: 13px;
+  color: var(--color-muted);
+  margin-top: 2px;
+}
+
+.bar-item-detail__window {
+  font-size: 12px;
+  color: var(--color-accent-secondary);
+  margin-top: 6px;
   font-weight: var(--weight-medium);
-  font-size: 14px;
+}
+
+.bar-item-detail__notes {
+  font-size: 13px;
+  color: var(--color-muted);
+  white-space: pre-wrap;
+  margin-top: 8px;
+}
+
+.bar-item-detail__qty {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.bar-item-detail__qty-label {
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.bar-item-detail__danger-btn {
+  margin-right: auto;
+  color: #c0392b;
 }
 
 .bar-item-card__meta {
   font-size: 12px;
   color: var(--color-muted);
   margin-top: 2px;
-}
-
-.bar-item-card__window {
-  font-size: 11px;
-  color: var(--color-accent-secondary);
-  margin-top: 4px;
-  font-weight: var(--weight-medium);
-}
-
-.bar-item-card__notes {
-  font-size: 12px;
-  color: var(--color-muted);
-  white-space: pre-wrap;
-}
-
-.bar-item-card__footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: auto;
-  padding-top: 4px;
 }
 
 .bar-item-card__qty {

@@ -3,9 +3,9 @@ import { api } from '../api/client';
 import type { BarItem, BarItemDetail, BarItemType, BarTopTastingEntry } from '../api/types';
 import { Modal } from '../components/Modal';
 import { ConfirmModal } from '../components/ConfirmModal';
-import { KebabMenu } from '../components/KebabMenu';
 import { StarRating } from '../components/StarRating';
 import { BarItemModal, type BarItemFormValue } from '../components/BarItemModal';
+import { BarItemDetailModal } from '../components/BarItemDetailModal';
 import { BarTastingHistoryModal } from '../components/BarTastingHistoryModal';
 import type { TastingFormValue } from '../components/BarTastingModal';
 import { useReportTabMeta } from '../contexts/TabsContext';
@@ -18,10 +18,6 @@ const TAB_META: Record<Tab, { label: string; icon: string; addLabel: string }> =
   beer: { label: 'Beer', icon: '🍺', addLabel: '+ Add a Beer' },
   top: { label: 'Top Rated', icon: '⭐', addLabel: '' },
 };
-
-function formatUSD(v: number): string {
-  return `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
 
 function parseBulkLines(text: string): { name: string; category: string | null }[] {
   return text
@@ -49,7 +45,9 @@ export function BarPage() {
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<BarItem | null>(null);
   const [deleting, setDeleting] = useState<BarItem | null>(null);
+  const [detailFor, setDetailFor] = useState<BarItem | null>(null);
   const [tastingHistoryFor, setTastingHistoryFor] = useState<BarItemDetail | null>(null);
+  const [search, setSearch] = useState('');
 
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkText, setBulkText] = useState('');
@@ -97,6 +95,29 @@ export function BarPage() {
   async function adjustQuantity(item: BarItem, delta: number) {
     const updated = await api.adjustBarItemQuantity(item.id, delta);
     setItems((prev) => (prev ? prev.map((i) => (i.id === item.id ? updated : i)) : prev));
+    // Keeps the stepper inside an open detail modal in sync with itself —
+    // it reads `detailFor`'s own quantity, not the grid tile behind it.
+    setDetailFor((prev) => (prev && prev.id === item.id ? updated : prev));
+  }
+
+  // The detail modal is a hub, not a layer other modals stack on top of —
+  // each action transitions away from it rather than opening alongside it.
+  function handleEditFromDetail() {
+    if (!detailFor) return;
+    setEditing(detailFor);
+    setDetailFor(null);
+  }
+
+  function handleDeleteFromDetail() {
+    if (!detailFor) return;
+    setDeleting(detailFor);
+    setDetailFor(null);
+  }
+
+  async function handleTastingsFromDetail() {
+    if (!detailFor) return;
+    await openTastingHistory(detailFor);
+    setDetailFor(null);
   }
 
   async function openTastingHistory(item: BarItem) {
@@ -153,7 +174,11 @@ export function BarPage() {
 
   if (error) return <div className="empty-state">Couldn't load the Bar: {error}</div>;
 
-  const shown = tab === 'top' ? [] : (items ?? []).filter((i) => i.type === tab);
+  const byTab = tab === 'top' ? [] : (items ?? []).filter((i) => i.type === tab);
+  const searchQuery = search.trim().toLowerCase();
+  const shown = searchQuery
+    ? byTab.filter((i) => [i.name, i.category, i.producer, i.region].filter(Boolean).join(' ').toLowerCase().includes(searchQuery))
+    : byTab;
 
   return (
     <div>
@@ -181,6 +206,16 @@ export function BarPage() {
           </button>
         ))}
       </div>
+
+      {tab !== 'top' && (
+        <input
+          type="search"
+          className="wallet-page__search"
+          placeholder={`Search ${TAB_META[tab].label.toLowerCase()}…`}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      )}
 
       {tab === 'top' ? (
         !topTastings ? (
@@ -213,68 +248,52 @@ export function BarPage() {
         )
       ) : !items ? (
         <div className="empty-state">Loading…</div>
-      ) : shown.length === 0 ? (
+      ) : byTab.length === 0 ? (
         <div className="empty-state empty-state--section">
           Nothing here yet — {TAB_META[tab].addLabel.toLowerCase()} or use Bulk Import to get your {TAB_META[tab].label.toLowerCase()} rack
           in quickly.
         </div>
+      ) : shown.length === 0 ? (
+        <div className="empty-state empty-state--section">No {TAB_META[tab].label.toLowerCase()} match "{search.trim()}".</div>
       ) : (
-        <div className="bar-item-grid">
+        <div className="bar-item-tile-grid">
           {shown.map((item) => (
-            <div key={item.id} className="bar-item-card">
-              <div className="bar-item-card__header">
-                <div className="bar-item-card__header-main">
-                  {item.photoKey && (
-                    <img
-                      className={`bar-item-card__photo${item.photoOrientation === 'landscape' ? ' bar-item-card__photo--landscape' : ''}`}
-                      src={api.fileUrl(item.photoKey)}
-                      alt=""
-                    />
-                  )}
-                  <div>
-                    <div className="bar-item-card__name">
-                      {item.name}
-                      {item.vintage ? ` (${item.vintage})` : ''}
-                    </div>
-                    <div className="bar-item-card__meta">{[item.category, item.producer, item.region].filter(Boolean).join(' · ')}</div>
-                    {(item.price != null || item.source) && (
-                      <div className="bar-item-card__meta">
-                        {[item.price != null ? formatUSD(item.price) : null, item.source].filter(Boolean).join(' · ')}
-                      </div>
-                    )}
-                    {(item.drinkWindowStart || item.drinkWindowEnd) && (
-                      <div className="bar-item-card__window">
-                        Drink {item.drinkWindowStart ?? '?'}–{item.drinkWindowEnd ?? '?'}
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <KebabMenu
-                  items={[
-                    { label: 'Edit', onClick: () => setEditing(item) },
-                    { label: 'Tastings', onClick: () => openTastingHistory(item) },
-                    { label: 'Delete', onClick: () => setDeleting(item), danger: true, separatorBefore: true },
-                  ]}
-                />
+            <button key={item.id} type="button" className="bar-item-tile" onClick={() => setDetailFor(item)}>
+              <div className="bar-item-tile__photo-wrap">
+                {item.photoKey ? (
+                  <img
+                    className={`bar-item-tile__photo${item.photoOrientation === 'landscape' ? ' bar-item-tile__photo--landscape' : ''}`}
+                    src={api.fileUrl(item.photoKey)}
+                    alt=""
+                  />
+                ) : (
+                  <span className="bar-item-tile__photo-icon">{TAB_META[item.type].icon}</span>
+                )}
+                {item.quantity !== 1 && (
+                  <span className={`bar-item-tile__qty-badge${item.quantity === 0 ? ' is-empty' : ''}`}>
+                    {item.quantity === 0 ? 'Out' : item.quantity}
+                  </span>
+                )}
               </div>
-              {item.notes && <div className="bar-item-card__notes">{item.notes}</div>}
-              <div className="bar-item-card__footer">
-                <div className="bar-item-card__qty">
-                  <button type="button" onClick={() => adjustQuantity(item, -1)} disabled={item.quantity <= 0} aria-label="Decrease quantity">
-                    −
-                  </button>
-                  <span>{item.quantity}</span>
-                  <button type="button" onClick={() => adjustQuantity(item, 1)} aria-label="Increase quantity">
-                    +
-                  </button>
-                </div>
-                <button type="button" className="bar-item-card__tastings-link" onClick={() => openTastingHistory(item)}>
-                  Tastings
-                </button>
+              <div className="bar-item-tile__name">
+                {item.name}
+                {item.vintage ? ` (${item.vintage})` : ''}
               </div>
-            </div>
+              {item.category && <div className="bar-item-tile__sub">{item.category}</div>}
+            </button>
           ))}
         </div>
+      )}
+
+      {detailFor && (
+        <BarItemDetailModal
+          item={detailFor}
+          onClose={() => setDetailFor(null)}
+          onEdit={handleEditFromDetail}
+          onDelete={handleDeleteFromDetail}
+          onAdjustQuantity={(delta) => adjustQuantity(detailFor, delta)}
+          onOpenTastings={handleTastingsFromDetail}
+        />
       )}
 
       {adding && <BarItemModal type={tab === 'top' ? 'wine' : tab} onSave={handleAdd} onClose={() => setAdding(false)} />}
