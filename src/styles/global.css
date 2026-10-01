@@ -13369,6 +13369,20 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   min-width: 0;
 }
 
+/* Card Database's cross-type search — a type pill ahead of the result,
+   same spot .rewards-find__result-rate occupies, since a search spanning
+   Loyalty/Payment/Rewards needs to say which family each hit came from
+   before the card name means anything. */
+.card-database__result-type {
+  font-size: 11px;
+  font-weight: var(--weight-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-muted);
+  width: 56px;
+  flex-shrink: 0;
+}
+
 .rewards-find__result-name {
   font-weight: var(--weight-medium);
   font-size: 14px;

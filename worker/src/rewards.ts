@@ -37,6 +37,7 @@ interface RewardsBonusRow {
   ends_on: string | null;
   keywords: string | null;
   online_only: number;
+  exclude_from_carry: number;
   sort_order: number;
   created_at: string;
 }
@@ -81,6 +82,7 @@ function bonusJson(row: RewardsBonusRow) {
     endsOn: row.ends_on,
     keywords: row.keywords,
     onlineOnly: row.online_only === 1,
+    excludeFromCarry: row.exclude_from_carry === 1,
     sortOrder: row.sort_order,
   };
 }
@@ -280,6 +282,7 @@ rewardsRouter.post('/cards/:cardId/bonuses', async (c) => {
     endsOn?: string | null;
     keywords?: string | null;
     onlineOnly?: boolean;
+    excludeFromCarry?: boolean;
   }>();
   const category = body.category?.trim();
   if (!category) return c.json({ error: 'category is required' }, 400);
@@ -289,7 +292,7 @@ rewardsRouter.post('/cards/:cardId/bonuses', async (c) => {
   const maxPos = await c.env.DB.prepare('SELECT COALESCE(MAX(sort_order), -1) as m FROM rewards_bonuses WHERE card_id = ?').bind(cardId).first<{ m: number }>();
   const id = uid();
   await c.env.DB.prepare(
-    `INSERT INTO rewards_bonuses (id, card_id, category, rate, kind, starts_on, ends_on, keywords, online_only, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO rewards_bonuses (id, card_id, category, rate, kind, starts_on, ends_on, keywords, online_only, exclude_from_carry, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
     .bind(
       id,
@@ -301,6 +304,7 @@ rewardsRouter.post('/cards/:cardId/bonuses', async (c) => {
       kind === 'rotating' ? body.endsOn || null : null,
       body.keywords?.trim() || null,
       body.onlineOnly ? 1 : 0,
+      body.excludeFromCarry ? 1 : 0,
       (maxPos?.m ?? -1) + 1,
       now()
     )
@@ -316,7 +320,16 @@ rewardsRouter.patch('/bonuses/:id', async (c) => {
   const existing = await c.env.DB.prepare('SELECT * FROM rewards_bonuses WHERE id = ?').bind(id).first<RewardsBonusRow>();
   if (!existing) return c.json({ error: 'not found' }, 404);
   const body = await c.req.json<
-    Partial<{ category: string; rate: number; kind: string; startsOn: string | null; endsOn: string | null; keywords: string | null; onlineOnly: boolean }>
+    Partial<{
+      category: string;
+      rate: number;
+      kind: string;
+      startsOn: string | null;
+      endsOn: string | null;
+      keywords: string | null;
+      onlineOnly: boolean;
+      excludeFromCarry: boolean;
+    }>
   >();
 
   const fields: string[] = [];
@@ -329,6 +342,7 @@ rewardsRouter.patch('/bonuses/:id', async (c) => {
   if (body.rate !== undefined) set('rate', body.rate);
   if (body.keywords !== undefined) set('keywords', body.keywords?.trim() || null);
   if (body.onlineOnly !== undefined) set('online_only', body.onlineOnly ? 1 : 0);
+  if (body.excludeFromCarry !== undefined) set('exclude_from_carry', body.excludeFromCarry ? 1 : 0);
   const nextKind = body.kind !== undefined ? (body.kind === 'rotating' ? 'rotating' : 'fixed') : existing.kind;
   if (body.kind !== undefined) set('kind', nextKind);
   if (body.startsOn !== undefined) set('starts_on', nextKind === 'rotating' ? body.startsOn || null : null);

@@ -68,6 +68,11 @@ export interface CarryPlanEntry {
    * everywhere", "Always carry" — joined for display rather than picking
    * just one, since a card can earn its spot more than one way. */
   reasons: string[];
+  /** The highest rate behind any of this card's reasons — "Always carry"
+   * contributes no number, so a card with only that reason falls back to
+   * its base rate. Drives the highest-to-lowest sort below; not meant for
+   * display (the reasons strings already say the rate). */
+  topRate: number;
 }
 
 /** Cards worth actually carrying, as few as possible, with the reason each
@@ -94,24 +99,31 @@ export function carryPlan(cards: RewardsCard[]): CarryPlanEntry[] {
 
   const cardById = new Map<string, RewardsCard>();
   const reasonsById = new Map<string, string[]>();
-  const addReason = (card: RewardsCard, reason: string) => {
+  const rateById = new Map<string, number>();
+  const addReason = (card: RewardsCard, reason: string, rate?: number) => {
     cardById.set(card.id, card);
     const list = reasonsById.get(card.id) ?? [];
     if (!list.includes(reason)) list.push(reason);
     reasonsById.set(card.id, list);
+    if (typeof rate === 'number') rateById.set(card.id, Math.max(rateById.get(card.id) ?? 0, rate));
   };
 
-  addReason(flat, `${floor}% everywhere`);
+  addReason(flat, `${floor}% everywhere`, floor);
 
   for (const category of MAJOR_CATEGORIES) {
     const best = bestCardForCategory(active, category, { excludeOnlineOnly: true });
-    if (best && best.rate > floor) addReason(best.card, `${category} ${best.rate}%`);
+    if (best && best.rate > floor) addReason(best.card, `${category} ${best.rate}%`, best.rate);
   }
 
   for (const c of active) {
     for (const b of c.bonuses) {
-      if (b.kind === 'rotating' && !b.onlineOnly && isBonusActiveToday(b) && b.rate > floor) {
-        addReason(c, `${b.category} ${b.rate}%`);
+      // excludeFromCarry: a rotating bonus Mike has said he isn't actually
+      // going to use (Discover it's Entertainment bonus) — it still beats
+      // the floor mathematically, but it shouldn't pull the card into the
+      // physical wallet on its own. Doesn't affect any other use of the
+      // bonus (Find, the category table, "All reward cards").
+      if (b.kind === 'rotating' && !b.onlineOnly && !b.excludeFromCarry && isBonusActiveToday(b) && b.rate > floor) {
+        addReason(c, `${b.category} ${b.rate}%`, b.rate);
       }
     }
   }
@@ -120,7 +132,9 @@ export function carryPlan(cards: RewardsCard[]): CarryPlanEntry[] {
     if (c.alwaysCarry) addReason(c, 'Always carry');
   }
 
-  return Array.from(cardById.values()).map((card) => ({ card, reasons: reasonsById.get(card.id) ?? [] }));
+  return Array.from(cardById.values())
+    .map((card) => ({ card, reasons: reasonsById.get(card.id) ?? [], topRate: rateById.get(card.id) ?? card.baseRate }))
+    .sort((a, b) => b.topRate - a.topRate || a.card.nickname.localeCompare(b.card.nickname));
 }
 
 // The everyday categories worth always showing a "best card" answer for,

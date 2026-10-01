@@ -544,6 +544,12 @@ export interface RewardsBonus {
    * their own in "Carry in your wallet"; Find still surfaces them under its
    * "if this is an online purchase" callout. */
   onlineOnly: boolean;
+  /** True when Mike has said he won't actually use this rotating bonus's
+   * category this cycle (Discover it's Entertainment bonus, say) — it
+   * still counts everywhere else (Find, the category table, "All reward
+   * cards"), it just never earns the card a spot in "Carry in your
+   * wallet" on its own. */
+  excludeFromCarry: boolean;
   sortOrder: number;
 }
 

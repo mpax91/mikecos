@@ -24,8 +24,12 @@ export function RewardsCardTile({
   /** Overrides the base-rate subtitle with why this card is shown here
    * (e.g. "Dining 5% · 2% everywhere") — used on the "Carry in your
    * wallet" grid, where "1% base" would be actively misleading about why
-   * the card made the list. Omitted elsewhere (All Cards), where the raw
-   * base rate is the more useful, general-purpose fact to show. */
+   * the card made the list. Also suppresses the network/last4 suffix on
+   * that same grid — Mike already knows which physical card is which by
+   * sight; what he wants at a glance there is just the reason it's in his
+   * hand. Omitted elsewhere (All Cards), where network/last4 are the more
+   * useful, general-purpose identifying facts to show alongside the base
+   * rate. */
   reason?: string;
   onOpen: (card: RewardsCard) => void;
   onEdit: (card: RewardsCard) => void;
@@ -52,9 +56,13 @@ export function RewardsCardTile({
       </div>
       <div className="wallet-tile__name">{card.nickname}</div>
       <div className="wallet-tile__category">
-        {reason || `${card.baseRate}% base`}
-        {card.network ? ` · ${card.network}` : ''}
-        {card.last4 ? ` ····${card.last4}` : ''}
+        {reason || (
+          <>
+            {`${card.baseRate}% base`}
+            {card.network ? ` · ${card.network}` : ''}
+            {card.last4 ? ` ····${card.last4}` : ''}
+          </>
+        )}
       </div>
     </div>
   );

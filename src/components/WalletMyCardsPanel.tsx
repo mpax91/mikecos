@@ -10,10 +10,11 @@ import { ConfirmModal } from './ConfirmModal';
 /** Wallet Phase 1 — loyalty/membership/pass/gift cards, built for one
  * moment specifically: standing at a register with a line behind you,
  * needing the right card on screen in a couple of taps. Everything here is
- * organized around that — an in-page search that filters instantly (no
- * round trip to the global search palette), a Favorites row pinned to the
- * top, and category chips to narrow a long list — with editing pushed
- * behind a kebab menu so it never gets in the way of just finding a card.
+ * organized around that — a Favorites row pinned to the top and category
+ * chips to narrow a long list — with editing pushed behind a kebab menu so
+ * it never gets in the way of just finding a card. Search itself lives one
+ * level up, in CardDatabasePanel, since it now searches across Loyalty,
+ * Payment, and Rewards together rather than just this tab.
  *
  * Split out of WalletPage (which now also hosts the Rewards tab) — this
  * component owns everything about the "My Cards" tab specifically. */
@@ -23,7 +24,6 @@ export function WalletMyCardsPanel() {
 
   const [cards, setCards] = useState<WalletCard[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [query, setQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [openCard, setOpenCard] = useState<WalletCard | null>(null);
   const [editing, setEditing] = useState<WalletCard | null | 'new'>(null);
@@ -57,13 +57,8 @@ export function WalletMyCardsPanel() {
 
   const filtered = useMemo(() => {
     if (!cards) return [];
-    const q = query.trim().toLowerCase();
-    return cards.filter((c) => {
-      if (activeCategory && c.category !== activeCategory) return false;
-      if (!q) return true;
-      return c.name.toLowerCase().includes(q) || c.category.toLowerCase().includes(q) || (c.notes ?? '').toLowerCase().includes(q);
-    });
-  }, [cards, query, activeCategory]);
+    return cards.filter((c) => !activeCategory || c.category === activeCategory);
+  }, [cards, activeCategory]);
 
   const favorites = filtered.filter((c) => c.pinned);
   const rest = filtered.filter((c) => !c.pinned);
@@ -98,14 +93,9 @@ export function WalletMyCardsPanel() {
   return (
     <div>
       <div className="wallet-page__toolbar">
-        <input
-          type="search"
-          className="wallet-page__search"
-          placeholder="Search your wallet…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          autoFocus={false}
-        />
+        <div className="wallet-editor__hint" style={{ flex: 1 }}>
+          Loyalty, membership, and gift cards. Use the search box above to find a card across your whole wallet.
+        </div>
         <button type="button" className="btn" onClick={() => setEditing('new')}>
           + Add Card
         </button>

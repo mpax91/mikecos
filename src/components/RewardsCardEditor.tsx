@@ -282,6 +282,11 @@ function BonusesEditor({ card, onChanged }: { card: RewardsCard; onChanged: (car
     onChanged({ ...card, bonuses: card.bonuses.filter((b) => b.id !== id) });
   }
 
+  async function toggleExcludeFromCarry(bonus: RewardsCard['bonuses'][number]) {
+    const updated = await api.updateRewardsBonus(bonus.id, { excludeFromCarry: !bonus.excludeFromCarry });
+    onChanged({ ...card, bonuses: card.bonuses.map((b) => (b.id === updated.id ? updated : b)) });
+  }
+
   return (
     <div className="wallet-editor__subsection">
       <div className="wallet-editor__subsection-title">Bonus categories</div>
@@ -298,7 +303,19 @@ function BonusesEditor({ card, onChanged }: { card: RewardsCard; onChanged: (car
                 )}
                 {b.keywords && <span className="wallet-editor__row-item-tag">merchants: {b.keywords}</span>}
                 {b.onlineOnly && <span className="wallet-editor__row-item-tag">online only</span>}
+                {b.excludeFromCarry && <span className="wallet-editor__row-item-tag">excluded from carry</span>}
               </span>
+              {b.kind === 'rotating' && (
+                <button
+                  type="button"
+                  className="wallet-editor__manage-link"
+                  style={{ marginRight: 8 }}
+                  onClick={() => toggleExcludeFromCarry(b)}
+                  title="Doesn't change Find, the category table, or All reward cards — only whether this bonus alone can earn the card a spot in Carry in your wallet"
+                >
+                  {b.excludeFromCarry ? "Count toward carry" : "Won't use — exclude from carry"}
+                </button>
+              )}
               <button type="button" className="wallet-editor__row-item-remove" onClick={() => removeBonus(b.id)} aria-label="Remove">
                 ×
               </button>

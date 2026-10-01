@@ -1078,11 +1078,15 @@ export const api = {
   importRewardsCards: (payload: { cards?: unknown[]; merchants?: unknown[] }) =>
     request<RewardsImportResult>('/api/rewards/import', { method: 'POST', body: JSON.stringify(payload) }),
 
-  createRewardsBonus: (cardId: string, params: Pick<RewardsBonus, 'category' | 'rate' | 'kind' | 'startsOn' | 'endsOn' | 'keywords' | 'onlineOnly'>) =>
-    request<RewardsBonus>(`/api/rewards/cards/${cardId}/bonuses`, { method: 'POST', body: JSON.stringify(params) }),
+  createRewardsBonus: (
+    cardId: string,
+    params: Pick<RewardsBonus, 'category' | 'rate' | 'kind' | 'startsOn' | 'endsOn' | 'keywords' | 'onlineOnly'> & Partial<Pick<RewardsBonus, 'excludeFromCarry'>>
+  ) => request<RewardsBonus>(`/api/rewards/cards/${cardId}/bonuses`, { method: 'POST', body: JSON.stringify(params) }),
 
-  updateRewardsBonus: (id: string, patch: Partial<Pick<RewardsBonus, 'category' | 'rate' | 'kind' | 'startsOn' | 'endsOn' | 'keywords' | 'onlineOnly'>>) =>
-    request<RewardsBonus>(`/api/rewards/bonuses/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  updateRewardsBonus: (
+    id: string,
+    patch: Partial<Pick<RewardsBonus, 'category' | 'rate' | 'kind' | 'startsOn' | 'endsOn' | 'keywords' | 'onlineOnly' | 'excludeFromCarry'>>
+  ) => request<RewardsBonus>(`/api/rewards/bonuses/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
 
   deleteRewardsBonus: (id: string) => request<{ ok: true }>(`/api/rewards/bonuses/${id}`, { method: 'DELETE' }),
 
