@@ -66,6 +66,28 @@ function normalizeTitle(t: string): string {
   return t.trim().toLowerCase().replace(/^(the|a|an)\s+/, '');
 }
 
+/** Plex models an audiobook as Artist › Album (the book) › Track(s) (the
+ * chapter files), same shape as music — but a single-file audiobook (no
+ * chapter breakdown) has exactly one track, and Plex names that lone
+ * track after the book itself. A title search then matches both the
+ * book and its own only track, surfacing as two unexplained near-
+ * identical hits for what's really one audiobook (see the "Network of
+ * Lies" case this came from). Drop a track from a search result set when
+ * its parent album is also in the set and shares its title — there's
+ * nothing on the track tile Mike needs that the album tile doesn't
+ * already cover. A track whose parent album didn't also match (a real
+ * song search, or a multi-chapter book where only one chapter's title
+ * happens to match) is left alone. */
+function dedupeAudiobookTrackDuplicates(items: PlexItem[]): PlexItem[] {
+  const byId = new Map(items.map((i) => [i.id, i]));
+  return items.filter((i) => {
+    if (i.type !== 'track') return true;
+    const parent = i.parentId ? byId.get(i.parentId) : undefined;
+    if (!parent || parent.type !== 'album') return true;
+    return normalizeTitle(parent.title) !== normalizeTitle(i.title);
+  });
+}
+
 /** Groups Plex + catalog search hits by normalized title so the same
  * work in multiple formats (a book Mike owns physical + audiobook +
  * ebook, say — or an audiobook that lives in Plex's own Audiobooks
@@ -161,7 +183,7 @@ export function MediaLibraryPanel() {
       }
       Promise.all([api.listPlexItems({ q: debouncedQuery }), api.listMediaCatalog({ q: debouncedQuery })])
         .then(([plex, catalog]) => {
-          setAllPlexHits(plex);
+          setAllPlexHits(dedupeAudiobookTrackDuplicates(plex));
           setAllCatalogHits(catalog);
         })
         .catch((e) => setError(String(e)));
@@ -181,7 +203,10 @@ export function MediaLibraryPanel() {
       // Deliberately searches across every library, not just whichever
       // one is currently selected — Mike wants "do I have this anywhere"
       // rather than having to remember which tab something lives under.
-      api.listPlexItems({ q: debouncedQuery }).then(setItems).catch((e) => setError(String(e)));
+      api
+        .listPlexItems({ q: debouncedQuery })
+        .then((plex) => setItems(dedupeAudiobookTrackDuplicates(plex)))
+        .catch((e) => setError(String(e)));
       setExpandedSections(new Set());
       return;
     }
