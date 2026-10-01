@@ -12,12 +12,20 @@ binding = "FILES"
 bucket_name = "mikeos-files"
 
 [triggers]
-# Nightly Plex library re-sync + airing check, plus the Inbox poll (see
-# index.ts's `scheduled` export, which branches on event.cron since both
-# schedules share one handler) — 9am UTC is ~4-5am Eastern, after the
-# previous night's shows have actually aired and well before Mike's Daily
-# Briefing. The Inbox entry must match index.ts's EMAIL_SYNC_CRON exactly.
-crons = ["0 9 * * *", "*/2 * * * *"]
+# Nightly Plex library re-sync, the airing check, and the Inbox poll (see
+# index.ts's `scheduled` export, which branches on event.cron since all
+# three schedules share one handler) — 9am UTC is ~4-5am Eastern, after
+# the previous night's shows have actually aired and well before Mike's
+# Daily Briefing. The airing check runs on its OWN tick 30 minutes after
+# sync's, not chained after it in the same invocation — sync alone can
+# take several nights to fully finish on a library this size (confirmed
+# via plex_libraries.synced_at going stale for days on the Music library
+# specifically), and chaining them used to mean a slow sync night left
+# the airing check starved of its own budget, which is exactly why some
+# newly-aired episodes weren't getting flagged automatically. Each entry
+# here must match its constant in index.ts exactly (PLEX_SYNC_CRON,
+# PLEX_AIRING_CRON, EMAIL_SYNC_CRON).
+crons = ["0 9 * * *", "30 9 * * *", "*/2 * * * *"]
 
 [vars]
 # Comma-separated exact origins the frontend is served from. Required (not

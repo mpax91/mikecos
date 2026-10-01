@@ -7496,37 +7496,50 @@ app.get('/api/health', (c) => c.json({ ok: true, time: now() }));
 // under a different name.
 const WORKER_SELF_URL = 'https://mikeos-api.michaelpalladino.workers.dev';
 
-// Nightly Cron Trigger (see wrangler.toml's [triggers] block) — re-syncs
-// the Plex library mirror, then runs the airing check against the freshly
-// synced data (so a show downloaded yesterday doesn't get flagged as
-// still missing just because the sync hadn't caught up yet). Both steps
-// are individually safe to fail — either can throw/error (Plex/TVMaze
-// down, PLEX_SERVER_URL not yet configured) without taking the Worker
-// itself down; there's no HTTP response to break, only next run's data
-// staying stale, which the next successful run fixes.
+// Nightly Cron Triggers (see wrangler.toml's [triggers] block) — re-sync
+// the Plex library mirror, and separately run the airing check. These
+// USED to be chained in one invocation (sync, then airing-check right
+// after), on the theory that airing-check should only ever see freshly-
+// synced data. In practice that starved airing-check: Mike's Music
+// library alone (46k+ tracks) routinely takes more than one night's
+// worth of chunks to finish syncing (confirmed via plex_libraries.
+// synced_at sitting 6 days stale while troubleshooting South Park/Last
+// Seen/Slow Horses never showing up in Airing on their own), and with
+// airing-check running second in the SAME invocation, a sync that's
+// still grinding through Music left airing-check with little or no
+// budget most nights — the exact "only Kill Tony got checked" symptom,
+// fixed in the moment by clicking "Check now" by hand. Splitting them
+// onto their own cron ticks (own Worker invocations, own fresh
+// subrequest budgets) means airing-check runs to completion every night
+// regardless of how far sync has gotten — it doesn't actually need sync
+// to be 100% done, just reads whatever's currently in plex_items, same
+// as the manual "Check now" button always has.
 //
-// The library sync is chunked (see plexSync.ts's header comment) because
-// a full pass over a large library can exceed Cloudflare's per-invocation
-// subrequest cap. A plain in-process loop calling the sync function
+// Both steps are individually safe to fail — either can throw/error
+// (Plex/TVMaze down, PLEX_SERVER_URL not yet configured) without taking
+// the Worker itself down; there's no HTTP response to break, only that
+// run's data staying stale, which the next successful run fixes.
+//
+// Both are chunked (see plexSync.ts's and plexAiring.ts's header
+// comments) because a full pass can exceed Cloudflare's per-invocation
+// subrequest cap. A plain in-process loop calling the chunk function
 // repeatedly wouldn't help — every fetch/D1 call in that loop would still
 // count against this ONE scheduled invocation's budget. Instead this
-// self-fetches its own /api/plex/sync endpoint in a loop: each self-fetch
-// is a genuinely separate Worker invocation with its own fresh budget,
-// and only costs this invocation a single subrequest per iteration.
+// self-fetches its own endpoint in a loop: each self-fetch is a
+// genuinely separate Worker invocation with its own fresh budget, and
+// only costs this invocation a single subrequest per iteration.
 const MAX_SYNC_CHUNKS = 200; // safety valve — real libraries finish in far fewer chunks than this
 
-// Must match wrangler.toml's second `crons` entry exactly — see the
-// `scheduled` export below, which branches on this to tell the two cron
-// schedules apart.
+// Must match wrangler.toml's `crons` entries exactly — see the
+// `scheduled` export below, which branches on event.cron to tell the
+// three cron schedules apart.
+const PLEX_SYNC_CRON = '0 9 * * *';
+const PLEX_AIRING_CRON = '30 9 * * *'; // 30 min after sync's tick — enough of a head start to matter, but airing-check never waits on sync finishing
 const EMAIL_SYNC_CRON = '*/2 * * * *';
 
 export default {
   fetch: app.fetch,
   async scheduled(event: ScheduledController, env: Env) {
-    // Two cron schedules share this one handler (see wrangler.toml's
-    // `crons` array) — the nightly Plex resync and the every-few-minutes
-    // Inbox sync run on very different cadences, so each checks
-    // event.cron rather than both running on every tick.
     if (event.cron === EMAIL_SYNC_CRON) {
       try {
         await syncAllAccounts(env);
@@ -7536,35 +7549,42 @@ export default {
       return;
     }
 
-    try {
-      for (let i = 0; i < MAX_SYNC_CHUNKS; i++) {
-        const res = await fetch(`${WORKER_SELF_URL}/api/plex/sync`, { method: 'POST' });
-        if (!res.ok) {
-          console.error('Plex library sync chunk failed', res.status, await res.text());
-          break;
+    if (event.cron === PLEX_SYNC_CRON) {
+      try {
+        for (let i = 0; i < MAX_SYNC_CHUNKS; i++) {
+          const res = await fetch(`${WORKER_SELF_URL}/api/plex/sync`, { method: 'POST' });
+          if (!res.ok) {
+            console.error('Plex library sync chunk failed', res.status, await res.text());
+            break;
+          }
+          const chunk = await res.json<{ done: boolean }>();
+          if (chunk.done) break;
         }
-        const chunk = await res.json<{ done: boolean }>();
-        if (chunk.done) break;
+      } catch (err) {
+        console.error('Plex library sync failed', err);
       }
-    } catch (err) {
-      console.error('Plex library sync failed', err);
+      return;
     }
-    try {
-      // Same self-fetch chunking as the library sync above, for the same
-      // reason — see runAiringCheckChunk's own comment for the D1 timeout
-      // this used to silently hit on a large library, which is exactly
-      // how Ted Lasso S04E09 / It's Always Sunny S18E08 went unflagged.
-      for (let i = 0; i < MAX_SYNC_CHUNKS; i++) {
-        const res = await fetch(`${WORKER_SELF_URL}/api/plex/airing-check`, { method: 'POST' });
-        if (!res.ok) {
-          console.error('Plex airing check chunk failed', res.status, await res.text());
-          break;
+
+    if (event.cron === PLEX_AIRING_CRON) {
+      try {
+        // Same self-fetch chunking as the library sync above, for the same
+        // reason — see runAiringCheckChunk's own comment for the D1 timeout
+        // this used to silently hit on a large library, which is exactly
+        // how Ted Lasso S04E09 / It's Always Sunny S18E08 went unflagged.
+        for (let i = 0; i < MAX_SYNC_CHUNKS; i++) {
+          const res = await fetch(`${WORKER_SELF_URL}/api/plex/airing-check`, { method: 'POST' });
+          if (!res.ok) {
+            console.error('Plex airing check chunk failed', res.status, await res.text());
+            break;
+          }
+          const chunk = await res.json<{ done: boolean }>();
+          if (chunk.done) break;
         }
-        const chunk = await res.json<{ done: boolean }>();
-        if (chunk.done) break;
+      } catch (err) {
+        console.error('Plex airing check failed', err);
       }
-    } catch (err) {
-      console.error('Plex airing check failed', err);
+      return;
     }
   },
 };
