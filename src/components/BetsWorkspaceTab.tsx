@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
 import type { BetGameEnrichment, BetGameNote, BetGameTeamSnapshot, BetPromo, BetScheduleGame } from '../api/types';
-import { SPORTS, formatMoney, type SportsbookBalance } from '../utils/bets';
+import { SPORTS, formatMoney, formatExpiryLabel, type SportsbookBalance } from '../utils/bets';
 import { Modal } from './Modal';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { KebabMenu } from './KebabMenu';
@@ -54,6 +54,30 @@ function sortSports(sports: string[]): string[] {
 // the "Sportsbooks" tab of Mike's old sheet. Not renameable — these are real
 // sportsbook names that Banking/Promos also key off of.
 const SPORTSBOOK_COLUMNS = ['BetMGM', 'BetRivers', 'DraftKings', 'FanDuel', 'Caesars'];
+
+/** sportsbookBalances() only returns a row for a book that's actually had
+ * a transaction or bet — so a book Mike hasn't funded yet (or fully
+ * withdrew from and never touched again) just doesn't appear, which reads
+ * as "I don't track that book" rather than "that book is at $0." The
+ * balance strip is specifically meant to be Mike's whole-roster glance at
+ * every book he actually uses — the fixed SPORTSBOOK_COLUMNS five — so
+ * this fills in a $0 entry for any of those five missing from `balances`,
+ * keeping the real (possibly non-zero, possibly non-standard-book) rows
+ * from `balances` as-is and in their existing balance-descending order,
+ * with the filled-in zeros appended after in column order. */
+function allSportsbookBalances(balances: SportsbookBalance[]): SportsbookBalance[] {
+  const present = new Set(balances.map((b) => b.sportsbook));
+  const missing = SPORTSBOOK_COLUMNS.filter((name) => !present.has(name)).map((sportsbook) => ({
+    sportsbook,
+    deposited: 0,
+    withdrawn: 0,
+    bonuses: 0,
+    adjustments: 0,
+    betNet: 0,
+    balance: 0,
+  }));
+  return [...balances, ...missing];
+}
 
 function loadStringList(key: string, fallback: string[] = []): string[] {
   try {
@@ -1124,6 +1148,16 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
   }
 
   const activePromos = promos.filter((p) => p.status === 'active' && (!p.expires_at || p.expires_at >= date));
+  // Soonest-expiring first — the whole point of glancing at this list is
+  // "what do I need to use before it's gone," so a promo expiring today
+  // should never be buried below one with weeks left. No expiration at
+  // all sorts to the end, since there's no urgency to surface for those.
+  const sortedActivePromos = [...activePromos].sort((a, b) => {
+    if (a.expires_at && b.expires_at) return a.expires_at < b.expires_at ? -1 : a.expires_at > b.expires_at ? 1 : 0;
+    if (a.expires_at) return -1;
+    if (b.expires_at) return 1;
+    return 0;
+  });
   // Boost-availability is flagged per sportsbook only — a promo carries no
   // sport of its own (see BetPromo), and matching a promo's odds/legs
   // against a specific game is unreliable for anything but a plain straight
@@ -1131,15 +1165,16 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
   // in isolation when it really doesn't). So this is a "check this book"
   // nudge, not an auto-verified match — the tooltip says as much.
   const promoSportsbooks = new Set(activePromos.map((p) => p.sportsbook));
-  const balanceBySportsbook = new Map(balances.map((b) => [b.sportsbook, b.balance]));
+  const displayBalances = allSportsbookBalances(balances);
+  const balanceBySportsbook = new Map(displayBalances.map((b) => [b.sportsbook, b.balance]));
   const loading = schedule === null || notes === null;
   const sportKeys = sortSports([...bySport.keys()]);
 
   return (
     <div className="bets-workspace">
-      {balances.length > 0 && (
+      {displayBalances.length > 0 && (
         <div className="bets-workspace__balances">
-          {balances.map((b) => (
+          {displayBalances.map((b) => (
             <div key={b.sportsbook} className="bets-workspace__balance-chip">
               <span>{b.sportsbook}</span>
               <span className={b.balance >= 0 ? 'is-up' : 'is-down'}>{formatMoney(b.balance)}</span>
@@ -1253,15 +1288,28 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
         </div>
       )}
 
-      {activePromos.length > 0 && (
+      {sortedActivePromos.length > 0 && (
         <div className="bets-breakdown card" style={{ marginTop: 12 }}>
           <div className="bets-breakdown__title">Promos available today</div>
-          <div className="bets-workspace__promo-chips">
-            {activePromos.map((p) => (
-              <div key={p.id} className="bets-workspace__promo-chip">
-                <strong>{p.sportsbook}</strong> {p.description}
-                {p.odds ? ` · ${p.odds}` : ''}
-                {p.amount ? ` · ${p.amount}` : ''}
+          <div className="bets-workspace__promo-list">
+            {sortedActivePromos.map((p) => (
+              <div key={p.id} className="bets-workspace__promo-row">
+                <span className="bets-workspace__promo-row-type">{p.promo_type}</span>
+                <div className="bets-workspace__promo-row-main">
+                  <div className="bets-workspace__promo-row-headline">
+                    <strong>{p.sportsbook}</strong> {p.description}
+                  </div>
+                  {(p.legs || p.odds || p.amount) && (
+                    <div className="bets-workspace__promo-row-detail">
+                      {[p.legs ? `${p.legs} legs` : null, p.odds, p.amount].filter(Boolean).join(' · ')}
+                    </div>
+                  )}
+                </div>
+                {p.expires_at && (
+                  <span className={`bets-workspace__promo-row-expiry${p.expires_at === date ? ' is-today' : ''}`}>
+                    {formatExpiryLabel(p.expires_at, date)}
+                  </span>
+                )}
               </div>
             ))}
           </div>

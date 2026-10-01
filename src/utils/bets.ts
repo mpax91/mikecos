@@ -79,6 +79,22 @@ export function formatOdds(odds: number): string {
   return odds > 0 ? `+${odds}` : String(odds);
 }
 
+/** Promo expirations read far better as "Today"/"Tomorrow"/"4D" than a raw
+ * YYYY-MM-DD — most of Mike's promos expire same-day, so the common case
+ * should be instantly scannable rather than requiring date math every
+ * time he glances at the list. Computed as a whole-day difference so DST
+ * and time-of-day never shift which bucket a date lands in. */
+export function formatExpiryLabel(expiresAt: string, today: string = todayLocalISODash()): string {
+  const [ey, em, ed] = expiresAt.split('-').map(Number);
+  const [ty, tm, td] = today.split('-').map(Number);
+  const diffDays = Math.round((Date.UTC(ey, em - 1, ed) - Date.UTC(ty, tm - 1, td)) / 86_400_000);
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Tomorrow';
+  if (diffDays === -1) return 'Yesterday';
+  if (diffDays > 1) return `${diffDays}D`;
+  return `${Math.abs(diffDays)}D ago`;
+}
+
 export function formatMoney(v: number): string {
   const sign = v < 0 ? '-' : '';
   return `${sign}$${Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;

@@ -9317,19 +9317,72 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   color: #c0392b;
 }
 
-.bets-workspace__promo-chips {
+/* "Promos available today" — redesigned as a scannable list (was a wall
+   of "· "-joined text in one line per promo) so Mike can glance down the
+   left edge for which book/type, the middle for what it actually is, and
+   the right edge for how much time is left, instead of reading every
+   promo as one run-on sentence. */
+.bets-workspace__promo-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
 }
 
-.bets-workspace__promo-chip {
-  font-size: 12.5px;
+.bets-workspace__promo-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: var(--border-hairline);
+}
+
+.bets-workspace__promo-row:last-child {
+  border-bottom: none;
+}
+
+.bets-workspace__promo-row-type {
+  flex-shrink: 0;
+  width: 64px;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-muted);
+}
+
+.bets-workspace__promo-row-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.bets-workspace__promo-row-headline {
+  font-size: 13px;
   color: var(--color-ink);
 }
 
-.bets-workspace__promo-chip strong {
+.bets-workspace__promo-row-headline strong {
   font-weight: 600;
+}
+
+.bets-workspace__promo-row-detail {
+  font-size: 11.5px;
+  color: var(--color-muted);
+  margin-top: 1px;
+}
+
+.bets-workspace__promo-row-expiry {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(120, 120, 120, 0.14);
+  color: var(--color-muted);
+  white-space: nowrap;
+}
+
+.bets-workspace__promo-row-expiry.is-today {
+  background: rgba(192, 57, 43, 0.12);
+  color: #c0392b;
 }
 
 /* Two clusters within .bets-workspace__toolbar — desktop just lets them

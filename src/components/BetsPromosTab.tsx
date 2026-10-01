@@ -1,11 +1,14 @@
 import { useState } from 'react';
 import type { BetPromo, BetPromoStatus } from '../api/types';
-import { COMMON_SPORTSBOOKS } from '../utils/bets';
+import { COMMON_SPORTSBOOKS, formatExpiryLabel } from '../utils/bets';
 import { Modal } from './Modal';
 import { ConfirmModal } from './ConfirmModal';
 import { KebabMenu } from './KebabMenu';
 
-const PROMO_TYPES = ['Boost', 'Profit Boost', 'Risk-Free', 'Bonus Bet', 'No Sweat', 'Deposit Match', 'Other'];
+// "Boost" and "Profit Boost" meant the same thing and just split the same
+// promo type across two option values — collapsed into one. The rest of
+// the list matches the actual promo shapes Mike logs.
+const PROMO_TYPES = ['Boost', 'Insurance', 'Bonus', 'Up Early', 'Free Bet'];
 
 const STATUS_OPTIONS: { value: BetPromoStatus; label: string }[] = [
   { value: 'active', label: 'Active' },
@@ -22,7 +25,12 @@ function PromoFormModal({ promo, onClose, onSave }: { promo: BetPromo | null; on
   const [sportsbook, setSportsbook] = useState(promo?.sportsbook ?? '');
   const [description, setDescription] = useState(promo?.description ?? '');
   const [promoType, setPromoType] = useState(promo?.promo_type ?? PROMO_TYPES[0]);
-  const [expiresAt, setExpiresAt] = useState(promo?.expires_at ?? '');
+  // New promos default to expiring today — most bonuses do, and this is
+  // the common case Mike's actually entering same-day. Editing an existing
+  // promo always starts from whatever it already has (including no
+  // expiration at all), never silently backfilled to today just by
+  // opening the form.
+  const [expiresAt, setExpiresAt] = useState(promo ? (promo.expires_at ?? '') : todayLocalISODash());
   const [legs, setLegs] = useState(promo?.legs ?? '');
   const [odds, setOdds] = useState(promo?.odds ?? '');
   const [amount, setAmount] = useState(promo?.amount ?? '');
@@ -184,7 +192,7 @@ export function BetsPromosTab({
                     {p.odds ? ` · ${p.odds}` : ''}
                     {p.amount ? ` · ${p.amount}` : ''}
                     {p.max_bonus != null ? ` · max $${p.max_bonus}` : ''}
-                    {p.expires_at ? ` · expires ${p.expires_at}` : ''}
+                    {p.expires_at ? ` · expires ${formatExpiryLabel(p.expires_at)}` : ''}
                   </span>
                 </div>
                 <span className={`bets__result-badge ${stale ? 'bets__result-badge--loss' : p.status === 'active' ? 'bets__result-badge--win' : 'bets__result-badge--push'}`}>
