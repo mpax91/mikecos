@@ -1631,10 +1631,14 @@ export interface BriefingResponse {
 
 // ---- Bets (sports betting dashboard, 0032_bets.sql) ----
 
-export type BetResult = 'win' | 'loss' | 'push' | 'void';
+// The base four are still what computeProfit/computeStreaks/etc. in
+// utils/bets.ts pattern-match on, but the set itself is now Settings-
+// editable (0084_bet_options_tipper_line.sql added 'cashed_out'/'tbd'),
+// so this is intentionally just `string` rather than a closed union.
+export type BetResult = string;
 
-// Only ever non-empty when bet_type is 'Parlay' | 'Same Game Parlay' |
-// 'SGP+' — see worker/migrations/0038_bet_legs.sql for the money-vs-
+// Only ever non-empty when bet_type is 'Parlay' | 'SGP' |
+// 'SGPx' — see worker/migrations/0038_bet_legs.sql for the money-vs-
 // pick-accuracy split this exists for.
 export interface BetLeg {
   id: string;
@@ -1663,16 +1667,31 @@ export interface Bet {
   sport: string;
   sportsbook: string;
   bet_type: string;
-  pick: string | null;
+  pick: string | null; // deprecated — see worker/migrations/0084_bet_options_tipper_line.sql; new bets use `line` instead
   odds: number; // American odds
   wager: number;
   result: BetResult;
   stake_type: BetStakeType; // 'cash' (default) | 'free_bet' — see worker/migrations/0080_bet_stake_type.sql
   manual_profit: number | null;
   notes: string | null;
+  tipper: string | null; // free text, who the pick came from — see 0084_bet_options_tipper_line.sql
+  line: string | null; // 'ATS' | 'Mixed' | 'ML' | 'o/u' by default, Settings-editable
   legs: BetLeg[];
   created_at: string;
   updated_at: string;
+}
+
+// ---- Bets Settings: editable option lists (0084_bet_options_tipper_line.sql) ----
+
+export type BetOptionCategory = 'bet_type' | 'tipper' | 'line' | 'result';
+
+export interface BetOption {
+  id: string;
+  category: BetOptionCategory;
+  value: string;
+  label: string;
+  position: number;
+  created_at: string;
 }
 
 // ---- Bets banking/promos/workspace (0040_bet_workspace.sql) ----

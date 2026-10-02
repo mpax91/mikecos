@@ -7,6 +7,7 @@ import type {
   CanvasItemType,
   Bet,
   BetLegRow,
+  BetOption,
   BetGameLineRow,
   BetGameNoteRow,
   BetPromo,
@@ -4920,7 +4921,10 @@ app.get('/api/journal/:date', async (c) => {
       if (bet.result === 'win') acc.wins += 1;
       else if (bet.result === 'loss') acc.losses += 1;
       else if (bet.result === 'push') acc.pushes += 1;
-      else acc.voids += 1;
+      else if (bet.result === 'void') acc.voids += 1;
+      // 'cashed_out' / 'tbd' / any other custom result (see
+      // 0084_bet_options_tipper_line.sql) fall through uncounted here —
+      // same as the frontend's aggregateBucket/foldPick.
       return acc;
     },
     { wins: 0, losses: 0, pushes: 0, voids: 0, net: 0 }
@@ -6720,8 +6724,92 @@ app.get('/api/briefing', async (c) => {
 // facts, the UI derives the view" split as the rest of this app (Contacts'
 // household connections, the Journal's pulled-in data). At personal-bet-log
 // scale there's no reason to duplicate that math on the server.
-const BET_RESULTS = ['win', 'loss', 'push', 'void'];
+// Leg-level results stay this fixed four forever — bet_legs.result has a
+// DB CHECK constraint restricting it to exactly these (0038_bet_legs.sql),
+// and "Cashed Out"/"TBD" don't really make sense per-leg anyway (a whole
+// live parlay gets cashed out, not one leg of it; a parlay isn't graded
+// until every leg is). Top-level bet results, by contrast, are Settings-
+// editable — see getOptionValues/BET_OPTION_CATEGORIES below.
+const LEG_RESULTS = ['win', 'loss', 'push', 'void'];
 const BET_STAKE_TYPES = ['cash', 'free_bet']; // see 0080_bet_stake_type.sql
+
+// ---- Bets Settings: editable option lists (0084_bet_options_tipper_line.sql) ----
+
+const BET_OPTION_CATEGORIES = ['bet_type', 'tipper', 'line', 'result'] as const;
+type BetOptionCategoryLocal = (typeof BET_OPTION_CATEGORIES)[number];
+
+/** Current values for one Settings-editable category, in display order.
+ * Used to validate bet_type/line/result on write (tipper is deliberately
+ * NOT validated this way — see POST /api/bets — it's free text by design). */
+async function getOptionValues(db: D1Database, category: BetOptionCategoryLocal): Promise<string[]> {
+  const { results } = await db.prepare('SELECT value FROM bet_options WHERE category = ? ORDER BY position ASC').bind(category).all<{ value: string }>();
+  return (results ?? []).map((r) => r.value);
+}
+
+app.get('/api/bet-options', async (c) => {
+  const { results } = await c.env.DB.prepare('SELECT * FROM bet_options ORDER BY category ASC, position ASC').all<BetOption>();
+  return c.json(results ?? []);
+});
+
+app.post('/api/bet-options', async (c) => {
+  const body = await c.req.json<{ category?: string; value?: string }>();
+  if (!body.category || !BET_OPTION_CATEGORIES.includes(body.category as BetOptionCategoryLocal)) {
+    return c.json({ error: `category must be one of ${BET_OPTION_CATEGORIES.join(', ')}` }, 400);
+  }
+  if (!body.value?.trim()) return c.json({ error: 'value is required' }, 400);
+  const value = body.value.trim();
+  const existing = await c.env.DB.prepare('SELECT id FROM bet_options WHERE category = ? AND value = ?').bind(body.category, value).first();
+  if (existing) return c.json({ error: 'that option already exists' }, 409);
+  const maxPos = await c.env.DB.prepare('SELECT MAX(position) as maxPos FROM bet_options WHERE category = ?').bind(body.category).first<{ maxPos: number | null }>();
+  const id = uid();
+  await c.env.DB.prepare('INSERT INTO bet_options (id, category, value, label, position, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+    .bind(id, body.category, value, value, (maxPos?.maxPos ?? -1) + 1, now())
+    .run();
+  const created = await c.env.DB.prepare('SELECT * FROM bet_options WHERE id = ?').bind(id).first<BetOption>();
+  return c.json(created, 201);
+});
+
+// Only `label` (the display text) is editable — `value` (what's actually
+// stored on bets that already use this option) is fixed at creation so a
+// typo fix can't silently reclassify every bet that used the old spelling.
+app.patch('/api/bet-options/:id', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json<{ label?: string }>();
+  if (!body.label?.trim()) return c.json({ error: 'label is required' }, 400);
+  const existing = await c.env.DB.prepare('SELECT * FROM bet_options WHERE id = ?').bind(id).first<BetOption>();
+  if (!existing) return c.json({ error: 'not found' }, 404);
+  await c.env.DB.prepare('UPDATE bet_options SET label = ? WHERE id = ?').bind(body.label.trim(), id).run();
+  const updated = await c.env.DB.prepare('SELECT * FROM bet_options WHERE id = ?').bind(id).first<BetOption>();
+  return c.json(updated);
+});
+
+app.delete('/api/bet-options/:id', async (c) => {
+  const id = c.req.param('id');
+  await c.env.DB.prepare('DELETE FROM bet_options WHERE id = ?').bind(id).run();
+  return c.json({ ok: true });
+});
+
+// "With enough data... if free form text fields occur often enough (>5
+// times) that becomes a go-forward pre-populated option" — Mike's own
+// spec. Fires after a bet is written with a tipper value that isn't
+// already a Settings option; once that exact string has been used on more
+// than 5 bets, it's auto-added to the tipper list so it shows up as a
+// suggestion going forward. Silent/best-effort: never blocks saving the
+// bet it's checking.
+async function maybePromoteTipper(db: D1Database, tipper: string | null | undefined): Promise<void> {
+  const value = tipper?.trim();
+  if (!value) return;
+  const existing = await db.prepare('SELECT id FROM bet_options WHERE category = ? AND value = ?').bind('tipper', value).first();
+  if (existing) return;
+  const { results } = await db.prepare('SELECT COUNT(*) as n FROM bets WHERE tipper = ?').bind(value).all<{ n: number }>();
+  const count = results?.[0]?.n ?? 0;
+  if (count <= 5) return;
+  const maxPos = await db.prepare("SELECT MAX(position) as maxPos FROM bet_options WHERE category = 'tipper'").first<{ maxPos: number | null }>();
+  await db
+    .prepare('INSERT INTO bet_options (id, category, value, label, position, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+    .bind(uid(), 'tipper', value, value, (maxPos?.maxPos ?? -1) + 1, now())
+    .run();
+}
 
 // Same American-odds payout math as computeProfit in src/utils/bets.ts —
 // duplicated here (not imported; the worker and frontend are separate
@@ -6742,8 +6830,11 @@ function computeBetProfit(bet: Bet): number {
 }
 
 // Only these three bet_type values ever carry legs (see 0038_bet_legs.sql).
-// A straight bet keeps using bets.pick/odds directly, unchanged.
-const PARLAY_BET_TYPES = ['Parlay', 'Same Game Parlay', 'SGP+'];
+// A straight bet keeps using bets.odds directly, unchanged. Hardcoded
+// rather than Settings-driven: whether a bet type carries legs is business
+// logic, not a display choice, so a brand-new bet_type Mike adds later via
+// Settings behaves as a straight bet unless this list is updated too.
+const PARLAY_BET_TYPES = ['Parlay', 'SGP', 'SGPx'];
 
 type BetLegInput = {
   sport?: string;
@@ -6760,7 +6851,7 @@ function validateLegs(legs: unknown): { error: string } | { legs: BetLegInput[] 
   for (const leg of legs as BetLegInput[]) {
     if (!leg.sport?.trim()) return { error: 'every leg needs a sport' };
     if (!leg.bet_type?.trim()) return { error: 'every leg needs a bet type' };
-    if (!leg.result || !BET_RESULTS.includes(leg.result)) return { error: `every leg's result must be one of ${BET_RESULTS.join(', ')}` };
+    if (!leg.result || !LEG_RESULTS.includes(leg.result)) return { error: `every leg's result must be one of ${LEG_RESULTS.join(', ')}` };
     if (leg.over_under !== undefined && leg.over_under !== null && leg.over_under !== 'over' && leg.over_under !== 'under') {
       return { error: "a leg's over_under must be 'over', 'under', or null" };
     }
@@ -6793,7 +6884,7 @@ async function replaceLegs(env: Env, betId: string, legs: BetLegInput[]): Promis
   );
 }
 
-/** Attaches each bet's legs (only ever non-empty for Parlay/SGP/SGP+ rows)
+/** Attaches each bet's legs (only ever non-empty for Parlay/SGP/SGPx rows)
  * in one extra query rather than N+1 — same pattern as habitsWithLogs in
  * the Journal endpoint. */
 async function attachLegs(env: Env, bets: Bet[]): Promise<(Bet & { legs: BetLegRow[] })[]> {
@@ -6824,10 +6915,20 @@ app.post('/api/bets', async (c) => {
   if (!body.bet_type?.trim()) return c.json({ error: 'bet_type is required' }, 400);
   if (typeof body.odds !== 'number' || !Number.isFinite(body.odds) || body.odds === 0) return c.json({ error: 'odds must be a non-zero number (American odds, e.g. -110 or 150)' }, 400);
   if (typeof body.wager !== 'number' || !Number.isFinite(body.wager) || body.wager <= 0) return c.json({ error: 'wager must be a positive number' }, 400);
-  if (!body.result || !BET_RESULTS.includes(body.result)) return c.json({ error: `result must be one of ${BET_RESULTS.join(', ')}` }, 400);
+  if (!body.result) return c.json({ error: 'result is required' }, 400);
   if (body.stake_type !== undefined && !BET_STAKE_TYPES.includes(body.stake_type)) {
     return c.json({ error: `stake_type must be one of ${BET_STAKE_TYPES.join(', ')}` }, 400);
   }
+
+  const [betTypeOptions, resultOptions, lineOptions] = await Promise.all([
+    getOptionValues(c.env.DB, 'bet_type'),
+    getOptionValues(c.env.DB, 'result'),
+    getOptionValues(c.env.DB, 'line'),
+  ]);
+  if (!betTypeOptions.includes(body.bet_type.trim())) return c.json({ error: `bet_type must be one of ${betTypeOptions.join(', ')}` }, 400);
+  if (!resultOptions.includes(body.result)) return c.json({ error: `result must be one of ${resultOptions.join(', ')}` }, 400);
+  const lineValue = (body as { line?: string }).line?.trim() || null;
+  if (lineValue && !lineOptions.includes(lineValue)) return c.json({ error: `line must be one of ${lineOptions.join(', ')}` }, 400);
 
   const isParlay = PARLAY_BET_TYPES.includes(body.bet_type.trim());
   let legs: BetLegInput[] = [];
@@ -6837,11 +6938,12 @@ app.post('/api/bets', async (c) => {
     legs = validated.legs;
   }
 
+  const tipperValue = (body as { tipper?: string }).tipper?.trim() || null;
   const id = uid();
   const ts = now();
   await c.env.DB.prepare(
-    `INSERT INTO bets (id, date, sport, sportsbook, bet_type, pick, odds, wager, result, stake_type, manual_profit, notes, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO bets (id, date, sport, sportsbook, bet_type, pick, odds, wager, result, stake_type, manual_profit, notes, tipper, line, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
     .bind(
       id,
@@ -6856,11 +6958,14 @@ app.post('/api/bets', async (c) => {
       body.stake_type ?? 'cash',
       body.manual_profit ?? null,
       body.notes?.trim() || null,
+      tipperValue,
+      lineValue,
       ts,
       ts
     )
     .run();
   if (isParlay) await replaceLegs(c.env, id, legs);
+  await maybePromoteTipper(c.env.DB, tipperValue);
   const bet = await c.env.DB.prepare('SELECT * FROM bets WHERE id = ?').bind(id).first<Bet>();
   const [withLegs] = await attachLegs(c.env, [bet as Bet]);
   return c.json(withLegs, 201);
@@ -6872,12 +6977,25 @@ app.patch('/api/bets/:id', async (c) => {
   const existing = await c.env.DB.prepare('SELECT * FROM bets WHERE id = ?').bind(id).first<Bet>();
   if (!existing) return c.json({ error: 'not found' }, 404);
 
-  if (body.result !== undefined && !BET_RESULTS.includes(body.result)) return c.json({ error: `result must be one of ${BET_RESULTS.join(', ')}` }, 400);
   if (body.stake_type !== undefined && !BET_STAKE_TYPES.includes(body.stake_type)) {
     return c.json({ error: `stake_type must be one of ${BET_STAKE_TYPES.join(', ')}` }, 400);
   }
   if (body.odds !== undefined && (typeof body.odds !== 'number' || !Number.isFinite(body.odds) || body.odds === 0)) return c.json({ error: 'odds must be a non-zero number' }, 400);
   if (body.wager !== undefined && (typeof body.wager !== 'number' || !Number.isFinite(body.wager) || body.wager <= 0)) return c.json({ error: 'wager must be a positive number' }, 400);
+
+  if (body.result !== undefined || body.bet_type !== undefined || (body as { line?: string }).line !== undefined) {
+    const [betTypeOptions, resultOptions, lineOptions] = await Promise.all([
+      getOptionValues(c.env.DB, 'bet_type'),
+      getOptionValues(c.env.DB, 'result'),
+      getOptionValues(c.env.DB, 'line'),
+    ]);
+    if (body.result !== undefined && !resultOptions.includes(body.result)) return c.json({ error: `result must be one of ${resultOptions.join(', ')}` }, 400);
+    if (body.bet_type !== undefined && !betTypeOptions.includes(body.bet_type.trim())) return c.json({ error: `bet_type must be one of ${betTypeOptions.join(', ')}` }, 400);
+    const nextLine = (body as { line?: string }).line?.trim() || null;
+    if ((body as { line?: string }).line !== undefined && nextLine && !lineOptions.includes(nextLine)) {
+      return c.json({ error: `line must be one of ${lineOptions.join(', ')}` }, 400);
+    }
+  }
 
   const nextBetType = body.bet_type ?? existing.bet_type;
   const isParlay = PARLAY_BET_TYPES.includes(nextBetType);
@@ -6899,6 +7017,12 @@ app.patch('/api/bets/:id', async (c) => {
   if ('pick' in body) fields.push(['pick', body.pick?.trim() || null]);
   if ('notes' in body) fields.push(['notes', body.notes?.trim() || null]);
   if ('manual_profit' in body) fields.push(['manual_profit', body.manual_profit ?? null]);
+  let tipperToPromote: string | null = null;
+  if ('tipper' in body) {
+    tipperToPromote = (body as { tipper?: string }).tipper?.trim() || null;
+    fields.push(['tipper', tipperToPromote]);
+  }
+  if ('line' in body) fields.push(['line', (body as { line?: string }).line?.trim() || null]);
 
   if (fields.length > 0) {
     fields.push(['updated_at', now()]);
@@ -6907,6 +7031,7 @@ app.patch('/api/bets/:id', async (c) => {
       .bind(...fields.map(([, v]) => v), id)
       .run();
   }
+  if (tipperToPromote) await maybePromoteTipper(c.env.DB, tipperToPromote);
   const bet = await c.env.DB.prepare('SELECT * FROM bets WHERE id = ?').bind(id).first<Bet>();
   const [withLegs] = await attachLegs(c.env, [bet as Bet]);
   return c.json(withLegs);

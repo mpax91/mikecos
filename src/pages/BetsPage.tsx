@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
-import { BET_STAKE_TYPES, type Bet, type BetLeg, type BetPromo, type BetResult, type BetStakeType, type BetTransaction } from '../api/types';
+import { BET_STAKE_TYPES, type Bet, type BetLeg, type BetOption, type BetOptionCategory, type BetPromo, type BetResult, type BetStakeType, type BetTransaction } from '../api/types';
 import { useReportTabMeta } from '../contexts/TabsContext';
 import type { Granularity } from '../utils/healthPeriods';
 import {
   BET_TYPES,
   COMMON_SPORTSBOOKS,
-  LEG_BET_TYPES,
-  RESULT_OPTIONS,
+  LEG_RESULT_OPTIONS,
   SPORTS,
   averageLegsPerParlay,
   buildBetPeriods,
@@ -19,13 +18,18 @@ import {
   formatMoney,
   formatOdds,
   groupByOddsRange,
+  groupByTipper,
   isParlayType,
+  legBetTypes,
+  optionLabel,
+  optionValues,
   overUnderHitRate,
   pickAccuracyByBetType,
   pickAccuracyBySport,
   resultLabel,
   sportsbookBalances,
-  todayLocalISODash,
+  withCurrentValue,
+  yesterdayLocalISODash,
   winRateByParlaySize,
   type AggregatedBetPeriod,
   type BetGroupStat,
@@ -38,7 +42,7 @@ import { BetsBankingTab } from '../components/BetsBankingTab';
 import { BetsPromosTab } from '../components/BetsPromosTab';
 import { BetsWorkspaceTab } from '../components/BetsWorkspaceTab';
 
-type BetsTab = 'workspace' | 'log' | 'performance' | 'trends' | 'banking' | 'promos';
+type BetsTab = 'workspace' | 'log' | 'performance' | 'trends' | 'banking' | 'promos' | 'settings';
 
 const TABS: { id: BetsTab; label: string }[] = [
   { id: 'workspace', label: 'Workspace' },
@@ -47,7 +51,142 @@ const TABS: { id: BetsTab; label: string }[] = [
   { id: 'trends', label: 'Trends' },
   { id: 'banking', label: 'Banking' },
   { id: 'promos', label: 'Promos' },
+  { id: 'settings', label: 'Settings' },
 ];
+
+const OPTION_CATEGORIES: { id: BetOptionCategory; label: string; hint: string }[] = [
+  { id: 'bet_type', label: 'Bet Type', hint: 'Straight, Parlay, SGP…' },
+  { id: 'tipper', label: 'Tipper', hint: 'Who the pick came from — free text on the betslip, but these show up as suggestions.' },
+  { id: 'line', label: 'Line', hint: 'ATS, Mixed, ML, o/u…' },
+  { id: 'result', label: 'Result', hint: 'Win, Loss, Cashed Out…' },
+];
+
+/** Add/remove/edit for one of the four Bets lists (Bet Type, Tipper,
+ * Line, Result) — Mike's own ask: "build a proper settings screen...
+ * that allows me to add/remove/edit any of these fields". Editing only
+ * ever changes an option's label, never its stored value — see
+ * worker/migrations/0084_bet_options_tipper_line.sql's header for why. */
+function OptionListEditor({
+  category,
+  label,
+  hint,
+  options,
+  onCreate,
+  onUpdate,
+  onDelete,
+}: {
+  category: BetOptionCategory;
+  label: string;
+  hint: string;
+  options: BetOption[];
+  onCreate: (category: BetOptionCategory, value: string) => Promise<void>;
+  onUpdate: (id: string, newLabel: string) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
+}) {
+  const [adding, setAdding] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingLabel, setEditingLabel] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const rows = options.filter((o) => o.category === category);
+
+  async function handleAdd() {
+    if (!adding.trim()) return;
+    setBusy(true);
+    try {
+      await onCreate(category, adding.trim());
+      setAdding('');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleSaveEdit() {
+    if (!editingId || !editingLabel.trim()) return;
+    setBusy(true);
+    try {
+      await onUpdate(editingId, editingLabel.trim());
+      setEditingId(null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="bets-settings__card card">
+      <div className="bets-settings__card-title">{label}</div>
+      <div className="bets-settings__card-hint">{hint}</div>
+      <div className="bets-settings__list">
+        {rows.map((o) => (
+          <div key={o.id} className="bets-settings__row">
+            {editingId === o.id ? (
+              <>
+                <input className="bets-settings__edit-input" autoFocus value={editingLabel} onChange={(e) => setEditingLabel(e.target.value)} />
+                <button type="button" className="link-btn" disabled={busy} onClick={handleSaveEdit}>
+                  Save
+                </button>
+                <button type="button" className="link-btn" disabled={busy} onClick={() => setEditingId(null)}>
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <>
+                <span className="bets-settings__row-label">{o.label}</span>
+                <button
+                  type="button"
+                  className="link-btn"
+                  onClick={() => {
+                    setEditingId(o.id);
+                    setEditingLabel(o.label);
+                  }}
+                >
+                  Edit
+                </button>
+                <button type="button" className="link-btn bets-settings__danger" disabled={busy} onClick={() => onDelete(o.id)}>
+                  Remove
+                </button>
+              </>
+            )}
+          </div>
+        ))}
+        {rows.length === 0 && <div className="bets-settings__row-label bets-settings__empty">No options yet.</div>}
+      </div>
+      <div className="bets-settings__add">
+        <input
+          placeholder={`Add a ${label.toLowerCase()}…`}
+          value={adding}
+          onChange={(e) => setAdding(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') handleAdd();
+          }}
+        />
+        <button type="button" className="btn btn--ghost" disabled={busy || !adding.trim()} onClick={handleAdd}>
+          Add
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function BetsSettingsTab({
+  options,
+  onCreate,
+  onUpdate,
+  onDelete,
+}: {
+  options: BetOption[];
+  onCreate: (category: BetOptionCategory, value: string) => Promise<void>;
+  onUpdate: (id: string, newLabel: string) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
+}) {
+  return (
+    <div className="bets-settings">
+      {OPTION_CATEGORIES.map((c) => (
+        <OptionListEditor key={c.id} category={c.id} label={c.label} hint={c.hint} options={options} onCreate={onCreate} onUpdate={onUpdate} onDelete={onDelete} />
+      ))}
+    </div>
+  );
+}
 
 const GRANULARITIES: { id: Granularity; label: string }[] = [
   { id: 'week', label: 'Week' },
@@ -130,8 +269,8 @@ function PickAccuracyTable({ title, rows }: { title: string; rows: PickAccuracyS
 
 type LegDraft = { sport: string; bet_type: string; pick: string; line: string; over_under: '' | 'over' | 'under'; odds: string; result: BetResult };
 
-function emptyLegDraft(): LegDraft {
-  return { sport: SPORTS[0], bet_type: LEG_BET_TYPES[0], pick: '', line: '', over_under: '', odds: '', result: 'win' };
+function emptyLegDraft(legTypes: string[]): LegDraft {
+  return { sport: SPORTS[0], bet_type: legTypes[0] ?? '', pick: '', line: '', over_under: '', odds: '', result: 'win' };
 }
 
 function legDraftFromLeg(leg: BetLeg): LegDraft {
@@ -147,24 +286,31 @@ function legDraftFromLeg(leg: BetLeg): LegDraft {
 }
 
 /** Add/edit form for a single bet. Straight bets keep the simple
- * pick+odds+result flow; Parlay/Same Game Parlay/SGP+ swap the single Pick
+ * pick+odds+result flow; Parlay/SGP/SGPx swap the single Pick
  * field for a repeatable leg builder — the bet's own Odds field still
  * holds the parlay's combined price, wager and result still live at the
  * bet level (see 0038_bet_legs.sql's header for why). */
-function BetFormModal({ bet, onClose, onSave }: { bet: Bet | null; onClose: () => void; onSave: (params: Record<string, unknown>) => Promise<void> }) {
-  const [date, setDate] = useState(bet?.date ?? todayLocalISODash());
+function BetFormModal({ bet, betOptions, onClose, onSave }: { bet: Bet | null; betOptions: BetOption[]; onClose: () => void; onSave: (params: Record<string, unknown>) => Promise<void> }) {
+  const betTypeOptions = withCurrentValue(optionValues(betOptions, 'bet_type'), bet?.bet_type);
+  const resultOptions = withCurrentValue(optionValues(betOptions, 'result'), bet?.result);
+  const lineOptions = withCurrentValue(optionValues(betOptions, 'line'), bet?.line);
+  const tipperOptions = optionValues(betOptions, 'tipper');
+  const legTypeOptions = legBetTypes(betTypeOptions.length > 0 ? betTypeOptions : BET_TYPES);
+
+  const [date, setDate] = useState(bet?.date ?? yesterdayLocalISODash());
   const [sport, setSport] = useState(bet?.sport ?? SPORTS[0]);
   const [sportsbook, setSportsbook] = useState(bet?.sportsbook ?? '');
-  const [betType, setBetType] = useState(bet?.bet_type ?? BET_TYPES[0]);
-  const [pick, setPick] = useState(bet?.pick ?? '');
+  const [betType, setBetType] = useState(bet?.bet_type ?? betTypeOptions[0] ?? BET_TYPES[0]);
+  const [tipper, setTipper] = useState(bet?.tipper ?? '');
+  const [line, setLine] = useState(bet?.line ?? '');
   const [odds, setOdds] = useState(bet ? String(bet.odds) : '');
   const [wager, setWager] = useState(bet ? String(bet.wager) : '');
-  const [result, setResult] = useState<BetResult>(bet?.result ?? 'win');
+  const [result, setResult] = useState<BetResult>(bet?.result ?? resultOptions[0] ?? 'win');
   const [stakeType, setStakeType] = useState<BetStakeType>(bet?.stake_type ?? 'cash');
   const [notes, setNotes] = useState(bet?.notes ?? '');
   const [showOverride, setShowOverride] = useState(bet?.manual_profit != null);
   const [manualProfit, setManualProfit] = useState(bet?.manual_profit != null ? String(bet.manual_profit) : '');
-  const [legs, setLegs] = useState<LegDraft[]>(bet && bet.legs.length > 0 ? bet.legs.map(legDraftFromLeg) : [emptyLegDraft(), emptyLegDraft()]);
+  const [legs, setLegs] = useState<LegDraft[]>(bet && bet.legs.length > 0 ? bet.legs.map(legDraftFromLeg) : [emptyLegDraft(legTypeOptions), emptyLegDraft(legTypeOptions)]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -187,7 +333,7 @@ function BetFormModal({ bet, onClose, onSave }: { bet: Bet | null; onClose: () =
     setLegs((prev) => prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
   }
   function addLeg() {
-    setLegs((prev) => [...prev, emptyLegDraft()]);
+    setLegs((prev) => [...prev, emptyLegDraft(legTypeOptions)]);
   }
   function removeLeg(i: number) {
     setLegs((prev) => prev.filter((_, idx) => idx !== i));
@@ -221,7 +367,8 @@ function BetFormModal({ bet, onClose, onSave }: { bet: Bet | null; onClose: () =
         sport,
         sportsbook: sportsbook.trim(),
         bet_type: betType,
-        pick: parlay ? undefined : pick.trim() || undefined,
+        tipper: tipper.trim() || undefined,
+        line: parlay ? undefined : line || undefined,
         odds: oddsNum,
         wager: wagerNum,
         result,
@@ -265,18 +412,35 @@ function BetFormModal({ bet, onClose, onSave }: { bet: Bet | null; onClose: () =
         <label className="bets-form__field">
           <span>Bet type</span>
           <select value={betType} onChange={(e) => setBetType(e.target.value)}>
-            {BET_TYPES.map((t) => (
+            {betTypeOptions.map((t) => (
               <option key={t} value={t}>
                 {t}
               </option>
             ))}
           </select>
         </label>
+        <label className="bets-form__field">
+          <span>Tipper (optional)</span>
+          <input list="bets-tippers" placeholder="Who's the pick from?" value={tipper} onChange={(e) => setTipper(e.target.value)} />
+          <datalist id="bets-tippers">
+            {tipperOptions.map((t) => (
+              <option key={t} value={t} />
+            ))}
+          </datalist>
+        </label>
 
         {!parlay && (
           <label className="bets-form__field">
-            <span>Pick</span>
-            <input placeholder="Chiefs -3.5" value={pick} onChange={(e) => setPick(e.target.value)} />
+            <span>Line (optional)</span>
+            <select value={line} onChange={(e) => setLine(e.target.value)}>
+              <option value="">—</option>
+              {lineOptions.map((l) => (
+                <option key={l} value={l}>
+                  {l}
+                </option>
+              ))}
+            </select>
+            {bet?.pick && <span className="bets-form__hint">Previously logged as "{bet.pick}" — kept for reference, no longer edited here.</span>}
           </label>
         )}
 
@@ -306,9 +470,9 @@ function BetFormModal({ bet, onClose, onSave }: { bet: Bet | null; onClose: () =
         <label className="bets-form__field">
           <span>Result</span>
           <select value={result} onChange={(e) => setResult(e.target.value as BetResult)}>
-            {RESULT_OPTIONS.map((r) => (
-              <option key={r.value} value={r.value}>
-                {r.label}
+            {resultOptions.map((r) => (
+              <option key={r} value={r}>
+                {optionLabel(betOptions, 'result', r) !== r ? optionLabel(betOptions, 'result', r) : resultLabel(r)}
               </option>
             ))}
           </select>
@@ -327,7 +491,7 @@ function BetFormModal({ bet, onClose, onSave }: { bet: Bet | null; onClose: () =
                   ))}
                 </select>
                 <select value={leg.bet_type} onChange={(e) => updateLeg(i, { bet_type: e.target.value })}>
-                  {LEG_BET_TYPES.map((t) => (
+                  {withCurrentValue(legTypeOptions, leg.bet_type).map((t) => (
                     <option key={t} value={t}>
                       {t}
                     </option>
@@ -342,7 +506,7 @@ function BetFormModal({ bet, onClose, onSave }: { bet: Bet | null; onClose: () =
                 </select>
                 <input className="bets-legs__odds" placeholder="Odds" value={leg.odds} onChange={(e) => updateLeg(i, { odds: e.target.value })} />
                 <select value={leg.result} onChange={(e) => updateLeg(i, { result: e.target.value as BetResult })}>
-                  {RESULT_OPTIONS.map((r) => (
+                  {LEG_RESULT_OPTIONS.map((r) => (
                     <option key={r.value} value={r.value}>
                       {r.label}
                     </option>
@@ -353,7 +517,7 @@ function BetFormModal({ bet, onClose, onSave }: { bet: Bet | null; onClose: () =
                 </button>
               </div>
             ))}
-            <button type="button" className="link-btn" onClick={addLeg}>
+            <button type="button" className="link-btn" onClick={() => addLeg()}>
               + Add leg
             </button>
           </div>
@@ -600,6 +764,7 @@ function PerformanceTab({ bets }: { bets: Bet[] }) {
           <MoneyBreakdownTable title="By bet type" rows={current.byBetType} />
           <MoneyBreakdownTable title="By sportsbook" rows={current.bySportsbook} />
           <MoneyBreakdownTable title="By odds range" rows={oddsRanges} />
+          <MoneyBreakdownTable title="By tipper" rows={groupByTipper(current?.bets ?? bets)} />
         </div>
       )}
 
@@ -677,6 +842,7 @@ export function BetsPage() {
   const [bets, setBets] = useState<Bet[] | null>(null);
   const [transactions, setTransactions] = useState<BetTransaction[] | null>(null);
   const [promos, setPromos] = useState<BetPromo[] | null>(null);
+  const [betOptions, setBetOptions] = useState<BetOption[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<BetsTab>('workspace');
   const [adding, setAdding] = useState(false);
@@ -684,11 +850,12 @@ export function BetsPage() {
   const [deleting, setDeleting] = useState<Bet | null>(null);
 
   const load = () =>
-    Promise.all([api.listBets(), api.listBetTransactions(), api.listBetPromos()])
-      .then(([b, t, p]) => {
+    Promise.all([api.listBets(), api.listBetTransactions(), api.listBetPromos(), api.listBetOptions()])
+      .then(([b, t, p, o]) => {
         setBets(b);
         setTransactions(t);
         setPromos(p);
+        setBetOptions(o);
       })
       .catch((e) => setError(String(e)));
   useEffect(() => {
@@ -745,6 +912,21 @@ export function BetsPage() {
     await api.deleteBetPromo(p.id);
   }
 
+  async function handleCreateBetOption(category: BetOptionCategory, value: string) {
+    const created = await api.createBetOption({ category, value });
+    setBetOptions((prev) => [...prev, created]);
+  }
+
+  async function handleUpdateBetOption(id: string, newLabel: string) {
+    const updated = await api.updateBetOption(id, { label: newLabel });
+    setBetOptions((prev) => prev.map((o) => (o.id === id ? updated : o)));
+  }
+
+  async function handleDeleteBetOption(id: string) {
+    setBetOptions((prev) => prev.filter((o) => o.id !== id));
+    await api.deleteBetOption(id);
+  }
+
   if (error) return <div className="empty-state">Couldn't load bets: {error}</div>;
   if (!bets || !transactions || !promos) return <div className="empty-state">Loading…</div>;
 
@@ -783,9 +965,12 @@ export function BetsPage() {
         <BetsBankingTab bets={bets} transactions={transactions} onCreate={handleCreateTransaction} onUpdate={handleUpdateTransaction} onDelete={handleDeleteTransaction} />
       )}
       {tab === 'promos' && <BetsPromosTab promos={promos} onCreate={handleCreatePromo} onUpdate={handleUpdatePromo} onDelete={handleDeletePromo} />}
+      {tab === 'settings' && (
+        <BetsSettingsTab options={betOptions} onCreate={handleCreateBetOption} onUpdate={handleUpdateBetOption} onDelete={handleDeleteBetOption} />
+      )}
 
-      {adding && <BetFormModal bet={null} onClose={() => setAdding(false)} onSave={handleCreate} />}
-      {editing && <BetFormModal bet={editing} onClose={() => setEditing(null)} onSave={handleUpdate} />}
+      {adding && <BetFormModal bet={null} betOptions={betOptions} onClose={() => setAdding(false)} onSave={handleCreate} />}
+      {editing && <BetFormModal bet={editing} betOptions={betOptions} onClose={() => setEditing(null)} onSave={handleUpdate} />}
       {deleting && (
         <ConfirmModal
           title="Delete bet?"

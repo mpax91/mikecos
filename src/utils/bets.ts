@@ -1,4 +1,4 @@
-import type { Bet, BetResult, BetTransaction } from '../api/types';
+import type { Bet, BetOption, BetOptionCategory, BetResult, BetTransaction } from '../api/types';
 
 // Fixed lists (like Contacts' CIRCLES) rather than free text, so the
 // "performance by sport"/"performance by bet type" breakdowns stay clean
@@ -7,20 +7,32 @@ import type { Bet, BetResult, BetTransaction } from '../api/types';
 // scoping discussion this feature was built from).
 export const SPORTS = ['NFL', 'NBA', 'MLB', 'NHL', 'NCAAF', 'NCAAB', 'Soccer', 'Tennis', 'Golf', 'MMA/Boxing', 'Other'];
 
-export const BET_TYPES = ['Moneyline', 'Spread', 'Total (Over/Under)', 'Player Prop', 'Parlay', 'Same Game Parlay', 'SGP+', 'Prop', 'Teaser', 'Futures', 'Other'];
+// Defaults seeded by worker/migrations/0084_bet_options_tipper_line.sql —
+// Bet Type, Tipper, Line, and Result are all Settings-editable now (see
+// the Settings tab in BetsPage.tsx and the bet_options table), so these
+// arrays are only the starting point / fallback before that list has
+// loaded, not the live source of truth. optionLabels()/optionValues()
+// below read the fetched list; components should prefer those.
+export const BET_TYPES = ['Straight', 'Parlay', 'SGP', 'SGPx', 'Future', 'Prop', 'Teaser'];
 
 // Only these three ever carry legs (see worker/migrations/0038_bet_legs.sql)
-// — a straight bet (including a plain 'Prop') keeps using the single
-// pick/odds fields on the bet itself.
-export const PARLAY_BET_TYPES = ['Parlay', 'Same Game Parlay', 'SGP+'];
+// — a straight bet keeps using the single odds/line fields on the bet
+// itself. Hardcoded rather than Settings-driven on purpose: whether a bet
+// type carries legs is business logic, not a display choice.
+export const PARLAY_BET_TYPES = ['Parlay', 'SGP', 'SGPx'];
 
 export function isParlayType(betType: string): boolean {
   return PARLAY_BET_TYPES.includes(betType);
 }
 
-// A leg reuses the same bet-type vocabulary as a straight bet, minus the
-// parlay types themselves (a leg can't contain another parlay).
-export const LEG_BET_TYPES = BET_TYPES.filter((t) => !PARLAY_BET_TYPES.includes(t));
+// A leg reuses the bet-type vocabulary minus the parlay types themselves
+// (a leg can't contain another parlay) — pass the live fetched bet_type
+// options through this instead of the BET_TYPES default once they've
+// loaded.
+export function legBetTypes(betTypes: string[] = BET_TYPES): string[] {
+  return betTypes.filter((t) => !PARLAY_BET_TYPES.includes(t));
+}
+export const LEG_BET_TYPES = legBetTypes();
 
 // Sportsbook stays free text (unlike sport/bet type) so a one-off entry
 // never gets blocked, but the suggestion list itself is exactly the five
@@ -29,15 +41,57 @@ export const LEG_BET_TYPES = BET_TYPES.filter((t) => !PARLAY_BET_TYPES.includes(
 // Banking/Promos/the bet log don't dangle stale or unused books.
 export const COMMON_SPORTSBOOKS = ['BetMGM', 'BetRivers', 'DraftKings', 'FanDuel', 'Caesars'];
 
-export const RESULT_OPTIONS: { value: BetResult; label: string }[] = [
+// Leg-level results are NOT Settings-editable (see LEG_RESULTS in
+// worker/src/index.ts) — "Cashed Out"/"TBD" only make sense for a whole
+// bet, not one leg of a parlay, and bet_legs.result has a DB CHECK
+// constraint pinned to exactly these four.
+export const LEG_RESULT_OPTIONS: { value: BetResult; label: string }[] = [
   { value: 'win', label: 'Win' },
   { value: 'loss', label: 'Loss' },
   { value: 'push', label: 'Push' },
   { value: 'void', label: 'Void' },
 ];
 
+// Top-level bet results ARE Settings-editable — these are just the seeded
+// defaults (see 0084_bet_options_tipper_line.sql). 'cashed_out'/'tbd' were
+// added for exactly the two new cases Mike asked for; computeProfit below
+// already treats anything that isn't exactly 'win'/'loss' as a neutral
+// push/void-like 0 (so a cashed-out bet needs its actual payout entered
+// via the manual profit override — there's no formula for "how much did
+// cashing out early actually pay").
+export const RESULT_OPTIONS: { value: BetResult; label: string }[] = [
+  { value: 'win', label: 'Win' },
+  { value: 'loss', label: 'Loss' },
+  { value: 'push', label: 'Push' },
+  { value: 'void', label: 'Void' },
+  { value: 'cashed_out', label: 'Cashed Out' },
+  { value: 'tbd', label: 'TBD' },
+];
+
 export function resultLabel(result: BetResult): string {
   return RESULT_OPTIONS.find((r) => r.value === result)?.label ?? result;
+}
+
+// ---- Bets Settings: live option lists (0084_bet_options_tipper_line.sql) ----
+
+/** Values for one category, in display order, from the live fetched
+ * options list — this is what selects should render once options have
+ * loaded, instead of the hardcoded defaults above. */
+export function optionValues(options: BetOption[], category: BetOptionCategory): string[] {
+  return options.filter((o) => o.category === category).map((o) => o.value);
+}
+
+export function optionLabel(options: BetOption[], category: BetOptionCategory, value: string): string {
+  return options.find((o) => o.category === category && o.value === value)?.label ?? value;
+}
+
+/** A select's current value might be an old/removed option (an old bet's
+ * bet_type/result/line that predates a Settings edit, or a legacy value
+ * from before this field existed) — inject it as an extra choice so
+ * editing that bet doesn't silently change what's selected. */
+export function withCurrentValue(values: string[], current: string | null | undefined): string[] {
+  if (!current || values.includes(current)) return values;
+  return [current, ...values];
 }
 
 /** Straight American-odds payout math: a positive number (e.g. +150) is
@@ -72,6 +126,16 @@ export function computeProfit(bet: Bet): number {
 // (which drifts a day off after ~8pm Eastern).
 export function todayLocalISODash(): string {
   const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// "I'll most likely come in and log a bet after the day it's placed... so
+// the default date on the betslip should be yesterday" — Mike's own
+// reasoning. Used only as the NEW-bet default in BetFormModal; editing an
+// existing bet always keeps that bet's own date.
+export function yesterdayLocalISODash(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
@@ -240,9 +304,13 @@ function aggregateBucket(key: string, label: string, shortLabel: string, bucketB
       if (!biggestLoss || profit < biggestLoss.profit) biggestLoss = { bet, profit };
     } else if (bet.result === 'push') {
       pushes += 1;
-    } else {
+    } else if (bet.result === 'void') {
       voids += 1;
     }
+    // 'cashed_out' / 'tbd' / any other custom result (Settings-editable,
+    // see 0084_bet_options_tipper_line.sql) counts toward net/risked above
+    // but isn't tallied into wins/losses/pushes/voids here — same
+    // treatment as computeStreaks, which skips anything non-win/non-loss.
   }
 
   return {
@@ -333,7 +401,9 @@ function foldPick(stat: PickAccuracyStat, result: BetResult): void {
   if (result === 'win') stat.wins += 1;
   else if (result === 'loss') stat.losses += 1;
   else if (result === 'push') stat.pushes += 1;
-  else stat.voids += 1;
+  else if (result === 'void') stat.voids += 1;
+  // Leg-level results are never 'cashed_out'/'tbd' (not Settings-editable
+  // — see LEG_RESULT_OPTIONS), so this is just future-proofing.
   stat.winRate = stat.wins + stat.losses > 0 ? stat.wins / (stat.wins + stat.losses) : null;
 }
 
@@ -423,6 +493,14 @@ export function groupByOddsRange(bets: Bet[]): BetGroupStat[] {
     map.set(key, stat);
   }
   return [...map.values()].filter((s) => s.count > 0);
+}
+
+/** "How certain tippers I've been listening to have been performing" —
+ * Mike's own words for why the Tipper field exists. Only bets with a
+ * tipper set are included (most of the log predates this field and has
+ * none). Same shape/sort as the other money breakdowns. */
+export function groupByTipper(bets: Bet[]): BetGroupStat[] {
+  return groupBets(bets.filter((b) => b.tipper), (b) => b.tipper as string);
 }
 
 // ---- Trends: streaks, day-of-week, favorite/dog split, equity curve ----

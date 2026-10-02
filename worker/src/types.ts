@@ -423,7 +423,12 @@ export interface NewsSettingsRow {
 
 // ---- Sports betting dashboard (0032_bets.sql) ----
 
-export type BetResult = 'win' | 'loss' | 'push' | 'void';
+// Lowercase literal results are the four computeBetProfit/computeProfit
+// branch on by exact string; 'cashed_out'/'tbd' were added in
+// 0084_bet_options_tipper_line.sql as Settings-editable options but kept
+// as plain `string` here since the set is now DB-driven, not a closed
+// union — see BET_RESULTS below for the server-side validation list.
+export type BetResult = string;
 export type BetStakeType = 'cash' | 'free_bet';
 
 export interface Bet {
@@ -432,19 +437,35 @@ export interface Bet {
   sport: string;
   sportsbook: string;
   bet_type: string;
-  pick: string | null;
+  pick: string | null; // deprecated — see 0084_bet_options_tipper_line.sql; new bets use `line` instead
   odds: number; // American odds
   wager: number;
   result: BetResult;
   stake_type: BetStakeType; // 'cash' (default) | 'free_bet' — see 0080_bet_stake_type.sql
   manual_profit: number | null;
   notes: string | null;
+  tipper: string | null; // free text — see 0084_bet_options_tipper_line.sql
+  line: string | null; // 'ATS' | 'Mixed' | 'ML' | 'o/u' by default, Settings-editable
   created_at: string;
   updated_at: string;
 }
 
+// 0084_bet_options_tipper_line.sql — one generic table backing the four
+// Settings-editable lists (Bet Type, Tipper, Line, Result). See that
+// migration's header for the value-vs-label split.
+export type BetOptionCategory = 'bet_type' | 'tipper' | 'line' | 'result';
+
+export interface BetOption {
+  id: string;
+  category: BetOptionCategory;
+  value: string;
+  label: string;
+  position: number;
+  created_at: string;
+}
+
 // bet_legs (0038_bet_legs.sql) — only populated for Parlay/Same Game
-// Parlay/SGP+ bets. See that migration's header for the money-vs-pick-
+// Parlay/SGP/SGPx bets. See that migration's header for the money-vs-pick-
 // accuracy split this exists for.
 export interface BetLegRow {
   id: string;
