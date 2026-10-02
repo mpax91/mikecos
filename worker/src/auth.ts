@@ -180,8 +180,30 @@ async function requireAuthedOrBootstrap(c: Context<{ Bindings: Env }>): Promise<
 
 // ---- Exported middleware, mounted in index.ts ahead of every other /api route ----
 
+/** Lets the nightly cron's own self-fetch calls (Plex library sync, the
+ * Airing check — see index.ts's `scheduled` export) through without a
+ * login session, which a Worker-to-itself server-side fetch can never
+ * carry (no browser, no cookie jar). This used to be the actual reason
+ * those self-fetches silently did nothing every night: authGate rejected
+ * them with 401 before they ever reached the route, the self-fetch loop's
+ * `if (!res.ok) break` gave up on the very first chunk, and the only
+ * thing that ever ran the check was Mike clicking "Check now" by hand —
+ * exactly the "I once again had to click Check now" symptom. Checked with
+ * a timing-safe comparison since it's a bearer secret, same reasoning as
+ * the PIN/backup-code checks elsewhere in this file. Returns false (no
+ * bypass) whenever CRON_INTERNAL_SECRET isn't configured, so a fresh
+ * environment that hasn't deployed it yet behaves exactly as before. */
+function isInternalCronRequest(c: Context<{ Bindings: Env }>): boolean {
+  const configured = c.env.CRON_INTERNAL_SECRET;
+  if (!configured) return false;
+  const presented = c.req.header('x-cron-key');
+  if (!presented) return false;
+  return timingSafeEqual(presented, configured);
+}
+
 export async function authGate(c: Context<{ Bindings: Env }>, next: () => Promise<void>) {
   if (c.req.path.startsWith('/api/auth/')) return next();
+  if (isInternalCronRequest(c)) return next();
   const session = await getValidSession(c);
   if (!session) {
     deleteCookie(c, COOKIE_NAME, { path: '/' });

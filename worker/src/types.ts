@@ -353,6 +353,19 @@ export interface Env {
   // same reason: a fresh environment should still deploy, and wallet.ts
   // fails those specific requests with a clear error instead.
   WALLET_CARD_ENC_KEY?: string;
+  // Shared secret the nightly cron's self-fetch calls (Plex library sync,
+  // the Airing check — see index.ts's `scheduled` export) present on an
+  // `X-Cron-Key` header so authGate (worker/src/auth.ts) lets them through
+  // without a login session, which a bare server-to-server fetch can never
+  // have. Generated fresh on every deploy (see deploy.yml's "Set internal
+  // cron secret" step — `openssl rand -hex 32 | wrangler secret put`, no
+  // GitHub secret needed) rather than sourced from a repo secret, since
+  // nothing outside this one Worker ever needs to know the value: the
+  // same deploy that changes it is the only thing that both reads and
+  // checks it. Optional at the type level so a fresh environment that
+  // hasn't deployed this yet still boots — authGate just requires a real
+  // session for everyone, cron included, until it's set.
+  CRON_INTERNAL_SECRET?: string;
   // OAuth client id/secret per Cloud Storage provider — each is a Worker
   // secret from that provider's own developer console (Google Cloud
   // Console, Azure AD app registrations, Dropbox App Console, Box

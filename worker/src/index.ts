@@ -7621,6 +7621,18 @@ app.get('/api/health', (c) => c.json({ ok: true, time: now() }));
 // under a different name.
 const WORKER_SELF_URL = 'https://mikeos-api.michaelpalladino.workers.dev';
 
+// Headers the nightly cron's self-fetch calls present so authGate
+// (worker/src/auth.ts's isInternalCronRequest) lets them through without
+// a login session — see that function's comment for why this exists at
+// all (it's the fix for the self-fetch loop silently 401ing on every run,
+// which is why "Check now" always had to be clicked by hand). Returns {}
+// when CRON_INTERNAL_SECRET isn't configured, so the self-fetch still
+// goes out — it just 401s exactly as it always has, same as before this
+// existed.
+function cronAuthHeaders(env: Env): Record<string, string> {
+  return env.CRON_INTERNAL_SECRET ? { 'X-Cron-Key': env.CRON_INTERNAL_SECRET } : {};
+}
+
 // Nightly Cron Triggers (see wrangler.toml's [triggers] block) — re-sync
 // the Plex library mirror, and separately run the airing check. These
 // USED to be chained in one invocation (sync, then airing-check right
@@ -7677,7 +7689,7 @@ export default {
     if (event.cron === PLEX_SYNC_CRON) {
       try {
         for (let i = 0; i < MAX_SYNC_CHUNKS; i++) {
-          const res = await fetch(`${WORKER_SELF_URL}/api/plex/sync`, { method: 'POST' });
+          const res = await fetch(`${WORKER_SELF_URL}/api/plex/sync`, { method: 'POST', headers: cronAuthHeaders(env) });
           if (!res.ok) {
             console.error('Plex library sync chunk failed', res.status, await res.text());
             break;
@@ -7698,7 +7710,7 @@ export default {
         // this used to silently hit on a large library, which is exactly
         // how Ted Lasso S04E09 / It's Always Sunny S18E08 went unflagged.
         for (let i = 0; i < MAX_SYNC_CHUNKS; i++) {
-          const res = await fetch(`${WORKER_SELF_URL}/api/plex/airing-check`, { method: 'POST' });
+          const res = await fetch(`${WORKER_SELF_URL}/api/plex/airing-check`, { method: 'POST', headers: cronAuthHeaders(env) });
           if (!res.ok) {
             console.error('Plex airing check chunk failed', res.status, await res.text());
             break;
