@@ -1726,6 +1726,35 @@ a {
   background: var(--color-border);
 }
 
+/* Clickable variant — the project page's Completed group, collapsed by
+   default (see ProjectDetail.tsx). */
+.task-divider--toggle {
+  width: 100%;
+  padding: 4px 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 11px;
+  color: var(--color-placeholder);
+  text-align: left;
+  cursor: pointer;
+}
+
+.task-divider--toggle:hover {
+  color: var(--color-ink);
+}
+
+.task-divider__chevron {
+  display: inline-block;
+  font-size: 12px;
+  line-height: 1;
+  transition: transform 0.15s ease;
+}
+
+.task-divider__chevron.is-collapsed {
+  transform: rotate(-90deg);
+}
+
 /* ---- List item row (Lists feature) ----
    Deliberately its own rules rather than reusing .task-row — a checklist
    should read lighter than a project's task list: smaller checkbox, a

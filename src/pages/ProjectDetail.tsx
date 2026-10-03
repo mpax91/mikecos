@@ -43,6 +43,13 @@ export function ProjectDetail() {
   // top-level task/subtask is opened from the project list, with deeper
   // ids pushed as the panel itself drills into a subtask's own subtasks.
   const [taskStack, setTaskStack] = useState<string[]>([]);
+  // The Completed group under Tasks is always collapsed when a project/folder
+  // is opened — deliberately not persisted, and reset whenever `id` changes
+  // (this component stays mounted when navigating between projects).
+  const [showCompleted, setShowCompleted] = useState(false);
+  useEffect(() => {
+    setShowCompleted(false);
+  }, [id]);
 
   const load = useCallback(() => {
     if (!id) return;
@@ -443,8 +450,16 @@ export function ProjectDetail() {
           <NewTaskRow onCreate={createTask} />
           {doneTasks.length > 0 && (
             <>
-              <div className="task-divider">Completed</div>
-              {doneTasks.map((c) => renderTile(c))}
+              <button
+                type="button"
+                className="task-divider task-divider--toggle"
+                aria-expanded={showCompleted}
+                onClick={() => setShowCompleted((v) => !v)}
+              >
+                <span className={`task-divider__chevron${showCompleted ? '' : ' is-collapsed'}`}>▾</span>
+                Completed ({doneTasks.length})
+              </button>
+              {showCompleted && doneTasks.map((c) => renderTile(c))}
             </>
           )}
         </div>
