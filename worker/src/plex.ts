@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import type { Env } from './types';
+import type { Env, PlexCronRunRow } from './types';
 import { runPlexSyncChunk, PlexNotConfiguredError } from './plexSync';
 import { runAiringCheckChunk, runFullHistoryScanChunk, deleteEpisodeTask } from './plexAiring';
 
@@ -230,6 +230,17 @@ plexRouter.post('/airing-scan', async (c) => {
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : 'full history scan failed' }, 500);
   }
+});
+
+// GET /cron-runs — recent history of the nightly sync/airing-check cron
+// invocations (0085_plex_cron_runs.sql), so whether they're actually
+// firing on their own is visible from the app itself. An empty result
+// for a given cron_name, rather than a run of 'error' rows, means
+// Cloudflare never invoked `scheduled()` for that tick at all — a
+// trigger-registration problem, not something this app's code caused.
+plexRouter.get('/cron-runs', async (c) => {
+  const { results } = await c.env.DB.prepare(`SELECT * FROM plex_cron_runs ORDER BY started_at DESC LIMIT 20`).all<PlexCronRunRow>();
+  return c.json(results ?? []);
 });
 
 // ---- Metadata gaps ("Needs attention") — plain rules over the synced

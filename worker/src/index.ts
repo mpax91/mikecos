@@ -9,6 +9,7 @@ import type {
   BetLegRow,
   BetOption,
   BetGameLineRow,
+  PlexCronName,
   BetGameNoteRow,
   BetPromo,
   BetTransaction,
@@ -7674,6 +7675,53 @@ const PLEX_SYNC_CRON = '0 9 * * *';
 const PLEX_AIRING_CRON = '30 9 * * *'; // 30 min after sync's tick — enough of a head start to matter, but airing-check never waits on sync finishing
 const EMAIL_SYNC_CRON = '*/2 * * * *';
 
+/** Writes one row to plex_cron_runs (0085_plex_cron_runs.sql) so whether
+ * the nightly crons actually fired, and what happened, is visible from
+ * the app (GET /api/plex/cron-runs) instead of requiring Cloudflare
+ * dashboard/CLI access to diagnose. Never thrown from — a logging
+ * failure shouldn't take down the cron it's logging. */
+async function logCronRun(env: Env, cronName: PlexCronName, startedAt: string, outcome: 'success' | 'error', chunksRun: number, detail: string): Promise<void> {
+  try {
+    await env.DB.prepare(`INSERT INTO plex_cron_runs (id, cron_name, started_at, finished_at, outcome, chunks_run, detail) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+      .bind(crypto.randomUUID(), cronName, startedAt, new Date().toISOString(), outcome, chunksRun, detail)
+      .run();
+  } catch (err) {
+    console.error('Failed to log cron run', cronName, err);
+  }
+}
+
+/** Shared self-fetch chunk loop for both nightly Plex crons — see the
+ * `scheduled` export's PLEX_SYNC_CRON/PLEX_AIRING_CRON branches for why
+ * this self-fetches rather than looping in-process, and
+ * CRON_INTERNAL_SECRET in types.ts for cronAuthHeaders. Logs exactly one
+ * plex_cron_runs row per invocation, success or failure, so a run that
+ * never logs anything at all means `scheduled()` itself never fired that
+ * tick (a Cloudflare Cron Trigger problem, not this code). */
+async function runSelfFetchCron(env: Env, cronName: PlexCronName, url: string, label: string): Promise<void> {
+  const startedAt = new Date().toISOString();
+  let chunksRun = 0;
+  try {
+    for (; chunksRun < MAX_SYNC_CHUNKS; chunksRun++) {
+      const res = await fetch(url, { method: 'POST', headers: cronAuthHeaders(env) });
+      if (!res.ok) {
+        const body = await res.text();
+        console.error(`${label} chunk failed`, res.status, body);
+        await logCronRun(env, cronName, startedAt, 'error', chunksRun, `HTTP ${res.status}: ${body.slice(0, 500)}`);
+        return;
+      }
+      const chunk = await res.json<{ done: boolean; summary?: unknown }>();
+      if (chunk.done) {
+        await logCronRun(env, cronName, startedAt, 'success', chunksRun + 1, JSON.stringify(chunk.summary ?? {}));
+        return;
+      }
+    }
+    await logCronRun(env, cronName, startedAt, 'error', chunksRun, `hit MAX_SYNC_CHUNKS (${MAX_SYNC_CHUNKS}) without finishing`);
+  } catch (err) {
+    console.error(`${label} failed`, err);
+    await logCronRun(env, cronName, startedAt, 'error', chunksRun, err instanceof Error ? err.message : String(err));
+  }
+}
+
 export default {
   fetch: app.fetch,
   async scheduled(event: ScheduledController, env: Env) {
@@ -7687,40 +7735,16 @@ export default {
     }
 
     if (event.cron === PLEX_SYNC_CRON) {
-      try {
-        for (let i = 0; i < MAX_SYNC_CHUNKS; i++) {
-          const res = await fetch(`${WORKER_SELF_URL}/api/plex/sync`, { method: 'POST', headers: cronAuthHeaders(env) });
-          if (!res.ok) {
-            console.error('Plex library sync chunk failed', res.status, await res.text());
-            break;
-          }
-          const chunk = await res.json<{ done: boolean }>();
-          if (chunk.done) break;
-        }
-      } catch (err) {
-        console.error('Plex library sync failed', err);
-      }
+      await runSelfFetchCron(env, 'plex_sync', `${WORKER_SELF_URL}/api/plex/sync`, 'Plex library sync');
       return;
     }
 
     if (event.cron === PLEX_AIRING_CRON) {
-      try {
-        // Same self-fetch chunking as the library sync above, for the same
-        // reason — see runAiringCheckChunk's own comment for the D1 timeout
-        // this used to silently hit on a large library, which is exactly
-        // how Ted Lasso S04E09 / It's Always Sunny S18E08 went unflagged.
-        for (let i = 0; i < MAX_SYNC_CHUNKS; i++) {
-          const res = await fetch(`${WORKER_SELF_URL}/api/plex/airing-check`, { method: 'POST', headers: cronAuthHeaders(env) });
-          if (!res.ok) {
-            console.error('Plex airing check chunk failed', res.status, await res.text());
-            break;
-          }
-          const chunk = await res.json<{ done: boolean }>();
-          if (chunk.done) break;
-        }
-      } catch (err) {
-        console.error('Plex airing check failed', err);
-      }
+      // Same self-fetch chunking as the library sync above, for the same
+      // reason — see runAiringCheckChunk's own comment for the D1 timeout
+      // this used to silently hit on a large library, which is exactly
+      // how Ted Lasso S04E09 / It's Always Sunny S18E08 went unflagged.
+      await runSelfFetchCron(env, 'plex_airing_check', `${WORKER_SELF_URL}/api/plex/airing-check`, 'Plex airing check');
       return;
     }
   },

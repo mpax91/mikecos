@@ -477,6 +477,22 @@ export interface BetOption {
   created_at: string;
 }
 
+// 0085_plex_cron_runs.sql — one row per scheduled() invocation of the
+// nightly Plex sync / Airing check, so whether they actually fired and
+// what happened is visible from the app itself instead of requiring
+// Cloudflare dashboard/CLI access. See that migration's header.
+export type PlexCronName = 'plex_sync' | 'plex_airing_check';
+
+export interface PlexCronRunRow {
+  id: string;
+  cron_name: PlexCronName;
+  started_at: string;
+  finished_at: string;
+  outcome: 'success' | 'error';
+  chunks_run: number;
+  detail: string | null;
+}
+
 // bet_legs (0038_bet_legs.sql) — only populated for Parlay/Same Game
 // Parlay/SGP/SGPx bets. See that migration's header for the money-vs-pick-
 // accuracy split this exists for.
