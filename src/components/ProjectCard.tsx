@@ -11,11 +11,13 @@ export function ProjectCard({
   onDelete,
   onTogglePin,
   onRename,
+  onToggleArchive,
 }: {
   project: ProjectListItem;
   onDelete: (p: ProjectListItem) => void;
   onTogglePin: (p: ProjectListItem) => void;
   onRename: (p: ProjectListItem) => void;
+  onToggleArchive: (p: ProjectListItem) => void;
 }) {
   const navigate = useNavigate();
   const { openTab, showContextMenu } = useTabs();
@@ -30,6 +32,7 @@ export function ProjectCard({
   };
 
   const isPinned = project.pinned === 1;
+  const isArchived = project.status === 'archived';
   // last_touched bumps whenever anything inside the project actually changes
   // (title/content edits anywhere in its tree, children created/deleted) —
   // distinct from updated_at, which also moves on pure reordering/pinning.
@@ -39,7 +42,7 @@ export function ProjectCard({
     <div
       ref={setNodeRef}
       style={style}
-      className={`card project-card${isPinned ? ' is-pinned' : ''}`}
+      className={`card project-card${isPinned ? ' is-pinned' : ''}${isArchived ? ' is-archived' : ''}`}
       onClick={(e) => {
         if (e.metaKey || e.ctrlKey) {
           openTab(`/projects/${project.id}`, { background: true, title: project.title || 'Untitled Project', kind: 'project' });
@@ -69,9 +72,15 @@ export function ProjectCard({
       <div style={{ minWidth: 0, flex: 1 }}>
         <p className="project-card__title">
           <span className="project-card__title-text">{project.title}</span>
-          <span className="last-modified-badge" title={new Date(lastModifiedIso).toLocaleString()}>
-            {formatRelativeTime(lastModifiedIso)}
-          </span>
+          {isArchived && project.archived_at ? (
+            <span className="last-modified-badge" title={new Date(project.archived_at).toLocaleString()}>
+              Archived {formatRelativeTime(project.archived_at)}
+            </span>
+          ) : (
+            <span className="last-modified-badge" title={new Date(lastModifiedIso).toLocaleString()}>
+              {formatRelativeTime(lastModifiedIso)}
+            </span>
+          )}
         </p>
         <div className="project-card__stats">
           {project.pinned_count > 0 && (
@@ -107,7 +116,8 @@ export function ProjectCard({
       <KebabMenu
         items={[
           { label: 'Rename', onClick: () => onRename(project) },
-          { label: isPinned ? 'Unpin' : 'Pin to top', onClick: () => onTogglePin(project) },
+          ...(isArchived ? [] : [{ label: isPinned ? 'Unpin' : 'Pin to top', onClick: () => onTogglePin(project) }]),
+          { label: isArchived ? 'Restore' : 'Archive', onClick: () => onToggleArchive(project) },
           { label: 'Delete', onClick: () => onDelete(project), danger: true, separatorBefore: true },
         ]}
       />

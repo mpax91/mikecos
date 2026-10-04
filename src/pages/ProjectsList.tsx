@@ -7,6 +7,8 @@ import { ProjectCard } from '../components/ProjectCard';
 import { RenameModal } from '../components/RenameModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { SortableGrid } from '../components/SortableGrid';
+import { Section } from '../components/Section';
+import { Toast } from '../components/Toast';
 import { useReportTabMeta } from '../contexts/TabsContext';
 
 export function ProjectsList() {
@@ -17,10 +19,16 @@ export function ProjectsList() {
   const [error, setError] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<ProjectListItem | null>(null);
   const [deleting, setDeleting] = useState<ProjectListItem | null>(null);
+  // Archived projects live in their own collapsed section at the bottom —
+  // fetched separately since /api/projects leaves them out by default (so
+  // Move-to / Convert pickers never offer one). See migrations/0086.
+  const [archived, setArchived] = useState<ProjectListItem[]>([]);
+  const [toast, setToast] = useState<{ message: string; actionLabel?: string; onAction?: () => void } | null>(null);
   const navigate = useNavigate();
 
   function load() {
     api.listProjects().then(setProjects).catch((e) => setError(String(e)));
+    api.listProjects(true).then(setArchived).catch(() => setArchived([]));
   }
 
   useEffect(() => {
@@ -50,13 +58,43 @@ export function ProjectsList() {
     load();
   }
 
+  async function setArchivedState(p: ProjectListItem, archive: boolean) {
+    // Optimistic move between the two groups; load() then refreshes both
+    // with the server's real order and archived_at.
+    if (archive) {
+      setProjects((prev) => (prev ? prev.filter((x) => x.id !== p.id) : prev));
+      setArchived((prev) => [{ ...p, status: 'archived', archived_at: new Date().toISOString() }, ...prev]);
+    } else {
+      setArchived((prev) => prev.filter((x) => x.id !== p.id));
+      setProjects((prev) => (prev ? [...prev, { ...p, status: 'active', archived_at: null }] : prev));
+    }
+    await api.updateEntity(p.id, { status: archive ? 'archived' : 'active' });
+    load();
+  }
+
+  function handleToggleArchive(p: ProjectListItem) {
+    if (p.status === 'archived') {
+      setArchivedState(p, false);
+      setToast({ message: `Restored "${p.title || 'Untitled Project'}"` });
+    } else {
+      setArchivedState(p, true);
+      setToast({
+        message: `Archived "${p.title || 'Untitled Project'}"`,
+        actionLabel: 'Undo',
+        onAction: () => setArchivedState(p, false),
+      });
+    }
+  }
+
   async function handleRename(p: ProjectListItem, newTitle: string) {
     setProjects((prev) => (prev ? prev.map((x) => (x.id === p.id ? { ...x, title: newTitle } : x)) : prev));
+    setArchived((prev) => prev.map((x) => (x.id === p.id ? { ...x, title: newTitle } : x)));
     await api.updateEntity(p.id, { title: newTitle });
   }
 
   async function handleDelete(p: ProjectListItem) {
     setProjects((prev) => (prev ? prev.filter((x) => x.id !== p.id) : prev));
+    setArchived((prev) => prev.filter((x) => x.id !== p.id));
     await api.deleteEntity(p.id);
     setDeleting(null);
   }
@@ -76,7 +114,7 @@ export function ProjectsList() {
       </div>
 
       {projects.length === 0 ? (
-        <div className="empty-state">No projects yet — create your first one.</div>
+        <div className="empty-state">{archived.length > 0 ? 'No active projects.' : 'No projects yet — create your first one.'}</div>
       ) : (
         <SortableGrid
           items={projects}
@@ -89,8 +127,35 @@ export function ProjectsList() {
               onDelete={setDeleting}
               onTogglePin={handleTogglePin}
               onRename={setRenaming}
+              onToggleArchive={handleToggleArchive}
             />
           )}
+        />
+      )}
+
+      {archived.length > 0 && (
+        <Section title="Archived" count={archived.length} defaultExpanded={false}>
+          <div className="project-card-list">
+            {archived.map((p) => (
+              <ProjectCard
+                key={p.id}
+                project={p}
+                onDelete={setDeleting}
+                onTogglePin={handleTogglePin}
+                onRename={setRenaming}
+                onToggleArchive={handleToggleArchive}
+              />
+            ))}
+          </div>
+        </Section>
+      )}
+
+      {toast && (
+        <Toast
+          message={toast.message}
+          actionLabel={toast.actionLabel}
+          onAction={toast.onAction}
+          onDismiss={() => setToast(null)}
         />
       )}
 

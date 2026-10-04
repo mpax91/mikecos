@@ -1726,6 +1726,24 @@ a {
   background: var(--color-border);
 }
 
+/* "Archived · Restore" strip at the top of an archived project. */
+.archived-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 8px 0 14px;
+  padding: 8px 12px;
+  border: 1px dashed var(--color-border);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--color-muted);
+}
+
+.project-card.is-archived .project-card__title-text {
+  color: var(--color-muted);
+}
+
 /* Clickable variant — the project page's Completed group, collapsed by
    default (see ProjectDetail.tsx). */
 .task-divider--toggle {

@@ -67,7 +67,8 @@ function resolveEmailAccount(account: EmailAccount): EmailAccount {
 }
 
 export const api = {
-  listProjects: () => request<ProjectListItem[]>('/api/projects'),
+  // Active projects only by default; `archived` = only the archived ones.
+  listProjects: (archived = false) => request<ProjectListItem[]>(`/api/projects${archived ? '?archived=1' : ''}`),
 
   createProject: (title: string, description: string) =>
     request<Entity>('/api/projects', {

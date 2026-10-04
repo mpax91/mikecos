@@ -337,6 +337,26 @@ async function touchProjectAncestor(db: D1Database, entityId: string | null) {
 // nextDueOccurrenceDate — if several were missed while the last instance
 // sat open, only the oldest one spawns; it lands with a due_date in the
 // past and rolls straight into Overdue, same as any other dated task).
+// ---- Project archive (migrations/0086_project_archive.sql) ----
+// Every entity under an archived top-level project/list, at any depth
+// (folders, tasks, subtasks). Archiving is just status = 'archived' on the
+// top-level row — nothing gets moved — so anything that surfaces tasks
+// globally (Today, Overdue, the day planner, the briefing) prefixes its
+// query with this CTE and adds NOT_ARCHIVED to its WHERE, rather than
+// relying on each task's own status. Restoring flips the one row back and
+// everything reappears exactly as it was.
+const ARCHIVED_TREE_CTE = `WITH RECURSIVE archived_tree(id) AS (
+  SELECT id FROM entities WHERE is_top_level = 1 AND status = 'archived'
+  UNION ALL
+  SELECT e.id FROM entities e JOIN archived_tree a ON e.parent_id = a.id
+)`;
+const NOT_ARCHIVED = `id NOT IN (SELECT id FROM archived_tree)`;
+
+async function isInArchivedTree(db: D1Database, id: string): Promise<boolean> {
+  const row = await db.prepare(`${ARCHIVED_TREE_CTE} SELECT 1 as x FROM archived_tree WHERE id = ?`).bind(id).first<{ x: number }>();
+  return !!row;
+}
+
 async function spawnDueRecurringTasks(db: D1Database, todayIso: string): Promise<void> {
   const { results } = await db
     .prepare(`SELECT * FROM recurring_task_definitions WHERE active = 1`)
@@ -358,6 +378,9 @@ async function spawnDueRecurringTasks(db: D1Database, todayIso: string): Promise
       continue; // a malformed RRULE shouldn't take the whole endpoint down
     }
     if (!dueDate) continue;
+    // A recurring task inside an archived project stays paused rather than
+    // piling up hidden instances — it picks back up on Restore.
+    if (def.project_id && (await isInArchivedTree(db, def.project_id))) continue;
 
     const id = uid();
     const ts = now();
@@ -2570,9 +2593,15 @@ app.delete('/api/contacts/import/orphaned', async (c) => {
 // Excludes Lists (see migrations/0029_lists.sql) — a List is stored as this
 // same type='project' shape with is_list set, but shown on its own separate
 // Lists page/nav item, not mixed in here.
+// ?archived=1 returns ONLY the archived ones (newest-archived first) for the
+// collapsed "Archived" section; the default list excludes them, so every
+// other consumer (pickers, sidebar, move-to) never offers an archived one.
 app.get('/api/projects', async (c) => {
+  const archived = c.req.query('archived') === '1';
   const { results } = await c.env.DB.prepare(
-    `SELECT * FROM entities WHERE is_top_level = 1 AND type = 'project' AND is_list = 0 ORDER BY pinned DESC, position ASC, created_at ASC`
+    archived
+      ? `SELECT * FROM entities WHERE is_top_level = 1 AND type = 'project' AND is_list = 0 AND status = 'archived' ORDER BY archived_at DESC, title ASC`
+      : `SELECT * FROM entities WHERE is_top_level = 1 AND type = 'project' AND is_list = 0 AND COALESCE(status, 'active') != 'archived' ORDER BY pinned DESC, position ASC, created_at ASC`
   ).all<Entity>();
 
   const withCounts = await Promise.all(
@@ -2624,6 +2653,8 @@ app.post('/api/projects', async (c) => {
 // apply to list items for free) with is_list set, so it's shown on its own
 // page instead of mixed into Projects.
 
+// Includes archived lists (status 'archived') — ListsPage splits them into
+// its own collapsed Archived section client-side.
 app.get('/api/lists', async (c) => {
   const { results } = await c.env.DB.prepare(
     `SELECT * FROM entities WHERE is_top_level = 1 AND type = 'project' AND is_list = 1 ORDER BY pinned DESC, position ASC, created_at ASC`
@@ -2886,6 +2917,9 @@ app.patch('/api/entities/:id', async (c) => {
   if (body.status !== undefined) {
     fields.push('status = ?');
     values.push(body.status);
+    // Archive/restore of a project or list — see migrations/0086.
+    fields.push('archived_at = ?');
+    values.push(body.status === 'archived' ? now() : null);
     touchesContent = true;
   }
   if (body.parent_id !== undefined) {
@@ -3482,7 +3516,7 @@ function daysSinceEpoch(iso: string): number {
 // already varies with the viewed date.
 async function computeSpotlight(db: D1Database, date: string): Promise<Entity | null> {
   const { results } = await db
-    .prepare(`SELECT * FROM entities WHERE type = 'task' AND status = 'open' AND due_date IS NULL ORDER BY COALESCE(last_touched, updated_at) ASC`)
+    .prepare(`${ARCHIVED_TREE_CTE} SELECT * FROM entities WHERE type = 'task' AND status = 'open' AND ${NOT_ARCHIVED} AND due_date IS NULL ORDER BY COALESCE(last_touched, updated_at) ASC`)
     .all<Entity>();
   if (!results || results.length === 0) return null;
   const index = ((daysSinceEpoch(date) % results.length) + results.length) % results.length;
@@ -3523,7 +3557,7 @@ app.get('/api/today', async (c) => {
   // overdueAsOf is always <= date (it's the earlier of the two), so a
   // single due_date <= date bound covers both buckets below.
   const { results } = await c.env.DB.prepare(
-    `SELECT * FROM entities WHERE type = 'task' AND status = 'open' AND due_date IS NOT NULL AND due_date <= ? ORDER BY due_date ASC, due_position IS NULL, due_position ASC, position ASC`
+    `${ARCHIVED_TREE_CTE} SELECT * FROM entities WHERE type = 'task' AND status = 'open' AND ${NOT_ARCHIVED} AND due_date IS NOT NULL AND due_date <= ? ORDER BY due_date ASC, due_position IS NULL, due_position ASC, position ASC`
   )
     .bind(date)
     .all<Entity>();
@@ -3638,7 +3672,7 @@ app.get('/api/week', async (c) => {
   await spawnDueRecurringTasks(c.env.DB, today ? maxIso(end, today) : end);
 
   const { results } = await c.env.DB.prepare(
-    `SELECT * FROM entities WHERE type = 'task' AND status = 'open' AND due_date IS NOT NULL AND due_date <= ? ORDER BY due_date ASC, due_position IS NULL, due_position ASC, position ASC`
+    `${ARCHIVED_TREE_CTE} SELECT * FROM entities WHERE type = 'task' AND status = 'open' AND ${NOT_ARCHIVED} AND due_date IS NOT NULL AND due_date <= ? ORDER BY due_date ASC, due_position IS NULL, due_position ASC, position ASC`
   )
     .bind(end)
     .all<Entity>();
@@ -3659,7 +3693,7 @@ app.get('/api/week', async (c) => {
   // list. Capped well above what anyone would actually let pile up, purely
   // as a sanity ceiling rather than a real pagination boundary.
   const { results: unscheduledRaw } = await c.env.DB.prepare(
-    `SELECT * FROM entities WHERE type = 'task' AND status = 'open' AND due_date IS NULL ORDER BY COALESCE(last_touched, updated_at) ASC LIMIT 50`
+    `${ARCHIVED_TREE_CTE} SELECT * FROM entities WHERE type = 'task' AND status = 'open' AND ${NOT_ARCHIVED} AND due_date IS NULL ORDER BY COALESCE(last_touched, updated_at) ASC LIMIT 50`
   ).all<Entity>();
   const unscheduled = await Promise.all(
     (unscheduledRaw ?? []).map(async (task) => ({ ...task, project: await resolveProject(task.parent_id) }))
@@ -3720,7 +3754,7 @@ app.get('/api/month', async (c) => {
   await spawnDueRecurringTasks(c.env.DB, end);
 
   const { results } = await c.env.DB.prepare(
-    `SELECT * FROM entities WHERE type = 'task' AND status = 'open' AND due_date IS NOT NULL AND due_date >= ? AND due_date <= ? ORDER BY due_date ASC, due_position IS NULL, due_position ASC, position ASC`
+    `${ARCHIVED_TREE_CTE} SELECT * FROM entities WHERE type = 'task' AND status = 'open' AND ${NOT_ARCHIVED} AND due_date IS NOT NULL AND due_date >= ? AND due_date <= ? ORDER BY due_date ASC, due_position IS NULL, due_position ASC, position ASC`
   )
     .bind(start, end)
     .all<Entity>();
@@ -6104,8 +6138,15 @@ async function runSearch(db: D1Database, q: string, scope: Set<SearchGroup>, inc
   ]);
 
   // ---- entities: notes / jots / lists / projects / their tasks / files ----
+  // Anything living inside an archived project counts as archived too — only
+  // fetched when it can matter (unchecked box and at least one entity hit).
+  let archivedIds = new Set<string>();
+  if (!includeArchived && (entityRows.results ?? []).length > 0) {
+    const { results: arch } = await db.prepare(`${ARCHIVED_TREE_CTE} SELECT id FROM archived_tree`).all<{ id: string }>();
+    archivedIds = new Set((arch ?? []).map((r) => r.id));
+  }
   for (const e of entityRows.results ?? []) {
-    if (!includeArchived && (e.status === 'done' || e.status === 'archived')) continue;
+    if (!includeArchived && (e.status === 'done' || e.status === 'archived' || archivedIds.has(e.id))) continue;
 
     let kind: string;
     let group: SearchGroup;
@@ -6580,11 +6621,11 @@ async function computeBriefing(db: D1Database, date: string) {
   // ---- day-level nudges ----
   const [overdueRow, dueTodayRow, staleProjectsRow] = await Promise.all([
     db
-      .prepare(`SELECT id, title, due_date FROM entities WHERE type = 'task' AND status NOT IN ('done','archived') AND due_date IS NOT NULL AND due_date < ? ORDER BY due_date ASC LIMIT 5`)
+      .prepare(`${ARCHIVED_TREE_CTE} SELECT id, title, due_date FROM entities WHERE type = 'task' AND status NOT IN ('done','archived') AND ${NOT_ARCHIVED} AND due_date IS NOT NULL AND due_date < ? ORDER BY due_date ASC LIMIT 5`)
       .bind(date)
       .all<{ id: string; title: string; due_date: string }>(),
     db
-      .prepare(`SELECT id, title FROM entities WHERE type = 'task' AND status NOT IN ('done','archived') AND due_date = ? ORDER BY position ASC LIMIT 8`)
+      .prepare(`${ARCHIVED_TREE_CTE} SELECT id, title FROM entities WHERE type = 'task' AND status NOT IN ('done','archived') AND ${NOT_ARCHIVED} AND due_date = ? ORDER BY position ASC LIMIT 8`)
       .bind(date)
       .all<{ id: string; title: string }>(),
     db
@@ -6595,8 +6636,8 @@ async function computeBriefing(db: D1Database, date: string) {
       .all<{ id: string; title: string; last_touched: string }>(),
   ]);
   const [overdueCountRow, dueTodayCountRow] = await Promise.all([
-    db.prepare(`SELECT COUNT(*) as n FROM entities WHERE type = 'task' AND status NOT IN ('done','archived') AND due_date IS NOT NULL AND due_date < ?`).bind(date).first<{ n: number }>(),
-    db.prepare(`SELECT COUNT(*) as n FROM entities WHERE type = 'task' AND status NOT IN ('done','archived') AND due_date = ?`).bind(date).first<{ n: number }>(),
+    db.prepare(`${ARCHIVED_TREE_CTE} SELECT COUNT(*) as n FROM entities WHERE type = 'task' AND status NOT IN ('done','archived') AND ${NOT_ARCHIVED} AND due_date IS NOT NULL AND due_date < ?`).bind(date).first<{ n: number }>(),
+    db.prepare(`${ARCHIVED_TREE_CTE} SELECT COUNT(*) as n FROM entities WHERE type = 'task' AND status NOT IN ('done','archived') AND ${NOT_ARCHIVED} AND due_date = ?`).bind(date).first<{ n: number }>(),
   ]);
 
   // Birthdays/anniversaries in the next 7 days (today included) — pulled

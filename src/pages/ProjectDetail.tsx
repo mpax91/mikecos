@@ -389,6 +389,32 @@ export function ProjectDetail() {
     <div>
       <Breadcrumb trail={breadcrumb} current={entity} />
 
+      {entity.is_top_level === 1 && entity.status === 'archived' && (
+        // Archived projects still open normally (everything's intact) —
+        // this is just the reminder it's hidden from Projects/Today, and
+        // the one-tap way back. See migrations/0086_project_archive.sql.
+        <div className="archived-banner">
+          <span>
+            Archived
+            {entity.archived_at
+              ? ` ${new Date(entity.archived_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`
+              : ''}{' '}
+            · hidden from Projects, Today and reminders
+          </span>
+          <button
+            type="button"
+            className="btn btn--sm"
+            onClick={async () => {
+              if (!id) return;
+              await api.updateEntity(id, { status: 'active' });
+              load();
+            }}
+          >
+            Restore
+          </button>
+        </div>
+      )}
+
       {entity.is_top_level ? (
         <div className="project-header">
           <EditableText
