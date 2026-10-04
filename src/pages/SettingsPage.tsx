@@ -16,6 +16,7 @@ import { HabitsPanel } from './settings/HabitsPanel';
 import { RewardsMerchantsPanel } from './settings/RewardsMerchantsPanel';
 import { EmailAccountsPanel } from './settings/EmailAccountsPanel';
 import { BetsBalancesPanel } from './settings/BetsBalancesPanel';
+import { BetOptionsPanel } from './settings/BetOptionsPanel';
 
 interface Category {
   id: string;
@@ -42,7 +43,7 @@ const CATEGORIES: Category[] = [
   { id: 'media-catalog', label: 'Media Catalog', icon: '📚' },
   { id: 'email-accounts', label: 'Email Accounts', icon: '📥' },
   { id: 'rewards-merchants', label: 'Rewards Merchants', icon: '🏷️' },
-  { id: 'bets-balances', label: 'Bets Balances', icon: '🎰' },
+  { id: 'bets', label: 'Bets', icon: '🎰' },
   { id: 'habits', label: 'Habits', icon: '📈' },
   { id: 'news-feeds', label: 'News Feeds', icon: '📰' },
   { id: 'contact-import', label: 'Contact Import', icon: '👤' },
@@ -56,7 +57,10 @@ export function SettingsPage() {
   // it in the sidebar. Falls back to the default first category for a
   // missing/unknown id, same as landing on Settings normally.
   const [searchParams] = useSearchParams();
-  const requestedCat = searchParams.get('cat');
+  // 'bets-balances' was the old id before Bets' options moved in alongside
+  // balances — kept as an alias so any old link still lands right.
+  const rawCat = searchParams.get('cat');
+  const requestedCat = rawCat === 'bets-balances' ? 'bets' : rawCat;
   const initialCat = CATEGORIES.some((c) => c.id === requestedCat) ? requestedCat! : CATEGORIES[0].id;
   const [active, setActive] = useState<string>(initialCat);
 
@@ -98,7 +102,12 @@ export function SettingsPage() {
           {active === 'media-catalog' && <MediaCatalogPanel />}
           {active === 'email-accounts' && <EmailAccountsPanel />}
           {active === 'rewards-merchants' && <RewardsMerchantsPanel />}
-          {active === 'bets-balances' && <BetsBalancesPanel />}
+          {active === 'bets' && (
+            <>
+              <BetOptionsPanel />
+              <BetsBalancesPanel />
+            </>
+          )}
           {active === 'habits' && <HabitsPanel />}
           {active === 'news-feeds' && <NewsFeedsPanel />}
           {active === 'contact-import' && <ContactImportPanel />}

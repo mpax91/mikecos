@@ -5609,6 +5609,13 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   margin-top: 0;
 }
 
+/* A category that stacks more than one panel (Settings → Bets). */
+.settings-page__section + .settings-page__section {
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 1px solid var(--color-border);
+}
+
 .settings-page__section-title {
   font-size: 16px;
   margin: 0;
