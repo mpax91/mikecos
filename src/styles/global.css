@@ -1740,6 +1740,10 @@ a {
   color: var(--color-muted);
 }
 
+.project-card-list + .detail-section {
+  margin-top: 20px;
+}
+
 .project-card.is-archived .project-card__title-text {
   color: var(--color-muted);
 }
