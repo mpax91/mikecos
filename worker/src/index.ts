@@ -7793,11 +7793,13 @@ export async function runSelfFetchCron(env: Env, cronName: PlexCronName, path: s
 
 // POST /api/plex/cron-runs/run-airing — runs the Airing check through the
 // EXACT path the nightly cron uses (env.SELF service binding + X-Cron-Key),
-// in the background, logging a plex_cron_runs row like a scheduled run.
-// Lets the overnight path be verified on demand instead of waiting a day.
-app.post('/api/plex/cron-runs/run-airing', (c) => {
-  c.executionCtx.waitUntil(runSelfFetchCron(c.env, 'plex_airing_check', AIRING_PATH, 'Plex airing check (manual cron-path test)'));
-  return c.json({ started: true }, 202);
+// and waits for it (waitUntil caps background work at ~30s, too short for a
+// full pass), logging a plex_cron_runs row like a scheduled run and
+// returning it. Lets the overnight path be verified on demand.
+app.post('/api/plex/cron-runs/run-airing', async (c) => {
+  await runSelfFetchCron(c.env, 'plex_airing_check', AIRING_PATH, 'Plex airing check (manual cron-path test)');
+  const row = await c.env.DB.prepare(`SELECT * FROM plex_cron_runs WHERE cron_name = 'plex_airing_check' ORDER BY started_at DESC LIMIT 1`).first();
+  return c.json(row);
 });
 
 export default {
