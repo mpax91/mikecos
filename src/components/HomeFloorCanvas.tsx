@@ -152,10 +152,56 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
       .catch((e) => setError(String(e)));
   }, [floorId]);
 
+  // Each floor opens zoomed to fit its rooms (once — reloads after an
+  // edit don't yank the view around).
+  const didInitialFit = useRef(false);
   useEffect(() => {
     load();
+    didInitialFit.current = false;
     setView({ pan: { x: 40, y: 40 }, scale: DEFAULT_SCALE });
   }, [load]);
+
+  /** Zoom so every room on the floor fits in the viewport, centered. */
+  const fitToRooms = useCallback(() => {
+    const el = viewportRef.current;
+    if (!el || !rooms || rooms.length === 0) {
+      setView({ pan: { x: 40, y: 40 }, scale: DEFAULT_SCALE });
+      return;
+    }
+    const minX = Math.min(...rooms.map((r) => r.x));
+    const minY = Math.min(...rooms.map((r) => r.y));
+    const maxX = Math.max(...rooms.map((r) => r.x + r.width));
+    const maxY = Math.max(...rooms.map((r) => r.y + r.depth));
+    const { width: vw, height: vh } = el.getBoundingClientRect();
+    const PAD_PX = 56; // room for labels above rooms + breathing room
+    const next = clamp(Math.min((vw - PAD_PX * 2) / Math.max(1, maxX - minX), (vh - PAD_PX * 2) / Math.max(1, maxY - minY)), MIN_SCALE, MAX_SCALE);
+    setView({
+      scale: next,
+      pan: { x: (vw - (maxX - minX) * next) / 2 - minX * next, y: (vh - (maxY - minY) * next) / 2 - minY * next + 12 },
+    });
+  }, [rooms]);
+
+  useEffect(() => {
+    if (didInitialFit.current || !rooms || !viewportRef.current) return;
+    didInitialFit.current = true;
+    if (rooms.length) fitToRooms();
+  }, [rooms, fitToRooms]);
+
+  /** Zoom by `factor`, keeping the viewport point (cx, cy) fixed — the
+   * viewport's center when not given (the +/− buttons). */
+  function zoomBy(factor: number, cx?: number, cy?: number) {
+    const el = viewportRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const px = cx ?? rect.width / 2;
+    const py = cy ?? rect.height / 2;
+    setView(({ pan: prevPan, scale: prevScale }) => {
+      const nextScale = clamp(prevScale * factor, MIN_SCALE, MAX_SCALE);
+      const worldX = (px - prevPan.x) / prevScale;
+      const worldY = (py - prevPan.y) / prevScale;
+      return { scale: nextScale, pan: { x: px - worldX * nextScale, y: py - worldY * nextScale } };
+    });
+  }
 
   // Native wheel listener (not React's onWheel) so preventDefault reliably
   // stops the page itself from scrolling — see CanvasBoardPage.tsx for the
@@ -182,8 +228,49 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
       const dy = e.shiftKey && e.deltaX === 0 ? 0 : e.deltaY;
       setView((prev) => ({ ...prev, pan: { x: prev.pan.x - dx, y: prev.pan.y - dy } }));
     }
+    // Two-finger pinch on phones/tablets: zoom around the midpoint between
+    // the fingers. Cancels any one-finger pan/drag the first touch started.
+    let pinch: { dist: number } | null = null;
+    function touchDist(t: TouchList) {
+      return Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    }
+    function onTouchStart(e: TouchEvent) {
+      if (e.touches.length === 2) {
+        gesture.current = null;
+        pinch = { dist: touchDist(e.touches) };
+      }
+    }
+    function onTouchMove(e: TouchEvent) {
+      if (!pinch || e.touches.length !== 2) return;
+      e.preventDefault();
+      const d = touchDist(e.touches);
+      const rect = el!.getBoundingClientRect();
+      const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
+      const my = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top;
+      const factor = d / pinch.dist;
+      pinch.dist = d;
+      setView(({ pan: prevPan, scale: prevScale }) => {
+        const nextScale = clamp(prevScale * factor, MIN_SCALE, MAX_SCALE);
+        const worldX = (mx - prevPan.x) / prevScale;
+        const worldY = (my - prevPan.y) / prevScale;
+        return { scale: nextScale, pan: { x: mx - worldX * nextScale, y: my - worldY * nextScale } };
+      });
+    }
+    function onTouchEnd(e: TouchEvent) {
+      if (e.touches.length < 2) pinch = null;
+    }
     el.addEventListener('wheel', onWheel, { passive: false });
-    return () => el.removeEventListener('wheel', onWheel);
+    el.addEventListener('touchstart', onTouchStart, { passive: true });
+    el.addEventListener('touchmove', onTouchMove, { passive: false });
+    el.addEventListener('touchend', onTouchEnd);
+    el.addEventListener('touchcancel', onTouchEnd);
+    return () => {
+      el.removeEventListener('wheel', onWheel);
+      el.removeEventListener('touchstart', onTouchStart);
+      el.removeEventListener('touchmove', onTouchMove);
+      el.removeEventListener('touchend', onTouchEnd);
+      el.removeEventListener('touchcancel', onTouchEnd);
+    };
   }, [rooms]);
 
   /** Screen (clientX/Y) → floor-absolute inches, given the current pan/zoom. */
@@ -467,10 +554,6 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
     });
   }
 
-  function resetView() {
-    setView({ pan: { x: 40, y: 40 }, scale: DEFAULT_SCALE });
-  }
-
   if (error) return <div className="empty-state">Couldn't load this floor: {error}</div>;
   if (!rooms || !fixtures || !wallItems) return <div className="empty-state">Loading…</div>;
 
@@ -484,13 +567,13 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
           Import Room Spec
         </button>
         <span className="home-canvas__hint">
-          Scroll to pan · Ctrl/Cmd+scroll to zoom · drag a wall to reshape · click a wall for doors/windows/corners · click a room's ⋯ for appliances, furniture, outlets, switches
+          Scroll to pan · Ctrl/Cmd+scroll or pinch to zoom · drag a wall to reshape · click a wall for doors/windows/corners · click a room's ⋯ for appliances, furniture, outlets, switches
         </span>
         <button type="button" className="btn btn--ghost btn--sm" onClick={toggleLabels} style={{ marginLeft: 'auto' }}>
           {labelsHidden ? 'Show Labels' : 'Hide Labels'}
         </button>
-        <button type="button" className="btn btn--ghost btn--sm" onClick={resetView}>
-          Reset View
+        <button type="button" className="btn btn--ghost btn--sm" onClick={fitToRooms}>
+          Fit to Rooms
         </button>
       </div>
 
@@ -501,6 +584,17 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
       >
+        <div className="home-canvas__zoom" onPointerDown={(e) => e.stopPropagation()}>
+          <button type="button" onClick={() => zoomBy(1 / 1.25)} aria-label="Zoom out" title="Zoom out">
+            −
+          </button>
+          <button type="button" className="home-canvas__zoom-level" onClick={fitToRooms} title="Fit to rooms">
+            {Math.round((scale / DEFAULT_SCALE) * 100)}%
+          </button>
+          <button type="button" onClick={() => zoomBy(1.25)} aria-label="Zoom in" title="Zoom in">
+            +
+          </button>
+        </div>
         <div className="home-canvas__world" style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})` }}>
           {rooms.length === 0 && (
             <div className="home-canvas__empty" style={{ transform: `scale(${1 / scale})`, transformOrigin: 'top left' }}>

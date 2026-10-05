@@ -15349,6 +15349,48 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   color: var(--color-muted);
 }
 
+/* Floating zoom control, bottom-right of the floor canvas: − / level
+   (click = fit to rooms) / +. Sits above the panned world layer. */
+.home-canvas__zoom {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  z-index: 5;
+  display: flex;
+  align-items: stretch;
+  background: var(--color-card-bg);
+  border: var(--border-hairline);
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(46, 42, 34, 0.12);
+  overflow: hidden;
+  cursor: default;
+}
+
+.home-canvas__zoom button {
+  background: none;
+  border: none;
+  font: inherit;
+  font-size: 16px;
+  min-width: 36px;
+  height: 34px;
+  padding: 0 8px;
+  color: inherit;
+  cursor: pointer;
+}
+
+.home-canvas__zoom button:hover {
+  background: var(--color-sidebar);
+}
+
+.home-canvas__zoom .home-canvas__zoom-level {
+  font-size: 12px;
+  min-width: 54px;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-muted);
+  border-left: var(--border-hairline);
+  border-right: var(--border-hairline);
+}
+
 .home-canvas__viewport {
   position: relative;
   flex: 1;
