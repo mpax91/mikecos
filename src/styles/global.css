@@ -15589,20 +15589,34 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   cursor: pointer;
 }
 
+/* The room label sits just ABOVE the room's bounding box, so it never
+   covers a wall, door or window inside the room. */
 .home-room__header {
   position: absolute;
-  top: 0;
+  bottom: calc(100% + 4px);
   left: 0;
-  transform-origin: top left;
+  transform-origin: bottom left;
+  transition: opacity 0.15s ease;
   display: flex;
   align-items: center;
   gap: 6px;
   white-space: nowrap;
   background: var(--color-card-bg);
   border: var(--border-hairline);
-  border-radius: 0 0 6px 0;
+  border-radius: 6px;
   padding: 3px 6px;
   box-shadow: 0 1px 3px rgba(46, 42, 34, 0.12);
+}
+
+/* "Hide Labels": labels vanish but come back while hovering the room (or
+   while its ⋯ menu is in use), so room actions stay one hover away. */
+.home-canvas--labels-hidden .home-room__header {
+  opacity: 0;
+}
+
+.home-canvas--labels-hidden .home-room:hover .home-room__header,
+.home-canvas--labels-hidden .home-room__header:focus-within {
+  opacity: 1;
 }
 
 .home-room__title {

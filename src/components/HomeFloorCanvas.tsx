@@ -111,6 +111,25 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
   const [wallMenu, setWallMenu] = useState<{ roomId: string; wallIndex: number; offset: number; screenX: number; screenY: number } | null>(null);
   const [specModal, setSpecModal] = useState<'new' | HomeRoom | null>(null);
   const [copiedRoomId, setCopiedRoomId] = useState<string | null>(null);
+  // Room name labels can be hidden (they then show only on hover, so the
+  // room's ⋯ menu stays reachable). Remembered per browser.
+  const [labelsHidden, setLabelsHidden] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('mikeos.home.labelsHidden') === '1';
+    } catch {
+      return false;
+    }
+  });
+  function toggleLabels() {
+    setLabelsHidden((prev) => {
+      try {
+        localStorage.setItem('mikeos.home.labelsHidden', prev ? '0' : '1');
+      } catch {
+        // storage unavailable — toggle still works for this visit
+      }
+      return !prev;
+    });
+  }
 
   const viewportRef = useRef<HTMLDivElement>(null);
   const gesture = useRef<
@@ -456,7 +475,7 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
   if (!rooms || !fixtures || !wallItems) return <div className="empty-state">Loading…</div>;
 
   return (
-    <div className="home-canvas">
+    <div className={`home-canvas${labelsHidden ? ' home-canvas--labels-hidden' : ''}`}>
       <div className="home-canvas__toolbar">
         <button type="button" className="btn btn--ghost btn--sm" onClick={openAddRoom}>
           + Add Room
@@ -467,7 +486,10 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
         <span className="home-canvas__hint">
           Scroll to pan · Ctrl/Cmd+scroll to zoom · drag a wall to reshape · click a wall for doors/windows/corners · click a room's ⋯ for appliances, furniture, outlets, switches
         </span>
-        <button type="button" className="btn btn--ghost btn--sm" onClick={resetView} style={{ marginLeft: 'auto' }}>
+        <button type="button" className="btn btn--ghost btn--sm" onClick={toggleLabels} style={{ marginLeft: 'auto' }}>
+          {labelsHidden ? 'Show Labels' : 'Hide Labels'}
+        </button>
+        <button type="button" className="btn btn--ghost btn--sm" onClick={resetView}>
           Reset View
         </button>
       </div>
@@ -562,7 +584,7 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
                     );
                   })}
                 </svg>
-                <div className="home-room__header" style={{ transform: `scale(${1 / scale})`, transformOrigin: 'top left' }}>
+                <div className="home-room__header" style={{ transform: `scale(${1 / scale})`, transformOrigin: 'bottom left' }}>
                   <span className="home-room__title">{room.name}</span>
                   <span className="home-room__dims">
                     {formatFeetInches(room.width)} × {formatFeetInches(room.depth)}
