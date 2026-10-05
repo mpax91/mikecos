@@ -7658,19 +7658,18 @@ app.delete('/api/bet-game-notes/:id', async (c) => {
 
 app.get('/api/health', (c) => c.json({ ok: true, time: now() }));
 
-// This Worker's own public URL — needed so the nightly cron can re-invoke
-// itself below. Update this if the Worker is ever renamed/redeployed
-// under a different name.
-const WORKER_SELF_URL = 'https://mikeos-api.michaelpalladino.workers.dev';
+// Base URL for the nightly crons' internal calls through env.SELF (a
+// service binding to this Worker — see wrangler.toml). The host is never
+// resolved; a service-binding request goes straight to this Worker.
+// Previously these went to the public workers.dev URL, which Cloudflare
+// rejects for a Worker calling itself (error 1042) — the real reason the
+// overnight Airing check never ran on its own.
+const SELF_BASE = 'https://mikeos-self.internal';
 
-// Headers the nightly cron's self-fetch calls present so authGate
+// Headers the nightly cron's internal calls present so authGate
 // (worker/src/auth.ts's isInternalCronRequest) lets them through without
-// a login session — see that function's comment for why this exists at
-// all (it's the fix for the self-fetch loop silently 401ing on every run,
-// which is why "Check now" always had to be clicked by hand). Returns {}
-// when CRON_INTERNAL_SECRET isn't configured, so the self-fetch still
-// goes out — it just 401s exactly as it always has, same as before this
-// existed.
+// a login session. runSelfFetchCron refuses to run (and logs why) when
+// CRON_INTERNAL_SECRET isn't configured.
 function cronAuthHeaders(env: Env): Record<string, string> {
   return env.CRON_INTERNAL_SECRET ? { 'X-Cron-Key': env.CRON_INTERNAL_SECRET } : {};
 }
@@ -7731,6 +7730,31 @@ async function logCronRun(env: Env, cronName: PlexCronName, startedAt: string, o
   }
 }
 
+const AIRING_PATH = '/api/plex/airing-check';
+const AIRING_RETRY_MINUTE = 50; // even, so the */2 tick actually lands on it
+
+/** Retries the Airing check if nothing has succeeded since today's
+ * scheduled 09:30 UTC run. Waits until 10:30 UTC before treating "no row
+ * yet" as a miss, so it never overlaps a first run that's still going;
+ * an explicit error row is retried at the next hourly slot. Safe to
+ * re-run: the check itself is idempotent (same path "Check now" uses). */
+async function retryAiringCheckIfNeeded(env: Env, scheduledTime: number): Promise<void> {
+  const now = new Date(scheduledTime);
+  const firstRun = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 9, 30));
+  if (now.getTime() < firstRun.getTime()) return;
+  try {
+    const latest = await env.DB.prepare(
+      `SELECT outcome FROM plex_cron_runs WHERE cron_name = 'plex_airing_check' AND started_at >= ? ORDER BY started_at DESC LIMIT 1`
+    ).bind(firstRun.toISOString()).first<{ outcome: string }>();
+    if (latest?.outcome === 'success') return;
+    if (!latest && now.getTime() < firstRun.getTime() + 60 * 60 * 1000) return;
+  } catch (err) {
+    console.error('Airing retry check failed', err);
+    return;
+  }
+  await runSelfFetchCron(env, 'plex_airing_check', AIRING_PATH, 'Plex airing check (retry)');
+}
+
 /** Shared self-fetch chunk loop for both nightly Plex crons — see the
  * `scheduled` export's PLEX_SYNC_CRON/PLEX_AIRING_CRON branches for why
  * this self-fetches rather than looping in-process, and
@@ -7738,12 +7762,16 @@ async function logCronRun(env: Env, cronName: PlexCronName, startedAt: string, o
  * plex_cron_runs row per invocation, success or failure, so a run that
  * never logs anything at all means `scheduled()` itself never fired that
  * tick (a Cloudflare Cron Trigger problem, not this code). */
-async function runSelfFetchCron(env: Env, cronName: PlexCronName, url: string, label: string): Promise<void> {
+export async function runSelfFetchCron(env: Env, cronName: PlexCronName, path: string, label: string): Promise<void> {
   const startedAt = new Date().toISOString();
   let chunksRun = 0;
+  if (!env.CRON_INTERNAL_SECRET) {
+    await logCronRun(env, cronName, startedAt, 'error', 0, 'CRON_INTERNAL_SECRET is not configured — internal cron calls would be rejected by authGate');
+    return;
+  }
   try {
     for (; chunksRun < MAX_SYNC_CHUNKS; chunksRun++) {
-      const res = await fetch(url, { method: 'POST', headers: cronAuthHeaders(env) });
+      const res = await env.SELF.fetch(`${SELF_BASE}${path}`, { method: 'POST', headers: cronAuthHeaders(env) });
       if (!res.ok) {
         const body = await res.text();
         console.error(`${label} chunk failed`, res.status, body);
@@ -7763,6 +7791,15 @@ async function runSelfFetchCron(env: Env, cronName: PlexCronName, url: string, l
   }
 }
 
+// POST /api/plex/cron-runs/run-airing — runs the Airing check through the
+// EXACT path the nightly cron uses (env.SELF service binding + X-Cron-Key),
+// in the background, logging a plex_cron_runs row like a scheduled run.
+// Lets the overnight path be verified on demand instead of waiting a day.
+app.post('/api/plex/cron-runs/run-airing', (c) => {
+  c.executionCtx.waitUntil(runSelfFetchCron(c.env, 'plex_airing_check', AIRING_PATH, 'Plex airing check (manual cron-path test)'));
+  return c.json({ started: true }, 202);
+});
+
 export default {
   fetch: app.fetch,
   async scheduled(event: ScheduledController, env: Env) {
@@ -7772,11 +7809,19 @@ export default {
       } catch (err) {
         console.error('Email inbox sync failed', err);
       }
+      // Self-healing retry for the Airing check: once an hour (riding this
+      // every-2-minutes tick rather than adding another account-wide cron
+      // trigger), if today's 09:30 UTC run hasn't succeeded, run it again.
+      // A transient TVMaze/D1 failure now costs at most an hour instead of
+      // a whole day of "click Check now".
+      if (new Date(event.scheduledTime).getUTCMinutes() === AIRING_RETRY_MINUTE) {
+        await retryAiringCheckIfNeeded(env, event.scheduledTime);
+      }
       return;
     }
 
     if (event.cron === PLEX_SYNC_CRON) {
-      await runSelfFetchCron(env, 'plex_sync', `${WORKER_SELF_URL}/api/plex/sync`, 'Plex library sync');
+      await runSelfFetchCron(env, 'plex_sync', '/api/plex/sync', 'Plex library sync');
       return;
     }
 
@@ -7785,7 +7830,7 @@ export default {
       // reason — see runAiringCheckChunk's own comment for the D1 timeout
       // this used to silently hit on a large library, which is exactly
       // how Ted Lasso S04E09 / It's Always Sunny S18E08 went unflagged.
-      await runSelfFetchCron(env, 'plex_airing_check', `${WORKER_SELF_URL}/api/plex/airing-check`, 'Plex airing check');
+      await runSelfFetchCron(env, 'plex_airing_check', AIRING_PATH, 'Plex airing check');
       return;
     }
   },

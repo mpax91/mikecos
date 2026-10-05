@@ -7,6 +7,17 @@ binding = "DB"
 database_name = "mikeos-db"
 database_id = "d2a93367-a474-4b41-aa2d-a688400e4fb2"
 
+# Service binding to THIS Worker, used by the nightly Plex crons to call
+# their own chunk endpoints. They used to fetch() the public workers.dev
+# URL, which Cloudflare blocks outright for a Worker calling itself
+# (error 1042) — every scheduled run failed on its first chunk, which is
+# why "Check now" always had to be clicked by hand. A self service
+# binding is the supported way to do this: each call is still its own
+# invocation with its own subrequest budget.
+[[services]]
+binding = "SELF"
+service = "mikeos-api"
+
 [[r2_buckets]]
 binding = "FILES"
 bucket_name = "mikeos-files"
