@@ -757,6 +757,8 @@ export interface HomeRoomRow {
   width: number;
   depth: number;
   points: string | null; // JSON Point[] — see 0078_home_room_shapes.sql; width/depth stay the shape's bounding box
+  ceiling_height: number | null; // inches — 0087_home_room_specs.sql
+  spec: string | null; // JSON room spec this shape was imported from; null once reshaped on the canvas
   notes: string | null;
   created_at: string;
   updated_at: string;

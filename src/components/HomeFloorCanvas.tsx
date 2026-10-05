@@ -15,7 +15,11 @@ import {
   dragWall,
   insertNotch,
   relocateAfterShapeChange,
+  canDragWall,
+  canAddCorner,
 } from '../lib/homeGeometry';
+import { specFromRoom, type SolvedRoom } from '../lib/roomSpec';
+import { HomeRoomSpecModal } from './HomeRoomSpecModal';
 import { ConfirmModal } from './ConfirmModal';
 import { HomeRoomModal, type HomeRoomFormValue } from './HomeRoomModal';
 import { HomeFixtureModal, type HomeFixtureFormValue, FIXTURE_TYPE_LABEL } from './HomeFixtureModal';
@@ -45,7 +49,7 @@ interface Pan {
  * (not dragging) a wall — portaled to <body> and positioned at the
  * click's screen coordinates, styled the same as KebabMenu's dropdown
  * so it needs no CSS of its own. */
-function WallMenu({ x, y, onAddDoor, onAddWindow, onAddCorner, onClose }: { x: number; y: number; onAddDoor: () => void; onAddWindow: () => void; onAddCorner: () => void; onClose: () => void }) {
+function WallMenu({ x, y, onAddDoor, onAddWindow, onAddCorner, onClose }: { x: number; y: number; onAddDoor: () => void; onAddWindow: () => void; onAddCorner?: () => void; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     function onDocDown(e: MouseEvent) {
@@ -63,9 +67,11 @@ function WallMenu({ x, y, onAddDoor, onAddWindow, onAddCorner, onClose }: { x: n
       <div className="kebab-menu__item" onClick={onAddWindow}>
         + Window
       </div>
-      <div className="kebab-menu__item" onClick={onAddCorner}>
-        + Add Corner
-      </div>
+      {onAddCorner && (
+        <div className="kebab-menu__item" onClick={onAddCorner}>
+          + Add Corner
+        </div>
+      )}
     </div>,
     document.body
   );
@@ -103,6 +109,8 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
   const [wallItemModal, setWallItemModal] = useState<{ type: HomeWallItemType; roomId: string; wallIndex: number; offset: number; initial?: HomeWallItem } | null>(null);
   const [deletingWallItem, setDeletingWallItem] = useState<HomeWallItem | null>(null);
   const [wallMenu, setWallMenu] = useState<{ roomId: string; wallIndex: number; offset: number; screenX: number; screenY: number } | null>(null);
+  const [specModal, setSpecModal] = useState<'new' | HomeRoom | null>(null);
+  const [copiedRoomId, setCopiedRoomId] = useState<string | null>(null);
 
   const viewportRef = useRef<HTMLDivElement>(null);
   const gesture = useRef<
@@ -216,6 +224,9 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
       setRooms((prev) => (prev ? prev.map((r) => (r.id === g.roomId ? { ...r, x, y } : r)) : prev));
     } else if (g.kind === 'wall-drag') {
       g.moved += Math.abs(e.movementX) + Math.abs(e.movementY);
+      // Angled bay walls / curve chords from an imported spec aren't
+      // draggable (see canDragWall) — the gesture only counts as a click.
+      if (!canDragWall(g.startPoints, g.wallIndex)) return;
       const dx = (e.clientX - g.startX) / scale;
       const dy = (e.clientY - g.startY) / scale;
       const { nx, ny } = inwardNormal(g.startPoints, g.wallIndex);
@@ -242,11 +253,10 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
       const room = rooms?.find((r) => r.id === g.roomId);
       const item = wallItems?.find((w) => w.id === g.itemId);
       if (!room || !item) return;
-      const { a, b, horizontal, length } = wallSegment(room.points, g.wallIndex);
-      const dir = horizontal ? Math.sign(b.x - a.x) || 1 : Math.sign(b.y - a.y) || 1;
+      const { ux, uy, length } = wallSegment(room.points, g.wallIndex);
       const dx = (e.clientX - g.startX) / scale;
       const dy = (e.clientY - g.startY) / scale;
-      const deltaAlong = (horizontal ? dx : dy) * dir;
+      const deltaAlong = dx * ux + dy * uy;
       const offset = clamp(Math.round(g.startOffset + deltaAlong), 0, Math.max(0, length - item.width));
       setWallItems((prev) => (prev ? prev.map((w) => (w.id === g.itemId ? { ...w, offset } : w)) : prev));
     }
@@ -273,6 +283,7 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
         setWallMenu({ roomId: g.roomId, wallIndex: g.wallIndex, offset, screenX: g.startX, screenY: g.startY });
         return;
       }
+      if (!canDragWall(g.startPoints, g.wallIndex)) return;
       // Re-anchor any doors/windows on this room's walls to whichever edge
       // of the reshaped polygon now passes through where they actually
       // sit — see relocateAfterShapeChange's header for why this works
@@ -415,6 +426,28 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
     setWallItemModal(null);
   }
 
+  /** New room from a spec — auto-placed to the right of everything else on
+   * the floor, same as Add Room. */
+  async function importRoomFromSpec(solved: SolvedRoom, name: string) {
+    const payload = { points: solved.points, ceilingHeight: solved.ceilingHeight, spec: solved.spec, wallItems: solved.wallItems };
+    if (specModal && specModal !== 'new') {
+      await api.reshapeHomeRoom(specModal.id, payload);
+    } else {
+      const x = rooms && rooms.length ? Math.max(...rooms.map((r) => r.x + r.width)) + ROOM_GAP_IN : 0;
+      await api.importHomeRoom(floorId, { ...payload, name, x, y: 0, notes: solved.notes });
+    }
+    setSpecModal(null);
+    load();
+  }
+
+  function copyRoomSpec(room: HomeRoom) {
+    const spec = specFromRoom(room, (wallItems ?? []).filter((w) => w.roomId === room.id));
+    navigator.clipboard.writeText(JSON.stringify(spec, null, 2)).then(() => {
+      setCopiedRoomId(room.id);
+      window.setTimeout(() => setCopiedRoomId((prev) => (prev === room.id ? null : prev)), 1800);
+    });
+  }
+
   function resetView() {
     setView({ pan: { x: 40, y: 40 }, scale: DEFAULT_SCALE });
   }
@@ -427,6 +460,9 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
       <div className="home-canvas__toolbar">
         <button type="button" className="btn btn--ghost btn--sm" onClick={openAddRoom}>
           + Add Room
+        </button>
+        <button type="button" className="btn btn--ghost btn--sm" onClick={() => setSpecModal('new')}>
+          Import Room Spec
         </button>
         <span className="home-canvas__hint">
           Scroll to pan · Ctrl/Cmd+scroll to zoom · drag a wall to reshape · click a wall for doors/windows/corners · click a room's ⋯ for appliances, furniture, outlets, switches
@@ -472,7 +508,7 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
                           x2={seg.b.x}
                           y2={seg.b.y}
                           className="home-room__wall-hit"
-                          style={{ cursor: seg.horizontal ? 'ns-resize' : 'ew-resize' }}
+                          style={{ cursor: canDragWall(room.points, i) ? (seg.horizontal ? 'ns-resize' : 'ew-resize') : 'pointer' }}
                           onPointerDown={(e) => handleWallPointerDown(room, i, e)}
                         />
                       </g>
@@ -481,27 +517,29 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
                   {roomWallItems.map((item) => {
                     const start = pointAlongWall(room.points, item.wallIndex, item.offset);
                     const end = pointAlongWall(room.points, item.wallIndex, item.offset + item.width);
-                    const { horizontal } = wallSegment(room.points, item.wallIndex);
+                    const { horizontal, axisAligned, ux, uy } = wallSegment(room.points, item.wallIndex);
                     const { nx, ny } = inwardNormal(room.points, item.wallIndex);
                     const gapPad = 3;
-                    const gx1 = horizontal ? start.x - Math.sign(end.x - start.x) * gapPad : start.x;
-                    const gy1 = horizontal ? start.y : start.y - Math.sign(end.y - start.y) * gapPad;
-                    const gx2 = horizontal ? end.x + Math.sign(end.x - start.x) * gapPad : end.x;
-                    const gy2 = horizontal ? end.y : end.y + Math.sign(end.y - start.y) * gapPad;
+                    const gx1 = start.x - ux * gapPad;
+                    const gy1 = start.y - uy * gapPad;
+                    const gx2 = end.x + ux * gapPad;
+                    const gy2 = end.y + uy * gapPad;
                     return (
                       <g key={item.id}>
                         <line x1={gx1} y1={gy1} x2={gx2} y2={gy2} className="home-wall-item__gap" />
                         {item.type === 'door' ? (
                           (() => {
                             const hinge = item.swing === 'right' ? end : start;
+                            const latch = item.swing === 'right' ? start : end;
                             const openPoint = { x: hinge.x + nx * item.width, y: hinge.y + ny * item.width };
+                            // Sweep direction from the geometry itself (closed latch
+                            // -> open leaf around the hinge), so the arc is right on
+                            // walls at any angle and either polygon winding.
+                            const cross = (latch.x - hinge.x) * (openPoint.y - hinge.y) - (latch.y - hinge.y) * (openPoint.x - hinge.x);
                             return (
                               <>
                                 <line x1={hinge.x} y1={hinge.y} x2={openPoint.x} y2={openPoint.y} className="home-wall-item__leaf" />
-                                <path
-                                  d={`M ${item.swing === 'right' ? start.x : end.x} ${item.swing === 'right' ? start.y : end.y} A ${item.width} ${item.width} 0 0 ${item.swing === 'right' ? 0 : 1} ${openPoint.x} ${openPoint.y}`}
-                                  className="home-wall-item__arc"
-                                />
+                                <path d={`M ${latch.x} ${latch.y} A ${item.width} ${item.width} 0 0 ${cross > 0 ? 1 : 0} ${openPoint.x} ${openPoint.y}`} className="home-wall-item__arc" />
                               </>
                             );
                           })()
@@ -517,7 +555,7 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
                           x2={end.x}
                           y2={end.y}
                           className="home-wall-item__hit"
-                          style={{ cursor: horizontal ? 'ew-resize' : 'ns-resize' }}
+                          style={{ cursor: axisAligned ? (horizontal ? 'ew-resize' : 'ns-resize') : 'grab' }}
                           onPointerDown={(e) => handleWallItemPointerDown(item, e)}
                         />
                       </g>
@@ -528,11 +566,14 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
                   <span className="home-room__title">{room.name}</span>
                   <span className="home-room__dims">
                     {formatFeetInches(room.width)} × {formatFeetInches(room.depth)}
+                    {room.ceilingHeight ? ` · ${formatFeetInches(room.ceilingHeight)} ceiling` : ''}
                   </span>
                   <KebabMenu
                     items={[
                       ...FIXTURE_TYPES.map((t) => ({ label: `+ ${FIXTURE_TYPE_LABEL[t]}`, onClick: () => openAddFixture(room, t) })),
                       { label: 'Edit Room', onClick: () => setRoomModal(room), separatorBefore: true },
+                      { label: 'Replace Shape from Spec…', onClick: () => setSpecModal(room) },
+                      { label: copiedRoomId === room.id ? 'Room Spec Copied' : 'Copy Room Spec', onClick: () => copyRoomSpec(room) },
                       { label: 'Delete Room', onClick: () => setDeletingRoom(room), danger: true },
                     ]}
                   />
@@ -569,8 +610,20 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
           y={wallMenu.screenY}
           onAddDoor={() => openAddWallItem('door')}
           onAddWindow={() => openAddWallItem('window')}
-          onAddCorner={addCorner}
+          onAddCorner={(() => {
+            const r = rooms.find((rm) => rm.id === wallMenu.roomId);
+            return r && canAddCorner(r.points, wallMenu.wallIndex) ? addCorner : undefined;
+          })()}
           onClose={() => setWallMenu(null)}
+        />
+      )}
+
+      {specModal && (
+        <HomeRoomSpecModal
+          room={specModal === 'new' ? undefined : specModal}
+          initialText={specModal === 'new' ? undefined : JSON.stringify(specFromRoom(specModal, wallItems.filter((w) => w.roomId === specModal.id)), null, 2)}
+          onImport={importRoomFromSpec}
+          onClose={() => setSpecModal(null)}
         />
       )}
 

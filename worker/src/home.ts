@@ -54,14 +54,21 @@ function rectanglePoints(width: number, depth: number): ShapePoint[] {
 function boundingBoxOf(points: ShapePoint[]): { width: number; depth: number } {
   const xs = points.map((p) => p.x);
   const ys = points.map((p) => p.y);
-  return { width: Math.max(...xs) - Math.min(...xs), depth: Math.max(...ys) - Math.min(...ys) };
+  // ceil, not round: imported specs have decimal points, and the canvas
+  // sizes the room's SVG to width/depth — rounding down would clip the
+  // outermost wall by a fraction of an inch.
+  return { width: Math.ceil(Math.max(...xs) - Math.min(...xs)), depth: Math.ceil(Math.max(...ys) - Math.min(...ys)) };
+}
+
+function validPoints(points: unknown): points is ShapePoint[] {
+  return Array.isArray(points) && points.length >= 3 && points.every((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y));
 }
 
 function parsePoints(raw: string | null, width: number, depth: number): ShapePoint[] {
   if (!raw) return rectanglePoints(width, depth);
   try {
     const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed) && parsed.length >= 4) return parsed;
+    if (Array.isArray(parsed) && parsed.length >= 3) return parsed;
   } catch {
     // fall through to rectangle default
   }
@@ -82,6 +89,8 @@ function roomJson(r: HomeRoomRow) {
     width: r.width,
     depth: r.depth,
     points: parsePoints(r.points, r.width, r.depth),
+    ceilingHeight: r.ceiling_height ?? null,
+    spec: r.spec ?? null,
     notes: r.notes,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
@@ -255,6 +264,7 @@ interface RoomBody {
   width?: number;
   depth?: number;
   points?: ShapePoint[];
+  ceilingHeight?: number | null;
   notes?: string | null;
 }
 
@@ -305,10 +315,12 @@ homeRouter.patch('/rooms/:id', async (c) => {
     // insert) — width/depth are re-derived from it so every other query
     // that only reads the bounding box stays correct without the
     // frontend having to compute and send it separately.
-    if (!Array.isArray(body.points) || body.points.length < 4) return c.json({ error: 'points must have at least 4 vertices' }, 400);
+    if (!validPoints(body.points)) return c.json({ error: 'points must have at least 3 {x,y} vertices' }, 400);
     const bbox = boundingBoxOf(body.points);
-    sets.push('points = ?', 'width = ?', 'depth = ?');
-    binds.push(JSON.stringify(body.points), Math.round(bbox.width), Math.round(bbox.depth));
+    // Any canvas reshape means the imported spec (if any) no longer
+    // describes this room — drop it so export derives from the new shape.
+    sets.push('points = ?', 'width = ?', 'depth = ?', 'spec = NULL');
+    binds.push(JSON.stringify(body.points), bbox.width, bbox.depth);
   } else if (body.width !== undefined || body.depth !== undefined) {
     // Editing width/depth numerically (the room modal, for a still-simple
     // rectangle) regenerates points as a plain rectangle — this is only
@@ -317,8 +329,12 @@ homeRouter.patch('/rooms/:id', async (c) => {
     if (body.depth !== undefined && body.depth <= 0) return c.json({ error: 'depth must be positive' }, 400);
     const width = Math.round(body.width ?? existing.width);
     const depth = Math.round(body.depth ?? existing.depth);
-    sets.push('width = ?', 'depth = ?', 'points = ?');
+    sets.push('width = ?', 'depth = ?', 'points = ?', 'spec = NULL');
     binds.push(width, depth, JSON.stringify(rectanglePoints(width, depth)));
+  }
+  if (body.ceilingHeight !== undefined) {
+    sets.push('ceiling_height = ?');
+    binds.push(body.ceilingHeight && body.ceilingHeight > 0 ? Math.round(body.ceilingHeight) : null);
   }
   if (body.notes !== undefined) {
     sets.push('notes = ?');
@@ -329,6 +345,111 @@ homeRouter.patch('/rooms/:id', async (c) => {
     binds.push(now(), id);
     await db(c).prepare(`UPDATE home_rooms SET ${sets.join(', ')} WHERE id = ?`).bind(...binds).run();
   }
+  const row = await db(c).prepare('SELECT * FROM home_rooms WHERE id = ?').bind(id).first<HomeRoomRow>();
+  return c.json(roomJson(row!));
+});
+
+// ---- Room specs (src/lib/roomSpec.ts) ----
+//
+// The frontend solves a room spec into points + doors/windows (one solver,
+// used for the live preview too); these endpoints just persist the result
+// in one batch so a room never exists half-imported.
+
+interface SpecWallItem {
+  type?: string;
+  label?: string;
+  wallIndex?: number;
+  offset?: number;
+  width?: number;
+  swing?: 'left' | 'right' | null;
+  notes?: string | null;
+}
+
+interface SpecImportBody {
+  name?: string;
+  x?: number;
+  y?: number;
+  points?: ShapePoint[];
+  ceilingHeight?: number | null;
+  spec?: unknown;
+  notes?: string | null;
+  wallItems?: SpecWallItem[];
+}
+
+function checkSpecBody(body: SpecImportBody): string | null {
+  if (!validPoints(body.points)) return 'points must have at least 3 {x,y} vertices';
+  for (const w of body.wallItems ?? []) {
+    if (!isWallItemType(w.type)) return `wall item type must be one of ${WALL_ITEM_TYPES.join(', ')}`;
+    if (!w.label?.trim()) return 'every wall item needs a label';
+    if (!Number.isInteger(w.wallIndex) || w.wallIndex! < 0 || w.wallIndex! >= body.points!.length) return `wall item "${w.label}" has an invalid wallIndex`;
+  }
+  return null;
+}
+
+function wallItemInserts(c: { env: Env }, roomId: string, items: SpecWallItem[], ts: string) {
+  return items.map((w) =>
+    db(c)
+      .prepare(
+        `INSERT INTO home_wall_items (id, room_id, type, label, wall_index, offset, width, swing, vault_entry_id, notes, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`
+      )
+      .bind(uid(), roomId, w.type, w.label!.trim(), w.wallIndex, Math.max(0, Math.round(w.offset ?? 0)), Math.max(1, Math.round(w.width ?? 30)), w.type === 'door' ? w.swing ?? 'left' : null, w.notes?.trim() || null, ts, ts)
+  );
+}
+
+homeRouter.post('/floors/:floorId/rooms/import', async (c) => {
+  const floorId = c.req.param('floorId');
+  const floor = await db(c).prepare('SELECT id FROM home_floors WHERE id = ?').bind(floorId).first<{ id: string }>();
+  if (!floor) return c.json({ error: 'floor not found' }, 404);
+  const body = await c.req.json<SpecImportBody>();
+  if (!body.name?.trim()) return c.json({ error: 'name is required' }, 400);
+  const problem = checkSpecBody(body);
+  if (problem) return c.json({ error: problem }, 400);
+  const bbox = boundingBoxOf(body.points!);
+  const id = uid();
+  const ts = now();
+  await db(c).batch([
+    db(c)
+      .prepare('INSERT INTO home_rooms (id, floor_id, name, x, y, width, depth, points, ceiling_height, spec, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(
+        id,
+        floorId,
+        body.name.trim(),
+        Math.round(body.x ?? 0),
+        Math.round(body.y ?? 0),
+        bbox.width,
+        bbox.depth,
+        JSON.stringify(body.points),
+        body.ceilingHeight && body.ceilingHeight > 0 ? Math.round(body.ceilingHeight) : null,
+        body.spec ? JSON.stringify(body.spec) : null,
+        body.notes?.trim() || null,
+        ts,
+        ts
+      ),
+    ...wallItemInserts(c, id, body.wallItems ?? [], ts),
+  ]);
+  const row = await db(c).prepare('SELECT * FROM home_rooms WHERE id = ?').bind(id).first<HomeRoomRow>();
+  return c.json(roomJson(row!), 201);
+});
+
+/** Replace an existing room's shape (and its doors/windows) from a spec,
+ * keeping the room itself — its id, position, fixtures and notes. */
+homeRouter.post('/rooms/:id/reshape', async (c) => {
+  const id = c.req.param('id');
+  const existing = await db(c).prepare('SELECT * FROM home_rooms WHERE id = ?').bind(id).first<HomeRoomRow>();
+  if (!existing) return c.json({ error: 'not found' }, 404);
+  const body = await c.req.json<SpecImportBody>();
+  const problem = checkSpecBody(body);
+  if (problem) return c.json({ error: problem }, 400);
+  const bbox = boundingBoxOf(body.points!);
+  const ts = now();
+  await db(c).batch([
+    db(c)
+      .prepare('UPDATE home_rooms SET points = ?, width = ?, depth = ?, ceiling_height = ?, spec = ?, updated_at = ? WHERE id = ?')
+      .bind(JSON.stringify(body.points), bbox.width, bbox.depth, body.ceilingHeight && body.ceilingHeight > 0 ? Math.round(body.ceilingHeight) : existing.ceiling_height, body.spec ? JSON.stringify(body.spec) : null, ts, id),
+    db(c).prepare('DELETE FROM home_wall_items WHERE room_id = ?').bind(id),
+    ...wallItemInserts(c, id, body.wallItems ?? [], ts),
+  ]);
   const row = await db(c).prepare('SELECT * FROM home_rooms WHERE id = ?').bind(id).first<HomeRoomRow>();
   return c.json(roomJson(row!));
 });

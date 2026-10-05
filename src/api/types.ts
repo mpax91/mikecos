@@ -2098,13 +2098,24 @@ export interface HomeRoom {
   y: number;
   width: number;
   depth: number;
-  points: HomePoint[]; // the room's real shape — rectilinear polygon, inches, relative to (x,y)'s bounding box. See src/lib/homeGeometry.ts.
+  points: HomePoint[]; // the room's real shape — polygon in inches, relative to (x,y)'s bounding box. Rectilinear when drawn on the canvas; may have angled walls/curves when imported from a spec. See src/lib/homeGeometry.ts, src/lib/roomSpec.ts.
+  ceilingHeight: number | null; // inches
+  spec: string | null; // JSON room spec it was imported from — null once reshaped on the canvas
   notes: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
 export type HomeWallItemType = 'door' | 'window';
+
+/** What the room-spec import/reshape endpoints take — the output of
+ * solveRoomSpec (src/lib/roomSpec.ts). */
+export interface HomeRoomSpecPayload {
+  points: HomePoint[];
+  ceilingHeight: number | null;
+  spec: unknown;
+  wallItems: { type: HomeWallItemType; label: string; wallIndex: number; offset: number; width: number; swing: 'left' | 'right' | null; notes: string | null }[];
+}
 
 export interface HomeWallItem {
   id: string;

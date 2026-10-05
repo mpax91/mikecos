@@ -1,7 +1,11 @@
-// Rectilinear room-shape geometry for the Home floor canvas. A room's
-// shape is a closed polygon of whole-inch points, every wall horizontal
-// or vertical (see worker/migrations/0078_home_room_shapes.sql for why:
-// covers L-shapes/notches/bump-outs without a freeform-angle editor).
+// Room-shape geometry for the Home floor canvas. A room's shape is a
+// closed polygon of inch points. Rooms drawn on the canvas stay
+// rectilinear (every wall horizontal or vertical); rooms imported from a
+// spec (src/lib/roomSpec.ts) can have angled walls and curves (as short
+// chords), which is why the helpers below work at any angle. Canvas
+// reshaping stays rectilinear on purpose (see
+// worker/migrations/0078_home_room_shapes.sql) — angled shapes come from
+// a spec, not from freehand dragging.
 // Points are always normalized so the shape's own bounding box has its
 // top-left at (0,0) — room.x/room.y (unchanged from the rectangle-only
 // version) is where that bounding box sits on the floor. This file is
@@ -60,12 +64,20 @@ export function polygonToSvgPoints(points: Point[]): string {
   return points.map((p) => `${p.x},${p.y}`).join(' ');
 }
 
-export function wallSegment(points: Point[], wallIndex: number): { a: Point; b: Point; horizontal: boolean; length: number } {
+/** Walls within this many inches of level/plumb count as horizontal/
+ * vertical — imported specs (src/lib/roomSpec.ts) produce decimal points
+ * that can be a hair off true after closing a tape-measure gap. */
+const AXIS_EPS = 0.5;
+
+export function wallSegment(points: Point[], wallIndex: number): { a: Point; b: Point; horizontal: boolean; vertical: boolean; axisAligned: boolean; length: number; ux: number; uy: number } {
   const a = points[wallIndex];
   const b = points[(wallIndex + 1) % points.length];
-  const horizontal = a.y === b.y;
-  const length = horizontal ? Math.abs(b.x - a.x) : Math.abs(b.y - a.y);
-  return { a, b, horizontal, length };
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const length = Math.hypot(dx, dy);
+  const horizontal = Math.abs(dy) < AXIS_EPS;
+  const vertical = !horizontal && Math.abs(dx) < AXIS_EPS;
+  return { a, b, horizontal, vertical, axisAligned: horizontal || vertical, length, ux: length ? dx / length : 1, uy: length ? dy / length : 0 };
 }
 
 export function wallMidpoint(points: Point[], wallIndex: number): Point {
@@ -75,35 +87,60 @@ export function wallMidpoint(points: Point[], wallIndex: number): Point {
 
 /** The point on wall `wallIndex`, `offset` inches from its start corner
  * (a), toward its end corner (b) — this is where a door/window's own
- * start sits along the wall. */
+ * start sits along the wall. Works for walls at any angle. */
 export function pointAlongWall(points: Point[], wallIndex: number, offset: number): Point {
-  const { a, b, horizontal } = wallSegment(points, wallIndex);
-  const dir = horizontal ? Math.sign(b.x - a.x) || 1 : Math.sign(b.y - a.y) || 1;
-  return horizontal ? { x: a.x + dir * offset, y: a.y } : { x: a.x, y: a.y + dir * offset };
+  const { a, ux, uy } = wallSegment(points, wallIndex);
+  return { x: a.x + ux * offset, y: a.y + uy * offset };
 }
 
 /** Inverse of pointAlongWall: given a raw point near wall `wallIndex`
  * (e.g. a click), the offset in inches along that wall closest to it,
  * clamped to the wall's own length. */
 export function offsetOnWall(points: Point[], wallIndex: number, at: Point): number {
-  const { a, b, horizontal, length } = wallSegment(points, wallIndex);
-  const dir = horizontal ? Math.sign(b.x - a.x) || 1 : Math.sign(b.y - a.y) || 1;
-  const raw = horizontal ? (at.x - a.x) * dir : (at.y - a.y) * dir;
-  return Math.max(0, Math.min(length, Math.round(raw)));
+  const { a, ux, uy, length } = wallSegment(points, wallIndex);
+  const raw = (at.x - a.x) * ux + (at.y - a.y) * uy;
+  return Math.max(0, Math.min(Math.floor(length), Math.round(raw)));
 }
 
-/** The unit normal pointing toward the room's centroid from the
- * midpoint of `wallIndex` — an approximation of "into the room" that
- * holds for the convex and mildly-notched shapes a house floor plan
- * actually produces, used to decide which way a door's swing arc opens
- * and which way a freshly-inserted notch defaults to leaning. */
+/** Twice the polygon's signed area — positive when the points run
+ * clockwise on screen (y grows downward). */
+function signedArea2(points: Point[]): number {
+  let s = 0;
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i];
+    const b = points[(i + 1) % points.length];
+    s += a.x * b.y - b.x * a.y;
+  }
+  return s;
+}
+
+/** The unit normal pointing into the room from wall `wallIndex`, from the
+ * polygon's winding (room is on the right of a clockwise walk) — exact
+ * for any simple polygon, including angled bays, curves and notches.
+ * Used to decide which way a door's swing opens and which way a
+ * freshly-inserted notch leans. */
 export function inwardNormal(points: Point[], wallIndex: number): { nx: number; ny: number } {
-  const { horizontal } = wallSegment(points, wallIndex);
-  const mid = wallMidpoint(points, wallIndex);
-  const cx = points.reduce((s, p) => s + p.x, 0) / points.length;
-  const cy = points.reduce((s, p) => s + p.y, 0) / points.length;
-  if (horizontal) return { nx: 0, ny: cy >= mid.y ? 1 : -1 };
-  return { nx: cx >= mid.x ? 1 : -1, ny: 0 };
+  const { ux, uy } = wallSegment(points, wallIndex);
+  return signedArea2(points) >= 0 ? { nx: -uy || 0, ny: ux || 0 } : { nx: uy || 0, ny: -ux || 0 };
+}
+
+/** Wall dragging only has one obvious meaning when the wall is level or
+ * plumb and both neighbors run perpendicular to it (they stretch/shrink).
+ * Angled bay walls and curve segments from an imported spec are reshaped
+ * by re-importing the spec instead. */
+export function canDragWall(points: Point[], wallIndex: number): boolean {
+  const n = points.length;
+  const seg = wallSegment(points, wallIndex);
+  if (!seg.axisAligned) return false;
+  const prev = wallSegment(points, (wallIndex - 1 + n) % n);
+  const next = wallSegment(points, (wallIndex + 1) % n);
+  return seg.horizontal ? prev.vertical && next.vertical : prev.horizontal && next.horizontal;
+}
+
+/** "+ Add Corner" (insertNotch) builds an axis-aligned notch, so it's only
+ * offered on level/plumb walls. */
+export function canAddCorner(points: Point[], wallIndex: number): boolean {
+  return wallSegment(points, wallIndex).axisAligned;
 }
 
 /** Drags wall `wallIndex` perpendicular to itself by `delta` inches
@@ -112,6 +149,7 @@ export function inwardNormal(points: Point[], wallIndex: number): { nx: number; 
  * nothing further around the polygon is touched. Clamped so neither
  * neighboring wall collapses below MIN_WALL_LENGTH. */
 export function dragWall(points: Point[], wallIndex: number, delta: number): Point[] {
+  if (!canDragWall(points, wallIndex)) return points;
   const n = points.length;
   const i = wallIndex;
   const j = (wallIndex + 1) % n;
@@ -153,6 +191,7 @@ export function dragWall(points: Point[], wallIndex: number, delta: number): Poi
  * it into an actual notch or bump. This is the only way a rectangle
  * gains corners (dragWall alone can only reshape existing walls). */
 export function insertNotch(points: Point[], wallIndex: number, offsetAlongWall: number): Point[] {
+  if (!canAddCorner(points, wallIndex)) return points;
   const { a, b, horizontal, length } = wallSegment(points, wallIndex);
   const dir = horizontal ? Math.sign(b.x - a.x) || 1 : Math.sign(b.y - a.y) || 1;
   const halfW = Math.min(NOTCH_WIDTH / 2, (length - 2 * MIN_WALL_LENGTH) / 2, offsetAlongWall - MIN_WALL_LENGTH, length - offsetAlongWall - MIN_WALL_LENGTH);
@@ -189,11 +228,11 @@ export function relocateAfterShapeChange(oldPoints: Point[], newPoints: Point[],
   const at = pointAlongWall(oldPoints, wallIndex, offset);
   let best = { wallIndex: 0, offset: 0, dist: Infinity };
   for (let i = 0; i < newPoints.length; i++) {
-    const { a, b, horizontal, length } = wallSegment(newPoints, i);
+    const { a, length, ux, uy } = wallSegment(newPoints, i);
     if (length === 0) continue;
-    const t = horizontal ? Math.max(0, Math.min(1, (at.x - a.x) / (b.x - a.x))) : Math.max(0, Math.min(1, (at.y - a.y) / (b.y - a.y)));
-    const projX = horizontal ? a.x + (b.x - a.x) * t : a.x;
-    const projY = horizontal ? a.y : a.y + (b.y - a.y) * t;
+    const t = Math.max(0, Math.min(length, (at.x - a.x) * ux + (at.y - a.y) * uy));
+    const projX = a.x + ux * t;
+    const projY = a.y + uy * t;
     const dist = Math.hypot(at.x - projX, at.y - projY);
     if (dist < best.dist) best = { wallIndex: i, offset: offsetOnWall(newPoints, i, { x: projX, y: projY }), dist };
   }

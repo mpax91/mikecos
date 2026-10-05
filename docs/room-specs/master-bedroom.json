@@ -1,0 +1,25 @@
+{
+  "mikeos_room_spec": 1,
+  "name": "Master Bedroom",
+  "units": "in",
+  "ceiling_height": 100,
+  "start_heading": 180,
+  "walls": [
+    { "id": "A", "length": 144, "turn": 45, "label": "Headboard wall (shiplap)" },
+    { "id": "B", "length": 66.25, "turn": 45, "label": "Bay wall 1" },
+    { "id": "C", "length": 66.25, "turn": 45, "label": "Bay wall 2" },
+    { "id": "D", "length": 66.25, "turn": 45, "label": "Bay wall 3" },
+    { "id": "E", "length": 38, "turn": 90, "label": "Closet wall" },
+    { "id": "F", "arc": { "radius": 16, "sweep": -90 }, "turn": 0, "label": "Quarter-round curve" },
+    { "id": "G", "length": 90, "turn": 90, "label": "TV + entry wall" },
+    { "id": "H", "length": 144, "turn": 90, "label": "Dresser wall" }
+  ],
+  "openings": [
+    { "wall": "B", "type": "window", "offset": 15, "width": 36, "label": "Bay window 1" },
+    { "wall": "C", "type": "window", "offset": 15, "width": 36, "label": "Bay window 2" },
+    { "wall": "D", "type": "window", "offset": 15, "width": 36, "label": "Bay window 3" },
+    { "wall": "E", "type": "door", "offset": 10, "width": 28, "hinge": "start", "label": "Walk-in closet" },
+    { "wall": "G", "type": "door", "offset": 55, "width": 32, "hinge": "end", "label": "Entry (hallway)" }
+  ],
+  "notes": "Bay walls measured 60\" each; 66.25\" used so the room closes against the 144\" side walls. Window sizes/positions are placeholders until measured. Walk-in closet to be added as its own room off the closet door."
+}

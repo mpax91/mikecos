@@ -15475,6 +15475,120 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   pointer-events: stroke;
 }
 
+/* Room spec import (HomeRoomSpecModal) — JSON on the left, the solved
+   room drawn to scale on the right; stacks on narrow screens. */
+.modal.home-spec-modal {
+  width: min(920px, calc(100vw - 32px));
+  max-width: none;
+}
+
+.home-spec-modal__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px;
+  margin: 12px 0;
+}
+
+@media (max-width: 720px) {
+  .home-spec-modal__body {
+    grid-template-columns: 1fr;
+  }
+}
+
+.home-spec-modal__input {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.home-spec-modal__input textarea {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 1.45;
+  min-height: 280px;
+  resize: vertical;
+}
+
+.home-spec-modal__file {
+  align-self: flex-start;
+  cursor: pointer;
+}
+
+.home-spec-modal__preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: var(--border-hairline);
+  border-radius: 8px;
+  background: var(--color-sidebar);
+  padding: 10px;
+  min-height: 280px;
+}
+
+.home-spec-modal__svg {
+  width: 100%;
+  flex: 1;
+  min-height: 240px;
+}
+
+.home-spec-modal__empty {
+  margin: auto;
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.home-spec-modal__outline {
+  fill: none;
+  stroke: var(--color-ink, currentColor);
+  stroke-width: 2px;
+  vector-effect: non-scaling-stroke;
+  stroke-linejoin: round;
+}
+
+.home-spec-modal__door {
+  stroke: var(--color-image-accent);
+  stroke-width: 5px;
+  vector-effect: non-scaling-stroke;
+}
+
+.home-spec-modal__window {
+  stroke: var(--color-doc);
+  stroke-width: 5px;
+  vector-effect: non-scaling-stroke;
+}
+
+.home-spec-modal__label {
+  fill: var(--color-muted);
+  font-weight: var(--weight-medium);
+}
+
+.home-spec-modal__stats {
+  font-size: 12px;
+  color: var(--color-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.home-spec-modal__messages {
+  margin: 0 0 10px;
+  padding-left: 18px;
+  font-size: 12.5px;
+  color: var(--color-muted);
+}
+
+.home-spec-modal__messages--error {
+  color: var(--color-danger, #c0392b);
+}
+
+.home-spec-modal__link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--color-image-accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .home-room__header {
   position: absolute;
   top: 0;
