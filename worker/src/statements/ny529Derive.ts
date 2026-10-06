@@ -1,7 +1,10 @@
 import type { Env } from '../types';
 import { fmtMdy, fmtMoney } from './common';
 import type { FolderRow } from './engine';
-import { easternToday, ensureVaultEntry, syncFlags, syncManagedFacts, syncReminderTask } from './engine';
+import { appOrigin, easternToday, ensureVaultEntry, syncFlags, syncManagedFacts, syncManagedLinks, syncManagedNote, syncReminderTask } from './engine';
+import { bullets, doc, docText, heading, italic, kv, link, para, table } from './vaultDoc';
+import type { Block } from './vaultDoc';
+import { syncTaxPacketSection } from './taxPacket';
 import { crossCheckNy529 } from './templates/ny529';
 import type { Ny529Values } from './templates/ny529';
 import { templateById } from './templates';
@@ -13,6 +16,7 @@ import type { Ny529Settings, StmtRow, TxnRow } from './ny529Summary';
  * top-up reminder, the January limit check, and its Tax Packet lines. */
 
 interface FolderMeta {
+  vault?: { noteId?: string; links?: Record<string, string> };
   topupTask?: { year: number; taskId: string };
   limitTask?: { year: number; taskId: string };
 }
@@ -123,10 +127,40 @@ export async function deriveNy529(env: Env, folder: FolderRow): Promise<void> {
   await syncFlags(env, folder.id, flags);
 
   // ---- Vault note (one per account) ----
+  // Architecture shared by every statements folder (see
+  // docs/statement-templates/README.md): Quick Facts = only what's needed
+  // at a glance or in a pinch; Links = real Link children (plan site, Drive
+  // folder, latest statement, Finance dashboard); one auto-updated
+  // "Account Details" note for everything else. Mike's own facts, notes,
+  // links and files are never touched.
+  let meta: FolderMeta = {};
+  try {
+    meta = folder.meta_json ? JSON.parse(folder.meta_json) : {};
+  } catch {
+    meta = {};
+  }
   const entry = await ensureVaultEntry(env, folder.vault_entry_id, template.account.nickname);
   if (entry.id !== folder.vault_entry_id) {
     await env.DB.prepare('UPDATE statement_folders SET vault_entry_id = ?, updated_at = ? WHERE id = ?').bind(entry.id, new Date().toISOString(), folder.id).run();
   }
+  if (entry.created) meta.vault = {}; // a fresh entry has none of the old children
+  const v = latest?.values;
+  const asOfShort = s.asOf ? fmtMdy(s.asOf) : null;
+
+  await syncManagedFacts(
+    env,
+    entry.id,
+    [
+      { key: 'account', label: 'Account', value: v ? `••${v.accountLast}` : null },
+      { key: 'beneficiary', label: 'Beneficiary', value: v?.beneficiary ?? null },
+      { key: 'value', label: asOfShort ? `Value (${asOfShort})` : 'Value', value: latest ? fmtMoney(s.value) : null },
+      { key: 'aip', label: 'Monthly AIP', value: s.aip ? fmtMoney(s.aip.amount) : null },
+      { key: 'gap', label: `${s.year} Top-Up Needed`, value: s.gap >= 1 ? fmtMoney(s.gap) : null },
+      { key: 'phone', label: 'Plan Phone', value: template.account.phone ?? null },
+    ],
+    'ny529:'
+  );
+
   const history: string[] = [];
   for (const c of s.aipChanges) history.push(`${fmtMdy(c.date)}: monthly deposit ${fmtMoney(c.from)} → ${fmtMoney(c.to)}`);
   for (let i = 1; i < stmts.length; i++) {
@@ -135,43 +169,64 @@ export async function deriveNy529(env: Env, folder: FolderRow): Promise<void> {
     if (pa !== pb) history.push(`${fmtMdy(stmts[i].periodEnd)}: portfolio ${pa} → ${pb}`);
     if (a.beneficiary !== b.beneficiary) history.push(`${fmtMdy(stmts[i].periodEnd)}: beneficiary ${a.beneficiary} → ${b.beneficiary}`);
   }
-  const v = latest?.values;
-  await syncManagedFacts(
-    env,
-    entry.id,
-    [
-      { key: 'plan', label: 'Plan', value: template.account.institution },
-      { key: 'type', label: 'Account Type', value: v?.accountType ?? template.account.type },
-      { key: 'owner', label: 'Account Owner', value: v?.owner ?? null },
-      { key: 'beneficiary', label: 'Beneficiary', value: v?.beneficiary ?? null },
-      { key: 'account', label: 'Account', value: v ? `••${v.accountLast}` : null },
-      { key: 'portfolio', label: 'Portfolio', value: s.portfolio },
-      { key: 'value', label: 'Value', value: latest ? fmtMoney(s.value) : null },
-      { key: 'contributed', label: 'Contributed', value: latest ? fmtMoney(s.principal) : null },
-      { key: 'earnings', label: 'Earnings', value: latest ? fmtMoney(s.earnings) : null },
-      { key: 'asof', label: 'Values As Of', value: s.asOf ? fmtMdy(s.asOf) : null },
-      { key: 'aip', label: 'Monthly AIP', value: s.aip ? fmtMoney(s.aip.amount) : null },
-      { key: 'aip_day', label: 'Deposit Day', value: s.aip ? `Around the ${ordinal(s.aip.day)}` : null },
-      { key: 'ytd', label: `${s.year} Contributions`, value: fmtMoney(s.ytdContributions) },
-      { key: 'limit', label: `${s.year} NY Limit`, value: fmtMoney(s.limit) },
-      { key: 'projected', label: `${s.year} Projected`, value: fmtMoney(s.projectedYearEnd) },
-      { key: 'gap', label: `${s.year} Top-Up`, value: fmtMoney(s.gap) },
-      { key: 'site', label: 'Plan Website', value: template.account.site ?? null },
-      { key: 'phone', label: 'Plan Phone', value: template.account.phone ?? null },
-      { key: 'last_stmt', label: 'Last Statement', value: latest ? fileUrl(latest.fileId) : null },
-      { key: 'folder', label: 'Drive Folder', value: folder.folder_url },
-      { key: 'history', label: 'Change History', value: history.length ? history.slice(-5).join(' · ') : null },
-    ],
-    'ny529:'
-  );
+  const dashUrl = `${appOrigin(env)}/finance/${folder.id}`;
+  const blocks: Block[] = [
+    para([italic('Updated automatically each night from the statements in Drive — edits here are overwritten. Keep your own notes in a separate note.')]),
+    heading(2, 'Account'),
+    kv([
+      ['Plan', template.account.institution],
+      ['Account Type', v?.accountType ?? template.account.type],
+      ['Account Owner', v?.owner ?? '—'],
+      ['Beneficiary', v?.beneficiary ?? '—'],
+      ['Account', v ? `••${v.accountLast}` : '—'],
+      ['Portfolio', s.portfolio ?? '—'],
+      ['Monthly AIP', s.aip ? `${fmtMoney(s.aip.amount)} around the ${ordinal(s.aip.day)} (since ${fmtMdy(s.aip.startedOn)})` : 'None found'],
+      ['Plan Contact', template.account.site ? [link(template.account.site.replace(/^https?:\/\/(www\.)?/, ''), template.account.site), ` · ${template.account.phone ?? ''}`] : template.account.phone ?? '—'],
+    ]),
+  ];
+  if (latest) {
+    blocks.push(
+      heading(2, `Balances as of ${asOfShort}`),
+      kv([
+        ['Value', fmtMoney(s.value)],
+        ['Contributed', fmtMoney(s.principal)],
+        ['Earnings', `${fmtMoney(s.earnings)}${s.gainPct !== null ? ` (${s.gainPct > 0 ? '+' : ''}${s.gainPct.toFixed(2)}%)` : ''}`],
+      ]),
+      heading(2, `${s.year} NY Deduction`),
+      kv([
+        ['On Statements', `${fmtMoney(s.ytdContributions)}${s.ytdAsOf ? ` through ${fmtMdy(s.ytdAsOf)}` : ''}`],
+        ['Projected by Dec 31', `${fmtMoney(s.projectedYearEnd)} (+${s.remainingDrafts} monthly deposits)`],
+        ['Limit', `${fmtMoney(s.limit)}${(settings.limitConfirmedYear ?? 0) >= year ? ` (confirmed for ${year})` : ' (not yet confirmed this year)'}`],
+        ['Top-Up Needed', s.gap >= 1 ? `${fmtMoney(s.gap)} by Dec 31 — reminder Dec 1` : 'None — on pace'],
+      ]),
+      heading(2, 'Statements'),
+      table(
+        ['Quarter', 'Ending Value', 'Contributions', 'Return', ''],
+        [...s.quarters].reverse().map((q) => {
+          const url = fileUrl(q.fileId);
+          return [
+            `Q${Math.ceil(Number(q.periodEnd.slice(5, 7)) / 3)} ${q.periodEnd.slice(0, 4)}`,
+            fmtMoney(q.ending),
+            fmtMoney(q.contributions),
+            q.returnPct === null ? '—' : `${q.returnPct > 0 ? '+' : ''}${q.returnPct.toFixed(2)}%`,
+            url ? link('View', url) : '',
+          ];
+        })
+      )
+    );
+  }
+  blocks.push(heading(2, 'Change History'), history.length ? bullets(history) : para('No changes yet.'), para([link('Open the 529 dashboard in Finance', dashUrl)]));
+  const noteJson = doc(blocks);
+  meta.vault = meta.vault ?? {};
+  meta.vault.noteId = await syncManagedNote(env, entry.id, meta.vault.noteId, 'Account Details · Auto-Updated', noteJson, docText(noteJson));
+  meta.vault.links = await syncManagedLinks(env, entry.id, meta.vault.links, [
+    { key: 'site', title: 'NY 529 Direct Plan', url: template.account.site ?? null },
+    { key: 'dashboard', title: 'Finance Dashboard', url: dashUrl },
+    { key: 'latest', title: latest ? `Latest Statement · ${fmtLong(latest.periodEnd)}` : 'Latest Statement', url: latest ? fileUrl(latest.fileId) : null },
+    { key: 'folder', title: `Drive Folder · ${folder.folder_name}`, url: folder.folder_url },
+  ]);
 
   // ---- Reminders ----
-  let meta: FolderMeta = {};
-  try {
-    meta = folder.meta_json ? JSON.parse(folder.meta_json) : {};
-  } catch {
-    meta = {};
-  }
   const topup =
     s.gap >= 1 && s.aip // ignore sub-dollar rounding (12 × $833.33 = $9,999.96)
       ? {
@@ -189,38 +244,36 @@ export async function deriveNy529(env: Env, folder: FolderRow): Promise<void> {
   if (today.slice(5, 7) === '01' || meta.limitTask?.year === year) meta.limitTask = await syncReminderTask(env, meta.limitTask, year, limitTask);
   await env.DB.prepare('UPDATE statement_folders SET meta_json = ? WHERE id = ?').bind(JSON.stringify(meta), folder.id).run();
 
-  // ---- Tax Packet lines, per tax year with statements ----
+  // ---- Tax Packet section, per tax year with statements ----
   const years = [...new Set(stmts.map((x) => Number(x.periodEnd.slice(0, 4))))];
   for (const y of years) {
     const yearStmts = stmts.filter((x) => x.periodEnd.startsWith(String(y)));
     const last = yearStmts[yearStmts.length - 1];
     const q4 = yearStmts.find((x) => x.periodEnd === `${y}-12-31`);
-    const packet = await ensureTaxPacket(env, y);
-    await syncManagedFacts(
-      env,
-      packet,
-      [
-        { key: 'contrib', label: 'NY 529 Contributions (Chase)', value: fmtMoney(last.values.ytdContributions) },
-        { key: 'contrib_asof', label: 'NY 529 Contributions Through', value: fmtMdy(last.periodEnd) },
-        { key: 'deductible', label: 'NY 529 Deductible (Max)', value: fmtMoney(Math.min(last.values.ytdContributions, settings.nyLimit)) },
-        { key: 'q4', label: 'NY 529 Q4 Statement', value: q4 ? fileUrl(q4.fileId) : `Not in Drive yet — expected early January ${y + 1}` },
+    const q4Url = q4 ? fileUrl(q4.fileId) : null;
+    await syncTaxPacketSection(env, y, folder.id, {
+      title: template.account.nickname,
+      facts: [{ key: 'contrib', label: 'NY 529 Contributions (Chase)', value: fmtMoney(last.values.ytdContributions) }],
+      blocks: [
+        kv([
+          ['Contributions', `${fmtMoney(last.values.ytdContributions)} through ${fmtMdy(last.periodEnd)}${q4 ? ' (full year)' : ''}`],
+          ['NY Deductible', `${fmtMoney(Math.min(last.values.ytdContributions, settings.nyLimit))} (max ${fmtMoney(settings.nyLimit).replace(/\.00$/, '')}, joint)`],
+          ['Q4 Statement', q4Url ? link('View in Drive', q4Url) : `Not in Drive yet — expected early January ${y + 1}`],
+        ]),
       ],
-      `ny529:${folder.id}:`
-    );
+      expected: [{ label: `NY 529 Q4 ${y} statement`, received: !!q4 }],
+      links: q4Url ? [{ key: 'q4', title: `NY 529 · Q4 ${y} Statement`, url: q4Url }] : [],
+    });
   }
-}
-
-async function ensureTaxPacket(env: Env, year: number): Promise<string> {
-  const row = await env.DB.prepare('SELECT vault_entry_id FROM statement_tax_packets WHERE year = ?').bind(year).first<{ vault_entry_id: string }>();
-  const entry = await ensureVaultEntry(env, row?.vault_entry_id ?? null, `Tax Packet · ${year}`);
-  if (entry.id !== row?.vault_entry_id) {
-    await env.DB.prepare('INSERT INTO statement_tax_packets (year, vault_entry_id) VALUES (?, ?) ON CONFLICT(year) DO UPDATE SET vault_entry_id = excluded.vault_entry_id').bind(year, entry.id).run();
-  }
-  return entry.id;
 }
 
 function ordinal(n: number): string {
   const s = ['th', 'st', 'nd', 'rd'];
   const v = n % 100;
   return `${n}${s[(v - 20) % 10] ?? s[v] ?? s[0]}`;
+}
+
+function fmtLong(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 }

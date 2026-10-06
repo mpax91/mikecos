@@ -331,3 +331,73 @@ export async function syncFlags(env: Env, folderId: string, flags: { key: string
   }
   if (stmts.length) await env.DB.batch(stmts);
 }
+
+// ---- Managed Vault children: one auto "Account Details" note + Links ----
+// Ids are remembered by the caller (folder meta). If Mike deletes one, the
+// id stays remembered and it is NOT re-created — deletions stick.
+
+export interface ManagedChildren {
+  noteId?: string;
+  links?: Record<string, string>;
+}
+
+async function childExists(env: Env, id: string): Promise<boolean> {
+  return !!(await env.DB.prepare('SELECT id FROM entities WHERE id = ?').bind(id).first());
+}
+
+/** Creates or refreshes the managed note (title + TipTap JSON content). */
+export async function syncManagedNote(env: Env, entryId: string, noteId: string | undefined, title: string, content: string, searchText: string): Promise<string | undefined> {
+  const ts = now();
+  if (noteId) {
+    const cur = await env.DB.prepare('SELECT title, content FROM entities WHERE id = ?').bind(noteId).first<{ title: string; content: string | null }>();
+    if (!cur) return noteId; // deleted by Mike — leave it gone
+    if (cur.title !== title || cur.content !== content) {
+      await env.DB.prepare('UPDATE entities SET title = ?, content = ?, search_text = ?, updated_at = ? WHERE id = ?').bind(title, content, `${title} ${searchText}`, ts, noteId).run();
+    }
+    return noteId;
+  }
+  const id = uid();
+  await env.DB.prepare(
+    `INSERT INTO entities (id, type, title, content, parent_id, is_top_level, status, position, last_touched, created_at, updated_at, search_text)
+     VALUES (?, 'note', ?, ?, ?, 0, NULL, 0, ?, ?, ?, ?)`
+  )
+    .bind(id, title, content, entryId, ts, ts, ts, `${title} ${searchText}`)
+    .run();
+  return id;
+}
+
+/** Creates or refreshes managed Link children, keyed by a stable key.
+ * A null url removes a link Statements created (if it still exists). */
+export async function syncManagedLinks(env: Env, entryId: string, existing: Record<string, string> | undefined, links: { key: string; title: string; url: string | null }[]): Promise<Record<string, string>> {
+  const out: Record<string, string> = { ...(existing ?? {}) };
+  const ts = now();
+  let pos = 0;
+  for (const l of links) {
+    const id = out[l.key];
+    if (!l.url) {
+      if (id && (await childExists(env, id))) await env.DB.prepare('DELETE FROM entities WHERE id = ?').bind(id).run();
+      delete out[l.key];
+      continue;
+    }
+    const content = JSON.stringify({ url: l.url });
+    if (id) {
+      const cur = await env.DB.prepare('SELECT title, content FROM entities WHERE id = ?').bind(id).first<{ title: string; content: string | null }>();
+      if (cur && (cur.title !== l.title || cur.content !== content)) {
+        await env.DB.prepare('UPDATE entities SET title = ?, content = ?, search_text = ?, updated_at = ? WHERE id = ?').bind(l.title, content, `${l.title} ${l.url}`, ts, id).run();
+      }
+      continue; // missing = deleted by Mike; leave it
+    }
+    const newId = uid();
+    await env.DB.prepare(
+      `INSERT INTO entities (id, type, title, content, parent_id, is_top_level, status, position, last_touched, created_at, updated_at, search_text)
+       VALUES (?, 'link', ?, ?, ?, 0, NULL, ?, ?, ?, ?, ?)`
+    )
+      .bind(newId, l.title, content, entryId, pos++, ts, ts, ts, `${l.title} ${l.url}`)
+      .run();
+    out[l.key] = newId;
+  }
+  return out;
+}
+
+/** The frontend origin (first ALLOWED_ORIGINS entry) for in-app links. */
+export const appOrigin = (env: Env) => (env.ALLOWED_ORIGINS ?? 'https://mikeos.pages.dev').split(',')[0].trim();
