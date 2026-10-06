@@ -6225,33 +6225,21 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   background: var(--cloud-tile-color, var(--color-accent));
 }
 
-.cloud-page__breadcrumbs {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px;
-  font-size: 13px;
-  margin-bottom: 12px;
+.cloud-breadcrumb {
+  margin: 4px 0 14px;
 }
 
-.cloud-page__breadcrumbs button {
+.cloud-breadcrumb button.breadcrumb__link {
   background: none;
   border: none;
-  padding: 2px 4px;
   font: inherit;
-  color: var(--color-accent);
   cursor: pointer;
 }
 
-.cloud-page__breadcrumbs button:disabled {
-  color: var(--color-ink);
-  font-weight: var(--weight-medium);
-  cursor: default;
-}
-
-.cloud-page__crumb-sep {
-  color: var(--color-muted);
-  margin: 0 2px;
+.cloud-breadcrumb__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .cloud-tree {

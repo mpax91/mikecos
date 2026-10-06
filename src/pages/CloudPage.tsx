@@ -175,9 +175,14 @@ export function CloudPage() {
 
   return (
     <div>
-      <h1 className="heading-serif" style={{ fontSize: 24, margin: '0 0 2px' }}>
-        Cloud
-      </h1>
+      <div className="links-page__header">
+        <h1 className="heading-serif" style={{ fontSize: 24, margin: '0 0 2px' }}>
+          Cloud
+        </h1>
+        <Link to="/settings?cat=cloud" className="settings-gear-link" title="Cloud Storage Settings" aria-label="Cloud Storage Settings">
+          ⚙️
+        </Link>
+      </div>
       <p className="links-page__subhead">Your real cloud storage accounts, in one place — click in to browse, or search across all of them.</p>
 
       {accounts.length === 0 ? (
@@ -229,18 +234,38 @@ export function CloudPage() {
             </div>
           ) : (
             <div>
-              <div className="cloud-page__breadcrumbs">
-                <button type="button" onClick={backToAccounts}>
+              <div className="breadcrumb cloud-breadcrumb">
+                <button
+                  type="button"
+                  className="breadcrumb__back"
+                  onClick={() => (crumbs.length > 1 ? jumpToCrumb(crumbs.length - 2) : backToAccounts())}
+                  title="Up One Level"
+                  aria-label="Up One Level"
+                >
+                  ‹
+                </button>
+                <button type="button" className="breadcrumb__link" onClick={backToAccounts}>
                   Cloud
                 </button>
-                {crumbs.map((crumb, i) => (
-                  <span key={i}>
-                    <span className="cloud-page__crumb-sep">›</span>
-                    <button type="button" onClick={() => jumpToCrumb(i)} disabled={i === crumbs.length - 1}>
-                      {crumb.name}
-                    </button>
-                  </span>
-                ))}
+                {crumbs.map((crumb, i) => {
+                  const isLast = i === crumbs.length - 1;
+                  // The account root shows its provider too — with several
+                  // Google accounts all labelled "Personal"/"Work" the label
+                  // alone doesn't say where you are.
+                  const name = i === 0 ? `${account.providerLabel} · ${crumb.name}` : crumb.name;
+                  return (
+                    <span key={i} className="cloud-breadcrumb__item">
+                      <span className="breadcrumb__sep">›</span>
+                      {isLast ? (
+                        <span className="breadcrumb__current">{name}</span>
+                      ) : (
+                        <button type="button" className="breadcrumb__link" onClick={() => jumpToCrumb(i)}>
+                          {name}
+                        </button>
+                      )}
+                    </span>
+                  );
+                })}
               </div>
 
               {browseError && <div className="empty-state">{browseError}</div>}
