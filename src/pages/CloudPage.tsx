@@ -169,8 +169,46 @@ export function CloudPage() {
   if (error) return <div className="empty-state">Couldn't load Cloud Storage: {error}</div>;
   if (!accounts) return <div className="empty-state">Loading…</div>;
 
+  const searchActive = query.trim().length > 0;
+
   return (
     <div>
+      {account && !searchActive && (
+        // Same placement as Projects: the trail is the first thing on the page.
+        <div className="breadcrumb">
+          <button
+            type="button"
+            className="breadcrumb__back"
+            onClick={() => (crumbs.length > 1 ? jumpToCrumb(crumbs.length - 2) : backToAccounts())}
+            title="Up One Level"
+            aria-label="Up One Level"
+          >
+            ‹
+          </button>
+          <button type="button" className="breadcrumb__link cloud-breadcrumb__btn" onClick={backToAccounts}>
+            Cloud
+          </button>
+          {crumbs.map((crumb, i) => {
+            // The account root shows its provider too — with several Google
+            // accounts all labelled "Personal"/"Work" the label alone doesn't
+            // say where you are.
+            const name = i === 0 ? `${account.providerLabel} · ${crumb.name}` : crumb.name;
+            return (
+              <span key={i} className="cloud-breadcrumb__item">
+                <span className="breadcrumb__sep">›</span>
+                {i === crumbs.length - 1 ? (
+                  <span className="breadcrumb__current">{name}</span>
+                ) : (
+                  <button type="button" className="breadcrumb__link cloud-breadcrumb__btn" onClick={() => jumpToCrumb(i)}>
+                    {name}
+                  </button>
+                )}
+              </span>
+            );
+          })}
+        </div>
+      )}
+
       <div className="links-page__header">
         <h1 className="heading-serif" style={{ fontSize: 24, margin: '0 0 2px' }}>
           Cloud
@@ -188,58 +226,25 @@ export function CloudPage() {
         </div>
       ) : (
         <>
-          {!account && !query.trim() && <CloudStorageMeters accounts={accounts} onOpen={openAccount} />}
-
           <input
             type="search"
             className="cloud-page__search"
             placeholder="Search across every connected account…"
+            aria-label="Search across every connected account"
             value={query}
             onChange={(e) => handleQueryChange(e.target.value)}
           />
 
-          {query.trim() ? (
+          {searchActive ? (
             <div className="cloud-tree">
               {searching && <div className="empty-state empty-state--section">Searching…</div>}
               {!searching && searchResults && searchResults.length === 0 && <div className="empty-state empty-state--section">No matches.</div>}
               {!searching && searchResults?.map((hit) => <SearchResultRow key={`${hit.accountId}:${hit.id}`} hit={hit} />)}
             </div>
-          ) : !account ? null : (
+          ) : !account ? (
+            <CloudStorageMeters accounts={accounts} onOpen={openAccount} />
+          ) : (
             <div>
-              <div className="breadcrumb cloud-breadcrumb">
-                <button
-                  type="button"
-                  className="breadcrumb__back"
-                  onClick={() => (crumbs.length > 1 ? jumpToCrumb(crumbs.length - 2) : backToAccounts())}
-                  title="Up One Level"
-                  aria-label="Up One Level"
-                >
-                  ‹
-                </button>
-                <button type="button" className="breadcrumb__link" onClick={backToAccounts}>
-                  Cloud
-                </button>
-                {crumbs.map((crumb, i) => {
-                  const isLast = i === crumbs.length - 1;
-                  // The account root shows its provider too — with several
-                  // Google accounts all labelled "Personal"/"Work" the label
-                  // alone doesn't say where you are.
-                  const name = i === 0 ? `${account.providerLabel} · ${crumb.name}` : crumb.name;
-                  return (
-                    <span key={i} className="cloud-breadcrumb__item">
-                      <span className="breadcrumb__sep">›</span>
-                      {isLast ? (
-                        <span className="breadcrumb__current">{name}</span>
-                      ) : (
-                        <button type="button" className="breadcrumb__link" onClick={() => jumpToCrumb(i)}>
-                          {name}
-                        </button>
-                      )}
-                    </span>
-                  );
-                })}
-              </div>
-
               {browseError && <div className="empty-state">{browseError}</div>}
               {!browseError && !entries && <div className="empty-state empty-state--section">Loading…</div>}
               {!browseError && entries && entries.length === 0 && <div className="empty-state empty-state--section">Empty folder.</div>}

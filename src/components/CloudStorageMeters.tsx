@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type React from 'react';
 import { Link } from 'react-router-dom';
 import type { CloudAccount } from '../api/types';
@@ -9,6 +10,27 @@ import type { CloudAccount } from '../api/types';
  * which refreshes stale figures at most hourly. */
 
 const ALMOST_FULL = 0.9;
+
+/** Each provider's own favicon, served by Google's favicon service — the
+ * real product icon without bundling anyone's logo files. Falls back to a
+ * letter badge if it fails to load. */
+const PROVIDER_ICON_DOMAIN: Record<string, string> = {
+  google_drive: 'drive.google.com',
+  dropbox: 'dropbox.com',
+  onedrive: 'onedrive.live.com',
+  box: 'box.com',
+};
+
+function ProviderIcon({ acct }: { acct: CloudAccount }) {
+  const [failed, setFailed] = useState(false);
+  const domain = PROVIDER_ICON_DOMAIN[acct.provider];
+  if (!domain || failed) return <span className="cloud-meters__badge">{acct.providerLabel.charAt(0)}</span>;
+  return (
+    <span className="cloud-meters__badge cloud-meters__badge--icon">
+      <img src={`https://www.google.com/s2/favicons?domain=${domain}&sz=64`} alt={acct.providerLabel} width={22} height={22} onError={() => setFailed(true)} />
+    </span>
+  );
+}
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -87,7 +109,7 @@ export function CloudStorageMeters({ accounts, onOpen }: { accounts: CloudAccoun
           const frac = fractionOf(acct);
           const full = frac !== null && frac >= ALMOST_FULL;
           const style = { '--cloud-tile-color': full ? '#b45309' : acct.color } as React.CSSProperties;
-          const badge = <span className="cloud-meters__badge">{acct.providerLabel.charAt(0)}</span>;
+          const badge = <ProviderIcon acct={acct} />;
           const name = (
             <span className="cloud-meters__name">
               <span className="cloud-meters__label">{acct.label}</span>

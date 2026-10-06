@@ -6149,15 +6149,17 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 /* ---- Cloud (a live view over connected cloud storage accounts) ---- */
 
 .cloud-page__search {
+  display: block;
   width: 100%;
-  max-width: 480px;
-  padding: 9px 14px;
-  border-radius: 8px;
+  box-sizing: border-box;
+  padding: 10px 14px;
+  border-radius: 10px;
   border: var(--border-hairline);
   background: var(--color-card-bg);
+  font: inherit;
+  font-size: 14px;
   color: var(--color-ink);
-  font-size: 13px;
-  margin: 4px 0 18px;
+  margin: 14px 0;
 }
 
 .cloud-meters {
@@ -6165,7 +6167,17 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   border: var(--border-hairline);
   border-radius: 14px;
   overflow: hidden;
-  margin: 14px 0 16px;
+  margin: 0 0 16px;
+}
+
+.cloud-meters__badge--icon {
+  background: #fff;
+  border: var(--border-hairline);
+  box-sizing: border-box;
+}
+
+.cloud-meters__badge--icon img {
+  display: block;
 }
 
 .cloud-meters__stats {
@@ -6339,11 +6351,7 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   }
 }
 
-.cloud-breadcrumb {
-  margin: 4px 0 14px;
-}
-
-.cloud-breadcrumb button.breadcrumb__link {
+.cloud-breadcrumb__btn {
   background: none;
   border: none;
   font: inherit;
