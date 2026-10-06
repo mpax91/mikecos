@@ -5,7 +5,7 @@ import { formatExpiryLabel, sportsbookBrand } from '../utils/bets';
 /** Small stroke icon per sport, so the Sport column reads at a glance.
  * Anything without its own glyph gets a plain dot. */
 export function SportIcon({ sport }: { sport: string }) {
-  const common = { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', strokeWidth: 1.9, strokeLinecap: 'round' as const, 'aria-hidden': true };
+  const common = { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', strokeWidth: 1.9, strokeLinecap: 'round' as const, 'aria-hidden': true };
   switch (sport) {
     case 'MLB':
       return (

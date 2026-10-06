@@ -15922,14 +15922,14 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   appearance: none;
   -webkit-appearance: none;
   font: inherit;
-  font-size: 14px;
+  font-size: 12.5px;
   font-weight: 600;
   color: var(--color-ink);
-  padding: 7px 32px 7px 14px;
-  min-height: 36px;
+  padding: 5px 28px 5px 12px;
+  min-height: 30px;
   border-radius: 999px;
   border: 1px solid #dcd3c1;
-  background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%235f564a' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") no-repeat right 12px center;
+  background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%235f564a' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") no-repeat right 10px center;
   cursor: pointer;
 }
 
@@ -15942,7 +15942,7 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 
 .bets-promos__clear {
   font: inherit;
-  font-size: 14px;
+  font-size: 12.5px;
   font-weight: 600;
   color: var(--color-muted);
   background: none;
@@ -15962,7 +15962,7 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 }
 
 .bets-promos__table {
-  min-width: 980px;
+  min-width: 860px;
 }
 
 .bets-promos__row {
@@ -15970,13 +15970,13 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   grid-template-columns: 190px 110px minmax(160px, 1fr) 110px 100px 90px 90px 110px;
   gap: 16px;
   align-items: center;
-  padding: 11px 0;
+  padding: 7px 0;
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
-  font-size: 16px;
+  font-size: 12.5px;
 }
 
 .bets-promos__table--managed {
-  min-width: 1120px;
+  min-width: 1000px;
 }
 
 .bets-promos__table--managed .bets-promos__row {
@@ -15988,19 +15988,19 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 }
 
 .bets-promos__row--head {
-  padding: 4px 0 8px;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
+  padding: 5px 0;
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
   text-transform: uppercase;
-  color: #6e6250;
+  color: var(--color-muted);
 }
 
 .bets-promos__book {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-size: 17px;
+  gap: 8px;
+  font-size: 12.5px;
   font-weight: 700;
   min-width: 0;
 }
@@ -16010,13 +16010,13 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
-  min-width: 34px;
-  height: 34px;
-  padding: 0 4px;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 3px;
   box-sizing: border-box;
-  border-radius: 9px;
+  border-radius: 6px;
   color: #fff;
-  font-size: 12px;
+  font-size: 9.5px;
   font-weight: 800;
   letter-spacing: 0.02em;
 }
@@ -16040,30 +16040,30 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 }
 
 .bets-promos__value-num {
-  font-size: 22px;
+  font-size: 14px;
   font-weight: 800;
   line-height: 1.1;
   color: var(--color-accent);
 }
 
 .bets-promos__value-num--type {
-  font-size: 17px;
+  font-size: 12.5px;
 }
 
 .bets-promos__value-type {
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 600;
   color: #6e6250;
 }
 
 .bets-promos__num {
-  font-size: 17px;
+  font-size: 12.5px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
 .bets-promos__any {
-  font-size: 15px;
+  font-size: 12.5px;
   color: var(--color-muted);
 }
 
@@ -16073,9 +16073,9 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 
 .bets-promos__expiry {
   display: inline-block;
-  padding: 4px 12px;
+  padding: 2px 9px;
   border-radius: 999px;
-  font-size: 14px;
+  font-size: 11px;
   font-weight: 700;
   white-space: nowrap;
   background: #efebe3;
@@ -16088,8 +16088,8 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 }
 
 .bets-promos__empty {
-  padding: 8px 16px 18px;
-  font-size: 15px;
+  padding: 8px 16px 14px;
+  font-size: 12.5px;
   color: var(--color-muted);
 }
 
