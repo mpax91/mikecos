@@ -16741,3 +16741,6 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
     flex-direction: column;
   }
 }
+.ny529__card--full {
+  grid-column: 1 / -1;
+}

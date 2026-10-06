@@ -233,7 +233,7 @@ export function Ny529Dashboard({ data, onDismissFlag }: { data: Data; onDismissF
           </section>
         )}
 
-        <section className="ny529__card ny529__card--wide">
+        <section className="ny529__card ny529__card--full">
           <div className="ny529__card-head">
             <h3 className="ny529__card-title">Transactions</h3>
             <button type="button" className="btn btn--ghost btn--sm" onClick={() => setShowTxns((v) => !v)}>

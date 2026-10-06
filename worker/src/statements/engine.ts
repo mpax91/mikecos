@@ -254,10 +254,26 @@ export async function syncManagedFacts(env: Env, entryId: string, facts: Managed
       changed = true;
     }
   }
-  if (!changed) return;
-  stmts.push(env.DB.prepare('UPDATE entities SET last_touched = ?, updated_at = ? WHERE id = ?').bind(now(), now(), entryId));
-  await env.DB.batch(stmts);
-  await reindexEntry({ env }, entryId);
+  if (changed) {
+    stmts.push(env.DB.prepare('UPDATE entities SET last_touched = ?, updated_at = ? WHERE id = ?').bind(now(), now(), entryId));
+    await env.DB.batch(stmts);
+    await reindexEntry({ env }, entryId);
+  }
+  await orderManagedFacts(env, entryId, facts.filter((f) => f.value !== null).map((f) => `${keyPrefix}${f.key}`), keyPrefix);
+}
+
+/** Keeps this prefix's managed facts in their declared order, ahead of
+ * every other fact; Mike's own facts keep their relative order after. */
+async function orderManagedFacts(env: Env, entryId: string, order: string[], keyPrefix: string): Promise<void> {
+  const { results } = await env.DB.prepare('SELECT id, managed_key, position FROM vault_facts WHERE entry_id = ? ORDER BY position ASC, created_at ASC')
+    .bind(entryId)
+    .all<{ id: string; managed_key: string | null; position: number }>();
+  const rows = results ?? [];
+  const mine = order.map((k) => rows.find((r) => r.managed_key === k)).filter((r): r is NonNullable<typeof r> => !!r);
+  const rest = rows.filter((r) => !r.managed_key?.startsWith(keyPrefix));
+  const want = [...mine, ...rest];
+  if (want.every((r, i) => r.position === i)) return;
+  await env.DB.batch(want.map((r, i) => env.DB.prepare('UPDATE vault_facts SET position = ? WHERE id = ?').bind(i, r.id)));
 }
 
 /** One reminder task per (purpose, year): created once, kept current while
