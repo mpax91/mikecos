@@ -12,7 +12,7 @@ everything into Quick Facts:
 
 | Vault section | What goes there | Rule of thumb |
 |---|---|---|
-| **Quick Facts** | Only what's needed at a glance or in a pinch — about 4–6: account ••last digits, the headline balance (label carries the as-of date), the payment/deposit that matters, a time-sensitive item only while it applies (e.g. "2026 Top-Up Needed"), the institution's phone. | Would Mike need it standing at a counter or on the phone? |
+| **Quick Facts** | Only what's needed at a glance or in a pinch — about 4–6: account ••last digits, the headline balance (label carries the as-of date), the payment/deposit that matters, a time-sensitive item only while it applies (e.g. "2026 Top-Up"), the institution's phone. | Would Mike need it standing at a counter or on the phone? |
 | **Links** | Real Link children, never URL facts: institution website, Finance dashboard, latest statement (title carries the date), Drive folder. | Anything you'd click. |
 | **Notes** | One managed note, "Account Details · Auto-Updated": an italic "updated automatically" line, then sections as tables (Account, Balances as of…, the account's yearly/deadline section, Statements table with View links, Change History) and a link to the dashboard. | Everything else worth reading but not needed at a glance. |
 | Attachments / Passwords | Untouched — Mike's. Statements stay in Drive. | |

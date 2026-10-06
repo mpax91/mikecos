@@ -155,7 +155,7 @@ export async function deriveNy529(env: Env, folder: FolderRow): Promise<void> {
       { key: 'beneficiary', label: 'Beneficiary', value: v?.beneficiary ?? null },
       { key: 'value', label: asOfShort ? `Value (${asOfShort})` : 'Value', value: latest ? fmtMoney(s.value) : null },
       { key: 'aip', label: 'Monthly AIP', value: s.aip ? fmtMoney(s.aip.amount) : null },
-      { key: 'gap', label: `${s.year} Top-Up Needed`, value: s.gap >= 1 ? fmtMoney(s.gap) : null },
+      { key: 'gap', label: `${s.year} Top-Up`, value: s.gap >= 1 ? fmtMoney(s.gap) : null },
       { key: 'phone', label: 'Plan Phone', value: template.account.phone ?? null },
     ],
     'ny529:'
