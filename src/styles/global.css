@@ -15895,3 +15895,204 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 .home-breaker-row__fixture-loc {
   color: var(--color-muted);
 }
+
+/* ---- Bets promos table (Workspace "Promos Available Today" + Promos tab) ---- */
+.bets-promos__header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-right: 16px;
+}
+
+.bets-promos__header .bets-workspace__section-header {
+  width: auto;
+  flex: 1 1 auto;
+}
+
+.bets-promos__filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  padding: 6px 0 6px 16px;
+}
+
+.bets-promos__pill {
+  appearance: none;
+  -webkit-appearance: none;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-ink);
+  padding: 7px 32px 7px 14px;
+  min-height: 36px;
+  border-radius: 999px;
+  border: 1px solid #dcd3c1;
+  background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%235f564a' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") no-repeat right 12px center;
+  cursor: pointer;
+}
+
+.bets-promos__pill.is-on {
+  background-color: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #fff;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+}
+
+.bets-promos__clear {
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-muted);
+  background: none;
+  border: none;
+  padding: 6px 4px;
+  cursor: pointer;
+}
+
+.bets-promos__clear:hover {
+  color: var(--color-ink);
+  text-decoration: underline;
+}
+
+.bets-promos__scroll {
+  overflow-x: auto;
+  padding: 0 16px 6px;
+}
+
+.bets-promos__table {
+  min-width: 980px;
+}
+
+.bets-promos__row {
+  display: grid;
+  grid-template-columns: 190px 110px minmax(160px, 1fr) 110px 100px 90px 90px 110px;
+  gap: 16px;
+  align-items: center;
+  padding: 11px 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  font-size: 16px;
+}
+
+.bets-promos__table--managed {
+  min-width: 1120px;
+}
+
+.bets-promos__table--managed .bets-promos__row {
+  grid-template-columns: 190px 110px minmax(160px, 1fr) 110px 100px 90px 90px 110px 80px 32px;
+}
+
+.bets-promos__row:last-child {
+  border-bottom: none;
+}
+
+.bets-promos__row--head {
+  padding: 4px 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #6e6250;
+}
+
+.bets-promos__book {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 17px;
+  font-weight: 700;
+  min-width: 0;
+}
+
+.bets-promos__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-width: 34px;
+  height: 34px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  border-radius: 9px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.bets-promos__sport {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.bets-promos__desc {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.bets-promos__value {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.bets-promos__value-num {
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--color-accent);
+}
+
+.bets-promos__value-num--type {
+  font-size: 17px;
+}
+
+.bets-promos__value-type {
+  font-size: 12px;
+  font-weight: 600;
+  color: #6e6250;
+}
+
+.bets-promos__num {
+  font-size: 17px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.bets-promos__any {
+  font-size: 15px;
+  color: var(--color-muted);
+}
+
+.bets-promos__right {
+  text-align: right;
+}
+
+.bets-promos__expiry {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+  background: #efebe3;
+  color: #5f564a;
+}
+
+.bets-promos__expiry.is-today {
+  background: #fbe3df;
+  color: #9e2b1d;
+}
+
+.bets-promos__empty {
+  padding: 8px 16px 18px;
+  font-size: 15px;
+  color: var(--color-muted);
+}
+
+.bets-promos--tab {
+  padding: 10px 0;
+}

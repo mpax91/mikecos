@@ -1722,13 +1722,14 @@ export type BetPromoStatus = 'active' | 'used' | 'expired';
 export interface BetPromo {
   id: string;
   sportsbook: string;
+  sport: string | null; // null = usable on any sport (0088_bet_promo_sport.sql)
   description: string;
   promo_type: string;
   expires_at: string | null;
   legs: string | null;
   odds: string | null;
   amount: string | null;
-  max_bonus: number | null;
+  max_bonus: number | null; // shown as "Max Bet" — the max wager the promo applies to
   status: BetPromoStatus;
   notes: string | null;
   created_at: string;

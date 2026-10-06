@@ -7148,6 +7148,13 @@ app.delete('/api/bet-transactions/:id', async (c) => {
 
 const BET_PROMO_STATUSES = ['active', 'used', 'expired'];
 
+/** Free-text promo fields where a bare dash was typed to mean "no
+ * requirement" — stored as NULL so the UI can show "Any". */
+function promoText(v: string | null | undefined): string | null {
+  const t = v?.trim();
+  return !t || ['-', '—', '–'].includes(t) ? null : t;
+}
+
 /** Stale promos are auto-deleted rather than kept around:
  *  - anything marked 'expired', or 'active' with expires_at (YYYY-MM-DD,
  *    US-Eastern) before today;
@@ -7183,24 +7190,25 @@ app.get('/api/bet-promos', async (c) => {
 app.post('/api/bet-promos', async (c) => {
   const body = await c.req.json<Partial<BetPromo>>();
   if (!body.sportsbook?.trim()) return c.json({ error: 'sportsbook is required' }, 400);
-  if (!body.description?.trim()) return c.json({ error: 'description is required' }, 400);
+  if (!body.description?.trim() && !body.sport?.trim()) return c.json({ error: 'a sport or description is required' }, 400);
   if (body.status !== undefined && !BET_PROMO_STATUSES.includes(body.status)) return c.json({ error: `status must be one of ${BET_PROMO_STATUSES.join(', ')}` }, 400);
 
   const id = uid();
   const ts = now();
   await c.env.DB.prepare(
-    `INSERT INTO bet_promos (id, sportsbook, description, promo_type, expires_at, legs, odds, amount, max_bonus, status, notes, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO bet_promos (id, sportsbook, sport, description, promo_type, expires_at, legs, odds, amount, max_bonus, status, notes, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
     .bind(
       id,
       body.sportsbook.trim(),
-      body.description.trim(),
+      body.sport?.trim() || null,
+      body.description?.trim() ?? '',
       body.promo_type?.trim() || 'Boost',
       body.expires_at || null,
-      body.legs?.trim() || null,
-      body.odds?.trim() || null,
-      body.amount?.trim() || null,
+      promoText(body.legs),
+      promoText(body.odds),
+      promoText(body.amount),
       body.max_bonus ?? null,
       body.status ?? 'active',
       body.notes?.trim() || null,
@@ -7221,12 +7229,13 @@ app.patch('/api/bet-promos/:id', async (c) => {
 
   const fields: [string, unknown][] = [];
   if ('sportsbook' in body) fields.push(['sportsbook', body.sportsbook?.trim()]);
-  if ('description' in body) fields.push(['description', body.description?.trim()]);
+  if ('sport' in body) fields.push(['sport', body.sport?.trim() || null]);
+  if ('description' in body) fields.push(['description', body.description?.trim() ?? '']);
   if ('promo_type' in body) fields.push(['promo_type', body.promo_type?.trim() || 'Boost']);
   if ('expires_at' in body) fields.push(['expires_at', body.expires_at || null]);
-  if ('legs' in body) fields.push(['legs', body.legs?.trim() || null]);
-  if ('odds' in body) fields.push(['odds', body.odds?.trim() || null]);
-  if ('amount' in body) fields.push(['amount', body.amount?.trim() || null]);
+  if ('legs' in body) fields.push(['legs', promoText(body.legs)]);
+  if ('odds' in body) fields.push(['odds', promoText(body.odds)]);
+  if ('amount' in body) fields.push(['amount', promoText(body.amount)]);
   if ('max_bonus' in body) fields.push(['max_bonus', body.max_bonus ?? null]);
   if ('status' in body) fields.push(['status', body.status]);
   if ('notes' in body) fields.push(['notes', body.notes?.trim() || null]);

@@ -882,7 +882,8 @@ export const api = {
 
   createBetPromo: (params: {
     sportsbook: string;
-    description: string;
+    sport?: string | null;
+    description?: string;
     promo_type?: string;
     expires_at?: string | null;
     legs?: string;

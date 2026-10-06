@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { BetPromo, BetPromoStatus } from '../api/types';
-import { COMMON_SPORTSBOOKS, formatExpiryLabel } from '../utils/bets';
+import { COMMON_SPORTSBOOKS, SPORTS } from '../utils/bets';
+import { BetsPromosTable } from './BetsPromosTable';
 import { Modal } from './Modal';
 import { ConfirmModal } from './ConfirmModal';
 import { KebabMenu } from './KebabMenu';
@@ -23,6 +24,7 @@ function todayLocalISODash(): string {
 
 function PromoFormModal({ promo, onClose, onSave }: { promo: BetPromo | null; onClose: () => void; onSave: (params: Record<string, unknown>) => Promise<void> }) {
   const [sportsbook, setSportsbook] = useState(promo?.sportsbook ?? '');
+  const [sport, setSport] = useState(promo?.sport ?? '');
   const [description, setDescription] = useState(promo?.description ?? '');
   const [promoType, setPromoType] = useState(promo?.promo_type ?? PROMO_TYPES[0]);
   // New promos default to expiring today — most bonuses do, and this is
@@ -42,18 +44,19 @@ function PromoFormModal({ promo, onClose, onSave }: { promo: BetPromo | null; on
 
   async function handleSave() {
     if (!sportsbook.trim()) return setError('Sportsbook is required.');
-    if (!description.trim()) return setError('A short description is required.');
+    if (!description.trim() && !sport) return setError('Pick a sport or add a short description.');
     setSaving(true);
     setError(null);
     try {
       await onSave({
         sportsbook: sportsbook.trim(),
+        sport: sport || null,
         description: description.trim(),
         promo_type: promoType,
         expires_at: expiresAt || null,
-        legs: legs.trim() || undefined,
-        odds: odds.trim() || undefined,
-        amount: amount.trim() || undefined,
+        legs: legs.trim() || null,
+        odds: odds.trim() || null,
+        amount: amount.trim() || null,
         max_bonus: maxBonus.trim() !== '' ? Number(maxBonus) : null,
         status,
         notes: notes.trim() || undefined,
@@ -76,10 +79,23 @@ function PromoFormModal({ promo, onClose, onSave }: { promo: BetPromo | null; on
             ))}
           </datalist>
         </label>
-        <label className="bets-form__field">
-          <span>Description</span>
-          <input placeholder="NFL SGP odds boost" value={description} onChange={(e) => setDescription(e.target.value)} />
-        </label>
+        <div className="bets-form__row">
+          <label className="bets-form__field">
+            <span>Sport</span>
+            <select value={sport} onChange={(e) => setSport(e.target.value)}>
+              <option value="">Any Sport</option>
+              {[...SPORTS.filter((s) => s !== 'Other'), ...(sport && !SPORTS.includes(sport) ? [sport] : [])].map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="bets-form__field">
+            <span>Description</span>
+            <input placeholder="Parlay / SGP" value={description} onChange={(e) => setDescription(e.target.value)} />
+          </label>
+        </div>
         <div className="bets-form__row">
           <label className="bets-form__field">
             <span>Type</span>
@@ -97,22 +113,22 @@ function PromoFormModal({ promo, onClose, onSave }: { promo: BetPromo | null; on
         </div>
         <div className="bets-form__row">
           <label className="bets-form__field">
-            <span>Legs</span>
-            <input placeholder="2+" value={legs} onChange={(e) => setLegs(e.target.value)} />
+            <span>Min Legs</span>
+            <input placeholder="Blank = Any" value={legs} onChange={(e) => setLegs(e.target.value)} />
           </label>
           <label className="bets-form__field">
-            <span>Odds</span>
-            <input placeholder="+400" value={odds} onChange={(e) => setOdds(e.target.value)} />
+            <span>Min Odds</span>
+            <input placeholder="+100 (Blank = Any)" value={odds} onChange={(e) => setOdds(e.target.value)} />
           </label>
         </div>
         <div className="bets-form__row">
           <label className="bets-form__field">
-            <span>Amount</span>
-            <input placeholder="10%" value={amount} onChange={(e) => setAmount(e.target.value)} />
+            <span>Value</span>
+            <input placeholder="30% or $25" value={amount} onChange={(e) => setAmount(e.target.value)} />
           </label>
           <label className="bets-form__field">
-            <span>Max</span>
-            <input placeholder="20" inputMode="decimal" value={maxBonus} onChange={(e) => setMaxBonus(e.target.value)} />
+            <span>Max Bet ($)</span>
+            <input placeholder="25" inputMode="decimal" value={maxBonus} onChange={(e) => setMaxBonus(e.target.value)} />
           </label>
         </div>
         <label className="bets-form__field">
@@ -145,9 +161,6 @@ function PromoFormModal({ promo, onClose, onSave }: { promo: BetPromo | null; on
 
 const todayIso = todayLocalISODash();
 
-function promoIsStale(promo: BetPromo): boolean {
-  return promo.status === 'active' && !!promo.expires_at && promo.expires_at < todayIso;
-}
 
 export function BetsPromosTab({
   promos,
@@ -178,40 +191,29 @@ export function BetsPromosTab({
       {promos.length === 0 ? (
         <div className="empty-state">No promos logged yet.</div>
       ) : (
-        <div className="bets-log card" style={{ marginTop: 12 }}>
-          {promos.map((p) => {
-            const stale = promoIsStale(p);
-            return (
-              <div key={p.id} className="bets-log__row">
-                <div className="bets-log__main">
-                  <span className="bets-log__date">{p.sportsbook}</span>
-                  <span className="bets-log__pick">{p.description}</span>
-                  <span className="bets-log__meta">
-                    {p.promo_type}
-                    {p.legs ? ` · ${p.legs} legs` : ''}
-                    {p.odds ? ` · ${p.odds}` : ''}
-                    {p.amount ? ` · ${p.amount}` : ''}
-                    {p.max_bonus != null ? ` · max $${p.max_bonus}` : ''}
-                    {p.expires_at ? ` · expires ${formatExpiryLabel(p.expires_at)}` : ''}
-                  </span>
-                </div>
-                <span className={`bets__result-badge ${stale ? 'bets__result-badge--loss' : p.status === 'active' ? 'bets__result-badge--win' : 'bets__result-badge--push'}`}>
-                  {stale ? 'Expired' : STATUS_OPTIONS.find((s) => s.value === p.status)?.label}
-                </span>
-                <KebabMenu
-                  items={[
-                    ...(p.status === 'active'
-                      ? [{ label: 'Mark used', onClick: () => onUpdate(p.id, { status: 'used' }) }]
-                      : p.status === 'used'
-                        ? [{ label: 'Mark active', onClick: () => onUpdate(p.id, { status: 'active' }) }]
-                        : []),
-                    { label: 'Edit', onClick: () => setEditing(p) },
-                    { label: 'Delete', onClick: () => setDeleting(p), danger: true, separatorBefore: true },
-                  ]}
-                />
-              </div>
-            );
-          })}
+        <div className="bets-log card bets-promos--tab" style={{ marginTop: 12 }}>
+          <BetsPromosTable
+            promos={promos}
+            today={todayIso}
+            renderStatus={(p) => (
+              <span className={`bets__result-badge ${p.status === 'active' ? 'bets__result-badge--win' : 'bets__result-badge--push'}`}>
+                {STATUS_OPTIONS.find((s) => s.value === p.status)?.label}
+              </span>
+            )}
+            renderActions={(p) => (
+              <KebabMenu
+                items={[
+                  ...(p.status === 'active'
+                    ? [{ label: 'Mark Used', onClick: () => onUpdate(p.id, { status: 'used' }) }]
+                    : p.status === 'used'
+                      ? [{ label: 'Mark Active', onClick: () => onUpdate(p.id, { status: 'active' }) }]
+                      : []),
+                  { label: 'Edit', onClick: () => setEditing(p) },
+                  { label: 'Delete', onClick: () => setDeleting(p), danger: true, separatorBefore: true },
+                ]}
+              />
+            )}
+          />
         </div>
       )}
 

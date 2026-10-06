@@ -41,6 +41,32 @@ export const LEG_BET_TYPES = legBetTypes();
 // Banking/Promos/the bet log don't dangle stale or unused books.
 export const COMMON_SPORTSBOOKS = ['BetMGM', 'BetRivers', 'DraftKings', 'FanDuel', 'Caesars'];
 
+/** Badge for a sportsbook in the promos table — a short monogram on the
+ * book's own color so rows are identifiable at a glance. Unknown books
+ * get initials on a neutral color. */
+const SPORTSBOOK_BRANDS: Record<string, { mono: string; color: string }> = {
+  fanduel: { mono: 'FD', color: '#1475E1' },
+  draftkings: { mono: 'DK', color: '#1E7B3A' },
+  betmgm: { mono: 'MGM', color: '#7A6331' },
+  betrivers: { mono: 'BR', color: '#1B3D6E' },
+  caesars: { mono: 'CZR', color: '#0F4F47' },
+  fanatics: { mono: 'FAN', color: '#B3261E' },
+  espnbet: { mono: 'ESPN', color: '#C8102E' },
+};
+
+export function sportsbookBrand(name: string): { mono: string; color: string } {
+  const key = name.toLowerCase().replace(/[^a-z]/g, '');
+  const known = SPORTSBOOK_BRANDS[key];
+  if (known) return known;
+  const initials = name
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => w[0]!.toUpperCase())
+    .join('')
+    .slice(0, 3);
+  return { mono: initials || '?', color: '#5F564A' };
+}
+
 // Leg-level results are NOT Settings-editable (see LEG_RESULTS in
 // worker/src/index.ts) — "Cashed Out"/"TBD" only make sense for a whole
 // bet, not one leg of a parlay, and bet_legs.result has a DB CHECK
@@ -155,8 +181,8 @@ export function formatExpiryLabel(expiresAt: string, today: string = todayLocalI
   if (diffDays === 0) return 'Today';
   if (diffDays === 1) return 'Tomorrow';
   if (diffDays === -1) return 'Yesterday';
-  if (diffDays > 1) return `${diffDays}D`;
-  return `${Math.abs(diffDays)}D ago`;
+  if (diffDays > 1) return `${diffDays} Days`;
+  return `${Math.abs(diffDays)} Days Ago`;
 }
 
 export function formatMoney(v: number): string {

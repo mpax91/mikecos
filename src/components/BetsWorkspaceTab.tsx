@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
 import type { BetGameEnrichment, BetGameNote, BetGameTeamSnapshot, BetPromo, BetScheduleGame } from '../api/types';
-import { SPORTS, formatMoney, formatExpiryLabel, type SportsbookBalance } from '../utils/bets';
+import { SPORTS, formatMoney, type SportsbookBalance } from '../utils/bets';
+import { BetsPromosTable, PromoFilterPills, usePromoFilters } from './BetsPromosTable';
 import { Modal } from './Modal';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { KebabMenu } from './KebabMenu';
@@ -1162,6 +1163,7 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
     if (b.expires_at) return 1;
     return 0;
   });
+  const promoFilters = usePromoFilters(sortedActivePromos);
   // Boost-availability is flagged per sportsbook only — a promo carries no
   // sport of its own (see BetPromo), and matching a promo's odds/legs
   // against a specific game is unreliable for anything but a plain straight
@@ -1294,35 +1296,17 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
 
       {sortedActivePromos.length > 0 && (
         <div className="bets-workspace__section card" style={{ marginTop: 12 }}>
-          <button type="button" className="bets-workspace__section-header" onClick={() => toggleCollapse(PROMOS_SECTION_KEY)}>
-            <span className={`bets-workspace__chevron${collapsed.has(PROMOS_SECTION_KEY) ? ' is-collapsed' : ''}`}>▾</span>
-            <span className="bets-workspace__section-title">Promos Available Today</span>
-            <span className="bets-workspace__section-count">{sortedActivePromos.length}</span>
-          </button>
-          {!collapsed.has(PROMOS_SECTION_KEY) && (
-            <div className="bets-workspace__promo-list bets-workspace__promo-list--section">
-              {sortedActivePromos.map((p) => (
-                <div key={p.id} className="bets-workspace__promo-row">
-                  <span className="bets-workspace__promo-row-type">{p.promo_type}</span>
-                  <div className="bets-workspace__promo-row-main">
-                    <div className="bets-workspace__promo-row-headline">
-                      <strong>{p.sportsbook}</strong> {p.description}
-                    </div>
-                    {(p.legs || p.odds || p.amount) && (
-                      <div className="bets-workspace__promo-row-detail">
-                        {[p.legs ? `${p.legs} legs` : null, p.odds, p.amount].filter(Boolean).join(' · ')}
-                      </div>
-                    )}
-                  </div>
-                  {p.expires_at && (
-                    <span className={`bets-workspace__promo-row-expiry${p.expires_at === date ? ' is-today' : ''}`}>
-                      {formatExpiryLabel(p.expires_at, date)}
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
+          <div className="bets-promos__header">
+            <button type="button" className="bets-workspace__section-header" onClick={() => toggleCollapse(PROMOS_SECTION_KEY)}>
+              <span className={`bets-workspace__chevron${collapsed.has(PROMOS_SECTION_KEY) ? ' is-collapsed' : ''}`}>▾</span>
+              <span className="bets-workspace__section-title">Promos Available Today</span>
+              <span className="bets-workspace__section-count">
+                {promoFilters.book || promoFilters.sport ? `${promoFilters.shown.length} of ${sortedActivePromos.length}` : sortedActivePromos.length}
+              </span>
+            </button>
+            {!collapsed.has(PROMOS_SECTION_KEY) && <PromoFilterPills f={promoFilters} />}
+          </div>
+          {!collapsed.has(PROMOS_SECTION_KEY) && <BetsPromosTable promos={promoFilters.shown} today={date} />}
         </div>
       )}
 
