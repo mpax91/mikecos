@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useReportTabMeta } from '../contexts/TabsContext';
 import { api } from '../api/client';
 import type { CloudAccount, CloudFileEntry, CloudSearchHit } from '../api/types';
+import { CloudStorageMeters } from '../components/CloudStorageMeters';
 
 function formatBytes(bytes: number | null): string {
   if (bytes === null) return '';
@@ -15,11 +16,6 @@ function formatBytes(bytes: number | null): string {
     i++;
   }
   return `${n.toFixed(n >= 10 ? 0 : 1)} ${units[i]}`;
-}
-
-function quotaFraction(acct: CloudAccount): number | null {
-  if (!acct.quota || !acct.quota.totalBytes) return null;
-  return Math.min(1, acct.quota.usedBytes / acct.quota.totalBytes);
 }
 
 interface Crumb {
@@ -192,6 +188,8 @@ export function CloudPage() {
         </div>
       ) : (
         <>
+          {!account && !query.trim() && <CloudStorageMeters accounts={accounts} onOpen={openAccount} />}
+
           <input
             type="search"
             className="cloud-page__search"
@@ -206,33 +204,7 @@ export function CloudPage() {
               {!searching && searchResults && searchResults.length === 0 && <div className="empty-state empty-state--section">No matches.</div>}
               {!searching && searchResults?.map((hit) => <SearchResultRow key={`${hit.accountId}:${hit.id}`} hit={hit} />)}
             </div>
-          ) : !account ? (
-            <div className="cloud-page__tiles">
-              {accounts.map((acct) => {
-                const frac = quotaFraction(acct);
-                return (
-                  <button type="button" key={acct.id} className="cloud-tile" onClick={() => openAccount(acct)} style={{ '--cloud-tile-color': acct.color } as React.CSSProperties}>
-                    <span className="cloud-tile__icon">{acct.icon}</span>
-                    <span className="cloud-tile__label">{acct.label}</span>
-                    <span className="cloud-tile__provider">{acct.providerLabel}</span>
-                    {acct.status === 'error' ? (
-                      <span className="cloud-tile__error">⚠ Reconnect in Settings</span>
-                    ) : acct.quota ? (
-                      <div className="cloud-tile__quota">
-                        <div className="cloud-tile__quota-bar">
-                          {frac !== null && <div className="cloud-tile__quota-fill" style={{ width: `${frac * 100}%` }} />}
-                        </div>
-                        <span>
-                          {formatBytes(acct.quota.usedBytes)}
-                          {acct.quota.totalBytes ? ` / ${formatBytes(acct.quota.totalBytes)}` : ' used'}
-                        </span>
-                      </div>
-                    ) : null}
-                  </button>
-                );
-              })}
-            </div>
-          ) : (
+          ) : !account ? null : (
             <div>
               <div className="breadcrumb cloud-breadcrumb">
                 <button
