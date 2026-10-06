@@ -11,23 +11,26 @@ import type { CloudAccount } from '../api/types';
 
 const ALMOST_FULL = 0.9;
 
-/** Each provider's own favicon, served by Google's favicon service — the
- * real product icon without bundling anyone's logo files. Falls back to a
- * letter badge if it fails to load. */
-const PROVIDER_ICON_DOMAIN: Record<string, string> = {
-  google_drive: 'drive.google.com',
-  dropbox: 'dropbox.com',
-  onedrive: 'onedrive.live.com',
-  box: 'box.com',
+/** Each provider's real product icon, loaded from the provider's own CDN
+ * (Google's Drive icon, Microsoft's Fluent OneDrive icon) or, for the rest,
+ * their favicon via Google's favicon service — nothing bundled. Falls back
+ * to a letter badge if the image fails to load. Drive and OneDrive need the
+ * direct URLs: their domains' favicons are the generic Google "G" and the
+ * Microsoft logo. */
+const PROVIDER_ICON_URL: Record<string, string> = {
+  google_drive: 'https://ssl.gstatic.com/images/branding/product/2x/drive_2020q4_48dp.png',
+  onedrive: 'https://res-1.cdn.office.net/files/fabric-cdn-prod_20230815.002/assets/brand-icons/product/svg/onedrive_48x1.svg',
+  dropbox: 'https://www.google.com/s2/favicons?domain=dropbox.com&sz=64',
+  box: 'https://www.google.com/s2/favicons?domain=box.com&sz=64',
 };
 
 function ProviderIcon({ acct }: { acct: CloudAccount }) {
   const [failed, setFailed] = useState(false);
-  const domain = PROVIDER_ICON_DOMAIN[acct.provider];
-  if (!domain || failed) return <span className="cloud-meters__badge">{acct.providerLabel.charAt(0)}</span>;
+  const src = PROVIDER_ICON_URL[acct.provider];
+  if (!src || failed) return <span className="cloud-meters__badge">{acct.providerLabel.charAt(0)}</span>;
   return (
     <span className="cloud-meters__badge cloud-meters__badge--icon">
-      <img src={`https://www.google.com/s2/favicons?domain=${domain}&sz=64`} alt={acct.providerLabel} width={22} height={22} onError={() => setFailed(true)} />
+      <img src={src} alt={acct.providerLabel} width={22} height={22} style={{ objectFit: 'contain' }} onError={() => setFailed(true)} />
     </span>
   );
 }
