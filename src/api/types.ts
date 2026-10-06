@@ -2264,3 +2264,113 @@ export interface EmailPeekResult extends EmailMessage {
 export interface EmailSyncResult {
   results: { id: string; ok: boolean; error?: string }[];
 }
+
+// ---- Statements (worker/src/statements/*, migration 0089) ----
+
+export type StatementFolderStatus = 'live' | 'needs_template' | 'ignored';
+export type AccountOwner = 'household' | 'chase';
+
+export interface Ny529SettingsShape {
+  nyLimit: number;
+  limitConfirmedYear: number | null;
+  projectionReturnPct: number;
+}
+
+export interface StatementFolder {
+  id: string;
+  accountId: string;
+  folderId: string;
+  folderName: string;
+  folderUrl: string | null;
+  templateId: string | null;
+  templateName: string | null;
+  nickname: string;
+  status: StatementFolderStatus;
+  owner: AccountOwner;
+  vaultEntryId: string | null;
+  settings: Ny529SettingsShape | null;
+  lastScanAt: string | null;
+  lastError: string | null;
+  coverage: { total: number; parsed: number };
+  lastPeriodEnd: string | null;
+  openFlags: number;
+}
+
+export interface StatementDriveAccount {
+  accountId: string;
+  accountLabel: string;
+  accountEmail: string | null;
+  error: string | null;
+  folders: {
+    folderId: string;
+    folderName: string;
+    folderUrl: string | null;
+    registered: StatementFolder | null;
+    suggestedTemplateId: string | null;
+    defaultIgnored: boolean;
+  }[];
+}
+
+export interface StatementScanResult {
+  listed: number;
+  read: number;
+  parsed: number;
+  unreadable: number;
+  duplicates: number;
+  remaining: number;
+  errors: string[];
+}
+
+export interface FinanceAccount extends StatementFolder {
+  headline: { value: number; asOf: string | null; principal: number; earnings: number } | null;
+}
+
+export type Ny529MonthState = 'deposited' | 'missed' | 'upcoming' | 'before_start' | 'unknown';
+
+export interface Ny529Summary {
+  asOf: string | null;
+  value: number;
+  principal: number;
+  earnings: number;
+  gainPct: number | null;
+  portfolio: string | null;
+  unitPrice: number | null;
+  aip: { amount: number; day: number; startedOn: string } | null;
+  aipChanges: { date: string; from: number; to: number }[];
+  year: number;
+  ytdContributions: number;
+  ytdAsOf: string | null;
+  remainingDrafts: number;
+  projectedYearEnd: number;
+  limit: number;
+  gap: number;
+  months: { month: string; state: Ny529MonthState; amount: number }[];
+  missedMonths: string[];
+  quarters: {
+    periodStart: string;
+    periodEnd: string;
+    beginning: number;
+    contributions: number;
+    withdrawals: number;
+    change: number;
+    earnings: number;
+    returnPct: number | null;
+    ending: number;
+    unitPrice: number | null;
+    checksOk: boolean;
+    fileId: string;
+  }[];
+  projection: { targetDate: string; value: number; contributed: number; returnPct: number } | null;
+}
+
+export interface Ny529Dashboard {
+  folder: StatementFolder;
+  account: { owner: string; beneficiary: string; accountLast: string; accountType: string } | null;
+  template: { nickname: string; institution: string; type: string; site?: string; phone?: string } | null;
+  summary: Ny529Summary;
+  statements: { id: string; periodStart: string; periodEnd: string; fileId: string; checks: { name: string; ok: boolean; detail: string }[] }[];
+  transactions: { date: string; description: string; kind: string; amount: number; units: number | null; unitPrice: number | null }[];
+  files: { fileId: string; name: string; url: string | null; status: string; error: string | null }[];
+  flags: { id: string; severity: 'warn' | 'info'; message: string; created_at: string }[];
+  topupTask: { id: string; title: string; due: string | null; status: string | null } | null;
+}

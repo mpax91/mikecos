@@ -174,6 +174,15 @@ async function loadAccount(env: Env, id: string): Promise<CloudAccountRow | null
   return env.DB.prepare('SELECT * FROM cloud_accounts WHERE id = ?').bind(id).first<CloudAccountRow>();
 }
 
+/** For server-side jobs (Statements): a live token + adapter for one
+ * connected account, refreshed the same way browse/download do. */
+export async function cloudAccess(env: Env, accountId: string) {
+  const row = await loadAccount(env, accountId);
+  if (!row) throw new Error('That cloud account is no longer connected.');
+  const token = await getValidAccessToken(env, row);
+  return { token, adapter: getAdapter(env, row.provider), provider: row.provider, label: row.label, email: row.account_email };
+}
+
 // ---- Providers (Settings → Cloud Storage: which ones are set up) ----
 
 cloudRouter.get('/providers', async (c) => {

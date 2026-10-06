@@ -261,7 +261,15 @@ function FactRow({
   return (
     <div className="vault-facts__row" onClick={() => setEditing(true)}>
       <span className="vault-facts__label">{fact.label}</span>
-      <span className="vault-facts__value">{fact.value || <span className="vault-facts__value--empty">—</span>}</span>
+      <span className="vault-facts__value">
+        {fact.value && /^https?:\/\/\S+$/.test(fact.value) ? (
+          <a href={fact.value} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>
+            {fact.value.replace(/^https?:\/\/(www\.)?/, '').replace(/^(drive\.google\.com)\/.*$/, '$1 ↗')}
+          </a>
+        ) : (
+          fact.value || <span className="vault-facts__value--empty">—</span>
+        )}
+      </span>
       {fact.value && (
         <button
           type="button"

@@ -52,6 +52,8 @@ import { homeRouter } from './home';
 import { emailRouter, syncAllAccounts } from './email';
 import { bookmarksRouter } from './bookmarks';
 import { cloudRouter, keepCloudTokensAlive } from './cloud';
+import { statementsRouter } from './statements/router';
+import { scanAllLiveFolders, statementsScanDue } from './statements/engine';
 import { contactsAssistantRouter } from './contactsAssistant';
 import { betsEnrichmentRouter } from './betsEnrichment';
 
@@ -84,6 +86,7 @@ app.route('/api/home', homeRouter);
 app.route('/api/email', emailRouter);
 app.route('/api/bookmarks', bookmarksRouter);
 app.route('/api/cloud', cloudRouter);
+app.route('/api/statements', statementsRouter);
 app.route('/api/contacts/ask', contactsAssistantRouter);
 app.route('/api/bets/enrichment', betsEnrichmentRouter);
 
@@ -7768,6 +7771,7 @@ const AIRING_PATH = '/api/plex/airing-check';
 const AIRING_RETRY_MINUTE = 50; // even, so the */2 tick actually lands on it
 const BET_PROMO_PURGE_MINUTE = 10; // even, same reason
 const CLOUD_KEEPALIVE_MINUTE = 30; // even, same reason
+const STATEMENTS_SCAN_MINUTE = 20; // even, same reason
 
 /** Retries the Airing check if nothing has succeeded since today's
  * scheduled 09:30 UTC run. Waits until 10:30 UTC before treating "no row
@@ -7870,6 +7874,16 @@ export default {
           await keepCloudTokensAlive(env);
         } catch (err) {
           console.error('Cloud token keep-alive failed', err);
+        }
+      }
+      // Statements: nightly scan of every live Drive statement folder at
+      // 07:20 UTC (~3am Eastern), plus a retry at any later :20 if a live
+      // folder hasn't been scanned in 20h.
+      if (new Date(event.scheduledTime).getUTCMinutes() === STATEMENTS_SCAN_MINUTE) {
+        try {
+          if (await statementsScanDue(env, event.scheduledTime)) await scanAllLiveFolders(env);
+        } catch (err) {
+          console.error('Statements scan failed', err);
         }
       }
       return;

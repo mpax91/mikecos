@@ -82,7 +82,7 @@ export function detectFactValue(rawValue: string | null | undefined): { type: 'd
  * is findable by account number, VIN, etc. through the same search_text
  * column every other entity type already uses. Called after any fact
  * write/delete or title/content edit. */
-async function reindexEntry(c: { env: Env }, entryId: string): Promise<void> {
+export async function reindexEntry(c: { env: Env }, entryId: string): Promise<void> {
   const entity = await db(c).prepare('SELECT title, content FROM entities WHERE id = ?').bind(entryId).first<{ title: string; content: string | null }>();
   if (!entity) return;
   const facts = await db(c).prepare('SELECT label, value FROM vault_facts WHERE entry_id = ?').bind(entryId).all<{ label: string; value: string | null }>();

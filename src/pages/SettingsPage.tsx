@@ -8,6 +8,7 @@ import { UploadPanel } from './settings/UploadPanel';
 import { QuickLinksPanel } from './settings/QuickLinksPanel';
 import { BookmarksImportPanel } from './settings/BookmarksImportPanel';
 import { CloudStoragePanel } from './settings/CloudStoragePanel';
+import { StatementsPanel } from './settings/StatementsPanel';
 import { WalletCategoriesPanel } from './settings/WalletCategoriesPanel';
 import { MediaCatalogPanel } from './settings/MediaCatalogPanel';
 import { SecurityPanel } from './settings/SecurityPanel';
@@ -39,6 +40,7 @@ const CATEGORIES: Category[] = [
   { id: 'calendars', label: 'Calendar Integrations', icon: '📅' },
   { id: 'links', label: 'Links', icon: '🔗' },
   { id: 'cloud', label: 'Cloud Storage', icon: '☁️' },
+  { id: 'statements', label: 'Statements', icon: '🧾' },
   { id: 'wallet', label: 'Wallet Categories', icon: '🎫' },
   { id: 'media-catalog', label: 'Media Catalog', icon: '📚' },
   { id: 'email-accounts', label: 'Email Accounts', icon: '📥' },
@@ -98,6 +100,7 @@ export function SettingsPage() {
             </>
           )}
           {active === 'cloud' && <CloudStoragePanel />}
+          {active === 'statements' && <StatementsPanel />}
           {active === 'wallet' && <WalletCategoriesPanel />}
           {active === 'media-catalog' && <MediaCatalogPanel />}
           {active === 'email-accounts' && <EmailAccountsPanel />}

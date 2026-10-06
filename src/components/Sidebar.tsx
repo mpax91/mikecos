@@ -69,6 +69,7 @@ const SIDEBAR_SECTIONS: NavSectionDef[] = [
     items: [
       { path: '/vault', label: 'Vault', kind: 'vault-list' },
       { path: '/wallet', label: 'Wallet', kind: 'wallet-list' },
+      { path: '/finance', label: 'Finance', kind: 'finance' },
       { path: '/media', label: 'Media', kind: 'media-list' },
       { path: '/bar', label: 'Bar', kind: 'bar-list' },
       { path: '/home', label: 'Home', kind: 'home-list' },
