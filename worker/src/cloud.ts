@@ -74,13 +74,14 @@ function accountJson(row: CloudAccountRow) {
 }
 
 /** Returns a live, usable access token for this account — refreshing and
- * persisting a new one first if the stored token is at or near expiry.
- * Marks the account `status = 'error'` (surfaced in Settings) rather than
- * throwing silently, so a revoked/broken connection is visible instead of
- * just failing every browse call forever with no explanation. */
-async function getValidAccessToken(env: Env, row: CloudAccountRow): Promise<string> {
+ * persisting a new one first if the stored token is at or near expiry (or
+ * always, with `force`, which the daily keep-alive uses). Marks the account
+ * `status = 'error'` (surfaced in Settings) rather than throwing silently,
+ * so a revoked/broken connection is visible instead of just failing every
+ * browse call forever with no explanation. */
+async function getValidAccessToken(env: Env, row: CloudAccountRow, opts: { force?: boolean } = {}): Promise<string> {
   const expiresAt = new Date(row.token_expires_at).getTime();
-  if (Date.now() < expiresAt - TOKEN_REFRESH_BUFFER_MS) {
+  if (!opts.force && Date.now() < expiresAt - TOKEN_REFRESH_BUFFER_MS) {
     return decryptField(env, row.access_token_enc, 'CLOUD_ACCOUNT_ENC_KEY');
   }
   if (!row.refresh_token_enc) {
@@ -89,28 +90,83 @@ async function getValidAccessToken(env: Env, row: CloudAccountRow): Promise<stri
       .run();
     throw new Error('This account’s access expired and it has no refresh token — reconnect it in Settings.');
   }
+  // One refresh per account at a time within this isolate: Box rotates the
+  // refresh token on every use and invalidates the old one, so two
+  // concurrent refreshes (e.g. a search and a folder load) would otherwise
+  // race and the loser would mark a perfectly good account as broken.
+  const pending = refreshInFlight.get(row.id);
+  if (pending) return pending;
+  const p = refreshAccountToken(env, row).finally(() => refreshInFlight.delete(row.id));
+  refreshInFlight.set(row.id, p);
+  return p;
+}
+
+const refreshInFlight = new Map<string, Promise<string>>();
+
+/** Refreshes with the given row's stored refresh token and persists the
+ * result. Throws on provider failure without touching status. */
+async function refreshWithRow(env: Env, row: CloudAccountRow): Promise<string> {
   const adapter = getAdapter(env, row.provider);
-  const refreshToken = await decryptField(env, row.refresh_token_enc, 'CLOUD_ACCOUNT_ENC_KEY');
+  const refreshToken = await decryptField(env, row.refresh_token_enc!, 'CLOUD_ACCOUNT_ENC_KEY');
+  const tokens = await adapter.refreshAccessToken(refreshToken);
+  const accessEnc = await encryptField(env, tokens.accessToken, 'CLOUD_ACCOUNT_ENC_KEY');
+  // Always persist a re-issued refresh token (Box rotates on every use),
+  // falling back to the existing value only when none came back.
+  const refreshEnc = tokens.refreshToken ? await encryptField(env, tokens.refreshToken, 'CLOUD_ACCOUNT_ENC_KEY') : row.refresh_token_enc;
+  await env.DB.prepare(
+    'UPDATE cloud_accounts SET access_token_enc = ?, refresh_token_enc = ?, token_expires_at = ?, status = ?, last_error = NULL, updated_at = ? WHERE id = ?'
+  )
+    .bind(accessEnc, refreshEnc, tokens.expiresAt, 'connected', now(), row.id)
+    .run();
+  return tokens.accessToken;
+}
+
+async function refreshAccountToken(env: Env, row: CloudAccountRow): Promise<string> {
+  let failure: unknown;
   try {
-    const tokens = await adapter.refreshAccessToken(refreshToken);
-    const accessEnc = await encryptField(env, tokens.accessToken, 'CLOUD_ACCOUNT_ENC_KEY');
-    // Some providers (Box, notably) rotate the refresh token on every use
-    // and invalidate the old one — always persist whatever came back,
-    // falling back to the existing encrypted value only when the provider
-    // didn't re-issue one.
-    const refreshEnc = tokens.refreshToken ? await encryptField(env, tokens.refreshToken, 'CLOUD_ACCOUNT_ENC_KEY') : row.refresh_token_enc;
-    await env.DB.prepare(
-      'UPDATE cloud_accounts SET access_token_enc = ?, refresh_token_enc = ?, token_expires_at = ?, status = ?, last_error = NULL, updated_at = ? WHERE id = ?'
-    )
-      .bind(accessEnc, refreshEnc, tokens.expiresAt, 'connected', now(), row.id)
-      .run();
-    return tokens.accessToken;
+    return await refreshWithRow(env, row);
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    await env.DB.prepare('UPDATE cloud_accounts SET status = ?, last_error = ?, updated_at = ? WHERE id = ?')
-      .bind('error', message, now(), row.id)
-      .run();
-    throw new Error(`Couldn’t refresh ${PROVIDER_LABELS[row.provider]} access for "${row.label}" — reconnect it in Settings.`);
+    failure = err;
+  }
+  // Before declaring the account broken: another request or isolate may
+  // have refreshed (and, for Box, rotated) the token since this row was
+  // loaded, which makes ours stale. If so, use theirs — or retry once with
+  // the newer refresh token.
+  const latest = await loadAccount(env, row.id);
+  if (latest?.refresh_token_enc && latest.refresh_token_enc !== row.refresh_token_enc) {
+    if (Date.now() < new Date(latest.token_expires_at).getTime() - TOKEN_REFRESH_BUFFER_MS) {
+      return decryptField(env, latest.access_token_enc, 'CLOUD_ACCOUNT_ENC_KEY');
+    }
+    try {
+      return await refreshWithRow(env, latest);
+    } catch (err) {
+      failure = err;
+    }
+  }
+  const message = failure instanceof Error ? failure.message : String(failure);
+  await env.DB.prepare('UPDATE cloud_accounts SET status = ?, last_error = ?, updated_at = ? WHERE id = ?')
+    .bind('error', message, now(), row.id)
+    .run();
+  throw new Error(`Couldn’t refresh ${PROVIDER_LABELS[row.provider]} access for "${row.label}" — reconnect it in Settings.`);
+}
+
+const KEEPALIVE_MAX_AGE_MS = 20 * 60 * 60 * 1000;
+
+/** Daily token keep-alive, run hourly from the scheduled handler: forces a
+ * refresh on any account not touched in ~20h. Keeps OneDrive (refresh
+ * tokens lapse after 90 days unused) and Box (60 days, rotating) alive
+ * even if Cloud isn't opened for months, and lets an account that hit a
+ * transient refresh error recover on its own. updated_at is bumped by
+ * every refresh, so each account is refreshed at most about once a day. */
+export async function keepCloudTokensAlive(env: Env): Promise<void> {
+  const { results } = await env.DB.prepare('SELECT * FROM cloud_accounts WHERE refresh_token_enc IS NOT NULL').all<CloudAccountRow>();
+  for (const row of results ?? []) {
+    if (Date.now() - new Date(row.updated_at).getTime() < KEEPALIVE_MAX_AGE_MS) continue;
+    try {
+      await getValidAccessToken(env, row, { force: true });
+    } catch (err) {
+      console.error('Cloud token keep-alive failed', row.provider, row.label, err);
+    }
   }
 }
 

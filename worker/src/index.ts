@@ -51,7 +51,7 @@ import { barRouter } from './bar';
 import { homeRouter } from './home';
 import { emailRouter, syncAllAccounts } from './email';
 import { bookmarksRouter } from './bookmarks';
-import { cloudRouter } from './cloud';
+import { cloudRouter, keepCloudTokensAlive } from './cloud';
 import { contactsAssistantRouter } from './contactsAssistant';
 import { betsEnrichmentRouter } from './betsEnrichment';
 
@@ -7767,6 +7767,7 @@ async function logCronRun(env: Env, cronName: PlexCronName, startedAt: string, o
 const AIRING_PATH = '/api/plex/airing-check';
 const AIRING_RETRY_MINUTE = 50; // even, so the */2 tick actually lands on it
 const BET_PROMO_PURGE_MINUTE = 10; // even, same reason
+const CLOUD_KEEPALIVE_MINUTE = 30; // even, same reason
 
 /** Retries the Airing check if nothing has succeeded since today's
  * scheduled 09:30 UTC run. Waits until 10:30 UTC before treating "no row
@@ -7860,6 +7861,15 @@ export default {
           await purgeExpiredBetPromos(env);
         } catch (err) {
           console.error('Bet promo purge failed', err);
+        }
+      }
+      // Hourly: refresh Cloud Storage tokens untouched for ~20h, so
+      // OneDrive/Box connections never lapse from disuse.
+      if (new Date(event.scheduledTime).getUTCMinutes() === CLOUD_KEEPALIVE_MINUTE) {
+        try {
+          await keepCloudTokensAlive(env);
+        } catch (err) {
+          console.error('Cloud token keep-alive failed', err);
         }
       }
       return;
