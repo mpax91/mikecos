@@ -7148,7 +7148,22 @@ app.delete('/api/bet-transactions/:id', async (c) => {
 
 const BET_PROMO_STATUSES = ['active', 'used', 'expired'];
 
+/** Expired promos are auto-deleted rather than kept around: anything marked
+ * 'expired', plus any 'active' promo whose expires_at (a YYYY-MM-DD in
+ * US-Eastern) is before today. 'used' promos are kept as a record even
+ * after their date passes. Runs on every list load and hourly via cron. */
+export async function purgeExpiredBetPromos(env: Env): Promise<number> {
+  const today = localDateString(new Date().toISOString());
+  const res = await env.DB.prepare(
+    `DELETE FROM bet_promos
+     WHERE status = 'expired'
+        OR (status = 'active' AND expires_at IS NOT NULL AND expires_at != '' AND expires_at < ?)`
+  ).bind(today).run();
+  return res.meta?.changes ?? 0;
+}
+
 app.get('/api/bet-promos', async (c) => {
+  await purgeExpiredBetPromos(c.env);
   const { results } = await c.env.DB.prepare(
     `SELECT * FROM bet_promos ORDER BY (status = 'active') DESC, (expires_at IS NULL), expires_at ASC, created_at DESC`
   ).all<BetPromo>();
@@ -7732,6 +7747,7 @@ async function logCronRun(env: Env, cronName: PlexCronName, startedAt: string, o
 
 const AIRING_PATH = '/api/plex/airing-check';
 const AIRING_RETRY_MINUTE = 50; // even, so the */2 tick actually lands on it
+const BET_PROMO_PURGE_MINUTE = 10; // even, same reason
 
 /** Retries the Airing check if nothing has succeeded since today's
  * scheduled 09:30 UTC run. Waits until 10:30 UTC before treating "no row
@@ -7818,6 +7834,14 @@ export default {
       // a whole day of "click Check now".
       if (new Date(event.scheduledTime).getUTCMinutes() === AIRING_RETRY_MINUTE) {
         await retryAiringCheckIfNeeded(env, event.scheduledTime);
+      }
+      // Hourly: delete expired Bets promos (also done on every list load).
+      if (new Date(event.scheduledTime).getUTCMinutes() === BET_PROMO_PURGE_MINUTE) {
+        try {
+          await purgeExpiredBetPromos(env);
+        } catch (err) {
+          console.error('Bet promo purge failed', err);
+        }
       }
       return;
     }
