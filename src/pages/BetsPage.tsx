@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api/client';
 import { BET_STAKE_TYPES, type Bet, type BetLeg, type BetOption, type BetPromo, type BetResult, type BetStakeType, type BetTransaction } from '../api/types';
 import { useReportTabMeta } from '../contexts/TabsContext';
@@ -429,27 +429,51 @@ function pad2(n: number): string {
   return String(n).padStart(2, '0');
 }
 
+type DayStat = { net: number; risked: number; wins: number; losses: number; draws: number; pending: number; count: number };
+
+/** Per-day totals for the Log calendar. Record is W-L-D where a push is a
+ * draw; void / cashed-out don't count toward the record, TBD is "pending". */
+function dayStats(bets: Bet[]): Map<string, DayStat> {
+  const map = new Map<string, DayStat>();
+  for (const bet of bets) {
+    const s = map.get(bet.date) ?? { net: 0, risked: 0, wins: 0, losses: 0, draws: 0, pending: 0, count: 0 };
+    s.net += computeProfit(bet);
+    s.risked += bet.wager;
+    s.count += 1;
+    if (bet.result === 'win') s.wins += 1;
+    else if (bet.result === 'loss') s.losses += 1;
+    else if (bet.result === 'push') s.draws += 1;
+    else if (bet.result === 'tbd') s.pending += 1;
+    map.set(bet.date, s);
+  }
+  return map;
+}
+
+function recordLabel(s: DayStat): string {
+  return `${s.wins}-${s.losses}-${s.draws}`;
+}
+
 /** Month grid, color-coded by that day's net (deeper green/red the bigger
  * the swing, relative to the month's own biggest day) — the "profit
- * calendar" idea pulled from real competing apps (Bet Journal). Clicking a
- * day filters the flat list below to just that day's bets. */
-function ProfitCalendar({ bets, selected, onSelect }: { bets: Bet[]; selected: string | null; onSelect: (date: string | null) => void }) {
+ * calendar" idea pulled from real competing apps (Bet Journal). Each day
+ * shows its net and W-L-D record; clicking a day opens that day's bets. */
+function ProfitCalendar({ stats, selected, onSelect }: { stats: Map<string, DayStat>; selected: string | null; onSelect: (date: string | null) => void }) {
   const [monthCursor, setMonthCursor] = useState(() => {
     const d = new Date();
     return { y: d.getFullYear(), m: d.getMonth() };
   });
 
-  const byDate = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const bet of bets) map.set(bet.date, (map.get(bet.date) ?? 0) + computeProfit(bet));
-    return map;
-  }, [bets]);
-
-  const maxAbs = Math.max(1, ...[...byDate.values()].map((v) => Math.abs(v)));
+  const maxAbs = Math.max(1, ...[...stats.values()].map((v) => Math.abs(v.net)));
   const first = new Date(monthCursor.y, monthCursor.m, 1);
   const daysInMonth = new Date(monthCursor.y, monthCursor.m + 1, 0).getDate();
   const leadingBlanks = first.getDay();
   const cells: (string | null)[] = [...Array(leadingBlanks).fill(null), ...Array.from({ length: daysInMonth }, (_, i) => `${monthCursor.y}-${pad2(monthCursor.m + 1)}-${pad2(i + 1)}`)];
+  const monthPrefix = `${monthCursor.y}-${pad2(monthCursor.m + 1)}-`;
+  const monthDays = [...stats.entries()].filter(([d]) => d.startsWith(monthPrefix)).map(([, s]) => s);
+  const monthTotal = monthDays.reduce(
+    (acc, s) => ({ net: acc.net + s.net, risked: 0, wins: acc.wins + s.wins, losses: acc.losses + s.losses, draws: acc.draws + s.draws, pending: 0, count: 0 }),
+    { net: 0, risked: 0, wins: 0, losses: 0, draws: 0, pending: 0, count: 0 } as DayStat
+  );
 
   return (
     <div className="bets-calendar card">
@@ -462,6 +486,12 @@ function ProfitCalendar({ bets, selected, onSelect }: { bets: Bet[]; selected: s
           ›
         </button>
       </div>
+      {monthDays.length > 0 && (
+        <div className="bets-calendar__month-summary">
+          <span>{recordLabel(monthTotal)}</span>
+          <span className={monthTotal.net >= 0 ? 'is-up' : 'is-down'}>{formatMoney(monthTotal.net)}</span>
+        </div>
+      )}
       <div className="bets-calendar__weekdays">
         {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
           <span key={i}>{d}</span>
@@ -470,21 +500,22 @@ function ProfitCalendar({ bets, selected, onSelect }: { bets: Bet[]; selected: s
       <div className="bets-calendar__grid">
         {cells.map((date, i) => {
           if (!date) return <div key={i} className="bets-calendar__cell bets-calendar__cell--blank" />;
-          const net = byDate.get(date);
-          const intensity = net != null ? Math.min(1, Math.abs(net) / maxAbs) : 0;
-          const bg = net == null ? undefined : net >= 0 ? `rgba(46, 139, 87, ${0.12 + intensity * 0.55})` : `rgba(192, 57, 43, ${0.12 + intensity * 0.55})`;
+          const s = stats.get(date);
+          const intensity = s ? Math.min(1, Math.abs(s.net) / maxAbs) : 0;
+          const bg = !s ? undefined : s.net >= 0 ? `rgba(46, 139, 87, ${0.12 + intensity * 0.55})` : `rgba(192, 57, 43, ${0.12 + intensity * 0.55})`;
           return (
             <button
               key={i}
               type="button"
-              className={`bets-calendar__cell${selected === date ? ' is-selected' : ''}${net == null ? ' is-empty' : ''}`}
+              className={`bets-calendar__cell${selected === date ? ' is-selected' : ''}${!s ? ' is-empty' : ''}`}
               style={bg ? { background: bg } : undefined}
               onClick={() => onSelect(selected === date ? null : date)}
-              disabled={net == null}
-              title={net != null ? `${date}: ${formatMoney(net)}` : date}
+              disabled={!s}
+              title={s ? `${date}: ${recordLabel(s)}, ${formatMoney(s.net)}` : date}
             >
               <span className="bets-calendar__daynum">{Number(date.slice(-2))}</span>
-              {net != null && <span className="bets-calendar__net">{formatMoney(net)}</span>}
+              {s && <span className="bets-calendar__net">{formatMoney(s.net)}</span>}
+              {s && <span className="bets-calendar__record">{recordLabel(s)}</span>}
             </button>
           );
         })}
@@ -493,13 +524,90 @@ function ProfitCalendar({ bets, selected, onSelect }: { bets: Bet[]; selected: s
   );
 }
 
+function BetRow({ bet, showDate, onEdit, onDelete }: { bet: Bet; showDate: boolean; onEdit: (b: Bet) => void; onDelete: (b: Bet) => void }) {
+  const profit = computeProfit(bet);
+  return (
+    <div className="bets-log__row">
+      <div className="bets-log__main">
+        {showDate && <span className="bets-log__date">{bet.date}</span>}
+        <span className="bets-log__pick">{bet.pick || (bet.legs.length > 0 ? `${bet.legs.length}-leg ${bet.bet_type}` : `${bet.sport} ${bet.bet_type}`)}</span>
+        <span className="bets-log__meta">
+          {bet.sport} · {bet.sportsbook} · {formatOdds(bet.odds)} · {formatMoney(bet.wager)}
+          {bet.stake_type === 'free_bet' && <span className="bets-log__freebet"> · Free bet</span>}
+        </span>
+        {bet.legs.length > 0 && (
+          <span className="bets-log__legs">
+            {bet.legs.map((l) => `${l.pick || l.sport}${l.over_under ? ` (${l.over_under})` : ''}`).join(' · ')}
+          </span>
+        )}
+      </div>
+      <ResultBadge result={bet.result} />
+      <span className={`bets-log__profit ${profit >= 0 ? 'is-up' : 'is-down'}`}>{formatMoney(profit)}</span>
+      <KebabMenu
+        items={[
+          { label: 'Edit', onClick: () => onEdit(bet) },
+          { label: 'Delete', onClick: () => onDelete(bet), danger: true, separatorBefore: true },
+        ]}
+      />
+    </div>
+  );
+}
+
+/** The clicked day: its record, net and amount risked, then every bet made
+ * that day with how it did. */
+function BetsDayDetail({ date, stat, bets, onClose, onEdit, onDelete }: { date: string; stat: DayStat; bets: Bet[]; onClose: () => void; onEdit: (b: Bet) => void; onDelete: (b: Bet) => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    ref.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [date]);
+  const label = new Date(`${date}T12:00:00`).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+  return (
+    <div className="bets-day card" ref={ref}>
+      <div className="bets-day__header">
+        <span className="bets-day__title">{label}</span>
+        <button type="button" className="chip" onClick={onClose}>
+          Close
+        </button>
+      </div>
+      <div className="bets-day__stats">
+        <div>
+          <span className="bets-day__stat-label">Record (W-L-D)</span>
+          <span className="bets-day__stat-value">{recordLabel(stat)}</span>
+        </div>
+        <div>
+          <span className="bets-day__stat-label">Won / Lost</span>
+          <span className={`bets-day__stat-value ${stat.net >= 0 ? 'is-up' : 'is-down'}`}>{formatMoney(stat.net)}</span>
+        </div>
+        <div>
+          <span className="bets-day__stat-label">Risked</span>
+          <span className="bets-day__stat-value">{formatMoney(stat.risked)}</span>
+        </div>
+        <div>
+          <span className="bets-day__stat-label">Bets</span>
+          <span className="bets-day__stat-value">
+            {stat.count}
+            {stat.pending > 0 && <span className="bets-day__pending"> ({stat.pending} pending)</span>}
+          </span>
+        </div>
+      </div>
+      <div className="bets-day__list">
+        {bets.map((bet) => (
+          <BetRow key={bet.id} bet={bet} showDate={false} onEdit={onEdit} onDelete={onDelete} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function LogTab({ bets, onEdit, onDelete }: { bets: Bet[]; onEdit: (b: Bet) => void; onDelete: (b: Bet) => void }) {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [query, setQuery] = useState('');
+  const stats = useMemo(() => dayStats(bets), [bets]);
+  const selectedStat = selectedDate ? stats.get(selectedDate) : undefined;
+  const dayBets = useMemo(() => (selectedDate ? bets.filter((b) => b.date === selectedDate) : []), [bets, selectedDate]);
 
   const filtered = useMemo(() => {
     let list = bets;
-    if (selectedDate) list = list.filter((b) => b.date === selectedDate);
     const q = query.trim().toLowerCase();
     if (q) {
       list = list.filter((b) =>
@@ -507,53 +615,27 @@ function LogTab({ bets, onEdit, onDelete }: { bets: Bet[]; onEdit: (b: Bet) => v
       );
     }
     return [...list].sort((a, b) => (a.date < b.date ? 1 : -1));
-  }, [bets, selectedDate, query]);
+  }, [bets, query]);
 
   return (
     <div>
-      <ProfitCalendar bets={bets} selected={selectedDate} onSelect={setSelectedDate} />
+      <ProfitCalendar stats={stats} selected={selectedDate} onSelect={setSelectedDate} />
+
+      {selectedDate && selectedStat && (
+        <BetsDayDetail date={selectedDate} stat={selectedStat} bets={dayBets} onClose={() => setSelectedDate(null)} onEdit={onEdit} onDelete={onDelete} />
+      )}
 
       <div className="toolbar-row" style={{ marginTop: 16 }}>
         <input className="bets-log__search" placeholder="Search picks, sportsbooks, notes…" value={query} onChange={(e) => setQuery(e.target.value)} />
-        {selectedDate && (
-          <button type="button" className="chip" onClick={() => setSelectedDate(null)}>
-            Showing {selectedDate} · Clear
-          </button>
-        )}
       </div>
 
       {filtered.length === 0 ? (
         <div className="empty-state">No bets match.</div>
       ) : (
         <div className="bets-log card">
-          {filtered.map((bet) => {
-            const profit = computeProfit(bet);
-            return (
-              <div key={bet.id} className="bets-log__row">
-                <div className="bets-log__main">
-                  <span className="bets-log__date">{bet.date}</span>
-                  <span className="bets-log__pick">{bet.pick || (bet.legs.length > 0 ? `${bet.legs.length}-leg ${bet.bet_type}` : `${bet.sport} ${bet.bet_type}`)}</span>
-                  <span className="bets-log__meta">
-                    {bet.sport} · {bet.sportsbook} · {formatOdds(bet.odds)} · {formatMoney(bet.wager)}
-                    {bet.stake_type === 'free_bet' && <span className="bets-log__freebet"> · Free bet</span>}
-                  </span>
-                  {bet.legs.length > 0 && (
-                    <span className="bets-log__legs">
-                      {bet.legs.map((l) => `${l.pick || l.sport}${l.over_under ? ` (${l.over_under})` : ''}`).join(' · ')}
-                    </span>
-                  )}
-                </div>
-                <ResultBadge result={bet.result} />
-                <span className={`bets-log__profit ${profit >= 0 ? 'is-up' : 'is-down'}`}>{formatMoney(profit)}</span>
-                <KebabMenu
-                  items={[
-                    { label: 'Edit', onClick: () => onEdit(bet) },
-                    { label: 'Delete', onClick: () => onDelete(bet), danger: true, separatorBefore: true },
-                  ]}
-                />
-              </div>
-            );
-          })}
+          {filtered.map((bet) => (
+            <BetRow key={bet.id} bet={bet} showDate onEdit={onEdit} onDelete={onDelete} />
+          ))}
         </div>
       )}
     </div>

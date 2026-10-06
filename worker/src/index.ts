@@ -7148,10 +7148,13 @@ app.delete('/api/bet-transactions/:id', async (c) => {
 
 const BET_PROMO_STATUSES = ['active', 'used', 'expired'];
 
-/** Expired promos are auto-deleted rather than kept around: anything marked
- * 'expired', plus any 'active' promo whose expires_at (a YYYY-MM-DD in
- * US-Eastern) is before today. 'used' promos are kept as a record even
- * after their date passes. Runs on every list load and hourly via cron. */
+/** Stale promos are auto-deleted rather than kept around:
+ *  - anything marked 'expired', or 'active' with expires_at (YYYY-MM-DD,
+ *    US-Eastern) before today;
+ *  - 'used' promos once the day they were used is over. There's no used_at
+ *    column — updated_at is when the status was last changed, so its
+ *    US-Eastern date is the day of use (a used promo stays visible that day).
+ * Runs on every list load and hourly via cron. */
 export async function purgeExpiredBetPromos(env: Env): Promise<number> {
   const today = localDateString(new Date().toISOString());
   const res = await env.DB.prepare(
@@ -7159,7 +7162,14 @@ export async function purgeExpiredBetPromos(env: Env): Promise<number> {
      WHERE status = 'expired'
         OR (status = 'active' AND expires_at IS NOT NULL AND expires_at != '' AND expires_at < ?)`
   ).bind(today).run();
-  return res.meta?.changes ?? 0;
+  let deleted = res.meta?.changes ?? 0;
+  const { results: used } = await env.DB.prepare(`SELECT id, updated_at FROM bet_promos WHERE status = 'used'`).all<{ id: string; updated_at: string }>();
+  const staleUsed = (used ?? []).filter((p) => localDateString(p.updated_at) < today).map((p) => p.id);
+  if (staleUsed.length > 0) {
+    await env.DB.batch(staleUsed.map((id) => env.DB.prepare('DELETE FROM bet_promos WHERE id = ?').bind(id)));
+    deleted += staleUsed.length;
+  }
+  return deleted;
 }
 
 app.get('/api/bet-promos', async (c) => {
