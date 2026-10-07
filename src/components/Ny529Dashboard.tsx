@@ -226,9 +226,22 @@ export function Ny529Dashboard({ data, onDismissFlag }: { data: Data; onDismissF
               by {new Date(toMs(s.projection.targetDate)).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })} · {money(s.projection.contributed, false)}{' '}
               contributed
             </div>
+            <div className="ny529__muted" style={{ marginTop: 8 }}>
+              {s.projection.source === 'actual'
+                ? `At your actual return of ${s.projection.returnPct.toFixed(1)}%/yr`
+                : s.projection.source === 'fixed'
+                  ? `At a fixed ${s.projection.returnPct}%/yr`
+                  : `At ${s.projection.returnPct}%/yr${s.projection.actualFrom ? ` — switches to your actual return in ${fmtShort(toMs(s.projection.actualFrom))}` : ''}`}
+            </div>
+            {s.actualReturn && (
+              <div className="ny529__muted">
+                Actual so far: {pct(s.actualReturn.cumulativePct)} since {fmtDate(s.actualReturn.since)}
+                {s.actualReturn.annualizedPct !== null ? ` (${pct(s.actualReturn.annualizedPct)}/yr)` : ' (too early to annualize)'}
+              </div>
+            )}
             <p className="ny529__note">
-              Illustration only — assumes the {s.aip ? money(s.aip.amount) : ''} monthly deposit continues and a steady {s.projection.returnPct}%/yr return, compounded monthly. Not a
-              forecast. Change the rate in <Link to="/settings?cat=statements">Settings → Statements</Link>.
+              Illustration only — assumes the {s.aip ? money(s.aip.amount) : ''} monthly deposit continues and a steady return, compounded monthly. Not a forecast. Change how the rate is
+              chosen in <Link to="/settings?cat=statements">Settings → Statements</Link>.
             </p>
           </section>
         )}

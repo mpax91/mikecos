@@ -8,10 +8,18 @@ import type { Ny529Values } from './templates/ny529';
 export interface Ny529Settings {
   nyLimit: number; // NY deduction cap for this filing status ($10,000 joint)
   limitConfirmedYear: number | null; // year Mike last confirmed the limit
-  projectionReturnPct: number; // labeled, hypothetical projection only
+  /** 'auto' (default): projectionReturnPct until there are
+   * ACTUAL_RETURN_MIN_YEARS of statement history, then the account's own
+   * annualized return — switches by itself. 'fixed': always
+   * projectionReturnPct. */
+  projectionMode: 'auto' | 'fixed';
+  projectionReturnPct: number; // fixed rate / auto fallback; labeled, hypothetical projection only
 }
 
-export const DEFAULT_NY529_SETTINGS: Ny529Settings = { nyLimit: 10000, limitConfirmedYear: 2026, projectionReturnPct: 6 };
+export const DEFAULT_NY529_SETTINGS: Ny529Settings = { nyLimit: 10000, limitConfirmedYear: 2026, projectionMode: 'auto', projectionReturnPct: 6 };
+
+/** Years of history before Auto trusts the account's own return. */
+export const ACTUAL_RETURN_MIN_YEARS = 3;
 
 export interface StmtRow {
   id: string;
@@ -66,7 +74,17 @@ export interface Ny529Summary {
     checksOk: boolean;
     fileId: string;
   }[];
-  projection: { targetDate: string; value: number; contributed: number; returnPct: number } | null;
+  /** Time-weighted return since the first purchase (unit price chain, so
+   * deposits don't distort it). Annualized only after a full year. */
+  actualReturn: { since: string; years: number; cumulativePct: number; annualizedPct: number | null } | null;
+  projection: {
+    targetDate: string;
+    value: number;
+    contributed: number;
+    returnPct: number;
+    source: 'actual' | 'fallback' | 'fixed';
+    actualFrom: string | null; // Auto: date the actual return takes (or took) over
+  } | null;
 }
 
 const ym = (iso: string) => iso.slice(0, 7);
@@ -176,20 +194,32 @@ export function summarizeNy529(stmts: StmtRow[], txns: TxnRow[], settings: Ny529
   });
 
   const portfolio = latest?.values.holdings[0]?.portfolio ?? null;
+  const actualReturn = computeActualReturn(sorted, txns, quarters);
+
+  // Rate for the projection. Auto switches itself once there's enough
+  // history — nothing for Mike to remember.
+  let returnPct = settings.projectionReturnPct;
+  let source: 'actual' | 'fallback' | 'fixed' = settings.projectionMode === 'fixed' ? 'fixed' : 'fallback';
+  const actualFrom = actualReturn ? addYears(actualReturn.since, ACTUAL_RETURN_MIN_YEARS) : null;
+  if (settings.projectionMode !== 'fixed' && actualReturn?.annualizedPct != null && actualReturn.years >= ACTUAL_RETURN_MIN_YEARS) {
+    returnPct = actualReturn.annualizedPct;
+    source = 'actual';
+  }
+
   let projection: Ny529Summary['projection'] = null;
   const targetYear = portfolio?.match(/(20\d{2})/)?.[1];
   if (latest && targetYear) {
-    // Hypothetical: monthly compounding at the set return, current AIP
+    // Hypothetical: monthly compounding at the chosen return, current AIP
     // continuing until the September of the enrollment year.
     const targetDate = `${targetYear}-09-01`;
-    const r = settings.projectionReturnPct / 100 / 12;
+    const r = Math.pow(1 + returnPct / 100, 1 / 12) - 1;
     let v = latest.values.ending;
     let contributed = latest.values.principal;
     for (let m = addMonths(ym(latest.periodEnd), 1); `${m}-01` < targetDate; m = addMonths(m, 1)) {
       v = v * (1 + r) + (aip?.amount ?? 0);
       contributed += aip?.amount ?? 0;
     }
-    projection = { targetDate, value: round2(v), contributed: round2(contributed), returnPct: settings.projectionReturnPct };
+    projection = { targetDate, value: round2(v), contributed: round2(contributed), returnPct, source, actualFrom: settings.projectionMode === 'fixed' ? null : actualFrom };
   }
 
   return {
@@ -212,6 +242,42 @@ export function summarizeNy529(stmts: StmtRow[], txns: TxnRow[], settings: Ny529
     months,
     missedMonths,
     quarters,
+    actualReturn,
     projection,
+  };
+}
+
+function addYears(iso: string, n: number): string {
+  return `${Number(iso.slice(0, 4)) + n}${iso.slice(4)}`;
+}
+
+const daysBetween = (a: string, b: string) => Math.round((Date.parse(`${b}T12:00:00Z`) - Date.parse(`${a}T12:00:00Z`)) / 86400000);
+
+/** Single portfolio throughout: latest unit price ÷ first purchase price.
+ * Otherwise chain the quarterly returns. */
+function computeActualReturn(sorted: StmtRow[], txns: TxnRow[], quarters: Ny529Summary['quarters']): Ny529Summary['actualReturn'] {
+  const latest = sorted[sorted.length - 1];
+  if (!latest) return null;
+  const names = new Set(sorted.flatMap((s) => s.values.holdings.map((h) => h.portfolio)));
+  const firstBuy = [...txns].filter((t) => t.unitPrice && t.unitPrice > 0 && t.amount > 0).sort((a, b) => a.date.localeCompare(b.date))[0];
+  let since: string;
+  let growth: number;
+  if (names.size === 1 && latest.values.holdings.length === 1 && firstBuy) {
+    since = firstBuy.date;
+    growth = latest.values.holdings[0].unitPrice / firstBuy.unitPrice!;
+  } else {
+    const qs = quarters.filter((q) => q.returnPct !== null);
+    if (!qs.length) return null;
+    since = qs[0].periodStart;
+    growth = qs.reduce((g, q) => g * (1 + q.returnPct! / 100), 1);
+  }
+  const days = daysBetween(since, latest.periodEnd);
+  if (days <= 0) return null;
+  const years = days / 365.25;
+  return {
+    since,
+    years: round2(years),
+    cumulativePct: round2((growth - 1) * 100),
+    annualizedPct: years >= 1 ? round2((Math.pow(growth, 1 / years) - 1) * 100) : null,
   };
 }

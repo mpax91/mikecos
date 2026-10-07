@@ -2276,6 +2276,7 @@ export type AccountOwner = 'household' | 'chase';
 export interface Ny529SettingsShape {
   nyLimit: number;
   limitConfirmedYear: number | null;
+  projectionMode: 'auto' | 'fixed';
   projectionReturnPct: number;
 }
 
@@ -2429,7 +2430,15 @@ export interface Ny529Summary {
     checksOk: boolean;
     fileId: string;
   }[];
-  projection: { targetDate: string; value: number; contributed: number; returnPct: number } | null;
+  actualReturn: { since: string; years: number; cumulativePct: number; annualizedPct: number | null } | null;
+  projection: {
+    targetDate: string;
+    value: number;
+    contributed: number;
+    returnPct: number;
+    source: 'actual' | 'fallback' | 'fixed';
+    actualFrom: string | null;
+  } | null;
 }
 
 export interface Ny529Dashboard {

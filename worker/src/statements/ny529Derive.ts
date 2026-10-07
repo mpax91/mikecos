@@ -124,6 +124,19 @@ export async function deriveNy529(env: Env, folder: FolderRow): Promise<void> {
   if (needsLimitConfirm && today.slice(5, 7) <= '03') {
     flags.push({ key: `limit_confirm:${year}`, severity: 'info', message: `Confirm the ${year} NY 529 deduction limit (currently ${fmtMoney(settings.nyLimit)}) in Settings → Statements` });
   }
+  // Auto projection rate switched to the account's own return: say so for
+  // ~60 days after the first statement past the history threshold.
+  const pj = s.projection;
+  if (pj?.source === 'actual' && pj.actualFrom) {
+    const firstQualifying = stmts.find((x) => x.periodEnd >= pj.actualFrom!);
+    if (firstQualifying && addDays(firstQualifying.periodEnd, 60) >= today) {
+      flags.push({
+        key: `projection_actual:${firstQualifying.periodEnd}`,
+        severity: 'info',
+        message: `The 529 projection now uses your actual return (${pj.returnPct.toFixed(1)}%/yr since ${fmtMdy(s.actualReturn!.since)}) instead of the ${settings.projectionReturnPct}% placeholder`,
+      });
+    }
+  }
   await syncFlags(env, folder.id, flags);
 
   // ---- Vault entry (one per account) ----

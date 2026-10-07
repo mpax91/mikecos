@@ -237,7 +237,19 @@ function LiveFolderCard({ folder, busy, scanMsg, onScan, onChanged }: { folder: 
               <span>Limit Confirmed for {year}</span>
             </label>
             <label className="statements-settings__field">
-              <span>Projection Return (%/yr)</span>
+              <span>Projection Return</span>
+              <select
+                value={s.projectionMode ?? 'auto'}
+                disabled={saving}
+                onChange={(e) => save({ settings: { projectionMode: e.target.value } })}
+                title="Auto uses the fallback rate until there are 3 years of statements, then switches to your actual return on its own"
+              >
+                <option value="auto">Auto (Actual After 3 Yrs)</option>
+                <option value="fixed">Fixed Rate</option>
+              </select>
+            </label>
+            <label className="statements-settings__field">
+              <span>{(s.projectionMode ?? 'auto') === 'auto' ? 'Until Then (%/yr)' : 'Fixed Rate (%/yr)'}</span>
               <input
                 type="number"
                 min={0}
