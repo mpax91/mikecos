@@ -13,12 +13,14 @@ e.g. "NY 529 · Chase" — Mike can rename it; Statements tracks it by id).
 | Vault section | What Statements does | Rule of thumb |
 |---|---|---|
 | **Quick Facts** | Mike's. Statements seeds 2–4 **evergreen** facts once, when it creates the entry (account ••last digits, beneficiary/owner if relevant, institution phone) as ordinary facts — then never adds, edits, reorders or removes a Quick Fact. Nothing that changes (balances, AIP, gaps, as-of dates) ever goes here. | Won't change, needed in a pinch. |
-| **Links** | Created once as real Link children: institution website, Finance dashboard, latest statement, Drive folder. Only "live" links (Latest Statement) keep their URL/title current. Mike can rename, reorder, delete — deletions stick. | Anything you'd click. |
+| **Links** | Created once as real Link children: institution website, Finance dashboard, Drive folder (no per-statement links — the Drive folder covers them). Never touched again; Mike can edit, reorder, delete — deletions stick. Links show only their label (no URL subtext, no tags). | Anything you'd click. |
 | **Notes** | One note ("Account Details" — Mike may rename it). Seeded with an evergreen Account table plus **owned sections** (matched by their level-2 heading: e.g. "Balances as of…", "2026 NY Deduction", "Statements", "Change History"). Nightly, only the owned sections' bodies are replaced; everything else in the note is Mike's and untouched. An owned section Mike deletes stays deleted. | Everything that changes or is detail. |
 | Attachments / Passwords | Untouched — Mike's. Statements stay in Drive. | |
 
 Mechanics: `seedFacts`, `syncAutoNote` (sections + `written` keys so a
-deletion is respected), `syncManagedLinks` (`live` flag) in `engine.ts`;
+deletion is respected; owned blocks carry `autoUpdated` → tinted with an
+"Auto-Updates" tag in the editor), `syncManagedLinks` (`live` flag, used
+only by Tax Packet document links) in `engine.ts`;
 ids in `statement_folders.meta_json.vault`. Values follow the LATEST
 statement; backfills never roll back. Build note content with
 `vaultDoc.ts` and validate new node shapes against the editor schema.

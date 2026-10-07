@@ -65,8 +65,10 @@ export function VaultLinkRow({
   onTogglePin,
   onPromote,
   onDemote,
+  onEdit,
 }: {
   entity: Entity;
+  onEdit?: (entity: Entity) => void;
   onDelete: (entity: Entity) => void;
   onTogglePin: (entity: Entity) => void;
   onPromote?: (entity: Entity) => void;
@@ -80,6 +82,7 @@ export function VaultLinkRow({
   return (
     <div
       className={`vault-link-row${isPinned ? ' is-pinned' : ''}`}
+      title={url ? normalizeUrl(url) : undefined}
       onClick={() => url && window.open(normalizeUrl(url), '_blank', 'noopener,noreferrer')}
     >
       <div className={`vault-link-row__icon vault-link-row__icon--${family}`}>
@@ -88,23 +91,13 @@ export function VaultLinkRow({
       <div className="vault-link-row__body">
         <div className="vault-link-row__title">
           {isPinned && <span title="Pinned">📌 </span>}
-          {entity.title || url}
-          {meta?.auto === 'live' && (
-            <span className="auto-pill" title="Kept up to date automatically from your statements each night">
-              Auto-Updates
-            </span>
-          )}
-          {meta?.auto === 'once' && (
-            <span className="auto-pill auto-pill--quiet" title="Added automatically from your statements — yours to edit, never changed again">
-              From Statements
-            </span>
-          )}
+          {entity.title || (url ? hostAndPath(url) : 'Untitled Link')}
         </div>
-        <div className="vault-link-row__url">{url ? hostAndPath(url) : ''}</div>
       </div>
       <span className="vault-link-row__open">↗</span>
       <KebabMenu
         items={[
+          ...(onEdit ? [{ label: 'Edit', onClick: () => onEdit(entity) }] : []),
           { label: isPinned ? 'Unpin' : 'Pin', onClick: () => onTogglePin(entity) },
           ...(onPromote ? [{ label: 'Promote', onClick: () => onPromote(entity) }] : []),
           ...(onDemote ? [{ label: 'Demote', onClick: () => onDemote(entity) }] : []),

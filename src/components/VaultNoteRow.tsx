@@ -1,7 +1,6 @@
 import type { Entity } from '../api/types';
 import { KebabMenu } from './KebabMenu';
 import { formatRelativeTime } from '../utils/formatRelativeTime';
-import { extractNoteText } from '../utils/noteText';
 
 // A simple lined-page glyph — deliberately plain (no post-it color/border
 // identity the way the old card grid had) since a Vault note is meant to
@@ -36,7 +35,6 @@ export function VaultNoteRow({
   onDemote: (entity: Entity) => void;
 }) {
   const isPinned = entity.pinned === 1;
-  const preview = extractNoteText(entity.content, 140);
 
   return (
     <div className={`vault-note-row${isPinned ? ' is-pinned' : ''}`} onClick={() => onOpen(entity)}>
@@ -53,7 +51,6 @@ export function VaultNoteRow({
             </span>
           )}
         </div>
-        {preview && <div className="vault-note-row__preview">{preview}</div>}
       </div>
       <span className="last-modified-badge vault-note-row__meta" title={new Date(entity.updated_at).toLocaleString()}>
         {formatRelativeTime(entity.updated_at)}

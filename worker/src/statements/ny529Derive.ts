@@ -238,7 +238,8 @@ export async function deriveNy529(env: Env, folder: FolderRow): Promise<void> {
   meta.vault.links = await syncManagedLinks(env, entry.id, meta.vault.links, [
     { key: 'site', title: 'NY 529 Direct Plan', url: template.account.site ?? null },
     { key: 'dashboard', title: 'Finance Dashboard', url: dashUrl },
-    { key: 'latest', title: latest ? `Latest Statement · ${fmtLong(latest.periodEnd)}` : 'Latest Statement', url: latest ? fileUrl(latest.fileId) : null, live: true },
+    // Latest Statement link retired (Mike, 2026-10-06): the Drive folder link covers it.
+    { key: 'latest', title: 'Latest Statement', url: null },
     { key: 'folder', title: `Drive Folder · ${folder.folder_name}`, url: folder.folder_url },
   ]);
 
@@ -288,7 +289,3 @@ function ordinal(n: number): string {
   return `${n}${s[(v - 20) % 10] ?? s[v] ?? s[0]}`;
 }
 
-function fmtLong(iso: string): string {
-  const [y, m, d] = iso.split('-').map(Number);
-  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
-}

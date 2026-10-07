@@ -16789,3 +16789,11 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   color: #2a5a8a;
   border: 1px solid #cddcec;
 }
+
+/* Desktop: wide enough that the note editor's formatting ribbon fits on
+   one row (~800px of buttons) instead of wrapping. */
+@media (min-width: 900px) {
+  .vault-note-modal {
+    width: 840px;
+  }
+}

@@ -48,6 +48,7 @@ export function VaultPage() {
   const [children, setChildren] = useState<Entity[]>([]);
   const [entryTitle, setEntryTitle] = useState('');
   const [addingLink, setAddingLink] = useState(false);
+  const [editingLink, setEditingLink] = useState<Entity | null>(null);
   const [deleting, setDeleting] = useState<Entity | null>(null);
   const [renaming, setRenaming] = useState<Entity | null>(null);
   const [settingExpiration, setSettingExpiration] = useState<Entity | null>(null);
@@ -182,6 +183,13 @@ export function VaultPage() {
     if (!detail) return;
     await api.createLink(detail.id, url, title);
     setAddingLink(false);
+    loadDetail(detail.id);
+  }
+
+  async function saveEditedLink(url: string, title: string) {
+    if (!detail || !editingLink) return;
+    await api.updateEntity(editingLink.id, { title: title || url, content: JSON.stringify({ url }) });
+    setEditingLink(null);
     loadDetail(detail.id);
   }
 
@@ -373,7 +381,7 @@ export function VaultPage() {
                 <div className="entity-card-grid">
                   {pinned.map((c) =>
                     c.type === 'link' ? (
-                      <VaultLinkRow key={c.id} entity={c} onDelete={setDeleting} onTogglePin={togglePinChild} />
+                      <VaultLinkRow key={c.id} entity={c} onDelete={setDeleting} onTogglePin={togglePinChild} onEdit={setEditingLink} />
                     ) : (
                       <EntityCard
                         key={c.id}
@@ -457,6 +465,7 @@ export function VaultPage() {
                     onTogglePin={togglePinChild}
                     onPromote={(e) => promoteWithin(links, e)}
                     onDemote={(e) => demoteWithin(links, e)}
+                    onEdit={setEditingLink}
                   />
                 ))}
                 <button type="button" className="vault-link-row vault-link-row--ghost" onClick={() => setAddingLink(true)}>
@@ -475,6 +484,22 @@ export function VaultPage() {
       </div>
 
       {addingLink && <LinkModal onSave={addLink} onClose={() => setAddingLink(false)} />}
+      {editingLink && (
+        <LinkModal
+          heading="Edit Link"
+          submitLabel="Save"
+          initialUrl={(() => {
+            try {
+              return (JSON.parse(editingLink.content ?? '{}') as { url?: string }).url ?? '';
+            } catch {
+              return '';
+            }
+          })()}
+          initialTitle={editingLink.title}
+          onSave={saveEditedLink}
+          onClose={() => setEditingLink(null)}
+        />
+      )}
 
       {renaming && (
         <RenameModal
