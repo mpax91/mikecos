@@ -14,6 +14,7 @@ import type { ReactNode } from 'react';
 import type { Editor } from '@tiptap/react';
 import { Attachment } from './AttachmentNode';
 import { LinkPreview } from './LinkPreviewNode';
+import { AutoUpdatedAttr } from './AutoUpdatedAttr';
 import { LinkModal } from './LinkModal';
 import { api } from '../api/client';
 import { useIsMobile } from '../hooks/useIsMobile';
@@ -55,6 +56,7 @@ export function noteExtensions() {
     TextAlign.configure({ types: ['heading', 'paragraph'] }),
     Attachment,
     LinkPreview,
+    AutoUpdatedAttr,
   ];
 }
 

@@ -15,6 +15,9 @@ export interface LinkMeta {
   preview_title?: string | null;
   preview_image?: string | null;
   preview_domain?: string | null;
+  /** Set by Statements: 'live' = kept current nightly (e.g. Latest
+   * Statement); 'once' = added automatically once, Mike's to edit. */
+  auto?: 'live' | 'once';
 }
 
 /** Tasks store their extra detail (everything beyond title/status/due date)

@@ -47,6 +47,11 @@ export function VaultNoteRow({
         <div className="vault-note-row__title">
           {isPinned && <span title="Pinned">📌 </span>}
           {entity.title || 'Untitled Note'}
+          {entity.content?.includes('"autoUpdated":true') && (
+            <span className="auto-pill" title="Shaded sections in this note refresh automatically from your statements each night; everything else is yours">
+              Auto-Updates
+            </span>
+          )}
         </div>
         {preview && <div className="vault-note-row__preview">{preview}</div>}
       </div>

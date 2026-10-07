@@ -4,7 +4,7 @@ import { detectFactValue, reindexEntry } from '../vault';
 import { UnreadableStatement } from './common';
 import { pdfToText } from './pdfText';
 import { templateById } from './templates';
-import { doc, docText, heading } from './vaultDoc';
+import { doc, docText, heading, markAuto } from './vaultDoc';
 import type { Block } from './vaultDoc';
 import { deriveNy529 } from './ny529Derive';
 
@@ -322,7 +322,7 @@ export async function syncAutoNote(
 ): Promise<AutoNoteState> {
   const ts = now();
   const written = new Set(state?.written ?? []);
-  const sectionNodes = (sec: AutoSection) => [heading(2, sec.heading), ...sec.blocks] as PMNode[];
+  const sectionNodes = (sec: AutoSection) => markAuto([heading(2, sec.heading), ...sec.blocks]) as PMNode[];
 
   if (state?.noteId) {
     const cur = await env.DB.prepare('SELECT title, content FROM entities WHERE id = ?').bind(state.noteId).first<{ title: string; content: string | null }>();
@@ -363,7 +363,7 @@ export async function syncAutoNote(
     return { noteId: state.noteId, written: [...written] };
   }
 
-  const content = doc([...intro, ...sections.flatMap((sec) => [heading(2, sec.heading), ...sec.blocks])]);
+  const content = doc([...intro, ...sections.flatMap((sec) => markAuto([heading(2, sec.heading), ...sec.blocks]))]);
   const id = uid();
   await env.DB.prepare(
     `INSERT INTO entities (id, type, title, content, parent_id, is_top_level, status, position, last_touched, created_at, updated_at, search_text)
@@ -394,10 +394,22 @@ export async function syncManagedLinks(
       delete out[l.key];
       continue;
     }
-    const content = JSON.stringify({ url: l.url });
+    const content = JSON.stringify({ url: l.url, auto: l.live ? 'live' : 'once' });
     if (id) {
-      if (!l.live) continue;
       const cur = await env.DB.prepare('SELECT title, content FROM entities WHERE id = ?').bind(id).first<{ title: string; content: string | null }>();
+      if (!l.live) {
+        // Created-once links: only tag one that still points where we put
+        // it (pre-tag links) — never change a title or a URL Mike edited.
+        if (cur?.content) {
+          try {
+            const m = JSON.parse(cur.content) as { url?: string; auto?: string };
+            if (!m.auto && m.url === l.url) await env.DB.prepare('UPDATE entities SET content = ? WHERE id = ?').bind(content, id).run();
+          } catch {
+            // not ours to repair
+          }
+        }
+        continue;
+      }
       if (cur && (cur.title !== l.title || cur.content !== content)) {
         await env.DB.prepare('UPDATE entities SET title = ?, content = ?, search_text = ?, updated_at = ? WHERE id = ?').bind(l.title, content, `${l.title} ${l.url}`, ts, id).run();
       }

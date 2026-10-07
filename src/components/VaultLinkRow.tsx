@@ -89,6 +89,16 @@ export function VaultLinkRow({
         <div className="vault-link-row__title">
           {isPinned && <span title="Pinned">📌 </span>}
           {entity.title || url}
+          {meta?.auto === 'live' && (
+            <span className="auto-pill" title="Kept up to date automatically from your statements each night">
+              Auto-Updates
+            </span>
+          )}
+          {meta?.auto === 'once' && (
+            <span className="auto-pill auto-pill--quiet" title="Added automatically from your statements — yours to edit, never changed again">
+              From Statements
+            </span>
+          )}
         </div>
         <div className="vault-link-row__url">{url ? hostAndPath(url) : ''}</div>
       </div>

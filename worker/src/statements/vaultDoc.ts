@@ -55,3 +55,18 @@ export function docText(json: string): string {
   walk(JSON.parse(json));
   return out.join(' ').replace(/\s+/g, ' ').trim();
 }
+
+const AUTO_TYPES = new Set(['heading', 'paragraph', 'bulletList', 'table', 'tableCell', 'tableHeader']);
+
+/** Marks blocks (and table cells) as auto-updated so the editor tints them
+ * (src/components/AutoUpdatedAttr.ts). Paragraphs inside cells/list items
+ * are left unmarked — the cell or list carries the tint. */
+export function markAuto(blocks: Block[]): Block[] {
+  const mark = (n: Record<string, unknown>, top: boolean): Record<string, unknown> => {
+    const type = n.type as string;
+    const content = Array.isArray(n.content) ? (n.content as Record<string, unknown>[]).map((c) => mark(c, false)) : undefined;
+    const tag = AUTO_TYPES.has(type) && (top || type === 'tableCell' || type === 'tableHeader');
+    return { ...n, ...(tag ? { attrs: { ...((n.attrs as object) ?? {}), autoUpdated: true } } : {}), ...(content ? { content } : {}) };
+  };
+  return blocks.map((b) => mark(b, true));
+}

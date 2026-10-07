@@ -16744,3 +16744,48 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 .ny529__card--full {
   grid-column: 1 / -1;
 }
+
+/* ---- Auto-updated content (Statements) — see AutoUpdatedAttr.ts ---- */
+.auto-pill {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  vertical-align: 1px;
+  background: #e6eef7;
+  color: #2a5a8a;
+  border: 1px solid #cddcec;
+}
+.auto-pill--quiet {
+  background: transparent;
+  color: var(--color-muted);
+  border-color: var(--color-border);
+  font-weight: 500;
+}
+.ProseMirror > [data-auto='true'],
+.ProseMirror .tableWrapper:has(td[data-auto='true'], th[data-auto='true']) {
+  background: #f1f6fb;
+  box-shadow: -10px 0 0 #f1f6fb, 10px 0 0 #f1f6fb, -13px 0 0 #9dbbd9;
+}
+.ProseMirror td[data-auto='true'],
+.ProseMirror th[data-auto='true'] {
+  background: #f1f6fb;
+}
+.ProseMirror h2[data-auto='true']::after {
+  content: 'Auto-Updates';
+  display: inline-block;
+  margin-left: 10px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  vertical-align: 3px;
+  background: #e6eef7;
+  color: #2a5a8a;
+  border: 1px solid #cddcec;
+}
