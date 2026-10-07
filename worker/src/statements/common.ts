@@ -11,7 +11,7 @@ export interface StatementCheck {
 export interface ParsedTransaction {
   date: string; // YYYY-MM-DD
   description: string;
-  kind: 'aip' | 'contribution' | 'withdrawal' | 'other';
+  kind: 'aip' | 'contribution' | 'withdrawal' | 'payment' | 'adjustment' | 'other';
   amount: number;
   units: number | null;
   unitPrice: number | null;

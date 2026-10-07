@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
-import type { Ny529Dashboard as Data } from '../api/types';
+import type { FinanceDashboard as Data } from '../api/types';
 import { useReportTabMeta } from '../contexts/TabsContext';
 import { Ny529Dashboard } from '../components/Ny529Dashboard';
+import { AdtDashboard } from '../components/AdtDashboard';
 
 export function FinanceAccountPage() {
   const { id } = useParams<{ id: string }>();
@@ -15,14 +16,31 @@ export function FinanceAccountPage() {
   const load = useCallback(() => {
     if (!id) return;
     api
-      .getNy529Dashboard(id)
+      .getFinanceDashboard(id)
       .then(setData)
       .catch((e: Error) => setError(e.message));
   }, [id]);
   useEffect(load, [load]);
 
   const t = data?.template;
-  const a = data?.account;
+  const subhead =
+    !data || !t
+      ? null
+      : data.kind === 'adt'
+        ? [t.institution, t.type, data.account?.accountLast ? `••${data.account.accountLast}` : null, data.summary.latest?.services].filter(Boolean).join(' · ')
+        : [
+            t.institution,
+            data.account?.accountType,
+            data.account ? `••${data.account.accountLast}` : null,
+            data.account ? `Owner ${data.account.owner}` : null,
+            data.account ? `Beneficiary ${data.account.beneficiary}` : null,
+            data.summary.portfolio,
+          ]
+            .filter(Boolean)
+            .join(' · ');
+  const dismiss = (flagId: string) => {
+    api.dismissStatementFlag(flagId).then(load);
+  };
 
   return (
     <div className="finance-page">
@@ -45,13 +63,7 @@ export function FinanceAccountPage() {
           ⚙️
         </Link>
       </div>
-      {t && (
-        <p className="links-page__subhead">
-          {[t.institution, a?.accountType, a ? `••${a.accountLast}` : null, a ? `Owner ${a.owner}` : null, a ? `Beneficiary ${a.beneficiary}` : null, data?.summary.portfolio]
-            .filter(Boolean)
-            .join(' · ')}
-        </p>
-      )}
+      {subhead && <p className="links-page__subhead">{subhead}</p>}
 
       {error && <div className="empty-state">Couldn’t load this account: {error}</div>}
       {!data && !error && <div className="empty-state empty-state--section">Loading…</div>}
@@ -60,14 +72,7 @@ export function FinanceAccountPage() {
           No statements read yet — run <strong>Scan Now</strong> in <Link to="/settings?cat=statements">Settings → Statements</Link>.
         </div>
       )}
-      {data && data.statements.length > 0 && (
-        <Ny529Dashboard
-          data={data}
-          onDismissFlag={(flagId) => {
-            api.dismissStatementFlag(flagId).then(load);
-          }}
-        />
-      )}
+      {data && data.statements.length > 0 && (data.kind === 'adt' ? <AdtDashboard data={data} onDismissFlag={dismiss} /> : <Ny529Dashboard data={data} onDismissFlag={dismiss} />)}
     </div>
   );
 }

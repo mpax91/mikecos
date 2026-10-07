@@ -29,7 +29,12 @@ export function FinancePage() {
   }, []);
 
   const shown = (accounts ?? []).filter((a) => a.owner === owner);
-  const total = shown.reduce((s, a) => s + (a.headline?.value ?? 0), 0);
+  // Balances (529, savings) add up; bills (ADT, utilities) don't — they get
+  // their own monthly total instead.
+  const balances = shown.filter((a) => a.headline?.kind !== 'bill');
+  const bills = shown.filter((a) => a.headline?.kind === 'bill');
+  const total = balances.reduce((s, a) => s + (a.headline?.value ?? 0), 0);
+  const monthlyBills = bills.reduce((s, a) => s + (a.headline?.kind === 'bill' ? (a.headline.monthly ?? 0) : 0), 0);
 
   return (
     <div className="finance-page">
@@ -62,9 +67,19 @@ export function FinancePage() {
       )}
       {shown.length > 0 && (
         <div className="cloud-meters">
-          <div className="finance-page__total">
-            <span className="cloud-meters__stat-label">{owner === 'chase' ? 'Chase’s Accounts' : 'Household Accounts'}</span>
-            <span className="cloud-meters__stat-value">{money(total)}</span>
+          <div className="finance-page__totals">
+            {balances.length > 0 && (
+              <div className="finance-page__total">
+                <span className="cloud-meters__stat-label">{owner === 'chase' ? 'Chase’s Accounts' : 'Household Accounts'}</span>
+                <span className="cloud-meters__stat-value">{money(total)}</span>
+              </div>
+            )}
+            {bills.length > 0 && (
+              <div className="finance-page__total">
+                <span className="cloud-meters__stat-label">Monthly Bills</span>
+                <span className="cloud-meters__stat-value">{money(monthlyBills)}</span>
+              </div>
+            )}
           </div>
           <div className="cloud-meters__rows">
             {shown.map((a) => (
@@ -77,7 +92,15 @@ export function FinancePage() {
                   </span>
                 </span>
                 {a.openFlags > 0 && <span className="finance-page__flags">⚠ {a.openFlags}</span>}
-                <span className="finance-page__row-value">{a.headline ? money(a.headline.value) : '—'}</span>
+                <span className="finance-page__row-value">
+                  {a.headline ? money(a.headline.value) : '—'}
+                  {a.headline?.kind === 'bill' && (
+                    <span className="finance-page__row-sub">
+                      {a.headline.status === 'past_due' ? 'Past Due' : a.headline.status === 'autopay' ? 'Autopay' : a.headline.status === 'credit' ? 'Credit' : a.headline.status === 'due' ? 'Due' : 'Latest Bill'}
+                      {a.headline.monthly !== null ? ` · ${money(a.headline.monthly)}/mo` : ''}
+                    </span>
+                  )}
+                </span>
                 <span className="finance-page__chev">›</span>
               </Link>
             ))}

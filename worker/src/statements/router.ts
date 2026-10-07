@@ -6,6 +6,8 @@ import { derive, easternToday, loadFolder, scanFolder } from './engine';
 import type { FolderRow } from './engine';
 import { loadNy529Data, ny529Settings } from './ny529Derive';
 import { summarizeNy529 } from './ny529Summary';
+import { loadAdtData } from './adtDerive';
+import { summarizeAdt } from './adtSummary';
 
 /** Statements API, mounted at /api/statements. */
 export const statementsRouter = new Hono<{ Bindings: Env }>();
@@ -21,7 +23,7 @@ interface FolderStats {
 
 async function folderStats(env: Env): Promise<Map<string, FolderStats>> {
   const [files, stmts, flags] = await env.DB.batch([
-    env.DB.prepare(`SELECT folder_row_id, COUNT(*) AS total, SUM(CASE WHEN status = 'parsed' THEN 1 ELSE 0 END) AS parsed FROM statement_files GROUP BY folder_row_id`),
+    env.DB.prepare(`SELECT folder_row_id, SUM(CASE WHEN status = 'skipped' THEN 0 ELSE 1 END) AS total, SUM(CASE WHEN status = 'parsed' THEN 1 ELSE 0 END) AS parsed FROM statement_files GROUP BY folder_row_id`),
     env.DB.prepare('SELECT folder_row_id, MAX(period_end) AS last FROM statements GROUP BY folder_row_id'),
     env.DB.prepare('SELECT folder_row_id, COUNT(*) AS n FROM statement_flags WHERE resolved_at IS NULL AND dismissed_at IS NULL GROUP BY folder_row_id'),
   ]);
@@ -184,11 +186,18 @@ statementsRouter.get('/accounts', async (c) => {
   const stats = await folderStats(c.env);
   const out = [];
   for (const row of results ?? []) {
-    let headline: { value: number; asOf: string | null; principal: number; earnings: number } | null = null;
+    let headline:
+      | { kind: 'balance'; value: number; asOf: string | null; principal: number; earnings: number }
+      | { kind: 'bill'; value: number; asOf: string | null; monthly: number | null; status: string }
+      | null = null;
     if (row.template_id === 'ny529') {
       const { stmts, txns } = await loadNy529Data(c.env, row.id);
       const s = summarizeNy529(stmts, txns, ny529Settings(row), easternToday());
-      headline = { value: s.value, asOf: s.asOf, principal: s.principal, earnings: s.earnings };
+      headline = { kind: 'balance', value: s.value, asOf: s.asOf, principal: s.principal, earnings: s.earnings };
+    } else if (row.template_id === 'adt') {
+      const { stmts, txns } = await loadAdtData(c.env, row.id);
+      const s = summarizeAdt(stmts, txns, easternToday());
+      if (s.latest) headline = { kind: 'bill', value: s.latest.totalDue, asOf: s.asOf, monthly: s.monthlyWithTax ?? s.monthlyRate, status: s.status };
     }
     out.push({ ...folderJson(row, stats.get(row.id)), headline });
   }
@@ -198,6 +207,7 @@ statementsRouter.get('/accounts', async (c) => {
 statementsRouter.get('/folders/:id/dashboard', async (c) => {
   const row = await loadFolder(c.env, c.req.param('id'));
   if (!row) return c.json({ error: 'not found' }, 404);
+  if (row.template_id === 'adt') return c.json(await adtDashboard(c.env, row));
   if (row.template_id !== 'ny529') return c.json({ error: 'No dashboard for this template yet' }, 400);
   const stats = await folderStats(c.env);
   const { stmts, txns, files } = await loadNy529Data(c.env, row.id);
@@ -219,6 +229,7 @@ statementsRouter.get('/folders/:id/dashboard', async (c) => {
     // no reminder bookkeeping yet
   }
   return c.json({
+    kind: 'ny529',
     folder: folderJson(row, stats.get(row.id)),
     account: latest
       ? { owner: latest.values.owner, beneficiary: latest.values.beneficiary, accountLast: latest.values.accountLast, accountType: latest.values.accountType }
@@ -237,3 +248,42 @@ statementsRouter.post('/flags/:id/dismiss', async (c) => {
   await c.env.DB.prepare('UPDATE statement_flags SET dismissed_at = ? WHERE id = ?').bind(now(), c.req.param('id')).run();
   return c.json({ ok: true });
 });
+
+async function openFlags(env: Env, folderId: string) {
+  const { results } = await env.DB.prepare(
+    'SELECT id, severity, message, created_at FROM statement_flags WHERE folder_row_id = ? AND resolved_at IS NULL AND dismissed_at IS NULL ORDER BY severity DESC, created_at DESC'
+  )
+    .bind(folderId)
+    .all();
+  return results ?? [];
+}
+
+/** ADT (monthly bill) dashboard payload. */
+async function adtDashboard(env: Env, row: FolderRow) {
+  const stats = await folderStats(env);
+  const { stmts, txns, files } = await loadAdtData(env, row.id);
+  const summary = summarizeAdt(stmts, txns, easternToday());
+  let payTask: { id: string; title: string; due: string | null; status: string | null } | null = null;
+  try {
+    const meta = row.meta_json ? JSON.parse(row.meta_json) : {};
+    if (meta.payTask?.taskId) {
+      const t = await env.DB.prepare('SELECT id, title, due_date, status FROM entities WHERE id = ?').bind(meta.payTask.taskId).first<{ id: string; title: string; due_date: string | null; status: string | null }>();
+      if (t) payTask = { id: t.id, title: t.title, due: t.due_date, status: t.status };
+    }
+  } catch {
+    // no reminder bookkeeping yet
+  }
+  const last = stmts[stmts.length - 1];
+  return {
+    kind: 'adt' as const,
+    folder: folderJson(row, stats.get(row.id)),
+    template: templateById(row.template_id)?.account ?? null,
+    account: last ? { accountLast: last.values.accountLast } : null,
+    summary,
+    statements: stmts.map((s) => ({ id: s.id, periodEnd: s.periodEnd, fileId: s.fileId, checks: s.checks })),
+    transactions: txns,
+    files: files.map((f) => ({ fileId: f.file_id, name: f.file_name, url: f.web_url, status: f.status, error: f.error })),
+    flags: await openFlags(env, row.id),
+    payTask,
+  };
+}

@@ -2325,7 +2325,73 @@ export interface StatementScanResult {
 }
 
 export interface FinanceAccount extends StatementFolder {
-  headline: { value: number; asOf: string | null; principal: number; earnings: number } | null;
+  /** 'balance' accounts (529, savings) count toward totals; 'bill' accounts
+   * (ADT, utilities) show their latest bill and monthly cost instead. */
+  headline:
+    | { kind: 'balance'; value: number; asOf: string | null; principal: number; earnings: number }
+    | { kind: 'bill'; value: number; asOf: string | null; monthly: number | null; status: AdtBillStatus }
+    | null;
+}
+
+export type AdtBillStatus = 'paid' | 'autopay' | 'due' | 'past_due' | 'credit' | 'none';
+
+export interface StatementCheckRow {
+  name: string;
+  ok: boolean;
+  detail: string;
+}
+
+export interface AdtBill {
+  invoiceDate: string;
+  servicePeriodStart: string | null;
+  servicePeriodEnd: string | null;
+  charges: number;
+  taxes: number;
+  billed: number;
+  previousBalance: number;
+  payments: number;
+  totalDue: number;
+  dueDate: string | null;
+  dueNote: string | null;
+  autopay: boolean;
+  monthlyRate: number | null;
+  services: string | null;
+  fileId: string;
+  checksOk: boolean;
+  checks: StatementCheckRow[];
+}
+
+export interface AdtSummary {
+  asOf: string | null;
+  latest: AdtBill | null;
+  monthlyRate: number | null;
+  monthlyWithTax: number | null;
+  rateSince: string | null;
+  rateHistory: { from: string; to: string; rate: number; services: string | null; bills: number }[];
+  years: { year: number; bills: number; billed: number; paid: number }[];
+  ytdBilled: number;
+  ytdBills: number;
+  lifetimeBilled: number;
+  lifetimePaid: number;
+  firstInvoice: string | null;
+  bills: AdtBill[];
+  gaps: { after: string; before: string; days: number }[];
+  pastDueBills: string[];
+  nextBillExpected: string | null;
+  status: AdtBillStatus;
+}
+
+export interface AdtDashboard {
+  kind: 'adt';
+  folder: StatementFolder;
+  template: { nickname: string; institution: string; type: string; site?: string; phone?: string } | null;
+  account: { accountLast: string } | null;
+  summary: AdtSummary;
+  statements: { id: string; periodEnd: string; fileId: string; checks: StatementCheckRow[] }[];
+  transactions: { date: string; description: string; kind: string; amount: number }[];
+  files: { fileId: string; name: string; url: string | null; status: string; error: string | null }[];
+  flags: { id: string; severity: 'warn' | 'info'; message: string; created_at: string }[];
+  payTask: { id: string; title: string; due: string | null; status: string | null } | null;
 }
 
 export type Ny529MonthState = 'deposited' | 'missed' | 'upcoming' | 'before_start' | 'unknown';
@@ -2367,6 +2433,7 @@ export interface Ny529Summary {
 }
 
 export interface Ny529Dashboard {
+  kind?: 'ny529';
   folder: StatementFolder;
   account: { owner: string; beneficiary: string; accountLast: string; accountType: string } | null;
   template: { nickname: string; institution: string; type: string; site?: string; phone?: string } | null;
@@ -2377,3 +2444,5 @@ export interface Ny529Dashboard {
   flags: { id: string; severity: 'warn' | 'info'; message: string; created_at: string }[];
   topupTask: { id: string; title: string; due: string | null; status: string | null } | null;
 }
+
+export type FinanceDashboard = Ny529Dashboard | AdtDashboard;

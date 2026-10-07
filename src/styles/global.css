@@ -16217,6 +16217,17 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   margin-left: 6px;
   opacity: 0.65;
 }
+.finance-page__totals {
+  display: flex;
+  border-bottom: 1px solid var(--color-border);
+}
+.finance-page__totals .finance-page__total {
+  flex: 1;
+  border-bottom: none;
+}
+.finance-page__totals .finance-page__total + .finance-page__total {
+  border-left: 1px solid var(--color-border);
+}
 .finance-page__total {
   display: flex;
   flex-direction: column;
@@ -16743,6 +16754,65 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 }
 .ny529__card--full {
   grid-column: 1 / -1;
+}
+
+/* ADT (monthly bill) dashboard — AdtDashboard.tsx; shares the ny529 card system */
+.adt__years {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.adt__year {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) 64px 24px;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.adt__year-label {
+  color: var(--color-muted);
+}
+.adt__year-track {
+  height: 10px;
+  border-radius: 5px;
+  background: #efeae0;
+  overflow: hidden;
+}
+.adt__year-bar {
+  display: block;
+  height: 100%;
+  border-radius: 5px;
+  background: #2a6fb0;
+}
+.adt__year-value {
+  text-align: right;
+}
+.adt__year-bills {
+  text-align: right;
+  color: var(--color-muted);
+  font-size: 12px;
+}
+.adt__kv {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px 16px;
+  margin: 0;
+  font-size: 13.5px;
+}
+.adt__kv dt {
+  color: var(--color-muted);
+}
+.adt__kv dd {
+  margin: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.finance-page__row-sub {
+  display: block;
+  font-size: 12px;
+  color: var(--color-muted);
+  text-align: right;
 }
 
 /* ---- Auto-updated content (Statements) — see AutoUpdatedAttr.ts ---- */

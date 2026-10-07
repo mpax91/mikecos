@@ -59,7 +59,22 @@ export function StatementsPanel() {
     setBusy(folder.id);
     setScanMsg((m) => ({ ...m, [folder.id]: 'Reading statements…' }));
     try {
+      // Each pass reads up to 12 PDFs; keep going (a folder with years of
+      // bills takes several passes) until it's caught up.
       const r = await api.scanStatementFolder(folder.id);
+      for (let pass = 1; pass < 15 && r.remaining > 0; pass++) {
+        setScanMsg((m) => ({ ...m, [folder.id]: `Reading statements… ${r.read} done, ${r.remaining} to go` }));
+        const next = await api.scanStatementFolder(folder.id);
+        Object.assign(r, {
+          listed: next.listed,
+          read: r.read + next.read,
+          parsed: r.parsed + next.parsed,
+          unreadable: r.unreadable + next.unreadable,
+          duplicates: r.duplicates + next.duplicates,
+          remaining: next.remaining,
+          errors: [...r.errors, ...next.errors],
+        });
+      }
       const parts = [`${r.listed} PDFs in folder`, `${r.parsed} read`];
       if (r.unreadable) parts.push(`${r.unreadable} unreadable`);
       if (r.duplicates) parts.push(`${r.duplicates} duplicate`);
@@ -178,7 +193,7 @@ function LiveFolderCard({ folder, busy, scanMsg, onScan, onChanged }: { folder: 
           </div>
         </div>
         <div className="statements-settings__live-actions">
-          {folder.templateId === 'ny529' && (
+          {(folder.templateId === 'ny529' || folder.templateId === 'adt') && (
             <Link to={`/finance/${folder.id}`} className="btn btn--ghost btn--sm">
               Dashboard
             </Link>

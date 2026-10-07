@@ -1,9 +1,10 @@
 import type { ParsedStatement } from '../common';
 import { parseNy529 } from './ny529';
+import { parseAdt } from './adt';
 
 /** Per-folder templates (one per Drive folder, all on the shared base
- * engine). Build order per progress.md: 529 is live; American Express Bank
- * and the rest are added one folder at a time. */
+ * engine). Build order per progress.md: 529 and ADT are live; American Express
+ * Bank and the rest are added one folder at a time. */
 export interface StatementTemplate {
   id: string;
   name: string;
@@ -15,10 +16,16 @@ export interface StatementTemplate {
     type: string;
     owner: 'household' | 'chase';
     cadence: 'monthly' | 'quarterly';
+    /** 'balance' accounts count toward Finance totals; 'bill' accounts
+     * (utilities, services) show their latest bill instead. */
+    kind: 'balance' | 'bill';
     site?: string;
     phone?: string;
   };
   parse(text: string): ParsedStatement;
+  /** Files in the folder that aren't statements (e.g. a contract) are
+   * recorded as Skipped instead of being read and flagged. */
+  isStatementFile?(fileName: string): boolean;
 }
 
 export const TEMPLATES: StatementTemplate[] = [
@@ -32,10 +39,28 @@ export const TEMPLATES: StatementTemplate[] = [
       type: 'Individual 529',
       owner: 'chase',
       cadence: 'quarterly',
+      kind: 'balance',
       site: 'https://www.nysaves.org',
       phone: '1-877-697-2837',
     },
     parse: parseNy529,
+  },
+  {
+    id: 'adt',
+    name: 'ADT Home Security (Monthly Bill)',
+    folderNames: ['ADT'],
+    account: {
+      nickname: 'ADT Home Security',
+      institution: 'ADT',
+      type: 'Home Security Monitoring',
+      owner: 'household',
+      cadence: 'monthly',
+      kind: 'bill',
+      site: 'https://www.myadt.com',
+      phone: '1-800-238-2727',
+    },
+    parse: parseAdt,
+    isStatementFile: (name) => /statement/i.test(name),
   },
 ];
 

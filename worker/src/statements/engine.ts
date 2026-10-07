@@ -7,6 +7,7 @@ import { templateById } from './templates';
 import { doc, docText, heading, markAuto } from './vaultDoc';
 import type { Block } from './vaultDoc';
 import { deriveNy529 } from './ny529Derive';
+import { deriveAdt } from './adtDerive';
 
 /** Base statements engine: lists a registered Drive folder, reads any PDF
  * not seen before (or modified since), stores normalized statement +
@@ -80,10 +81,14 @@ export async function scanFolder(env: Env, folder: FolderRow): Promise<ScanResul
 
     for (const file of todo.slice(0, MAX_FILES_PER_RUN)) {
       result.read++;
-      let status: 'parsed' | 'unreadable' | 'failed' | 'duplicate' = 'failed';
+      let status: 'parsed' | 'unreadable' | 'failed' | 'duplicate' | 'skipped' = 'failed';
       let error: string | null = null;
       let statementId: string | null = null;
-      try {
+      if (template.isStatementFile && !template.isStatementFile(file.name)) {
+        // e.g. a contract kept alongside the bills — recorded, never read or flagged
+        status = 'skipped';
+        error = 'Not a statement (by file name)';
+      } else try {
         const res = await adapter.downloadFile(token, file.id);
         const text = await pdfToText(await res.arrayBuffer());
         if (text.replace(/\s/g, '').length < 40) throw new UnreadableStatement('No text layer (image-only scan)');
@@ -163,7 +168,9 @@ export async function scanFolder(env: Env, folder: FolderRow): Promise<ScanResul
 
 /** Template-specific outputs (Vault note, flags, reminders, Tax Packet). */
 export async function derive(env: Env, folder: FolderRow): Promise<void> {
-  if (folder.template_id === 'ny529') await deriveNy529(env, (await loadFolder(env, folder.id)) ?? folder);
+  const fresh = (await loadFolder(env, folder.id)) ?? folder;
+  if (folder.template_id === 'ny529') await deriveNy529(env, fresh);
+  else if (folder.template_id === 'adt') await deriveAdt(env, fresh);
 }
 
 /** Nightly: every live folder, looping each until its backlog is read. */

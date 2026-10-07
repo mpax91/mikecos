@@ -33,8 +33,17 @@ of the "Tax Items · <year>" note. No Quick Facts are written.
 
 ## Adding a folder
 1. Pull every PDF in the folder; find layout eras.
-2. `templates/<id>.ts` parser + checks; add to `TEMPLATES`.
+2. `templates/<id>.ts` parser + checks; add to `TEMPLATES` with
+   `account.kind` — `'balance'` (counts toward Finance totals) or `'bill'`
+   (utilities/services: Finance shows the latest bill + monthly cost) — and
+   `isStatementFile(name)` if the folder also holds non-statements
+   (they're recorded as Skipped, never flagged).
 3. Test the parser against ALL PDFs **in workerd** (not just Node).
 4. `<id>Derive.ts`: flags, reminders, Vault entry per the standard above,
    Tax Packet section.
-5. Report card in `<folder>.md`; Mike clicks **Go Live** in Settings → Statements.
+5. Dashboard: `/api/statements/folders/:id/dashboard` switches on the
+   template and returns a `kind`; `FinanceAccountPage` renders the matching
+   component (`Ny529Dashboard`, `AdtDashboard`).
+6. Report card in `<folder>.md`; Mike clicks **Go Live** in Settings → Statements.
+
+Live templates: `ny529` (529.md), `adt` (adt.md).
