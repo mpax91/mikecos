@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import type { HomeRoom } from '../api/types';
+import type { HomeFloor, HomeRoom } from '../api/types';
 import { formatFeetInches } from '../lib/homeUnits';
 import { pointAlongWall, inwardNormal, wallSegment } from '../lib/homeGeometry';
 import { ROOM_SPEC_GUIDE, solveRoomSpecText, type SolvedRoom } from '../lib/roomSpec';
@@ -13,12 +13,17 @@ import { Modal } from './Modal';
 export function HomeRoomSpecModal({
   room,
   initialText,
+  floors,
+  defaultFloorId,
   onImport,
   onClose,
 }: {
   room?: HomeRoom;
   initialText?: string;
-  onImport: (solved: SolvedRoom, name: string) => Promise<void>;
+  /** New rooms only: when given (and there's more than one), a Floor picker is shown. */
+  floors?: HomeFloor[];
+  defaultFloorId?: string;
+  onImport: (solved: SolvedRoom, name: string, floorId?: string) => Promise<void>;
   onClose: () => void;
 }) {
   const [text, setText] = useState(initialText ?? '');
@@ -26,6 +31,7 @@ export function HomeRoomSpecModal({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [floorId, setFloorId] = useState(defaultFloorId ?? floors?.[0]?.id ?? '');
 
   const solved = useMemo(() => solveRoomSpecText(text), [text]);
   const name = nameOverride ?? solved.name ?? '';
@@ -47,7 +53,7 @@ export function HomeRoomSpecModal({
     setSaving(true);
     setSaveError(null);
     try {
-      await onImport(solved, name.trim());
+      await onImport(solved, name.trim(), floors ? floorId : undefined);
     } catch (e) {
       setSaveError(String(e));
       setSaving(false);
@@ -103,6 +109,18 @@ export function HomeRoomSpecModal({
         <label className="wallet-editor__field">
           <span>Room name</span>
           <input value={name} onChange={(e) => setNameOverride(e.target.value)} placeholder="From the spec's name" />
+        </label>
+      )}
+      {!room && floors && floors.length > 1 && (
+        <label className="wallet-editor__field">
+          <span>Floor</span>
+          <select value={floorId} onChange={(e) => setFloorId(e.target.value)}>
+            {floors.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.name}
+              </option>
+            ))}
+          </select>
         </label>
       )}
       {room && <div className="wallet-editor__hint">Replaces this room's walls and its doors/windows. Furniture and other fixtures stay where they are — nudge them if the new shape moved things.</div>}

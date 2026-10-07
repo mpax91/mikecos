@@ -266,6 +266,7 @@ interface RoomBody {
   points?: ShapePoint[];
   ceilingHeight?: number | null;
   notes?: string | null;
+  floorId?: string; // PATCH only — moves the room to another floor
 }
 
 homeRouter.post('/floors/:floorId/rooms', async (c) => {
@@ -339,6 +340,12 @@ homeRouter.patch('/rooms/:id', async (c) => {
   if (body.notes !== undefined) {
     sets.push('notes = ?');
     binds.push(body.notes?.trim() || null);
+  }
+  if (body.floorId !== undefined && body.floorId !== existing.floor_id) {
+    const floor = await db(c).prepare('SELECT id FROM home_floors WHERE id = ?').bind(body.floorId).first<{ id: string }>();
+    if (!floor) return c.json({ error: 'floor not found' }, 404);
+    sets.push('floor_id = ?');
+    binds.push(body.floorId);
   }
   if (sets.length) {
     sets.push('updated_at = ?');

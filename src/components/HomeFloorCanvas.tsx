@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api } from '../api/client';
-import type { HomeFixture, HomeFixtureType, HomeRoom, HomeWallItem, HomeWallItemType } from '../api/types';
+import type { HomeFloor, HomeFixture, HomeFixtureType, HomeRoom, HomeWallItem, HomeWallItemType } from '../api/types';
 import { formatFeetInches } from '../lib/homeUnits';
 import {
   type Point,
@@ -92,12 +92,32 @@ function WallMenu({ x, y, onAddDoor, onAddWindow, onAddCorner, onClose }: { x: n
  * Reshaping itself is wall-based: drag a wall perpendicular to itself to
  * move it (dragWall), or click a wall for a menu that can split it into
  * a new draggable notch (insertNotch). See homeGeometry.ts's header for
- * why this is wall-based rather than corner-based. */
-export function HomeFloorCanvas({ floorId }: { floorId: string }) {
+ * why this is wall-based rather than corner-based.
+ *
+ * Home is room-first: HomePage passes `roomId` and the canvas shows just
+ * that one room (the floor's other rooms are loaded but not drawn). Add
+ * Room / Import can target any floor (`floors` feeds the modals' Floor
+ * picker); `onRoomsChanged` lets the page refresh its Rooms dropdown and
+ * `onSelectRoom` jumps to a newly added or moved room. */
+export function HomeFloorCanvas({
+  floorId,
+  roomId = null,
+  floors,
+  onRoomsChanged,
+  onSelectRoom,
+}: {
+  floorId: string;
+  roomId?: string | null;
+  floors?: HomeFloor[];
+  onRoomsChanged?: () => void;
+  onSelectRoom?: (roomId: string) => void;
+}) {
   const [rooms, setRooms] = useState<HomeRoom[] | null>(null);
   const [fixtures, setFixtures] = useState<HomeFixture[] | null>(null);
   const [wallItems, setWallItems] = useState<HomeWallItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // What's drawn: the one focused room, or the whole floor.
+  const shownRooms = useMemo(() => (rooms && roomId ? rooms.filter((r) => r.id === roomId) : rooms), [rooms, roomId]);
 
   const [view, setView] = useState<{ pan: Pan; scale: number }>({ pan: { x: 40, y: 40 }, scale: DEFAULT_SCALE });
   const { pan, scale } = view;
@@ -164,14 +184,15 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
   /** Zoom so every room on the floor fits in the viewport, centered. */
   const fitToRooms = useCallback(() => {
     const el = viewportRef.current;
-    if (!el || !rooms || rooms.length === 0) {
+    const fit = shownRooms;
+    if (!el || !fit || fit.length === 0) {
       setView({ pan: { x: 40, y: 40 }, scale: DEFAULT_SCALE });
       return;
     }
-    const minX = Math.min(...rooms.map((r) => r.x));
-    const minY = Math.min(...rooms.map((r) => r.y));
-    const maxX = Math.max(...rooms.map((r) => r.x + r.width));
-    const maxY = Math.max(...rooms.map((r) => r.y + r.depth));
+    const minX = Math.min(...fit.map((r) => r.x));
+    const minY = Math.min(...fit.map((r) => r.y));
+    const maxX = Math.max(...fit.map((r) => r.x + r.width));
+    const maxY = Math.max(...fit.map((r) => r.y + r.depth));
     const { width: vw, height: vh } = el.getBoundingClientRect();
     const PAD_PX = 56; // room for labels above rooms + breathing room
     const next = clamp(Math.min((vw - PAD_PX * 2) / Math.max(1, maxX - minX), (vh - PAD_PX * 2) / Math.max(1, maxY - minY)), MIN_SCALE, MAX_SCALE);
@@ -179,13 +200,13 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
       scale: next,
       pan: { x: (vw - (maxX - minX) * next) / 2 - minX * next, y: (vh - (maxY - minY) * next) / 2 - minY * next + 12 },
     });
-  }, [rooms]);
+  }, [shownRooms]);
 
   useEffect(() => {
-    if (didInitialFit.current || !rooms || !viewportRef.current) return;
+    if (didInitialFit.current || !shownRooms || !viewportRef.current) return;
     didInitialFit.current = true;
-    if (rooms.length) fitToRooms();
-  }, [rooms, fitToRooms]);
+    if (shownRooms.length) fitToRooms();
+  }, [shownRooms, fitToRooms]);
 
   /** Zoom by `factor`, keeping the viewport point (cx, cy) fixed — the
    * viewport's center when not given (the +/− buttons). */
@@ -427,13 +448,24 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
   }
 
   async function saveRoom(value: HomeRoomFormValue) {
+    const { floorId: targetFloorId, ...fields } = value;
     if (roomModal === 'new') {
-      const x = rooms && rooms.length ? Math.max(...rooms.map((r) => r.x + r.width)) + ROOM_GAP_IN : 0;
-      const created = await api.createHomeRoom(floorId, { ...value, x, y: 0 });
-      setRooms((prev) => (prev ? [...prev, created] : [created]));
+      const target = targetFloorId ?? floorId;
+      const x = target === floorId && rooms && rooms.length ? Math.max(...rooms.map((r) => r.x + r.width)) + ROOM_GAP_IN : 0;
+      const created = await api.createHomeRoom(target, { ...fields, x, y: 0 });
+      if (target === floorId) setRooms((prev) => (prev ? [...prev, created] : [created]));
+      setRoomModal(null);
+      onRoomsChanged?.();
+      onSelectRoom?.(created.id);
+      return;
     } else if (roomModal) {
-      const updated = await api.updateHomeRoom(roomModal.id, value);
-      setRooms((prev) => (prev ? prev.map((r) => (r.id === updated.id ? updated : r)) : prev));
+      const moving = targetFloorId !== undefined && targetFloorId !== roomModal.floorId;
+      const updated = await api.updateHomeRoom(roomModal.id, moving ? { ...fields, floorId: targetFloorId } : fields);
+      setRooms((prev) => (prev ? (moving ? prev.filter((r) => r.id !== updated.id) : prev.map((r) => (r.id === updated.id ? updated : r))) : prev));
+      setRoomModal(null);
+      onRoomsChanged?.();
+      if (moving) onSelectRoom?.(updated.id);
+      return;
     }
     setRoomModal(null);
   }
@@ -446,6 +478,7 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
     await api.deleteHomeRoom(deletingRoom.id);
     setDeletingRoom(null);
     setRoomModal(null);
+    onRoomsChanged?.();
   }
 
   function openAddFixture(room: HomeRoom, type: HomeFixtureType) {
@@ -534,16 +567,21 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
 
   /** New room from a spec — auto-placed to the right of everything else on
    * the floor, same as Add Room. */
-  async function importRoomFromSpec(solved: SolvedRoom, name: string) {
+  async function importRoomFromSpec(solved: SolvedRoom, name: string, targetFloorId?: string) {
     const payload = { points: solved.points, ceilingHeight: solved.ceilingHeight, spec: solved.spec, wallItems: solved.wallItems };
     if (specModal && specModal !== 'new') {
       await api.reshapeHomeRoom(specModal.id, payload);
-    } else {
-      const x = rooms && rooms.length ? Math.max(...rooms.map((r) => r.x + r.width)) + ROOM_GAP_IN : 0;
-      await api.importHomeRoom(floorId, { ...payload, name, x, y: 0, notes: solved.notes });
+      setSpecModal(null);
+      load();
+      return;
     }
+    const target = targetFloorId ?? floorId;
+    const x = target === floorId && rooms && rooms.length ? Math.max(...rooms.map((r) => r.x + r.width)) + ROOM_GAP_IN : 0;
+    const created = await api.importHomeRoom(target, { ...payload, name, x, y: 0, notes: solved.notes });
     setSpecModal(null);
     load();
+    onRoomsChanged?.();
+    onSelectRoom?.(created.id);
   }
 
   function copyRoomSpec(room: HomeRoom) {
@@ -555,7 +593,7 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
   }
 
   if (error) return <div className="empty-state">Couldn't load this floor: {error}</div>;
-  if (!rooms || !fixtures || !wallItems) return <div className="empty-state">Loading…</div>;
+  if (!rooms || !shownRooms || !fixtures || !wallItems) return <div className="empty-state">Loading…</div>;
 
   return (
     <div className={`home-canvas${labelsHidden ? ' home-canvas--labels-hidden' : ''}`}>
@@ -573,7 +611,7 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
           {labelsHidden ? 'Show Labels' : 'Hide Labels'}
         </button>
         <button type="button" className="btn btn--ghost btn--sm" onClick={fitToRooms}>
-          Fit to Rooms
+          {roomId ? 'Fit to Room' : 'Fit to Rooms'}
         </button>
       </div>
 
@@ -596,12 +634,12 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
           </button>
         </div>
         <div className="home-canvas__world" style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})` }}>
-          {rooms.length === 0 && (
+          {shownRooms.length === 0 && (
             <div className="home-canvas__empty" style={{ transform: `scale(${1 / scale})`, transformOrigin: 'top left' }}>
               No rooms on this floor yet — Add Room to start mapping it out.
             </div>
           )}
-          {rooms.map((room) => {
+          {shownRooms.map((room) => {
             const roomFixtures = fixtures.filter((f) => f.roomId === room.id);
             const roomWallItems = wallItems.filter((w) => w.roomId === room.id);
             return (
@@ -738,6 +776,8 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
         <HomeRoomSpecModal
           room={specModal === 'new' ? undefined : specModal}
           initialText={specModal === 'new' ? undefined : JSON.stringify(specFromRoom(specModal, wallItems.filter((w) => w.roomId === specModal.id)), null, 2)}
+          floors={floors}
+          defaultFloorId={floorId}
           onImport={importRoomFromSpec}
           onClose={() => setSpecModal(null)}
         />
@@ -746,6 +786,8 @@ export function HomeFloorCanvas({ floorId }: { floorId: string }) {
       {roomModal && (
         <HomeRoomModal
           initial={roomModal === 'new' ? undefined : roomModal}
+          floors={floors}
+          defaultFloorId={floorId}
           onSave={saveRoom}
           onDelete={roomModal !== 'new' ? () => setDeletingRoom(roomModal) : undefined}
           onClose={() => setRoomModal(null)}

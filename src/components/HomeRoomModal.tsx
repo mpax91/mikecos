@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { HomeRoom } from '../api/types';
+import type { HomeFloor, HomeRoom } from '../api/types';
 import { feetInchesToInches, inchesToFeet, inchesRemainder, formatFeetInches } from '../lib/homeUnits';
 import { roomHasCustomShape } from '../lib/homeGeometry';
 import { Modal } from './Modal';
@@ -9,6 +9,7 @@ export interface HomeRoomFormValue {
   width: number; // whole inches
   depth: number; // whole inches
   notes: string | null;
+  floorId?: string; // set when the modal shows a Floor picker
 }
 
 /** Add/edit a Room — dimensions are entered as separate feet/inches pairs
@@ -17,11 +18,16 @@ export interface HomeRoomFormValue {
  * the unit the to-scale canvas draws everything in. */
 export function HomeRoomModal({
   initial,
+  floors,
+  defaultFloorId,
   onSave,
   onDelete,
   onClose,
 }: {
   initial?: HomeRoom;
+  /** When given (and there's more than one), a Floor picker is shown. */
+  floors?: HomeFloor[];
+  defaultFloorId?: string;
   onSave: (value: HomeRoomFormValue) => void;
   onDelete?: () => void;
   onClose: () => void;
@@ -32,6 +38,8 @@ export function HomeRoomModal({
   const [depthFt, setDepthFt] = useState(initial ? String(inchesToFeet(initial.depth)) : '');
   const [depthIn, setDepthIn] = useState(initial ? String(inchesRemainder(initial.depth)) : '');
   const [notes, setNotes] = useState(initial?.notes ?? '');
+  const [floorId, setFloorId] = useState(initial?.floorId ?? defaultFloorId ?? floors?.[0]?.id ?? '');
+  const showFloor = !!floors && floors.length > 1;
 
   const customShape = initial ? roomHasCustomShape(initial.points) : false;
 
@@ -41,7 +49,7 @@ export function HomeRoomModal({
 
   function save() {
     if (!valid) return;
-    onSave({ name: name.trim(), width: customShape ? initial!.width : width, depth: customShape ? initial!.depth : depth, notes: notes.trim() || null });
+    onSave({ name: name.trim(), width: customShape ? initial!.width : width, depth: customShape ? initial!.depth : depth, notes: notes.trim() || null, ...(floors ? { floorId } : {}) });
   }
 
   return (
@@ -50,6 +58,19 @@ export function HomeRoomModal({
         <span>Name</span>
         <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Kitchen, Primary Bedroom" />
       </label>
+
+      {showFloor && (
+        <label className="wallet-editor__field">
+          <span>Floor</span>
+          <select value={floorId} onChange={(e) => setFloorId(e.target.value)}>
+            {floors!.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
 
       {customShape ? (
         <div className="wallet-editor__hint">

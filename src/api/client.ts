@@ -1478,7 +1478,7 @@ export const api = {
   /** Replace an existing room's shape + doors/windows from a solved spec. */
   reshapeHomeRoom: (id: string, body: HomeRoomSpecPayload) => request<HomeRoom>(`/api/home/rooms/${id}/reshape`, { method: 'POST', body: JSON.stringify(body) }),
 
-  updateHomeRoom: (id: string, patch: Partial<{ name: string; x: number; y: number; width: number; depth: number; points: HomePoint[]; ceilingHeight: number | null; notes: string | null }>) =>
+  updateHomeRoom: (id: string, patch: Partial<{ name: string; x: number; y: number; width: number; depth: number; points: HomePoint[]; ceilingHeight: number | null; notes: string | null; floorId: string }>) =>
     request<HomeRoom>(`/api/home/rooms/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
 
   deleteHomeRoom: (id: string) => request<{ ok: true }>(`/api/home/rooms/${id}`, { method: 'DELETE' }),
