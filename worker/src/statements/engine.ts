@@ -4,6 +4,8 @@ import { detectFactValue, reindexEntry } from '../vault';
 import { UnreadableStatement } from './common';
 import { pdfToText } from './pdfText';
 import { templateById } from './templates';
+import { doc, docText, heading } from './vaultDoc';
+import type { Block } from './vaultDoc';
 import { deriveNy529 } from './ny529Derive';
 
 /** Base statements engine: lists a registered Drive folder, reads any PDF
@@ -193,13 +195,6 @@ export const STATEMENTS_SCAN_HOUR_UTC = 7;
 
 // ---- Vault helpers shared by templates ----
 
-export interface ManagedFact {
-  key: string;
-  label: string;
-  value: string | null;
-}
-
-/** Creates the Vault entry if needed (or if Mike deleted it) and returns its id. */
 export async function ensureVaultEntry(env: Env, existingId: string | null, title: string): Promise<{ id: string; created: boolean }> {
   if (existingId) {
     const row = await env.DB.prepare(`SELECT id FROM entities WHERE id = ? AND type = 'vault_entry'`).bind(existingId).first<{ id: string }>();
@@ -216,64 +211,22 @@ export async function ensureVaultEntry(env: Env, existingId: string | null, titl
   return { id, created: true };
 }
 
-/** Upserts managed facts by key, in the given order, ahead of Mike's own
- * facts on first creation. Only writes when a label/value changed; never
- * touches unmanaged facts. A null value removes that managed fact. */
-export async function syncManagedFacts(env: Env, entryId: string, facts: ManagedFact[], keyPrefix: string): Promise<void> {
-  const { results } = await env.DB.prepare('SELECT id, label, value, managed_key, position FROM vault_facts WHERE entry_id = ?')
-    .bind(entryId)
-    .all<{ id: string; label: string; value: string | null; managed_key: string | null; position: number }>();
-  const rows = results ?? [];
-  const byKey = new Map(rows.filter((r) => r.managed_key).map((r) => [r.managed_key!, r]));
-  let changed = false;
-  const stmts: D1PreparedStatement[] = [];
-  let nextPos = rows.reduce((m, r) => Math.max(m, r.position), -1) + 1;
-  const wanted = new Set<string>();
-
-  for (const f of facts) {
-    const key = `${keyPrefix}${f.key}`;
-    const cur = byKey.get(key);
-    if (f.value === null) continue;
-    wanted.add(key);
-    const det = detectFactValue(f.value);
-    if (!cur) {
-      stmts.push(
-        env.DB.prepare('INSERT INTO vault_facts (id, entry_id, label, value, position, created_at, value_type, value_norm, managed_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(
-          uid(), entryId, f.label, f.value, nextPos++, now(), det.type, det.norm, key
-        )
+/** Quick Facts are Mike's: evergreen, hand-curated. Statements only seeds
+ * a few evergreen facts when it first creates an entry, as ordinary facts
+ * (no managed_key) — after that it never adds, edits, reorders or removes
+ * a Quick Fact. Anything that changes lives in the auto note instead. */
+export async function seedFacts(env: Env, entryId: string, facts: { label: string; value: string | null }[]): Promise<void> {
+  const rows = facts.filter((f) => f.value);
+  if (!rows.length) return;
+  await env.DB.batch(
+    rows.map((f, i) => {
+      const det = detectFactValue(f.value);
+      return env.DB.prepare('INSERT INTO vault_facts (id, entry_id, label, value, position, created_at, value_type, value_norm) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').bind(
+        uid(), entryId, f.label, f.value, i, now(), det.type, det.norm
       );
-      changed = true;
-    } else if (cur.label !== f.label || cur.value !== f.value) {
-      stmts.push(env.DB.prepare('UPDATE vault_facts SET label = ?, value = ?, value_type = ?, value_norm = ? WHERE id = ?').bind(f.label, f.value, det.type, det.norm, cur.id));
-      changed = true;
-    }
-  }
-  for (const [key, row] of byKey) {
-    if (key.startsWith(keyPrefix) && !wanted.has(key)) {
-      stmts.push(env.DB.prepare('DELETE FROM vault_facts WHERE id = ?').bind(row.id));
-      changed = true;
-    }
-  }
-  if (changed) {
-    stmts.push(env.DB.prepare('UPDATE entities SET last_touched = ?, updated_at = ? WHERE id = ?').bind(now(), now(), entryId));
-    await env.DB.batch(stmts);
-    await reindexEntry({ env }, entryId);
-  }
-  await orderManagedFacts(env, entryId, facts.filter((f) => f.value !== null).map((f) => `${keyPrefix}${f.key}`), keyPrefix);
-}
-
-/** Keeps this prefix's managed facts in their declared order, ahead of
- * every other fact; Mike's own facts keep their relative order after. */
-async function orderManagedFacts(env: Env, entryId: string, order: string[], keyPrefix: string): Promise<void> {
-  const { results } = await env.DB.prepare('SELECT id, managed_key, position FROM vault_facts WHERE entry_id = ? ORDER BY position ASC, created_at ASC')
-    .bind(entryId)
-    .all<{ id: string; managed_key: string | null; position: number }>();
-  const rows = results ?? [];
-  const mine = order.map((k) => rows.find((r) => r.managed_key === k)).filter((r): r is NonNullable<typeof r> => !!r);
-  const rest = rows.filter((r) => !r.managed_key?.startsWith(keyPrefix));
-  const want = [...mine, ...rest];
-  if (want.every((r, i) => r.position === i)) return;
-  await env.DB.batch(want.map((r, i) => env.DB.prepare('UPDATE vault_facts SET position = ? WHERE id = ?').bind(i, r.id)));
+    })
+  );
+  await reindexEntry({ env }, entryId);
 }
 
 /** One reminder task per (purpose, year): created once, kept current while
@@ -332,55 +285,118 @@ export async function syncFlags(env: Env, folderId: string, flags: { key: string
   if (stmts.length) await env.DB.batch(stmts);
 }
 
-// ---- Managed Vault children: one auto "Account Details" note + Links ----
-// Ids are remembered by the caller (folder meta). If Mike deletes one, the
-// id stays remembered and it is NOT re-created — deletions stick.
+// ---- Auto-updated Vault children: one "Account Details" note + Links ----
+// Ids and bookkeeping live in the caller's meta. Mike's changes win:
+//  - the note's TITLE is set once and never touched again;
+//  - in the note, Statements only refreshes the sections it owns (matched
+//    by their level-2 heading); everything else — edits to other sections,
+//    added text, removed lines — is left exactly as Mike left it. An owned
+//    section Mike deletes stays deleted;
+//  - links are created once; only "live" links (e.g. Latest Statement)
+//    keep their URL/title current. Deleted ones stay deleted.
 
-export interface ManagedChildren {
+export interface AutoSection {
+  key: string;
+  /** Does an existing level-2 heading belong to this section? */
+  match: (headingText: string) => boolean;
+  heading: string;
+  blocks: Block[];
+}
+
+export interface AutoNoteState {
   noteId?: string;
-  links?: Record<string, string>;
+  written?: string[]; // section keys ever written (so a deletion is respected)
 }
 
-async function childExists(env: Env, id: string): Promise<boolean> {
-  return !!(await env.DB.prepare('SELECT id FROM entities WHERE id = ?').bind(id).first());
-}
+type PMNode = { type: string; attrs?: Record<string, unknown>; content?: PMNode[]; text?: string };
+const nodeText = (n: PMNode): string => (n.text ?? '') + (n.content ?? []).map(nodeText).join('');
+const isH2 = (n: PMNode) => n.type === 'heading' && (n.attrs?.level ?? 0) === 2;
 
-/** Creates or refreshes the managed note (title + TipTap JSON content). */
-export async function syncManagedNote(env: Env, entryId: string, noteId: string | undefined, title: string, content: string, searchText: string): Promise<string | undefined> {
+export async function syncAutoNote(
+  env: Env,
+  entryId: string,
+  state: AutoNoteState | undefined,
+  title: string,
+  intro: Block[],
+  sections: AutoSection[]
+): Promise<AutoNoteState> {
   const ts = now();
-  if (noteId) {
-    const cur = await env.DB.prepare('SELECT title, content FROM entities WHERE id = ?').bind(noteId).first<{ title: string; content: string | null }>();
-    if (!cur) return noteId; // deleted by Mike — leave it gone
-    if (cur.title !== title || cur.content !== content) {
-      await env.DB.prepare('UPDATE entities SET title = ?, content = ?, search_text = ?, updated_at = ? WHERE id = ?').bind(title, content, `${title} ${searchText}`, ts, noteId).run();
+  const written = new Set(state?.written ?? []);
+  const sectionNodes = (sec: AutoSection) => [heading(2, sec.heading), ...sec.blocks] as PMNode[];
+
+  if (state?.noteId) {
+    const cur = await env.DB.prepare('SELECT title, content FROM entities WHERE id = ?').bind(state.noteId).first<{ title: string; content: string | null }>();
+    if (!cur) return { ...state, written: [...written] }; // deleted by Mike — leave it gone
+    let docNode: PMNode;
+    try {
+      docNode = cur.content ? JSON.parse(cur.content) : { type: 'doc', content: [] };
+    } catch {
+      return { ...state, written: [...written] }; // not ours to repair
     }
-    return noteId;
+    const nodes: PMNode[] = docNode.content ?? [];
+    let out: PMNode[] = [];
+    const seen = new Set<string>();
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i];
+      const sec = isH2(n) ? sections.find((s) => !seen.has(s.key) && s.match(nodeText(n))) : undefined;
+      if (!sec) {
+        out.push(n);
+        continue;
+      }
+      seen.add(sec.key);
+      out.push(...sectionNodes(sec));
+      while (i + 1 < nodes.length && !isH2(nodes[i + 1])) i++; // drop the old body
+    }
+    // A section that has never been written (new for this account) is
+    // appended; one written before but missing now was removed by Mike.
+    for (const sec of sections) {
+      if (!seen.has(sec.key) && !written.has(sec.key)) {
+        out.push(...sectionNodes(sec));
+        seen.add(sec.key);
+      }
+    }
+    seen.forEach((k) => written.add(k));
+    const content = JSON.stringify({ ...docNode, type: 'doc', content: out });
+    if (content !== cur.content) {
+      await env.DB.prepare('UPDATE entities SET content = ?, search_text = ?, updated_at = ? WHERE id = ?').bind(content, `${cur.title} ${docText(content)}`, ts, state.noteId).run();
+    }
+    return { noteId: state.noteId, written: [...written] };
   }
+
+  const content = doc([...intro, ...sections.flatMap((sec) => [heading(2, sec.heading), ...sec.blocks])]);
   const id = uid();
   await env.DB.prepare(
     `INSERT INTO entities (id, type, title, content, parent_id, is_top_level, status, position, last_touched, created_at, updated_at, search_text)
      VALUES (?, 'note', ?, ?, ?, 0, NULL, 0, ?, ?, ?, ?)`
   )
-    .bind(id, title, content, entryId, ts, ts, ts, `${title} ${searchText}`)
+    .bind(id, title, content, entryId, ts, ts, ts, `${title} ${docText(content)}`)
     .run();
-  return id;
+  return { noteId: id, written: sections.map((s) => s.key) };
 }
 
-/** Creates or refreshes managed Link children, keyed by a stable key.
- * A null url removes a link Statements created (if it still exists). */
-export async function syncManagedLinks(env: Env, entryId: string, existing: Record<string, string> | undefined, links: { key: string; title: string; url: string | null }[]): Promise<Record<string, string>> {
+/** Links are created once. `live: true` links (Latest Statement) keep
+ * their URL and title current; the rest are never touched again. A null
+ * url removes a link Statements created. Deleted links stay deleted. */
+export async function syncManagedLinks(
+  env: Env,
+  entryId: string,
+  existing: Record<string, string> | undefined,
+  links: { key: string; title: string; url: string | null; live?: boolean }[]
+): Promise<Record<string, string>> {
   const out: Record<string, string> = { ...(existing ?? {}) };
   const ts = now();
-  let pos = 0;
+  const max = await env.DB.prepare(`SELECT COALESCE(MAX(position), -1) AS m FROM entities WHERE parent_id = ? AND type = 'link'`).bind(entryId).first<{ m: number }>();
+  let pos = (max?.m ?? -1) + 1;
   for (const l of links) {
     const id = out[l.key];
     if (!l.url) {
-      if (id && (await childExists(env, id))) await env.DB.prepare('DELETE FROM entities WHERE id = ?').bind(id).run();
+      if (id) await env.DB.prepare('DELETE FROM entities WHERE id = ?').bind(id).run();
       delete out[l.key];
       continue;
     }
     const content = JSON.stringify({ url: l.url });
     if (id) {
+      if (!l.live) continue;
       const cur = await env.DB.prepare('SELECT title, content FROM entities WHERE id = ?').bind(id).first<{ title: string; content: string | null }>();
       if (cur && (cur.title !== l.title || cur.content !== content)) {
         await env.DB.prepare('UPDATE entities SET title = ?, content = ?, search_text = ?, updated_at = ? WHERE id = ?').bind(l.title, content, `${l.title} ${l.url}`, ts, id).run();

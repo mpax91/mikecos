@@ -1,17 +1,17 @@
 import type { Env } from '../types';
-import { ensureVaultEntry, syncManagedFacts, syncManagedLinks, syncManagedNote } from './engine';
-import { bullets, doc, docText, heading, italic, para } from './vaultDoc';
+import { ensureVaultEntry, syncAutoNote, syncManagedLinks } from './engine';
+import type { AutoNoteState, AutoSection } from './engine';
+import { bullets, para } from './vaultDoc';
 import type { Block } from './vaultDoc';
 
 /** "Tax Packet · <year>" — one Vault entry per tax year, composed from a
- * section per live statements folder. Same Vault architecture as account
- * notes: headline totals as Quick Facts, tax documents as Links, and one
- * auto-updated "Tax Items" note with the expected-documents checklist and
- * every account's section. */
+ * section per live statements folder. Same rules as account entries:
+ * Quick Facts are Mike's (none are written); tax documents are Links; one
+ * "Tax Items" note whose owned sections (Expected Documents + one per
+ * account) refresh nightly — anything else Mike writes there is kept. */
 
 export interface TaxSection {
   title: string;
-  facts: { key: string; label: string; value: string | null }[];
   blocks: Block[];
   expected: { label: string; received: boolean }[];
   links: { key: string; title: string; url: string | null }[];
@@ -29,38 +29,33 @@ export async function syncTaxPacketSection(env: Env, year: number, folderId: str
   const entry = await ensureVaultEntry(env, row?.vault_entry_id ?? null, `Tax Packet · ${year}`);
   const sections: Record<string, TaxSection> = row?.sections_json ? JSON.parse(row.sections_json) : {};
   sections[folderId] = section;
-  let children: { noteId?: string; links?: Record<string, string> } = row?.children_json && !entry.created ? JSON.parse(row.children_json) : {};
+  const children: { noteId?: string; note?: AutoNoteState; links?: Record<string, string> } = row?.children_json && !entry.created ? JSON.parse(row.children_json) : {};
 
-  // Only folders still registered + live keep a section.
+  // Only folders still live keep a section.
   const { results } = await env.DB.prepare(`SELECT id FROM statement_folders WHERE status = 'live'`).all<{ id: string }>();
   const live = new Set((results ?? []).map((r) => r.id));
   const ordered = Object.entries(sections)
     .filter(([id]) => live.has(id))
     .sort(([, a], [, b]) => a.title.localeCompare(b.title));
 
-  // Facts written before this layout used per-template prefixes — clear them.
-  await env.DB.prepare(`DELETE FROM vault_facts WHERE entry_id = ? AND managed_key IS NOT NULL AND managed_key NOT LIKE 'tax:%'`).bind(entry.id).run();
-  await syncManagedFacts(
-    env,
-    entry.id,
-    ordered.flatMap(([id, sec]) => sec.facts.map((f) => ({ ...f, key: `${id}:${f.key}` }))),
-    'tax:'
-  );
-
   const expected = ordered.flatMap(([, sec]) => sec.expected);
-  const blocks: Block[] = [
-    para([italic(`Built automatically from the statement folders in Drive — edits here are overwritten. Add your own notes (accountant, other forms) as a separate note.`)]),
-    heading(2, 'Expected Documents'),
-    expected.length ? bullets(expected.map((e) => `${e.received ? '✓' : '☐'} ${e.label}${e.received ? '' : ' — not received yet'}`)) : para('None yet.'),
-    ...ordered.flatMap(([, sec]) => [heading(2, sec.title), ...sec.blocks]),
+  const autoSections: AutoSection[] = [
+    {
+      key: 'expected',
+      match: (h) => /^Expected Documents$/i.test(h.trim()),
+      heading: 'Expected Documents',
+      blocks: [expected.length ? bullets(expected.map((e) => `${e.received ? '✓' : '☐'} ${e.label}${e.received ? '' : ' — not received yet'}`)) : para('None yet.')],
+    },
+    ...ordered.map(([id, sec]) => ({ key: `folder:${id}`, match: (h: string) => h.trim() === sec.title, heading: sec.title, blocks: sec.blocks })),
   ];
-  const noteJson = doc(blocks);
-  children.noteId = await syncManagedNote(env, entry.id, children.noteId, `Tax Items · ${year} · Auto-Updated`, noteJson, docText(noteJson));
+  const legacy = children.noteId ? { noteId: children.noteId, written: autoSections.map((s) => s.key) } : undefined;
+  children.note = await syncAutoNote(env, entry.id, children.note ?? legacy, `Tax Items · ${year}`, [], autoSections);
+  delete children.noteId;
   children.links = await syncManagedLinks(
     env,
     entry.id,
     children.links,
-    ordered.flatMap(([id, sec]) => sec.links.map((l) => ({ ...l, key: `${id}:${l.key}` })))
+    ordered.flatMap(([id, sec]) => sec.links.map((l) => ({ ...l, key: `${id}:${l.key}`, live: true })))
   );
 
   await env.DB.prepare(

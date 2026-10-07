@@ -4,34 +4,30 @@ One template per Drive folder, on the shared engine in `worker/src/statements/`.
 Each folder's doc here (`<folder>.md`) records field locations, layout eras,
 checks and a report card.
 
-## The Vault note standard (every account follows this)
+## The Vault entry standard (every account follows this)
 
-Each live folder owns one Vault entry (title = the account nickname, e.g.
-"NY 529 · Chase"). Statements writes into the entry's own sections — never
-everything into Quick Facts:
+Each live folder owns one Vault entry (created with the account nickname,
+e.g. "NY 529 · Chase" — Mike can rename it; Statements tracks it by id).
+**Mike's edits always win.**
 
-| Vault section | What goes there | Rule of thumb |
+| Vault section | What Statements does | Rule of thumb |
 |---|---|---|
-| **Quick Facts** | Only what's needed at a glance or in a pinch — about 4–6: account ••last digits, the headline balance (label carries the as-of date), the payment/deposit that matters, a time-sensitive item only while it applies (e.g. "2026 Top-Up"), the institution's phone. | Would Mike need it standing at a counter or on the phone? |
-| **Links** | Real Link children, never URL facts: institution website, Finance dashboard, latest statement (title carries the date), Drive folder. | Anything you'd click. |
-| **Notes** | One managed note, "Account Details · Auto-Updated": an italic "updated automatically" line, then sections as tables (Account, Balances as of…, the account's yearly/deadline section, Statements table with View links, Change History) and a link to the dashboard. | Everything else worth reading but not needed at a glance. |
+| **Quick Facts** | Mike's. Statements seeds 2–4 **evergreen** facts once, when it creates the entry (account ••last digits, beneficiary/owner if relevant, institution phone) as ordinary facts — then never adds, edits, reorders or removes a Quick Fact. Nothing that changes (balances, AIP, gaps, as-of dates) ever goes here. | Won't change, needed in a pinch. |
+| **Links** | Created once as real Link children: institution website, Finance dashboard, latest statement, Drive folder. Only "live" links (Latest Statement) keep their URL/title current. Mike can rename, reorder, delete — deletions stick. | Anything you'd click. |
+| **Notes** | One note ("Account Details" — Mike may rename it). Seeded with an evergreen Account table plus **owned sections** (matched by their level-2 heading: e.g. "Balances as of…", "2026 NY Deduction", "Statements", "Change History"). Nightly, only the owned sections' bodies are replaced; everything else in the note is Mike's and untouched. An owned section Mike deletes stays deleted. | Everything that changes or is detail. |
 | Attachments / Passwords | Untouched — Mike's. Statements stay in Drive. | |
 
-Rules:
-- Managed facts carry a `managed_key` (`<template>:` prefix) and sit first,
-  in a fixed order. Mike's own facts (no key) are never edited or moved
-  relative to each other.
-- Managed note/link ids live in `statement_folders.meta_json.vault`. If Mike
-  deletes one it stays deleted (not re-created).
-- Values always follow the LATEST statement; backfills never roll back.
-- Notes are built with `worker/src/statements/vaultDoc.ts` (TipTap JSON:
-  heading/para/kv/table/bullets/link) — validate new shapes against the
-  editor schema (StarterKit + Table + Link).
+Mechanics: `seedFacts`, `syncAutoNote` (sections + `written` keys so a
+deletion is respected), `syncManagedLinks` (`live` flag) in `engine.ts`;
+ids in `statement_folders.meta_json.vault`. Values follow the LATEST
+statement; backfills never roll back. Build note content with
+`vaultDoc.ts` and validate new node shapes against the editor schema.
 
 ## Tax Packet ("Tax Packet · <year>")
 Each template contributes a section via `syncTaxPacketSection`
-(`taxPacket.ts`): headline totals → Quick Facts, tax documents → Links,
-details + an "Expected Documents" checklist → the auto "Tax Items" note.
+(`taxPacket.ts`): tax documents → Links; its section (heading = account
+nickname) + the shared "Expected Documents" checklist are owned sections
+of the "Tax Items · <year>" note. No Quick Facts are written.
 
 ## Adding a folder
 1. Pull every PDF in the folder; find layout eras.

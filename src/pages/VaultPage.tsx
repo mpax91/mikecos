@@ -434,7 +434,14 @@ export function VaultPage() {
             <Section title="Passwords" count={passwords.length} defaultExpanded={!isCompact}>
               <div className="entity-card-grid">
                 {passwords.map((c) => (
-                  <PasswordCard key={c.id} entity={c} onOpen={setOpenPassword} onDelete={setDeleting} />
+                  <PasswordCard
+                    key={c.id}
+                    entity={c}
+                    onOpen={setOpenPassword}
+                    onDelete={setDeleting}
+                    onPromote={(e) => promoteWithin(passwords, e)}
+                    onDemote={(e) => demoteWithin(passwords, e)}
+                  />
                 ))}
                 <NewPasswordTile onCreate={createPassword} />
               </div>
@@ -443,7 +450,14 @@ export function VaultPage() {
             <Section title="Links" count={links.length} defaultExpanded={!isCompact}>
               <div className="vault-link-list">
                 {links.map((c) => (
-                  <VaultLinkRow key={c.id} entity={c} onDelete={setDeleting} onTogglePin={togglePinChild} />
+                  <VaultLinkRow
+                    key={c.id}
+                    entity={c}
+                    onDelete={setDeleting}
+                    onTogglePin={togglePinChild}
+                    onPromote={(e) => promoteWithin(links, e)}
+                    onDemote={(e) => demoteWithin(links, e)}
+                  />
                 ))}
                 <button type="button" className="vault-link-row vault-link-row--ghost" onClick={() => setAddingLink(true)}>
                   ＋ add a link

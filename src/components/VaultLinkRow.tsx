@@ -63,10 +63,14 @@ export function VaultLinkRow({
   entity,
   onDelete,
   onTogglePin,
+  onPromote,
+  onDemote,
 }: {
   entity: Entity;
   onDelete: (entity: Entity) => void;
   onTogglePin: (entity: Entity) => void;
+  onPromote?: (entity: Entity) => void;
+  onDemote?: (entity: Entity) => void;
 }) {
   const meta = parseLinkMeta(entity);
   const url = meta?.url ?? '';
@@ -92,6 +96,8 @@ export function VaultLinkRow({
       <KebabMenu
         items={[
           { label: isPinned ? 'Unpin' : 'Pin', onClick: () => onTogglePin(entity) },
+          ...(onPromote ? [{ label: 'Promote', onClick: () => onPromote(entity) }] : []),
+          ...(onDemote ? [{ label: 'Demote', onClick: () => onDemote(entity) }] : []),
           { label: 'Delete', onClick: () => onDelete(entity), danger: true, separatorBefore: true },
         ]}
       />

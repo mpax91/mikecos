@@ -26,14 +26,32 @@ function LockIcon() {
  * "Passwords" section — lock-icon tile + name + username, click to open
  * the detail view. Deliberately its own component rather than a mode of
  * EntityCard: the click behavior (always opens the detail modal, never
- * navigates or downloads) and menu (just Delete — no rename/promote/pin)
- * are both simpler and different enough to not share much with it. */
-export function PasswordCard({ entity, onOpen, onDelete }: { entity: Entity; onOpen: (entity: Entity) => void; onDelete: (entity: Entity) => void }) {
+ * navigates or downloads) and menu (Promote/Demote/Delete) are simpler and
+ * different enough to not share much with it. */
+export function PasswordCard({
+  entity,
+  onOpen,
+  onDelete,
+  onPromote,
+  onDemote,
+}: {
+  entity: Entity;
+  onOpen: (entity: Entity) => void;
+  onDelete: (entity: Entity) => void;
+  onPromote?: (entity: Entity) => void;
+  onDemote?: (entity: Entity) => void;
+}) {
   return (
     <div className="entity-card entity-card--compact password-card" onClick={() => onOpen(entity)}>
       <div className="entity-card__top">
         <div className="entity-card__spacer" />
-        <KebabMenu items={[{ label: 'Delete', onClick: () => onDelete(entity), danger: true }]} />
+        <KebabMenu
+          items={[
+            ...(onPromote ? [{ label: 'Promote', onClick: () => onPromote(entity) }] : []),
+            ...(onDemote ? [{ label: 'Demote', onClick: () => onDemote(entity) }] : []),
+            { label: 'Delete', onClick: () => onDelete(entity), danger: true, separatorBefore: !!(onPromote || onDemote) },
+          ]}
+        />
       </div>
       <div className="password-card__badge" style={{ background: tileColor(entity.id) }}>
         <LockIcon />

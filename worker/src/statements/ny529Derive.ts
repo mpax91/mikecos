@@ -1,9 +1,9 @@
 import type { Env } from '../types';
 import { fmtMdy, fmtMoney } from './common';
 import type { FolderRow } from './engine';
-import { appOrigin, easternToday, ensureVaultEntry, syncFlags, syncManagedFacts, syncManagedLinks, syncManagedNote, syncReminderTask } from './engine';
-import { bullets, doc, docText, heading, italic, kv, link, para, table } from './vaultDoc';
-import type { Block } from './vaultDoc';
+import { appOrigin, easternToday, ensureVaultEntry, seedFacts, syncAutoNote, syncFlags, syncManagedLinks, syncReminderTask } from './engine';
+import type { AutoNoteState, AutoSection } from './engine';
+import { bullets, heading, kv, link, para, table } from './vaultDoc';
 import { syncTaxPacketSection } from './taxPacket';
 import { crossCheckNy529 } from './templates/ny529';
 import type { Ny529Values } from './templates/ny529';
@@ -16,7 +16,7 @@ import type { Ny529Settings, StmtRow, TxnRow } from './ny529Summary';
  * top-up reminder, the January limit check, and its Tax Packet lines. */
 
 interface FolderMeta {
-  vault?: { noteId?: string; links?: Record<string, string> };
+  vault?: { noteId?: string; note?: AutoNoteState; links?: Record<string, string> };
   topupTask?: { year: number; taskId: string };
   limitTask?: { year: number; taskId: string };
 }
@@ -126,13 +126,11 @@ export async function deriveNy529(env: Env, folder: FolderRow): Promise<void> {
   }
   await syncFlags(env, folder.id, flags);
 
-  // ---- Vault note (one per account) ----
-  // Architecture shared by every statements folder (see
-  // docs/statement-templates/README.md): Quick Facts = only what's needed
-  // at a glance or in a pinch; Links = real Link children (plan site, Drive
-  // folder, latest statement, Finance dashboard); one auto-updated
-  // "Account Details" note for everything else. Mike's own facts, notes,
-  // links and files are never touched.
+  // ---- Vault entry (one per account) ----
+  // See docs/statement-templates/README.md. Quick Facts are Mike's (a few
+  // evergreen ones seeded at creation, never touched again); Links are
+  // created once (only Latest Statement stays current); the auto note's
+  // owned sections refresh nightly and everything else in it is Mike's.
   let meta: FolderMeta = {};
   try {
     meta = folder.meta_json ? JSON.parse(folder.meta_json) : {};
@@ -143,23 +141,17 @@ export async function deriveNy529(env: Env, folder: FolderRow): Promise<void> {
   if (entry.id !== folder.vault_entry_id) {
     await env.DB.prepare('UPDATE statement_folders SET vault_entry_id = ?, updated_at = ? WHERE id = ?').bind(entry.id, new Date().toISOString(), folder.id).run();
   }
-  if (entry.created) meta.vault = {}; // a fresh entry has none of the old children
   const v = latest?.values;
+  if (entry.created) {
+    meta.vault = {};
+    await seedFacts(env, entry.id, [
+      { label: 'Account', value: v ? `••${v.accountLast}` : null },
+      { label: 'Beneficiary', value: v?.beneficiary ?? null },
+      { label: 'Plan Phone', value: template.account.phone ?? null },
+    ]);
+  }
+  meta.vault = meta.vault ?? {};
   const asOfShort = s.asOf ? fmtMdy(s.asOf) : null;
-
-  await syncManagedFacts(
-    env,
-    entry.id,
-    [
-      { key: 'account', label: 'Account', value: v ? `••${v.accountLast}` : null },
-      { key: 'beneficiary', label: 'Beneficiary', value: v?.beneficiary ?? null },
-      { key: 'value', label: asOfShort ? `Value (${asOfShort})` : 'Value', value: latest ? fmtMoney(s.value) : null },
-      { key: 'aip', label: 'Monthly AIP', value: s.aip ? fmtMoney(s.aip.amount) : null },
-      { key: 'gap', label: `${s.year} Top-Up`, value: s.gap >= 1 ? fmtMoney(s.gap) : null },
-      { key: 'phone', label: 'Plan Phone', value: template.account.phone ?? null },
-    ],
-    'ny529:'
-  );
 
   const history: string[] = [];
   for (const c of s.aipChanges) history.push(`${fmtMdy(c.date)}: monthly deposit ${fmtMoney(c.from)} → ${fmtMoney(c.to)}`);
@@ -170,8 +162,64 @@ export async function deriveNy529(env: Env, folder: FolderRow): Promise<void> {
     if (a.beneficiary !== b.beneficiary) history.push(`${fmtMdy(stmts[i].periodEnd)}: beneficiary ${a.beneficiary} → ${b.beneficiary}`);
   }
   const dashUrl = `${appOrigin(env)}/finance/${folder.id}`;
-  const blocks: Block[] = [
-    para([italic('Updated automatically each night from the statements in Drive — edits here are overwritten. Keep your own notes in a separate note.')]),
+  const sections: AutoSection[] = [];
+  if (latest) {
+    sections.push(
+      {
+        key: 'balances',
+        match: (h) => /^Balances\b/i.test(h),
+        heading: `Balances as of ${asOfShort}`,
+        blocks: [
+          kv([
+            ['Value', fmtMoney(s.value)],
+            ['Contributed', fmtMoney(s.principal)],
+            ['Earnings', `${fmtMoney(s.earnings)}${s.gainPct !== null ? ` (${s.gainPct > 0 ? '+' : ''}${s.gainPct.toFixed(2)}%)` : ''}`],
+          ]),
+        ],
+      },
+      {
+        key: 'deduction',
+        match: (h) => /NY Deduction$/i.test(h),
+        heading: `${s.year} NY Deduction`,
+        blocks: [
+          kv([
+            ['On Statements', `${fmtMoney(s.ytdContributions)}${s.ytdAsOf ? ` through ${fmtMdy(s.ytdAsOf)}` : ''}`],
+            ['Projected by Dec 31', `${fmtMoney(s.projectedYearEnd)} (+${s.remainingDrafts} monthly deposits)`],
+            ['Limit', `${fmtMoney(s.limit)}${(settings.limitConfirmedYear ?? 0) >= year ? ` (confirmed for ${year})` : ' (not yet confirmed this year)'}`],
+            ['Top-Up Needed', s.gap >= 1 ? `${fmtMoney(s.gap)} by Dec 31 — reminder Dec 1` : 'None — on pace'],
+          ]),
+        ],
+      },
+      {
+        key: 'statements',
+        match: (h) => /^Statements$/i.test(h.trim()),
+        heading: 'Statements',
+        blocks: [
+          table(
+            ['Quarter', 'Ending Value', 'Contributions', 'Return', ''],
+            [...s.quarters].reverse().map((q) => {
+              const url = fileUrl(q.fileId);
+              return [
+                `Q${Math.ceil(Number(q.periodEnd.slice(5, 7)) / 3)} ${q.periodEnd.slice(0, 4)}`,
+                fmtMoney(q.ending),
+                fmtMoney(q.contributions),
+                q.returnPct === null ? '—' : `${q.returnPct > 0 ? '+' : ''}${q.returnPct.toFixed(2)}%`,
+                url ? link('View', url) : '',
+              ];
+            })
+          ),
+        ],
+      }
+    );
+  }
+  sections.push({
+    key: 'history',
+    match: (h) => /^Change History$/i.test(h.trim()),
+    heading: 'Change History',
+    blocks: [history.length ? bullets(history) : para('No changes yet.')],
+  });
+  // Seeded only when the note is first created; Mike's from then on.
+  const intro = [
     heading(2, 'Account'),
     kv([
       ['Plan', template.account.institution],
@@ -184,45 +232,13 @@ export async function deriveNy529(env: Env, folder: FolderRow): Promise<void> {
       ['Plan Contact', template.account.site ? [link(template.account.site.replace(/^https?:\/\/(www\.)?/, ''), template.account.site), ` · ${template.account.phone ?? ''}`] : template.account.phone ?? '—'],
     ]),
   ];
-  if (latest) {
-    blocks.push(
-      heading(2, `Balances as of ${asOfShort}`),
-      kv([
-        ['Value', fmtMoney(s.value)],
-        ['Contributed', fmtMoney(s.principal)],
-        ['Earnings', `${fmtMoney(s.earnings)}${s.gainPct !== null ? ` (${s.gainPct > 0 ? '+' : ''}${s.gainPct.toFixed(2)}%)` : ''}`],
-      ]),
-      heading(2, `${s.year} NY Deduction`),
-      kv([
-        ['On Statements', `${fmtMoney(s.ytdContributions)}${s.ytdAsOf ? ` through ${fmtMdy(s.ytdAsOf)}` : ''}`],
-        ['Projected by Dec 31', `${fmtMoney(s.projectedYearEnd)} (+${s.remainingDrafts} monthly deposits)`],
-        ['Limit', `${fmtMoney(s.limit)}${(settings.limitConfirmedYear ?? 0) >= year ? ` (confirmed for ${year})` : ' (not yet confirmed this year)'}`],
-        ['Top-Up Needed', s.gap >= 1 ? `${fmtMoney(s.gap)} by Dec 31 — reminder Dec 1` : 'None — on pace'],
-      ]),
-      heading(2, 'Statements'),
-      table(
-        ['Quarter', 'Ending Value', 'Contributions', 'Return', ''],
-        [...s.quarters].reverse().map((q) => {
-          const url = fileUrl(q.fileId);
-          return [
-            `Q${Math.ceil(Number(q.periodEnd.slice(5, 7)) / 3)} ${q.periodEnd.slice(0, 4)}`,
-            fmtMoney(q.ending),
-            fmtMoney(q.contributions),
-            q.returnPct === null ? '—' : `${q.returnPct > 0 ? '+' : ''}${q.returnPct.toFixed(2)}%`,
-            url ? link('View', url) : '',
-          ];
-        })
-      )
-    );
-  }
-  blocks.push(heading(2, 'Change History'), history.length ? bullets(history) : para('No changes yet.'), para([link('Open the 529 dashboard in Finance', dashUrl)]));
-  const noteJson = doc(blocks);
-  meta.vault = meta.vault ?? {};
-  meta.vault.noteId = await syncManagedNote(env, entry.id, meta.vault.noteId, 'Account Details · Auto-Updated', noteJson, docText(noteJson));
+  const noteState = await syncAutoNote(env, entry.id, meta.vault.note ?? (meta.vault.noteId ? { noteId: meta.vault.noteId, written: ['balances', 'deduction', 'statements', 'history'] } : undefined), 'Account Details', intro, sections);
+  meta.vault.note = noteState;
+  delete meta.vault.noteId;
   meta.vault.links = await syncManagedLinks(env, entry.id, meta.vault.links, [
     { key: 'site', title: 'NY 529 Direct Plan', url: template.account.site ?? null },
     { key: 'dashboard', title: 'Finance Dashboard', url: dashUrl },
-    { key: 'latest', title: latest ? `Latest Statement · ${fmtLong(latest.periodEnd)}` : 'Latest Statement', url: latest ? fileUrl(latest.fileId) : null },
+    { key: 'latest', title: latest ? `Latest Statement · ${fmtLong(latest.periodEnd)}` : 'Latest Statement', url: latest ? fileUrl(latest.fileId) : null, live: true },
     { key: 'folder', title: `Drive Folder · ${folder.folder_name}`, url: folder.folder_url },
   ]);
 
@@ -253,7 +269,6 @@ export async function deriveNy529(env: Env, folder: FolderRow): Promise<void> {
     const q4Url = q4 ? fileUrl(q4.fileId) : null;
     await syncTaxPacketSection(env, y, folder.id, {
       title: template.account.nickname,
-      facts: [{ key: 'contrib', label: 'NY 529 Contributions (Chase)', value: fmtMoney(last.values.ytdContributions) }],
       blocks: [
         kv([
           ['Contributions', `${fmtMoney(last.values.ytdContributions)} through ${fmtMdy(last.periodEnd)}${q4 ? ' (full year)' : ''}`],
