@@ -7,11 +7,12 @@ import { bold, bullets, heading, kv, link, para, table } from './vaultDoc';
 import { crossCheckAmazon } from './templates/amazon';
 import type { AmazonValues } from './templates/amazon';
 import { templateById } from './templates';
-import { summarizeAmazon } from './amazonSummary';
+import { categoryOf, summarizeAmazon } from './amazonSummary';
 import type { AmazonStmtRow, AmazonTxnRow } from './amazonSummary';
 import { addMonths } from './adtSummary';
 import { billingFromBills, loadPayer, payerFlags } from '../accountPayers';
 import type { BillingFacts } from '../accountPayers';
+import type { CardFacts } from '../cardFacts';
 
 /** Amazon Prime Visa outputs: Vault entry "Amazon Prime Visa" (per the
  * Vault entry standard in docs/statement-templates/README.md), flags
@@ -26,6 +27,7 @@ interface FolderMeta {
   vault?: { note?: { noteId?: string; written?: string[] }; links?: Record<string, string> };
   payTask?: { year: number; taskId: string };
   billing?: BillingFacts | null;
+  card?: CardFacts;
 }
 
 const NEW_STATEMENT_GRACE_DAYS = 10;
@@ -155,6 +157,20 @@ export async function deriveAmazon(env: Env, folder: FolderRow): Promise<void> {
     s.statements.map((r, i) => ({ date: r.closingDate, amount: r.newBalance, totalDue: r.newBalance, dueDate: r.dueDate, autopay: stmts[i].values.autopay }))
   );
   meta.billing = billing;
+  // ---- Card snapshot → card Quick Facts (cardFacts.ts, synced by engine.derive) ----
+  if (lv) {
+    const earn = (lv.points?.earned ?? [])
+      .filter((e) => e.rate !== null && categoryOf(e.label) !== null && categoryOf(e.label) !== 'Bonuses')
+      .map((e) => ({ rate: e.rate!, category: categoryOf(e.label)! }));
+    meta.card = {
+      last4: lv.accountLast,
+      network: template.account.network ?? null,
+      creditLine: lv.creditLine,
+      purchaseApr: lv.apr.purchases,
+      cashLine: lv.cashLine,
+      statementRewards: earn,
+    };
+  }
   flags.push(...(await payerFlags(env, entry.id, name, billing)));
   await syncFlags(env, folder.id, flags);
 

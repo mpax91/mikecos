@@ -54,6 +54,25 @@ Editing one makes it Mike's own fact; deleting one keeps it deleted
   mode. Flags: autopay with no card set, statement vs. Wallet mismatch,
   paying card inactive or deleted from Wallet.
 
+### Card Quick Facts (every credit card account — Mike, 2026-10-08)
+
+A second set of auto-updating facts for card accounts, same rules as the
+payment facts (`managed_key 'card:*'`, Auto-Updates tag, Mike's edit or
+delete wins). Code: `worker/src/cardFacts.ts`.
+
+| Fact | Source |
+|---|---|
+| Card Type | Wallet card's network when set (e.g. "Visa Signature"), else the template's `account.network` |
+| Credit Limit · Purchase APR · Cash Advance Limit | latest statement |
+| Expires | Wallet card expiry (MM/YYYY) — statements don't print it |
+| Rewards | what the card earns **today**: the MikeOS Rewards card (fixed bonuses + rotating bonuses whose dates cover today + base rate), else the earn categories on the latest statement |
+| Number & CVV | "Saved in Wallet" when Wallet holds them — the values stay encrypted in Wallet (reveal on tap), never in a plain-text fact |
+
+Wallet and Rewards cards are matched by **last 4**. A card template's
+derive stores a `CardFacts` snapshot as `meta.card`; `engine.derive` calls
+`syncCardFacts`. Wallet card create/edit/delete and any Rewards card / bonus
+change re-sync right away.
+
 ## Tax Packet ("Tax Packet · <year>")
 Each template contributes a section via `syncTaxPacketSection`
 (`taxPacket.ts`): tax documents → Links; its section (heading = account

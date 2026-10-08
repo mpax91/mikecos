@@ -59,7 +59,9 @@ $72,391 net spending; paid in full and on time for the last 35 statements.
 
 ## Outputs (`amazonDerive.ts`)
 - Vault entry **"Amazon Prime Visa"**: seeded facts Card (Visa ••6986), Issuer,
-  Customer Service; payment Quick Facts via `billingFromBills` (a card's
+  Customer Service; Card Quick Facts (Card Type default "Visa Signature",
+  Credit Limit, Purchase APR, Cash Advance Limit, Rewards, + Expires and
+  Number & CVV from Wallet); payment Quick Facts via `billingFromBills` (a card's
   "bill" = statement balance); note "Account Details" with owned sections
   Balance as of… / Rewards / Spend by Year / Recent Statements / Fees &
   Interest / Change History (APR moves summarized in one line); links Chase ·

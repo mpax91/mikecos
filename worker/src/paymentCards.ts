@@ -2,6 +2,9 @@ import { Hono } from 'hono';
 import type { Env } from './types';
 import { decryptField, encryptField } from './cryptoField';
 import { detachCard, syncAccountsForCard } from './accountPayers';
+import { syncCardFactsForLast4 } from './cardFacts';
+
+const easternToday = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
 import { templateById } from './statements/templates';
 
 const now = () => new Date().toISOString();
@@ -332,6 +335,8 @@ paymentCardsRouter.post('/cards', async (c) => {
     .run();
 
   const row = await c.env.DB.prepare('SELECT * FROM payment_cards WHERE id = ?').bind(id).first<PaymentCardRow>();
+  // A card account (Statements) with these last 4 picks up Card Type / Expires / Number & CVV.
+  if (row?.card_type !== 'bank') await syncCardFactsForLast4(c.env, row?.last4 ?? null, easternToday());
   return c.json(cardJson(row!, await bankLinks(c.env, row)), 201);
 });
 
@@ -444,6 +449,11 @@ paymentCardsRouter.patch('/cards/:id', async (c) => {
   }
 
   const row = await c.env.DB.prepare('SELECT * FROM payment_cards WHERE id = ?').bind(id).first<PaymentCardRow>();
+  // Card Quick Facts on the matching card account (network, expiry, number/CVV, Rewards link).
+  if (fields.length && row?.card_type !== 'bank') {
+    await syncCardFactsForLast4(c.env, row?.last4 ?? null, easternToday());
+    if (existing.last4 && existing.last4 !== row?.last4) await syncCardFactsForLast4(c.env, existing.last4, easternToday());
+  }
   return c.json(cardJson(row!, await bankLinks(c.env, row)));
 });
 
@@ -452,9 +462,9 @@ paymentCardsRouter.patch('/cards/:id', async (c) => {
 // is only ever removed from the Rewards tab directly.
 paymentCardsRouter.delete('/cards/:id', async (c) => {
   const id = c.req.param('id');
-  const existing = await c.env.DB.prepare('SELECT cover_art_key, back_art_key FROM payment_cards WHERE id = ?')
+  const existing = await c.env.DB.prepare('SELECT cover_art_key, back_art_key, last4 FROM payment_cards WHERE id = ?')
     .bind(id)
-    .first<{ cover_art_key: string | null; back_art_key: string | null }>();
+    .first<{ cover_art_key: string | null; back_art_key: string | null; last4: string | null }>();
   if (!existing) return c.json({ error: 'not found' }, 404);
   if (existing.cover_art_key) await c.env.FILES.delete(existing.cover_art_key).catch(() => {});
   if (existing.back_art_key) await c.env.FILES.delete(existing.back_art_key).catch(() => {});
@@ -467,6 +477,7 @@ paymentCardsRouter.delete('/cards/:id', async (c) => {
     c.env.DB.prepare('DELETE FROM payment_card_facts WHERE card_id = ?').bind(id),
     c.env.DB.prepare('DELETE FROM payment_cards WHERE id = ?').bind(id),
   ]);
+  await syncCardFactsForLast4(c.env, existing.last4, easternToday());
   return c.json({ ok: true });
 });
 

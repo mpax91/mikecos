@@ -11,6 +11,8 @@ import { deriveAdt } from './adtDerive';
 import { deriveAlly } from './allyDerive';
 import { deriveAmazon } from './amazonDerive';
 import { syncPaymentFacts } from '../accountPayers';
+import { syncCardFacts } from '../cardFacts';
+import type { CardFacts } from '../cardFacts';
 
 /** Base statements engine: lists a registered Drive folder, reads any PDF
  * not seen before (or modified since), stores normalized statement +
@@ -179,7 +181,17 @@ export async function derive(env: Env, folder: FolderRow): Promise<void> {
   // Payment Quick Facts (Due Date, Auto-Pay, Paid With, bill amounts) from
   // the billing snapshot the template just stored + the account's payer.
   const after = await loadFolder(env, folder.id);
-  if (after?.vault_entry_id) await syncPaymentFacts(env, after.vault_entry_id);
+  if (after?.vault_entry_id) {
+    await syncPaymentFacts(env, after.vault_entry_id);
+    // Card Quick Facts (Card Type, Credit Limit, APR, …) for card accounts.
+    let card: CardFacts | undefined;
+    try {
+      card = after.meta_json ? JSON.parse(after.meta_json).card : undefined;
+    } catch {
+      card = undefined;
+    }
+    if (card) await syncCardFacts(env, after.vault_entry_id, card, easternToday());
+  }
 }
 
 /** Nightly: every live folder, looping each until its backlog is read. */

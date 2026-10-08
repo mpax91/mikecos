@@ -25,6 +25,9 @@ export interface StatementTemplate {
     kind: 'balance' | 'bill' | 'card';
     site?: string;
     phone?: string;
+    /** Cards: the network / tier for the Card Type Quick Fact when the
+     * Wallet card doesn't say ('Visa Signature'). */
+    network?: string;
   };
   parse(text: string): ParsedStatement;
   /** Files in the folder that aren't statements (e.g. a contract) are
@@ -94,6 +97,7 @@ export const TEMPLATES: StatementTemplate[] = [
       owner: 'household',
       cadence: 'monthly',
       kind: 'card',
+      network: 'Visa Signature',
       site: 'https://www.chase.com/amazon',
       phone: '1-888-247-4080',
     },

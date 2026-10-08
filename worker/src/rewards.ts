@@ -1,3 +1,4 @@
+import { syncAllCardFacts } from './cardFacts';
 import { Hono } from 'hono';
 import type { Env } from './types';
 
@@ -8,6 +9,19 @@ const uid = () => crypto.randomUUID();
  * migrations/0047_rewards.sql for the schema and why it's a separate table
  * family from Wallet's Phase 1 cards. Mounted at /api/rewards. */
 export const rewardsRouter = new Hono<{ Bindings: Env }>();
+
+// The Rewards Quick Fact on card accounts (cardFacts.ts) reflects the
+// MikeOS Rewards card, so any card/bonus change re-syncs them right away.
+const resyncCardFacts = async (c: { req: { method: string }; res: Response; env: Env }, next: () => Promise<void>) => {
+  await next();
+  if (c.req.method !== 'GET' && c.res.status < 400) {
+    await syncAllCardFacts(c.env, new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })).catch((err) => console.error('card facts sync failed', err));
+  }
+};
+rewardsRouter.use('/cards', resyncCardFacts);
+rewardsRouter.use('/cards/*', resyncCardFacts);
+rewardsRouter.use('/bonuses/*', resyncCardFacts);
+rewardsRouter.use('/import', resyncCardFacts);
 
 interface RewardsCardRow {
   id: string;
