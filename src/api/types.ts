@@ -639,7 +639,26 @@ export interface RewardsImportResult {
 // See worker/migrations/0049_payment_cards.sql for the schema and the
 // linking-not-duplicating design with RewardsCard above.) ----
 
-export type PaymentCardType = 'credit' | 'debit';
+export type PaymentCardType = 'credit' | 'debit' | 'bank';
+export type BankAccountKind = 'checking' | 'savings' | 'money_market' | 'cd' | 'other';
+
+/** A Wallet bank account's live balance, matched by last 4 to an account
+ * on a live Statements folder's latest statement. */
+export interface StatementAccountLink {
+  folderId: string;
+  folderNickname: string;
+  institution: string | null;
+  kind: string | null;
+  product: string | null;
+  owners: string | null;
+  balance: number;
+  asOf: string;
+  apy: number | null;
+}
+
+export interface BankAccountSuggestion extends StatementAccountLink {
+  last4: string;
+}
 
 export interface PaymentCard {
   id: string;
@@ -669,6 +688,12 @@ export interface PaymentCard {
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
+  /** Bank accounts (cardType 'bank') only. */
+  accountKind: BankAccountKind | null;
+  routingNumber: string | null;
+  wireRoutingNumber: string | null;
+  accountOwners: string | null;
+  statementAccount: StatementAccountLink | null;
 }
 
 export interface PaymentCardSecrets {

@@ -1,5 +1,6 @@
 import type { PaymentCard } from '../api/types';
 import { KebabMenu } from './KebabMenu';
+import { BANK_KIND_LABEL } from '../utils/bankAccount';
 
 const TILE_COLORS = ['#3B5BA9', '#2F6F5E', '#8A5A3B', '#6B4C9A', '#3D7EA6', '#9A4C5F', '#4C6B4C', '#7A5C2E', '#B8632F', '#5C6B8A'];
 
@@ -41,14 +42,24 @@ export function PaymentCardTile({
         />
       </div>
       <div className="wallet-tile__art" style={{ background: card.coverArtUrl ? undefined : bg }}>
-        {card.coverArtUrl ? <img src={card.coverArtUrl} alt="" className="wallet-tile__art-img" /> : <span className="wallet-tile__art-icon">{card.cardType === 'debit' ? '🏦' : '💳'}</span>}
+        {card.coverArtUrl ? (
+          <img src={card.coverArtUrl} alt="" className="wallet-tile__art-img" />
+        ) : (
+          <span className="wallet-tile__art-icon">{card.cardType === 'bank' ? '🏛️' : card.cardType === 'debit' ? '🏦' : '💳'}</span>
+        )}
       </div>
       <div className="wallet-tile__name">{card.nickname}</div>
       <div className="wallet-tile__category">
-        {card.cardType === 'debit' ? 'Debit' : 'Credit'}
+        {card.cardType === 'bank' ? (card.accountKind ? BANK_KIND_LABEL[card.accountKind] : 'Bank Account') : card.cardType === 'debit' ? 'Debit' : 'Credit'}
         {card.last4 ? ` ····${card.last4}` : ''}
         {expiry ? ` · ${expiry}` : ''}
+        {card.cardType === 'bank' && !card.active ? ' · Closed' : ''}
       </div>
+      {card.statementAccount && (
+        <div className="wallet-tile__balance" title={`As of ${card.statementAccount.asOf} statement`}>
+          ${card.statementAccount.balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </div>
+      )}
     </div>
   );
 }

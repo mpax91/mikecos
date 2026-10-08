@@ -119,18 +119,27 @@ export function AccountPayerModal({
           <label className="account-payer__field">
             <span>Paid With</span>
             <select value={cardChoice} onChange={(e) => setCardChoice(e.target.value)}>
-              <option value="">Choose a Card…</option>
-              {activeCards.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {cardLabel(c)}
-                  {c.active ? '' : ' (Inactive)'}
-                </option>
-              ))}
-              <option value={OTHER}>Other (Bank Account, etc.)…</option>
+              <option value="">Choose a Card or Account…</option>
+              {[
+                { label: 'Cards', rows: activeCards.filter((c) => c.cardType !== 'bank') },
+                { label: 'Bank Accounts', rows: activeCards.filter((c) => c.cardType === 'bank') },
+              ]
+                .filter((g) => g.rows.length)
+                .map((g) => (
+                  <optgroup key={g.label} label={g.label}>
+                    {g.rows.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {cardLabel(c)}
+                        {c.active ? '' : c.cardType === 'bank' ? ' (Closed)' : ' (Inactive)'}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              <option value={OTHER}>Other…</option>
             </select>
           </label>
         )}
-        {isOther && <input placeholder="e.g. Chase Checking ••1234" value={payerText} onChange={(e) => setPayerText(e.target.value)} autoFocus />}
+        {isOther && <input placeholder="e.g. Venmo, cash, someone else" value={payerText} onChange={(e) => setPayerText(e.target.value)} autoFocus />}
 
         <div className="account-payer__field">
           <span>How</span>
@@ -144,7 +153,7 @@ export function AccountPayerModal({
           </div>
         </div>
         <div className="account-payer__hint">
-          {mode === 'autopay' ? 'Charges the card automatically each bill.' : 'Card is saved with them — you click Pay.'}
+          {mode === 'autopay' ? 'Pays automatically each bill.' : 'Saved with them — you click Pay.'}
         </div>
 
         <label className="account-payer__field">

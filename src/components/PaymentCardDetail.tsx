@@ -5,6 +5,7 @@ import type { CardPaidAccount, PaymentCard, PaymentCardFact } from '../api/types
 import { AccountPayerModal } from './AccountPayerModal';
 import { CardImageLightbox } from './CardImageLightbox';
 import { isPhoneLabel, telHref } from '../utils/phone';
+import { BANK_KIND_LABEL } from '../utils/bankAccount';
 
 /** View modal for a single Payment Card. The number and CVV are never
  * fetched until Mike explicitly taps "Reveal" — GET /cards/:id/reveal is
@@ -17,7 +18,8 @@ export function PaymentCardDetail({ card, onClose, onEdit }: { card: PaymentCard
   const [revealing, setRevealing] = useState(false);
   const [revealError, setRevealError] = useState<string | null>(null);
   const [shown, setShown] = useState(false);
-  const [copied, setCopied] = useState<'number' | 'cvv' | 'pin' | null>(null);
+  const [copied, setCopied] = useState<'number' | 'cvv' | 'pin' | 'routing' | 'wire' | null>(null);
+  const isBank = card.cardType === 'bank';
   const [lightboxSide, setLightboxSide] = useState<'front' | 'back' | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [facts, setFacts] = useState<PaymentCardFact[]>([]);
@@ -65,7 +67,7 @@ export function PaymentCardDetail({ card, onClose, onEdit }: { card: PaymentCard
     }
   }
 
-  function copy(field: 'number' | 'cvv' | 'pin', value: string | null) {
+  function copy(field: 'number' | 'cvv' | 'pin' | 'routing' | 'wire', value: string | null) {
     if (!value) return;
     navigator.clipboard.writeText(value).then(() => {
       setCopied(field);
@@ -90,12 +92,85 @@ export function PaymentCardDetail({ card, onClose, onEdit }: { card: PaymentCard
           )}
           <div className="wallet-barcode-view__name">{card.nickname}</div>
           <div className="wallet-barcode-view__category">
-            {[card.cardType === 'debit' ? 'Debit' : 'Credit', card.network, card.issuer].filter(Boolean).join(' · ')}
+            {(isBank
+              ? [card.accountKind ? BANK_KIND_LABEL[card.accountKind] : 'Bank Account', card.issuer, card.active ? null : 'Closed']
+              : [card.cardType === 'debit' ? 'Debit' : 'Credit', card.network, card.issuer]
+            )
+              .filter(Boolean)
+              .join(' · ')}
             {card.rewardWorthy ? ' · ★ Earns rewards' : ''}
           </div>
         </div>
 
-        {(card.hasNumber || card.hasCvv || card.hasPin || card.last4) && (
+        {isBank && card.statementAccount && (
+          <div className="bank-detail__balance">
+            <div>
+              <span className="bank-detail__balance-label">Balance</span>
+              <span className="bank-detail__balance-value">
+                ${card.statementAccount.balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+              <span className="bank-detail__balance-sub">
+                As of the {new Date(`${card.statementAccount.asOf}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} statement
+                {card.statementAccount.apy !== null ? ` · ${card.statementAccount.apy.toFixed(2)}% APY earned` : ''}
+              </span>
+            </div>
+            <Link to={`/finance/${card.statementAccount.folderId}`} className="btn btn--ghost btn--sm" onClick={onClose}>
+              Dashboard
+            </Link>
+          </div>
+        )}
+
+        {isBank && (
+          <div className="payment-detail__secure bank-detail__secure">
+            <div className="payment-detail__secure-row">
+              <span>Account number</span>
+              <span className="payment-detail__secure-value">{shown && revealed?.number ? revealed.number : card.last4 ? `••••••${card.last4}` : card.hasNumber ? '•••••••••' : '—'}</span>
+            </div>
+            <div className="payment-detail__secure-row">
+              <span>Routing number</span>
+              <span className="payment-detail__secure-value">
+                {card.routingNumber ?? '—'}
+                {card.routingNumber && (
+                  <button type="button" className="wallet-barcode-view__details-copy" onClick={() => copy('routing', card.routingNumber)} aria-label="Copy routing number">
+                    {copied === 'routing' ? '✓' : '⧉'}
+                  </button>
+                )}
+              </span>
+            </div>
+            {card.wireRoutingNumber && (
+              <div className="payment-detail__secure-row">
+                <span>Wire routing</span>
+                <span className="payment-detail__secure-value">
+                  {card.wireRoutingNumber}
+                  <button type="button" className="wallet-barcode-view__details-copy" onClick={() => copy('wire', card.wireRoutingNumber)} aria-label="Copy wire routing number">
+                    {copied === 'wire' ? '✓' : '⧉'}
+                  </button>
+                </span>
+              </div>
+            )}
+            {card.accountOwners && (
+              <div className="payment-detail__secure-row">
+                <span>Owners</span>
+                <span className="payment-detail__secure-value bank-detail__owners">{card.accountOwners}</span>
+              </div>
+            )}
+            <div className="payment-detail__secure-actions">
+              {card.hasNumber && (
+                <button type="button" className="wallet-barcode-view__reveal" onClick={reveal} disabled={revealing}>
+                  {revealing ? 'Decrypting…' : shown ? 'Hide' : 'Reveal'}
+                </button>
+              )}
+              {shown && revealed?.number && (
+                <button type="button" className="wallet-barcode-view__copy" onClick={() => copy('number', revealed.number)}>
+                  {copied === 'number' ? 'Copied ✓' : 'Copy account number'}
+                </button>
+              )}
+            </div>
+            {revealError && <div className="wallet-editor__error">{revealError}</div>}
+          </div>
+        )}
+
+        {!isBank && (card.hasNumber || card.hasCvv || card.hasPin || card.last4) && (
           <div className="payment-detail__secure">
             <div className="payment-detail__secure-row">
               <span>Card number</span>
@@ -202,7 +277,13 @@ export function PaymentCardDetail({ card, onClose, onEdit }: { card: PaymentCard
           </button>
           {paysOpen && (
             <div className="pays-for__body">
-              {paidAccounts.length === 0 && <div className="pays-for__empty">No accounts linked yet — add the ones that charge this card or keep it on file.</div>}
+              {paidAccounts.length === 0 && (
+                <div className="pays-for__empty">
+                  {isBank
+                    ? 'No accounts linked yet — add the bills and cards paid from this account.'
+                    : 'No accounts linked yet — add the ones that charge this card or keep it on file.'}
+                </div>
+              )}
               {[
                 { title: 'Auto-Pay', rows: autoPays },
                 { title: 'On File', rows: onFile },
@@ -242,7 +323,7 @@ export function PaymentCardDetail({ card, onClose, onEdit }: { card: PaymentCard
         )}
 
         <button type="button" className="wallet-barcode-view__edit" onClick={onEdit}>
-          Edit card
+          {isBank ? 'Edit account' : 'Edit card'}
         </button>
       </div>
 

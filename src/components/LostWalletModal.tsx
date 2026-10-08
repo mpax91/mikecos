@@ -46,7 +46,7 @@ export function LostWalletModal({ onClose }: { onClose: () => void }) {
   const [paidByCard, setPaidByCard] = useState<Map<string, CardPaidAccount[]>>(new Map());
 
   useEffect(() => {
-    api.listPaymentCards().then((cards) => setPayment(cards.filter((c) => c.active)));
+    api.listPaymentCards().then((cards) => setPayment(cards.filter((c) => c.active && c.cardType !== 'bank')));
     api.listWalletCards().then(setLoyalty);
   }, []);
 

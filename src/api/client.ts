@@ -1,6 +1,6 @@
 import type { AuthenticationResponseJSON, PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON, RegistrationResponseJSON } from '@simplewebauthn/browser';
 import type { AuthCredentialSummary, AuthStatus, Bet, BetLeg, BetGameNote, BetOption, BetOptionCategory, BetPromo, BetPromoStatus, BetScheduleGame, BetTransaction, BetTransactionType, VaultEntryDetail, VaultFact, BriefingResponse, CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, CreditScoreEntry, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitDirection, HabitEvent, HabitLog, HabitSummary, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsFeedsResponse, NewsFolder, NewsSavedArticle, NewsSettings, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, VoterFieldsBackfillChunkResponse,
-  ContactAskResponse, BetGameEnrichment, VaultFactLabel, VaultRollupGroup, WalletCard, WalletCardFact, WalletCategory, WalletCardIdSecret, RewardsCard, RewardsBonus, RewardsPerk, RewardsImportResult, RewardsMerchant, RewardsOffer, PaymentCard, PaymentCardFact, PaymentCardSecrets, PlexLibrary, PlexItem, PlexItemDetail, PlexIssue, PlexMissingEpisode, PlexSyncChunkResult, PlexAiringCheckChunkResult, PlexAiringScanChunkResult, MediaCatalogItem, MediaCatalogFormat, BarItem, BarItemDetail, BarItemType, BarTasting, BarTopTastingEntry, HomeFloor, HomeFloorLayout, HomeRoom, HomePoint, HomeRoomSpecPayload, HomeFixture, HomeFixtureType, HomeWallItem, HomeWallItemType, ElectricalPanel, ElectricalBreaker, ElectricalBreakerWithFixtures, WeatherResponse, WeekResponse, EmailAccount, EmailInboxFeed, EmailPeekResult, EmailSyncResult, BookmarksResponse, BookmarksImportResult, CloudProviderId, CloudProviderInfo, CloudAccount, CloudBrowseResponse, CloudSearchResponse, StatementFolder, StatementDriveAccount, StatementScanResult, FinanceAccount, Ny529Dashboard, FinanceDashboard, StatementFolderStatus, AccountOwner, AccountPayer, AccountPayerMode, CardPaidAccount } from './types';
+  ContactAskResponse, BetGameEnrichment, VaultFactLabel, VaultRollupGroup, WalletCard, WalletCardFact, WalletCategory, WalletCardIdSecret, RewardsCard, RewardsBonus, RewardsPerk, RewardsImportResult, RewardsMerchant, RewardsOffer, PaymentCard, PaymentCardFact, PaymentCardSecrets, BankAccountSuggestion, PlexLibrary, PlexItem, PlexItemDetail, PlexIssue, PlexMissingEpisode, PlexSyncChunkResult, PlexAiringCheckChunkResult, PlexAiringScanChunkResult, MediaCatalogItem, MediaCatalogFormat, BarItem, BarItemDetail, BarItemType, BarTasting, BarTopTastingEntry, HomeFloor, HomeFloorLayout, HomeRoom, HomePoint, HomeRoomSpecPayload, HomeFixture, HomeFixtureType, HomeWallItem, HomeWallItemType, ElectricalPanel, ElectricalBreaker, ElectricalBreakerWithFixtures, WeatherResponse, WeekResponse, EmailAccount, EmailInboxFeed, EmailPeekResult, EmailSyncResult, BookmarksResponse, BookmarksImportResult, CloudProviderId, CloudProviderInfo, CloudAccount, CloudBrowseResponse, CloudSearchResponse, StatementFolder, StatementDriveAccount, StatementScanResult, FinanceAccount, Ny529Dashboard, FinanceDashboard, StatementFolderStatus, AccountOwner, AccountPayer, AccountPayerMode, CardPaidAccount } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -1153,7 +1153,7 @@ export const api = {
     params: Partial<
       Pick<
         PaymentCard,
-        'nickname' | 'cardType' | 'network' | 'issuer' | 'last4' | 'nameOnCard' | 'expiryMonth' | 'expiryYear' | 'billingZip' | 'color' | 'coverArtKey' | 'backArtKey' | 'notes' | 'rewardWorthy'
+        'nickname' | 'cardType' | 'network' | 'issuer' | 'last4' | 'nameOnCard' | 'expiryMonth' | 'expiryYear' | 'billingZip' | 'color' | 'coverArtKey' | 'backArtKey' | 'notes' | 'rewardWorthy' | 'accountKind' | 'routingNumber' | 'wireRoutingNumber' | 'accountOwners'
       >
     > & { number?: string | null; cvv?: string | null; pin?: string | null; rewardsCardId?: string | null }
   ) => request<PaymentCard>('/api/payment-cards/cards', { method: 'POST', body: JSON.stringify(params) }).then(resolvePaymentCard),
@@ -1179,6 +1179,10 @@ export const api = {
         | 'rewardWorthy'
         | 'active'
         | 'sortOrder'
+        | 'accountKind'
+        | 'routingNumber'
+        | 'wireRoutingNumber'
+        | 'accountOwners'
       >
     > & { number?: string | null; cvv?: string | null; pin?: string | null; rewardsCardId?: string | null }
   ) => request<PaymentCard>(`/api/payment-cards/cards/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }).then(resolvePaymentCard),
@@ -1187,6 +1191,9 @@ export const api = {
 
   reorderPaymentCards: (ordered_ids: string[]) =>
     request<{ ok: true }>('/api/payment-cards/cards/reorder', { method: 'POST', body: JSON.stringify({ ordered_ids }) }),
+
+  // Accounts on live statements that aren't in Wallet yet (Bank Accounts → Add).
+  listBankAccountSuggestions: () => request<BankAccountSuggestion[]>('/api/payment-cards/bank-suggestions'),
 
   // The only call that ever returns a decrypted number/CVV — fire it on an
   // explicit tap, never eagerly.

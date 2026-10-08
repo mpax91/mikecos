@@ -199,7 +199,7 @@ export async function payerFlags(
   if (!billing || billing.autopay === null) {
     // The statement doesn't say either way — nothing to compare.
   } else if (billing.autopay && !label) {
-    flags.push({ key: 'payer:missing', severity: 'warn', message: `${accountName} is on automatic payment, but no card is set — pick it in Wallet (Pays For) or on the Vault entry (Paid With)` });
+    flags.push({ key: 'payer:missing', severity: 'warn', message: `${accountName} is on automatic payment, but no card or bank account is set — pick it in Wallet (Pays For) or on the Vault entry (Paid With)` });
   } else if (billing.autopay && payer?.mode === 'on_file') {
     flags.push({ key: 'payer:mode', severity: 'info', message: `The latest ${accountName} bill shows automatic payment, but ${label} is marked On File — switch it to Auto-Pay` });
   } else if (!billing.autopay && payer?.mode === 'autopay') {

@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { Env } from './types';
 import { decryptField, encryptField } from './cryptoField';
 import { detachCard, syncAccountsForCard } from './accountPayers';
+import { templateById } from './statements/templates';
 
 const now = () => new Date().toISOString();
 const uid = () => crypto.randomUUID();
@@ -28,7 +29,8 @@ async function copyR2Object(env: Env, sourceKey: string): Promise<string | null>
   }
 }
 
-/** Wallet Part 3 — a secure Payment Cards vault (credit + debit; see
+/** Wallet Part 3 — a secure Payment Cards vault (credit + debit, and bank
+ * accounts as card_type 'bank' — see 0094_bank_accounts.sql; see
  * migrations/0049_payment_cards.sql for the schema and the linking
  * design). Mounted at /api/payment-cards. */
 export const paymentCardsRouter = new Hono<{ Bindings: Env }>();
@@ -57,13 +59,74 @@ interface PaymentCardRow {
   sort_order: number;
   created_at: string;
   updated_at: string;
+  account_kind: string | null;
+  routing_number: string | null;
+  wire_routing_number: string | null;
+  account_owners: string | null;
+}
+
+/** credit | debit | bank — anything else falls back to credit. */
+const normType = (t: unknown) => (t === 'debit' ? 'debit' : t === 'bank' ? 'bank' : 'credit');
+const ACCOUNT_KINDS = ['checking', 'savings', 'money_market', 'cd', 'other'];
+const normKind = (k: unknown) => (typeof k === 'string' && ACCOUNT_KINDS.includes(k) ? k : null);
+const digits = (v: string | null | undefined) => (v ?? '').replace(/\D/g, '') || null;
+
+/** A bank account's live balance, from the latest statement of any live
+ * Statements folder that lists an account with the same last 4 (Ally's
+ * combined statement today). Keyed by last 4. */
+export interface StatementAccountLink {
+  folderId: string;
+  folderNickname: string;
+  institution: string | null;
+  kind: string | null;
+  product: string | null;
+  owners: string | null;
+  balance: number;
+  asOf: string;
+  apy: number | null;
+}
+
+export async function statementAccountsByLast4(env: Env): Promise<Map<string, StatementAccountLink>> {
+  const out = new Map<string, StatementAccountLink>();
+  const { results } = await env.DB.prepare(
+    `SELECT f.id AS folder_id, f.template_id, s.period_end, s.values_json
+       FROM statement_folders f
+       JOIN statements s ON s.folder_row_id = f.id
+      WHERE f.status = 'live'
+        AND s.period_end = (SELECT MAX(period_end) FROM statements WHERE folder_row_id = f.id)`
+  ).all<{ folder_id: string; template_id: string | null; period_end: string; values_json: string }>();
+  for (const r of results ?? []) {
+    let values: { accounts?: { last4: string; kind?: string; product?: string | null; holders?: string | null; ownership?: string | null; ending: number; apy?: number | null }[] };
+    try {
+      values = JSON.parse(r.values_json);
+    } catch {
+      continue;
+    }
+    const t = templateById(r.template_id);
+    for (const a of values.accounts ?? []) {
+      if (!a?.last4) continue;
+      out.set(a.last4, {
+        folderId: r.folder_id,
+        folderNickname: t?.account.nickname ?? 'Statements',
+        institution: t?.account.institution ?? null,
+        kind: a.kind ?? null,
+        product: a.product ?? null,
+        owners: a.holders ? `${a.holders}${a.ownership ? ` (${a.ownership})` : ''}` : null,
+        balance: a.ending,
+        asOf: r.period_end,
+        apy: a.apy ?? null,
+      });
+    }
+  }
+  return out;
 }
 
 // Never includes number_enc/cvv_enc, encrypted or otherwise — the list/
 // detail response only ever says whether a value is on file. The actual
 // number and CVV are fetched with GET /cards/:id/reveal, on tap, nowhere
 // else.
-function cardJson(row: PaymentCardRow) {
+function cardJson(row: PaymentCardRow, links?: Map<string, StatementAccountLink>) {
+  const link = row.card_type === 'bank' && row.last4 ? links?.get(row.last4) ?? null : null;
   return {
     id: row.id,
     nickname: row.nickname,
@@ -90,8 +153,15 @@ function cardJson(row: PaymentCardRow) {
     sortOrder: row.sort_order,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    accountKind: row.account_kind,
+    routingNumber: row.routing_number,
+    wireRoutingNumber: row.wire_routing_number,
+    accountOwners: row.account_owners,
+    statementAccount: link,
   };
 }
+
+const bankLinks = async (env: Env, row: PaymentCardRow | null) => (row?.card_type === 'bank' ? statementAccountsByLast4(env) : undefined);
 
 paymentCardsRouter.get('/cards', async (c) => {
   // Alphabetical by nickname — there's no drag-to-reorder UI wired up for
@@ -100,7 +170,17 @@ paymentCardsRouter.get('/cards', async (c) => {
   // calls it), so sort_order was really just creation order and made the
   // list order feel arbitrary as cards got added/imported over time.
   const { results } = await c.env.DB.prepare('SELECT * FROM payment_cards ORDER BY nickname COLLATE NOCASE ASC').all<PaymentCardRow>();
-  return c.json((results ?? []).map(cardJson));
+  const links = (results ?? []).some((r) => r.card_type === 'bank') ? await statementAccountsByLast4(c.env) : undefined;
+  return c.json((results ?? []).map((r) => cardJson(r, links)));
+});
+
+// Accounts found on live statements that aren't in Wallet yet — offered
+// as one-tap "Add" prefills in Wallet → Bank Accounts.
+paymentCardsRouter.get('/bank-suggestions', async (c) => {
+  const links = await statementAccountsByLast4(c.env);
+  const { results } = await c.env.DB.prepare(`SELECT last4 FROM payment_cards WHERE card_type = 'bank' AND last4 IS NOT NULL`).all<{ last4: string }>();
+  const have = new Set((results ?? []).map((r) => r.last4));
+  return c.json([...links.entries()].filter(([last4]) => !have.has(last4)).map(([last4, l]) => ({ last4, ...l })));
 });
 
 // Creates (or reuses, when rewardsCardId is passed) the linked Rewards
@@ -185,11 +265,16 @@ paymentCardsRouter.post('/cards', async (c) => {
       notes?: string | null;
       rewardWorthy?: boolean;
       rewardsCardId?: string | null;
+      accountKind?: string | null;
+      routingNumber?: string | null;
+      wireRoutingNumber?: string | null;
+      accountOwners?: string | null;
     }>()
     .catch(() => ({}) as Record<string, never>);
   const nickname = body.nickname?.trim();
   if (!nickname) return c.json({ error: 'nickname is required' }, 400);
-  const cardType = body.cardType === 'debit' ? 'debit' : 'credit';
+  const cardType = normType(body.cardType);
+  if (cardType === 'bank') body.rewardWorthy = false; // bank accounts never earn card rewards
 
   let numberEnc: string | null = null;
   let cvvEnc: string | null = null;
@@ -213,8 +298,8 @@ paymentCardsRouter.post('/cards', async (c) => {
   const id = uid();
   const ts = now();
   await c.env.DB.prepare(
-    `INSERT INTO payment_cards (id, nickname, card_type, network, issuer, last4, name_on_card, expiry_month, expiry_year, number_enc, cvv_enc, pin_enc, billing_zip, color, cover_art_key, back_art_key, notes, reward_worthy, rewards_card_id, active, sort_order, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`
+    `INSERT INTO payment_cards (id, nickname, card_type, network, issuer, last4, name_on_card, expiry_month, expiry_year, number_enc, cvv_enc, pin_enc, billing_zip, color, cover_art_key, back_art_key, notes, reward_worthy, rewards_card_id, active, sort_order, created_at, updated_at, account_kind, routing_number, wire_routing_number, account_owners)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)`
   )
     .bind(
       id,
@@ -238,12 +323,16 @@ paymentCardsRouter.post('/cards', async (c) => {
       rewardsCardId,
       (maxPos?.m ?? -1) + 1,
       ts,
-      ts
+      ts,
+      cardType === 'bank' ? normKind(body.accountKind) : null,
+      cardType === 'bank' ? digits(body.routingNumber) : null,
+      cardType === 'bank' ? digits(body.wireRoutingNumber) : null,
+      cardType === 'bank' ? body.accountOwners?.trim() || null : null
     )
     .run();
 
   const row = await c.env.DB.prepare('SELECT * FROM payment_cards WHERE id = ?').bind(id).first<PaymentCardRow>();
-  return c.json(cardJson(row!), 201);
+  return c.json(cardJson(row!, await bankLinks(c.env, row)), 201);
 });
 
 paymentCardsRouter.patch('/cards/:id', async (c) => {
@@ -270,6 +359,10 @@ paymentCardsRouter.patch('/cards/:id', async (c) => {
       rewardsCardId: string | null;
       active: boolean;
       sortOrder: number;
+      accountKind: string | null;
+      routingNumber: string | null;
+      wireRoutingNumber: string | null;
+      accountOwners: string | null;
     }>
   >();
   const existing = await c.env.DB.prepare('SELECT * FROM payment_cards WHERE id = ?').bind(id).first<PaymentCardRow>();
@@ -290,7 +383,11 @@ paymentCardsRouter.patch('/cards/:id', async (c) => {
   };
 
   if (body.nickname !== undefined) set('nickname', body.nickname.trim() || existing.nickname);
-  if (body.cardType !== undefined) set('card_type', body.cardType === 'debit' ? 'debit' : 'credit');
+  if (body.cardType !== undefined) set('card_type', normType(body.cardType));
+  if (body.accountKind !== undefined) set('account_kind', normKind(body.accountKind));
+  if (body.routingNumber !== undefined) set('routing_number', digits(body.routingNumber));
+  if (body.wireRoutingNumber !== undefined) set('wire_routing_number', digits(body.wireRoutingNumber));
+  if (body.accountOwners !== undefined) set('account_owners', body.accountOwners?.trim() || null);
   if (body.network !== undefined) set('network', body.network?.trim() || null);
   if (body.issuer !== undefined) set('issuer', body.issuer?.trim() || null);
   if (body.last4 !== undefined) set('last4', body.last4?.trim() || null);
@@ -347,7 +444,7 @@ paymentCardsRouter.patch('/cards/:id', async (c) => {
   }
 
   const row = await c.env.DB.prepare('SELECT * FROM payment_cards WHERE id = ?').bind(id).first<PaymentCardRow>();
-  return c.json(cardJson(row!));
+  return c.json(cardJson(row!, await bankLinks(c.env, row)));
 });
 
 // Never deletes the linked Rewards card — only the payment card's own row
