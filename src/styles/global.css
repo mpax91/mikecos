@@ -15673,6 +15673,7 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
    non-room pills like Electrical, then the Floors ⋯ menu. */
 .home-page__nav {
   align-items: center;
+  margin-bottom: 0;
 }
 
 .home-room-picker {
@@ -15725,11 +15726,13 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 }
 
 /* Same edge-to-edge treatment as .canvas-board — cancels .main__content's
-   padding so the pan/zoom viewport fills the available space. */
+   padding at the sides and bottom so the pan/zoom viewport fills the
+   available space. No top bleed: the Rooms nav sits above the canvas, and a
+   negative top margin would slide the canvas toolbar over the Rooms pill. */
 .home-canvas {
-  margin: -32px -40px;
+  margin: 0 -40px -32px;
   width: calc(100% + 80px);
-  height: calc(100% + 64px);
+  height: calc(100% + 32px);
   display: flex;
   flex-direction: column;
   overflow: hidden;
