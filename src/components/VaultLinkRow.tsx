@@ -1,4 +1,5 @@
 import type { Entity, LinkMeta } from '../api/types';
+import { useNavigate } from 'react-router-dom';
 import { KebabMenu } from './KebabMenu';
 import { normalizeUrl } from '../api/client';
 import { linkFamily } from '../utils/linkStyle';
@@ -74,8 +75,25 @@ export function VaultLinkRow({
   onPromote?: (entity: Entity) => void;
   onDemote?: (entity: Entity) => void;
 }) {
+  const navigate = useNavigate();
   const meta = parseLinkMeta(entity);
   const url = meta?.url ?? '';
+  // Links into MikeOS itself (Finance Dashboard, Wallet card) open in the
+  // app; everything else opens in a new tab.
+  const open = () => {
+    if (!url) return;
+    const href = normalizeUrl(url);
+    try {
+      const u = new URL(href);
+      if (u.origin === window.location.origin) {
+        navigate(`${u.pathname}${u.search}${u.hash}`);
+        return;
+      }
+    } catch {
+      // not a parseable URL — fall through
+    }
+    window.open(href, '_blank', 'noopener,noreferrer');
+  };
   const family = url ? linkFamily(url) : 'generic';
   const isPinned = entity.pinned === 1;
 
@@ -83,7 +101,7 @@ export function VaultLinkRow({
     <div
       className={`vault-link-row${isPinned ? ' is-pinned' : ''}`}
       title={url ? normalizeUrl(url) : undefined}
-      onClick={() => url && window.open(normalizeUrl(url), '_blank', 'noopener,noreferrer')}
+      onClick={open}
     >
       <div className={`vault-link-row__icon vault-link-row__icon--${family}`}>
         {family === 'drive' ? <DriveIcon /> : family === 'ai' ? <AiSparkIcon /> : <GlobeIcon />}

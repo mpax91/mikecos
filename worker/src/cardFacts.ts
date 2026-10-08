@@ -70,6 +70,7 @@ export function rewardsLine(rows: { rate: number; category: string }[]): string 
 
 interface WalletCardRow {
   id: string;
+  nickname: string;
   network: string | null;
   expiry_month: number | null;
   expiry_year: number | null;
@@ -97,12 +98,12 @@ async function rewardsCardRates(env: Env, rewardsCardId: string | null, last4: s
   return rows;
 }
 
-export async function syncCardFacts(env: Env, entryId: string, card: CardFacts, today: string): Promise<void> {
+export async function syncCardFacts(env: Env, entryId: string, card: CardFacts, today: string, folderId?: string): Promise<void> {
   const entry = await env.DB.prepare(`SELECT id FROM entities WHERE id = ? AND type = 'vault_entry'`).bind(entryId).first();
   if (!entry) return;
   const wallet = card.last4
     ? await env.DB.prepare(
-        `SELECT id, network, expiry_month, expiry_year, number_enc, cvv_enc, rewards_card_id, active FROM payment_cards
+        `SELECT id, nickname, network, expiry_month, expiry_year, number_enc, cvv_enc, rewards_card_id, active FROM payment_cards
           WHERE last4 = ? AND card_type != 'bank' ORDER BY active DESC, updated_at DESC LIMIT 1`
       )
         .bind(card.last4)
@@ -156,6 +157,64 @@ export async function syncCardFacts(env: Env, entryId: string, card: CardFacts, 
     await env.DB.batch(stmts);
     await reindexEntry({ env }, entryId);
   }
+  if (folderId) await syncWalletLink(env, folderId, entryId, wallet, card.last4);
+}
+
+/** A "Wallet · <card> ••1234" Link child on the card account's Vault
+ * entry that opens the card in Wallet (like the Finance Dashboard link).
+ * Live: its title/URL follow the card; removed when the card leaves
+ * Wallet. If Mike deletes it, it stays deleted — until a different Wallet
+ * card takes over these last 4. Bookkeeping: folder meta `walletLink`. */
+async function syncWalletLink(env: Env, folderId: string, entryId: string, wallet: WalletCardRow | null, last4: string | null): Promise<void> {
+  const row = await env.DB.prepare('SELECT meta_json FROM statement_folders WHERE id = ?').bind(folderId).first<{ meta_json: string | null }>();
+  let meta: Record<string, unknown> = {};
+  try {
+    meta = row?.meta_json ? JSON.parse(row.meta_json) : {};
+  } catch {
+    return; // not ours to repair
+  }
+  const cur = meta.walletLink as { linkId: string; cardId: string } | undefined;
+  const existing = cur ? await env.DB.prepare(`SELECT id, title, content FROM entities WHERE id = ? AND type = 'link'`).bind(cur.linkId).first<{ id: string; title: string; content: string | null }>() : null;
+  const ts = now();
+  let next: { linkId: string; cardId: string } | undefined = cur;
+
+  if (!wallet) {
+    if (existing) await env.DB.prepare('DELETE FROM entities WHERE id = ?').bind(existing.id).run();
+    next = undefined;
+  } else {
+    const origin = (env.ALLOWED_ORIGINS ?? 'https://mikeos.pages.dev').split(',')[0].trim();
+    const url = `${origin}/wallet?tab=database&type=payment&open=${wallet.id}`;
+    const title = `Wallet · ${wallet.nickname}${last4 && !wallet.nickname.includes(last4) ? ` ••${last4}` : ''}`;
+    const content = JSON.stringify({ url, auto: 'live' });
+    if (existing) {
+      if (existing.title !== title || existing.content !== content) {
+        await env.DB.prepare('UPDATE entities SET title = ?, content = ?, search_text = ?, updated_at = ? WHERE id = ?').bind(title, content, `${title} ${url}`, ts, existing.id).run();
+      }
+      next = { linkId: existing.id, cardId: wallet.id };
+    } else if (!cur || cur.cardId !== wallet.id) {
+      const max = await env.DB.prepare(`SELECT COALESCE(MAX(position), -1) AS m FROM entities WHERE parent_id = ? AND type = 'link'`).bind(entryId).first<{ m: number }>();
+      const id = uid();
+      await env.DB.prepare(
+        `INSERT INTO entities (id, type, title, content, parent_id, is_top_level, status, position, last_touched, created_at, updated_at, search_text)
+         VALUES (?, 'link', ?, ?, ?, 0, NULL, ?, ?, ?, ?, ?)`
+      )
+        .bind(id, title, content, entryId, (max?.m ?? -1) + 1, ts, ts, ts, `${title} ${url}`)
+        .run();
+      next = { linkId: id, cardId: wallet.id };
+    } // else: Mike deleted it for this same card — leave it gone
+  }
+  if (JSON.stringify(next) === JSON.stringify(cur)) return;
+  // Re-read so a concurrent derive's meta isn't clobbered; only walletLink changes.
+  const fresh = await env.DB.prepare('SELECT meta_json FROM statement_folders WHERE id = ?').bind(folderId).first<{ meta_json: string | null }>();
+  let m: Record<string, unknown> = {};
+  try {
+    m = fresh?.meta_json ? JSON.parse(fresh.meta_json) : {};
+  } catch {
+    return;
+  }
+  if (next) m.walletLink = next;
+  else delete m.walletLink;
+  await env.DB.prepare('UPDATE statement_folders SET meta_json = ? WHERE id = ?').bind(JSON.stringify(m), folderId).run();
 }
 
 /** Re-syncs the card facts of any live card account with these last 4
@@ -172,14 +231,15 @@ export async function syncAllCardFacts(env: Env, today: string): Promise<void> {
 }
 
 async function syncCardFactsWhere(env: Env, today: string, match: (card: CardFacts) => boolean): Promise<void> {
-  const { results } = await env.DB.prepare(`SELECT vault_entry_id, meta_json FROM statement_folders WHERE status = 'live' AND vault_entry_id IS NOT NULL AND meta_json LIKE '%"card"%'`).all<{
+  const { results } = await env.DB.prepare(`SELECT id, vault_entry_id, meta_json FROM statement_folders WHERE status = 'live' AND vault_entry_id IS NOT NULL AND meta_json LIKE '%"card"%'`).all<{
+    id: string;
     vault_entry_id: string;
     meta_json: string;
   }>();
   for (const r of results ?? []) {
     try {
       const card = JSON.parse(r.meta_json).card as CardFacts | undefined;
-      if (card && match(card)) await syncCardFacts(env, r.vault_entry_id, card, today);
+      if (card && match(card)) await syncCardFacts(env, r.vault_entry_id, card, today, r.id);
     } catch {
       // not ours to repair
     }

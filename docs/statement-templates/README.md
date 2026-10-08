@@ -68,6 +68,13 @@ delete wins). Code: `worker/src/cardFacts.ts`.
 | Rewards | what the card earns **today**: the MikeOS Rewards card (fixed bonuses + rotating bonuses whose dates cover today + base rate), else the earn categories on the latest statement |
 | Number & CVV | "Saved in Wallet" when Wallet holds them — the values stay encrypted in Wallet (reveal on tap), never in a plain-text fact |
 
+A matching Wallet card also gets a live **"Wallet · <card> ••1234"** Link
+on the Vault entry (opens `/wallet?tab=database&type=payment&open=<id>`);
+it follows the card's name, is removed if the card leaves Wallet, and
+stays deleted if Mike deletes it (bookkeeping: folder meta `walletLink`).
+Vault links into MikeOS itself (this one, Finance Dashboard) now open in
+the app instead of a new tab.
+
 Wallet and Rewards cards are matched by **last 4**. A card template's
 derive stores a `CardFacts` snapshot as `meta.card`; `engine.derive` calls
 `syncCardFacts`. Wallet card create/edit/delete and any Rewards card / bonus

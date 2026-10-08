@@ -190,7 +190,7 @@ export async function derive(env: Env, folder: FolderRow): Promise<void> {
     } catch {
       card = undefined;
     }
-    if (card) await syncCardFacts(env, after.vault_entry_id, card, easternToday());
+    if (card) await syncCardFacts(env, after.vault_entry_id, card, easternToday(), after.id);
   }
 }
 

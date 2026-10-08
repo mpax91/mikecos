@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import type { BankAccountSuggestion, PaymentCard } from '../api/types';
 import { PaymentCardTile } from './PaymentCardTile';
@@ -18,6 +18,7 @@ import { ConfirmModal } from './ConfirmModal';
 export function PaymentCardsPanel() {
   const location = useLocation();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [cards, setCards] = useState<PaymentCard[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -49,6 +50,18 @@ export function PaymentCardsPanel() {
     if (match) setOpenCard(match);
     navigate('.', { replace: true, state: null });
   }, [location.state, cards, navigate]);
+
+  // Deep-link by URL — a Vault card account's "Wallet · <card>" link is
+  // /wallet?tab=database&type=payment&open=<id> (worker cardFacts.ts).
+  useEffect(() => {
+    const openId = searchParams.get('open');
+    if (!openId || !cards) return;
+    const match = cards.find((c) => c.id === openId);
+    if (match) setOpenCard(match);
+    const next = new URLSearchParams(searchParams);
+    next.delete('open');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, cards, setSearchParams]);
 
   async function handleDeleteConfirmed() {
     if (!deleting) return;
