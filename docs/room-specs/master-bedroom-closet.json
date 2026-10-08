@@ -1,0 +1,22 @@
+{
+  "mikeos_room_spec": 1,
+  "name": "Master Bedroom Closet",
+  "units": "in",
+  "ceiling_height": 101,
+  "start_heading": 270,
+  "walls": [
+    { "id": "A", "length": 71, "turn": -48.1, "label": "Left wall (mirror)" },
+    { "id": "B", "length": 21.5, "turn": 48.1, "label": "Angle out to bay" },
+    { "id": "C", "length": 38, "turn": 45, "label": "Bench window wall" },
+    { "id": "D", "length": 38, "turn": 45, "label": "Bay wall" },
+    { "id": "E", "length": 38, "turn": 90, "label": "Back wall (window + shelf nook)" },
+    { "id": "N1", "length": 15, "turn": 90, "label": "Shelf nook side" },
+    { "id": "N2", "length": 8.9, "turn": -90, "label": "Shelf nook return" },
+    { "id": "F", "length": 137, "turn": 90, "label": "Clothes wall (rods + shelving)" },
+    { "id": "G", "length": 40, "turn": 90, "label": "Door wall" }
+  ],
+  "openings": [
+    { "wall": "G", "type": "door", "offset": 3, "width": 28, "hinge": "end", "label": "Master Bedroom", "notes": "Swings out into the bedroom; hinges on the left as seen from the bedroom" }
+  ],
+  "notes": "Measured: A 71, B 21.5, C 38, D 38, E 38 (to the far side of the shelf nook), nook depth 15, door frame to back wall 152, hallway 40, widest 56, ceiling 101, door 28 with a 9\" return on the left. Derived: B's angle (48.1°, from the 16\" bump-out 56 − 40), D at 45° (the only angle that lands the walk on the 152\" depth), nook width 8.9\" (38\" back wall minus the window span to the clothes-wall line), the 3\" return right of the door (40 − 9 − 28), and F = 152 − 15. Assumed square: the nook's side wall. Windows on C, D and E not yet measured, so not drawn."
+}
