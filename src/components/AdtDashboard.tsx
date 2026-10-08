@@ -58,13 +58,13 @@ export function AdtDashboard({ data, onDismissFlag }: { data: Data; onDismissFla
   const avgYear = fullYears.length ? fullYears.reduce((a, y) => a + y.billed, 0) / fullYears.length : null;
 
   return (
-    <div className="ny529 adt">
+    <div className="fin-dash adt">
       {data.flags.length > 0 && (
-        <div className="ny529__flags">
+        <div className="fin-dash__flags">
           {data.flags.map((f) => (
-            <div key={f.id} className={`ny529__flag ny529__flag--${f.severity}`}>
-              <span className="ny529__flag-icon">{f.severity === 'warn' ? '⚠' : 'ℹ'}</span>
-              <span className="ny529__flag-msg">{f.message}</span>
+            <div key={f.id} className={`fin-dash__flag fin-dash__flag--${f.severity}`}>
+              <span className="fin-dash__flag-icon">{f.severity === 'warn' ? '⚠' : 'ℹ'}</span>
+              <span className="fin-dash__flag-msg">{f.message}</span>
               <button type="button" className="btn btn--ghost btn--sm" onClick={() => onDismissFlag(f.id)}>
                 Dismiss
               </button>
@@ -73,7 +73,7 @@ export function AdtDashboard({ data, onDismissFlag }: { data: Data; onDismissFla
         </div>
       )}
 
-      <div className="ny529__stats">
+      <div className="fin-dash__stats">
         <Stat label="Latest Bill" value={latest ? money(latest.totalDue) : '—'} sub={latest ? `${paymentText(latest)} · Billed ${fmtDate(latest.invoiceDate)}` : undefined} tone={s.status === 'past_due' ? 'bad' : undefined} />
         <Stat
           label="Monthly Rate"
@@ -84,37 +84,37 @@ export function AdtDashboard({ data, onDismissFlag }: { data: Data; onDismissFla
         <Stat label={`Since ${firstYear}`} value={money(s.lifetimeBilled, false)} sub={`${s.bills.length} bills${avgYear !== null ? ` · ~${money(avgYear, false)}/yr` : ''}`} />
       </div>
 
-      <div className="ny529__grid">
-        <section className="ny529__card ny529__card--wide">
-          <h3 className="ny529__card-title">Monthly Rate Over Time</h3>
+      <div className="fin-dash__grid">
+        <section className="fin-dash__card fin-dash__card--wide">
+          <h3 className="fin-dash__card-title">Monthly Rate Over Time</h3>
           <FinanceLineChart series={series} formatY={(v) => `$${Math.round(v)}`} formatX={fmtShort} ariaLabel="ADT monthly rate and amount billed per bill over time" />
-          <p className="ny529__note">Monthly Rate is the full-month monitoring charge before tax. Billed is each bill’s charges + tax (credits and pro-rated months dip below the rate).</p>
+          <p className="fin-dash__note">Monthly Rate is the full-month monitoring charge before tax. Billed is each bill’s charges + tax (credits and pro-rated months dip below the rate).</p>
         </section>
 
-        <section className="ny529__card">
-          <h3 className="ny529__card-title">Spend by Year</h3>
-          <div className="adt__years">
+        <section className="fin-dash__card">
+          <h3 className="fin-dash__card-title">Spend by Year</h3>
+          <div className="fin-dash__years">
             {[...s.years].reverse().map((y) => (
-              <div key={y.year} className="adt__year" title={`${y.year}: ${money(y.billed)} billed over ${y.bills} bills`}>
-                <span className="adt__year-label">{y.year}</span>
-                <span className="adt__year-track">
-                  <span className="adt__year-bar" style={{ width: `${Math.max(0, (y.billed / maxYear) * 100)}%` }} />
+              <div key={y.year} className="fin-dash__year" title={`${y.year}: ${money(y.billed)} billed over ${y.bills} bills`}>
+                <span className="fin-dash__year-label">{y.year}</span>
+                <span className="fin-dash__year-track">
+                  <span className="fin-dash__year-bar" style={{ width: `${Math.max(0, (y.billed / maxYear) * 100)}%` }} />
                 </span>
-                <span className="adt__year-value">{money(y.billed, false)}</span>
-                <span className="adt__year-bills">{y.bills}</span>
+                <span className="fin-dash__year-value">{money(y.billed, false)}</span>
+                <span className="fin-dash__year-bills">{y.bills}</span>
               </div>
             ))}
           </div>
-          <p className="ny529__note">
+          <p className="fin-dash__note">
             Charges + tax by invoice year; right column is bills in Drive.
             {year === Number(s.asOf?.slice(0, 4)) ? ` ${year} is year to date.` : ''}
           </p>
         </section>
 
-        <section className="ny529__card ny529__card--wide">
-          <h3 className="ny529__card-title">Rate History</h3>
-          <div className="ny529__table-wrap">
-            <table className="ny529__table">
+        <section className="fin-dash__card fin-dash__card--wide">
+          <h3 className="fin-dash__card-title">Rate History</h3>
+          <div className="fin-dash__table-wrap">
+            <table className="fin-dash__table">
               <thead>
                 <tr>
                   <th>From</th>
@@ -134,7 +134,7 @@ export function AdtDashboard({ data, onDismissFlag }: { data: Data; onDismissFla
                       <td>{fmtMonth(r.from)}</td>
                       <td>{i === 0 ? 'Now' : fmtMonth(r.to)}</td>
                       <td>{money(r.rate)}</td>
-                      <td className={delta !== null && delta > 0 ? 'ny529__neg' : undefined}>
+                      <td className={delta !== null && delta > 0 ? 'fin-dash__neg' : undefined}>
                         {delta === null ? '—' : `${delta > 0 ? '+' : ''}${money(delta)} (${delta > 0 ? '+' : ''}${((delta / prev!.rate) * 100).toFixed(0)}%)`}
                       </td>
                       <td>{r.bills}</td>
@@ -148,8 +148,8 @@ export function AdtDashboard({ data, onDismissFlag }: { data: Data; onDismissFla
         </section>
 
         {latest && (
-          <section className="ny529__card">
-            <h3 className="ny529__card-title">Current Bill · {fmtDate(latest.invoiceDate)}</h3>
+          <section className="fin-dash__card">
+            <h3 className="fin-dash__card-title">Current Bill · {fmtDate(latest.invoiceDate)}</h3>
             <dl className="adt__kv">
               <dt>Service Period</dt>
               <dd>{period(latest)}</dd>
@@ -175,28 +175,28 @@ export function AdtDashboard({ data, onDismissFlag }: { data: Data; onDismissFla
               )}
             </dl>
             {s.status === 'past_due' ? (
-              <div className="ny529__gap">
+              <div className="fin-dash__gap">
                 <strong>Unpaid balance carried over.</strong> Check the card on file at MyADT.com.
               </div>
             ) : data.payTask && data.payTask.status !== 'done' ? (
-              <div className="ny529__gap">Not on autopay — reminder set for {data.payTask.due ? fmtDate(data.payTask.due) : 'the due date'}.</div>
+              <div className="fin-dash__gap">Not on autopay — reminder set for {data.payTask.due ? fmtDate(data.payTask.due) : 'the due date'}.</div>
             ) : (
-              <div className="ny529__gap ny529__gap--ok">✓ {latest.autopay ? 'On automatic payment.' : 'Nothing outstanding.'}</div>
+              <div className="fin-dash__gap fin-dash__gap--ok">✓ {latest.autopay ? 'On automatic payment.' : 'Nothing outstanding.'}</div>
             )}
           </section>
         )}
 
-        <section className="ny529__card ny529__card--full">
-          <div className="ny529__card-head">
-            <h3 className="ny529__card-title">Bills</h3>
+        <section className="fin-dash__card fin-dash__card--full">
+          <div className="fin-dash__card-head">
+            <h3 className="fin-dash__card-title">Bills</h3>
             {bills.length > 12 && (
               <button type="button" className="btn btn--ghost btn--sm" onClick={() => setShowAll((v) => !v)}>
                 {showAll ? 'Show Recent' : `Show All ${bills.length}`}
               </button>
             )}
           </div>
-          <div className="ny529__table-wrap">
-            <table className="ny529__table">
+          <div className="fin-dash__table-wrap">
+            <table className="fin-dash__table">
               <thead>
                 <tr>
                   <th>Invoice</th>
@@ -217,9 +217,9 @@ export function AdtDashboard({ data, onDismissFlag }: { data: Data; onDismissFla
                     <tr key={b.invoiceDate}>
                       <td>{fmtDate(b.invoiceDate)}</td>
                       <td>{period(b)}</td>
-                      <td className={b.charges < 0 ? 'ny529__neg' : undefined}>{money(b.charges)}</td>
+                      <td className={b.charges < 0 ? 'fin-dash__neg' : undefined}>{money(b.charges)}</td>
                       <td>{money(b.taxes)}</td>
-                      <td className={carried(b) ? 'ny529__neg' : undefined} title={carried(b) ? `Includes ${money(b.previousBalance)} carried from the previous bill` : undefined}>
+                      <td className={carried(b) ? 'fin-dash__neg' : undefined} title={carried(b) ? `Includes ${money(b.previousBalance)} carried from the previous bill` : undefined}>
                         {money(b.totalDue)}
                       </td>
                       <td>{paymentText(b)}</td>
@@ -237,7 +237,7 @@ export function AdtDashboard({ data, onDismissFlag }: { data: Data; onDismissFla
               </tbody>
             </table>
           </div>
-          <p className="ny529__note">
+          <p className="fin-dash__note">
             {s.bills.length} bill{s.bills.length === 1 ? '' : 's'} read · {checksOk}/{checksTotal} math checks passed
             {notRead > 0 && ` · ${notRead} file(s) not read`}
             {s.gaps.length > 0 && ` · ${s.gaps.length} gap${s.gaps.length === 1 ? '' : 's'} of 45+ days between bills`}
@@ -272,10 +272,10 @@ export function AdtDashboard({ data, onDismissFlag }: { data: Data; onDismissFla
 
 function Stat({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: 'bad' }) {
   return (
-    <div className="ny529__stat">
-      <span className="ny529__stat-label">{label}</span>
-      <span className={`ny529__stat-value${tone === 'bad' ? ' ny529__neg' : ''}`}>{value}</span>
-      {sub && <span className="ny529__stat-sub">{sub}</span>}
+    <div className="fin-dash__stat">
+      <span className="fin-dash__stat-label">{label}</span>
+      <span className={`fin-dash__stat-value${tone === 'bad' ? ' fin-dash__neg' : ''}`}>{value}</span>
+      {sub && <span className="fin-dash__stat-sub">{sub}</span>}
     </div>
   );
 }

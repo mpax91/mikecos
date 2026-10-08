@@ -8,6 +8,8 @@ import { loadNy529Data, ny529Settings } from './ny529Derive';
 import { summarizeNy529 } from './ny529Summary';
 import { loadAdtData } from './adtDerive';
 import { summarizeAdt } from './adtSummary';
+import { loadAllyData } from './allyDerive';
+import { accountLabel, summarizeAlly } from './allySummary';
 
 /** Statements API, mounted at /api/statements. */
 export const statementsRouter = new Hono<{ Bindings: Env }>();
@@ -187,7 +189,7 @@ statementsRouter.get('/accounts', async (c) => {
   const out = [];
   for (const row of results ?? []) {
     let headline:
-      | { kind: 'balance'; value: number; asOf: string | null; principal: number; earnings: number }
+      | { kind: 'balance'; value: number; asOf: string | null; principal?: number; earnings?: number; parts?: { label: string; value: number }[] }
       | { kind: 'bill'; value: number; asOf: string | null; monthly: number | null; status: string }
       | null = null;
     if (row.template_id === 'ny529') {
@@ -198,6 +200,10 @@ statementsRouter.get('/accounts', async (c) => {
       const { stmts, txns } = await loadAdtData(c.env, row.id);
       const s = summarizeAdt(stmts, txns, easternToday());
       if (s.latest) headline = { kind: 'bill', value: s.latest.totalDue, asOf: s.asOf, monthly: s.monthlyWithTax ?? s.monthlyRate, status: s.status };
+    } else if (row.template_id === 'ally') {
+      const { stmts, txns } = await loadAllyData(c.env, row.id);
+      const s = summarizeAlly(stmts, txns, easternToday());
+      if (s.asOf) headline = { kind: 'balance', value: s.total, asOf: s.asOf, parts: s.accounts.filter((a) => a.open).map((a) => ({ label: accountLabel(a.kind, a.last4), value: a.balance })) };
     }
     out.push({ ...folderJson(row, stats.get(row.id)), headline });
   }
@@ -208,6 +214,7 @@ statementsRouter.get('/folders/:id/dashboard', async (c) => {
   const row = await loadFolder(c.env, c.req.param('id'));
   if (!row) return c.json({ error: 'not found' }, 404);
   if (row.template_id === 'adt') return c.json(await adtDashboard(c.env, row));
+  if (row.template_id === 'ally') return c.json(await allyDashboard(c.env, row));
   if (row.template_id !== 'ny529') return c.json({ error: 'No dashboard for this template yet' }, 400);
   const stats = await folderStats(c.env);
   const { stmts, txns, files } = await loadNy529Data(c.env, row.id);
@@ -285,5 +292,31 @@ async function adtDashboard(env: Env, row: FolderRow) {
     files: files.map((f) => ({ fileId: f.file_id, name: f.file_name, url: f.web_url, status: f.status, error: f.error })),
     flags: await openFlags(env, row.id),
     payTask,
+  };
+}
+
+/** Ally Bank (checking + savings) dashboard payload. Transactions are
+ * capped to the last 24 months — the full history stays in D1. */
+async function allyDashboard(env: Env, row: FolderRow) {
+  const stats = await folderStats(env);
+  const { stmts, txns, files } = await loadAllyData(env, row.id);
+  const summary = summarizeAlly(stmts, txns, easternToday());
+  const since = stmts.length > 24 ? stmts[stmts.length - 25].periodEnd : '';
+  return {
+    kind: 'ally' as const,
+    folder: folderJson(row, stats.get(row.id)),
+    template: templateById(row.template_id)?.account ?? null,
+    summary,
+    statements: stmts.map((s) => ({
+      id: s.id,
+      periodEnd: s.periodEnd,
+      fileId: s.fileId,
+      checks: s.checks,
+      accounts: s.values.accounts.map((a) => ({ last4: a.last4, beginning: a.beginning, ending: a.ending, deposits: a.deposits, withdrawals: a.withdrawals, interest: a.interest, apy: a.apy })),
+    })),
+    transactions: txns.filter((t) => t.date > since),
+    transactionsSince: since || null,
+    files: files.map((f) => ({ fileId: f.file_id, name: f.file_name, url: f.web_url, status: f.status, error: f.error })),
+    flags: await openFlags(env, row.id),
   };
 }

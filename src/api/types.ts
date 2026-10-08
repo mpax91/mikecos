@@ -2332,7 +2332,7 @@ export interface FinanceAccount extends StatementFolder {
   /** 'balance' accounts (529, savings) count toward totals; 'bill' accounts
    * (ADT, utilities) show their latest bill and monthly cost instead. */
   headline:
-    | { kind: 'balance'; value: number; asOf: string | null; principal: number; earnings: number }
+    | { kind: 'balance'; value: number; asOf: string | null; principal?: number; earnings?: number; parts?: { label: string; value: number }[] }
     | { kind: 'bill'; value: number; asOf: string | null; monthly: number | null; status: AdtBillStatus }
     | null;
 }
@@ -2457,7 +2457,59 @@ export interface Ny529Dashboard {
   topupTask: { id: string; title: string; due: string | null; status: string | null } | null;
 }
 
-export type FinanceDashboard = Ny529Dashboard | AdtDashboard;
+export type AllyAccountKind = 'checking' | 'savings' | 'other';
+
+export interface AllyAccountSummary {
+  last4: string;
+  kind: AllyAccountKind;
+  label: string;
+  product: string | null;
+  openDate: string | null;
+  balance: number;
+  apy: number | null;
+  avgDailyBalance: number | null;
+  interestYtd: number;
+  interestLifetime: number;
+  firstStatement: string;
+  open: boolean;
+}
+
+export interface AllySummary {
+  asOf: string | null;
+  total: number;
+  accounts: AllyAccountSummary[];
+  series: { date: string; total: number; balances: Record<string, number> }[];
+  apy: { date: string; last4: string; apy: number }[];
+  interestYears: { year: number; total: number; byAccount: Record<string, number>; statements: number }[];
+  interestLifetime: number;
+  flows: { month: string; statementDate: string; moneyIn: number; moneyOut: number; interest: number; net: number }[];
+  recurring: { payee: string; account: string | null; lastAmount: number; lastDate: string; typicalDay: number; months: number }[];
+  gaps: string[];
+  nextExpected: string | null;
+  firstStatement: string | null;
+  events: { date: string; account: string | null; kind: string; description: string; amount: number }[];
+}
+
+export interface AllyDashboard {
+  kind: 'ally';
+  folder: StatementFolder;
+  template: { nickname: string; institution: string; type: string; site?: string; phone?: string } | null;
+  summary: AllySummary;
+  statements: {
+    id: string;
+    periodEnd: string;
+    fileId: string;
+    checks: StatementCheckRow[];
+    accounts: { last4: string; beginning: number; ending: number; deposits: number; withdrawals: number; interest: number; apy: number | null }[];
+  }[];
+  /** Last 24 months only (transactionsSince = exclusive start). */
+  transactions: { date: string; account: string | null; description: string; kind: string; amount: number }[];
+  transactionsSince: string | null;
+  files: { fileId: string; name: string; url: string | null; status: string; error: string | null }[];
+  flags: { id: string; severity: 'warn' | 'info'; message: string; created_at: string }[];
+}
+
+export type FinanceDashboard = Ny529Dashboard | AdtDashboard | AllyDashboard;
 
 // ---- Account payers (0092_account_payers.sql) — which card pays which
 // account. 'autopay' = charges the card by itself; 'on_file' = the card is

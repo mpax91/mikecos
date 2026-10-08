@@ -68,7 +68,12 @@ of the "Tax Items · <year>" note. No Quick Facts are written.
    Tax Packet section.
 5. Dashboard: `/api/statements/folders/:id/dashboard` switches on the
    template and returns a `kind`; `FinanceAccountPage` renders the matching
-   component (`Ny529Dashboard`, `AdtDashboard`).
+   component (`Ny529Dashboard`, `AdtDashboard`, `AllyDashboard`) on the
+   shared `fin-dash__*` card CSS.
 6. Report card in `<folder>.md`; Mike clicks **Go Live** in Settings → Statements.
 
-Live templates: `ny529` (529.md), `adt` (adt.md).
+Live templates: `ny529` (529.md), `adt` (adt.md), `ally` (ally.md).
+
+**Multi-account statements** (Ally): `ParsedTransaction.account` = last 4
+digits (stored in `statement_transactions.account`, migration 0093);
+key accounts by last 4, never by product name.

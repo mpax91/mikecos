@@ -100,6 +100,14 @@ export function FinancePage() {
                       {a.headline.monthly !== null ? ` · ${money(a.headline.monthly)}/mo` : ''}
                     </span>
                   )}
+                  {a.headline?.kind === 'balance' &&
+                    a.headline.parts &&
+                    a.headline.parts.length > 1 &&
+                    a.headline.parts.map((p) => (
+                      <span key={p.label} className="finance-page__row-parts">
+                        {p.label} {money(p.value)}
+                      </span>
+                    ))}
                 </span>
                 <span className="finance-page__chev">›</span>
               </Link>

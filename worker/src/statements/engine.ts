@@ -8,6 +8,7 @@ import { doc, docText, heading, markAuto } from './vaultDoc';
 import type { Block } from './vaultDoc';
 import { deriveNy529 } from './ny529Derive';
 import { deriveAdt } from './adtDerive';
+import { deriveAlly } from './allyDerive';
 import { syncPaymentFacts } from '../accountPayers';
 
 /** Base statements engine: lists a registered Drive folder, reads any PDF
@@ -114,9 +115,9 @@ export async function scanFolder(env: Env, folder: FolderRow): Promise<ScanResul
             env.DB.prepare('DELETE FROM statement_transactions WHERE statement_id = ?').bind(statementId),
             ...parsed.transactions.map((t, i) =>
               env.DB.prepare(
-                `INSERT INTO statement_transactions (id, statement_id, folder_row_id, txn_date, description, kind, amount, units, unit_price, position)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-              ).bind(uid(), statementId, folder.id, t.date, t.description, t.kind, t.amount, t.units, t.unitPrice, i)
+                `INSERT INTO statement_transactions (id, statement_id, folder_row_id, txn_date, description, kind, amount, units, unit_price, position, account)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+              ).bind(uid(), statementId, folder.id, t.date, t.description, t.kind, t.amount, t.units, t.unitPrice, i, t.account ?? null)
             ),
           ];
           await env.DB.batch(stmts);
@@ -172,6 +173,7 @@ export async function derive(env: Env, folder: FolderRow): Promise<void> {
   const fresh = (await loadFolder(env, folder.id)) ?? folder;
   if (folder.template_id === 'ny529') await deriveNy529(env, fresh);
   else if (folder.template_id === 'adt') await deriveAdt(env, fresh);
+  else if (folder.template_id === 'ally') await deriveAlly(env, fresh);
   // Payment Quick Facts (Due Date, Auto-Pay, Paid With, bill amounts) from
   // the billing snapshot the template just stored + the account's payer.
   const after = await loadFolder(env, folder.id);

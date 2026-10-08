@@ -86,13 +86,13 @@ export function Ny529Dashboard({ data, onDismissFlag }: { data: Data; onDismissF
   const checksOk = statements.reduce((n, st) => n + st.checks.filter((c) => c.ok).length, 0);
 
   return (
-    <div className="ny529">
+    <div className="fin-dash ny529">
       {data.flags.length > 0 && (
-        <div className="ny529__flags">
+        <div className="fin-dash__flags">
           {data.flags.map((f) => (
-            <div key={f.id} className={`ny529__flag ny529__flag--${f.severity}`}>
-              <span className="ny529__flag-icon">{f.severity === 'warn' ? '⚠' : 'ℹ'}</span>
-              <span className="ny529__flag-msg">{f.message}</span>
+            <div key={f.id} className={`fin-dash__flag fin-dash__flag--${f.severity}`}>
+              <span className="fin-dash__flag-icon">{f.severity === 'warn' ? '⚠' : 'ℹ'}</span>
+              <span className="fin-dash__flag-msg">{f.message}</span>
               <button type="button" className="btn btn--ghost btn--sm" onClick={() => onDismissFlag(f.id)}>
                 Dismiss
               </button>
@@ -101,22 +101,22 @@ export function Ny529Dashboard({ data, onDismissFlag }: { data: Data; onDismissF
         </div>
       )}
 
-      <div className="ny529__stats">
+      <div className="fin-dash__stats">
         <Stat label="Value" value={money(s.value)} sub={s.asOf ? `As of ${fmtDate(s.asOf)}` : undefined} />
         <Stat label="Contributed" value={money(s.principal)} sub={s.aip ? `Since ${fmtDate(s.aip.startedOn)}` : undefined} />
         <Stat label="Earnings" value={money(s.earnings)} sub={s.gainPct !== null ? `${pct(s.gainPct)} on contributions` : undefined} tone={s.earnings >= 0 ? 'good' : 'bad'} />
         <Stat label="Monthly Deposit" value={s.aip ? money(s.aip.amount) : '—'} sub={s.aip ? `Around the ${ordinal(s.aip.day)} (AIP)` : 'No automatic deposit found'} />
       </div>
 
-      <div className="ny529__grid">
-        <section className="ny529__card ny529__card--wide">
-          <h3 className="ny529__card-title">Value vs. Contributed</h3>
+      <div className="fin-dash__grid">
+        <section className="fin-dash__card fin-dash__card--wide">
+          <h3 className="fin-dash__card-title">Value vs. Contributed</h3>
           <FinanceLineChart series={valueSeries} formatY={moneyAxis} formatX={fmtShort} ariaLabel="529 value and contributions over time" />
-          <p className="ny529__note">Between statements, value is estimated from units held × the price on each deposit date.</p>
+          <p className="fin-dash__note">Between statements, value is estimated from units held × the price on each deposit date.</p>
         </section>
 
-        <section className="ny529__card">
-          <h3 className="ny529__card-title">{s.year} NY Deduction</h3>
+        <section className="fin-dash__card">
+          <h3 className="fin-dash__card-title">{s.year} NY Deduction</h3>
           <div className="ny529__meter" role="img" aria-label={`${money(s.ytdContributions)} contributed of ${money(s.limit, false)}; ${money(s.projectedYearEnd)} projected by Dec 31`}>
             <div className="ny529__meter-proj" style={{ width: `${projPct}%` }} />
             <div className="ny529__meter-fill" style={{ width: `${ytdPct}%` }} />
@@ -124,24 +124,24 @@ export function Ny529Dashboard({ data, onDismissFlag }: { data: Data; onDismissF
           <div className="ny529__meter-legend">
             <span>
               <span className="ny529__key ny529__key--fill" /> On Statements {money(s.ytdContributions)}
-              {s.ytdAsOf && <span className="ny529__muted"> (through {fmtDate(s.ytdAsOf)})</span>}
+              {s.ytdAsOf && <span className="fin-dash__muted"> (through {fmtDate(s.ytdAsOf)})</span>}
             </span>
             <span>
               <span className="ny529__key ny529__key--proj" /> Projected by Dec 31 {money(s.projectedYearEnd)}
-              <span className="ny529__muted"> (+{s.remainingDrafts} deposits)</span>
+              <span className="fin-dash__muted"> (+{s.remainingDrafts} deposits)</span>
             </span>
             <span>Limit {money(s.limit, false)}</span>
           </div>
           {s.gap >= 1 ? (
-            <div className="ny529__gap">
+            <div className="fin-dash__gap">
               <strong>{money(s.gap)} short</strong> of the full deduction.{' '}
               {data.topupTask && data.topupTask.status !== 'done' ? `Reminder set for ${data.topupTask.due ? fmtDate(data.topupTask.due) : 'Dec 1'}.` : 'Top up by Dec 31.'}
             </div>
           ) : (
-            <div className="ny529__gap ny529__gap--ok">✓ On pace for the full {money(s.limit, false)} deduction.</div>
+            <div className="fin-dash__gap fin-dash__gap--ok">✓ On pace for the full {money(s.limit, false)} deduction.</div>
           )}
 
-          <h4 className="ny529__subtitle">Deposit Health · {s.year}</h4>
+          <h4 className="fin-dash__subtitle">Deposit Health · {s.year}</h4>
           <div className="ny529__months">
             {s.months.map((m) => {
               const st = MONTH_STATE[m.state];
@@ -165,10 +165,10 @@ export function Ny529Dashboard({ data, onDismissFlag }: { data: Data; onDismissF
           </div>
         </section>
 
-        <section className="ny529__card ny529__card--wide">
-          <h3 className="ny529__card-title">By Quarter</h3>
-          <div className="ny529__table-wrap">
-            <table className="ny529__table">
+        <section className="fin-dash__card fin-dash__card--wide">
+          <h3 className="fin-dash__card-title">By Quarter</h3>
+          <div className="fin-dash__table-wrap">
+            <table className="fin-dash__table">
               <thead>
                 <tr>
                   <th>Quarter</th>
@@ -190,8 +190,8 @@ export function Ny529Dashboard({ data, onDismissFlag }: { data: Data; onDismissF
                     <tr key={q.periodEnd}>
                       <td>{quarterLabel(q.periodEnd)}</td>
                       <td>{money(q.contributions)}</td>
-                      <td className={q.earnings < 0 ? 'ny529__neg' : undefined}>{money(q.earnings)}</td>
-                      <td className={q.returnPct !== null && q.returnPct < 0 ? 'ny529__neg' : undefined}>{pct(q.returnPct)}</td>
+                      <td className={q.earnings < 0 ? 'fin-dash__neg' : undefined}>{money(q.earnings)}</td>
+                      <td className={q.returnPct !== null && q.returnPct < 0 ? 'fin-dash__neg' : undefined}>{pct(q.returnPct)}</td>
                       <td>{money(q.ending)}</td>
                       <td>{q.unitPrice !== null ? money(q.unitPrice) : '—'}</td>
                       <td title={st?.checks.map((c) => `${c.ok ? '✓' : '✕'} ${c.name}: ${c.detail}`).join('\n')}>
@@ -210,23 +210,23 @@ export function Ny529Dashboard({ data, onDismissFlag }: { data: Data; onDismissF
               </tbody>
             </table>
           </div>
-          <p className="ny529__note">Return is the change in unit price over the quarter (time-weighted, so deposits don’t inflate it). First quarter has no starting price.</p>
+          <p className="fin-dash__note">Return is the change in unit price over the quarter (time-weighted, so deposits don’t inflate it). First quarter has no starting price.</p>
         </section>
 
-        <section className="ny529__card">
-          <h3 className="ny529__card-title">Unit Price · {s.portfolio ?? 'Portfolio'}</h3>
+        <section className="fin-dash__card">
+          <h3 className="fin-dash__card-title">Unit Price · {s.portfolio ?? 'Portfolio'}</h3>
           <FinanceLineChart series={priceSeries} height={170} yFromZero={false} formatY={(v) => `$${v.toFixed(2)}`} formatX={fmtDay} ariaLabel="Unit price over time" />
         </section>
 
         {s.projection && (
-          <section className="ny529__card">
-            <h3 className="ny529__card-title">Hypothetical at Enrollment</h3>
+          <section className="fin-dash__card">
+            <h3 className="fin-dash__card-title">Hypothetical at Enrollment</h3>
             <div className="ny529__proj-value">{money(s.projection.value, false)}</div>
-            <div className="ny529__muted">
+            <div className="fin-dash__muted">
               by {new Date(toMs(s.projection.targetDate)).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })} · {money(s.projection.contributed, false)}{' '}
               contributed
             </div>
-            <div className="ny529__muted" style={{ marginTop: 8 }}>
+            <div className="fin-dash__muted" style={{ marginTop: 8 }}>
               {s.projection.source === 'actual'
                 ? `At your actual return of ${s.projection.returnPct.toFixed(1)}%/yr`
                 : s.projection.source === 'fixed'
@@ -234,28 +234,28 @@ export function Ny529Dashboard({ data, onDismissFlag }: { data: Data; onDismissF
                   : `At ${s.projection.returnPct}%/yr${s.projection.actualFrom ? ` — switches to your actual return in ${fmtShort(toMs(s.projection.actualFrom))}` : ''}`}
             </div>
             {s.actualReturn && (
-              <div className="ny529__muted">
+              <div className="fin-dash__muted">
                 Actual so far: {pct(s.actualReturn.cumulativePct)} since {fmtDate(s.actualReturn.since)}
                 {s.actualReturn.annualizedPct !== null ? ` (${pct(s.actualReturn.annualizedPct)}/yr)` : ' (too early to annualize)'}
               </div>
             )}
-            <p className="ny529__note">
+            <p className="fin-dash__note">
               Illustration only — assumes the {s.aip ? money(s.aip.amount) : ''} monthly deposit continues and a steady return, compounded monthly. Not a forecast. Change how the rate is
               chosen in <Link to="/settings?cat=statements">Settings → Statements</Link>.
             </p>
           </section>
         )}
 
-        <section className="ny529__card ny529__card--full">
-          <div className="ny529__card-head">
-            <h3 className="ny529__card-title">Transactions</h3>
+        <section className="fin-dash__card fin-dash__card--full">
+          <div className="fin-dash__card-head">
+            <h3 className="fin-dash__card-title">Transactions</h3>
             <button type="button" className="btn btn--ghost btn--sm" onClick={() => setShowTxns((v) => !v)}>
               {showTxns ? 'Hide' : `Show ${transactions.length}`}
             </button>
           </div>
           {showTxns && (
-            <div className="ny529__table-wrap">
-              <table className="ny529__table">
+            <div className="fin-dash__table-wrap">
+              <table className="fin-dash__table">
                 <thead>
                   <tr>
                     <th>Date</th>
@@ -272,14 +272,14 @@ export function Ny529Dashboard({ data, onDismissFlag }: { data: Data; onDismissF
                       <td>{t.description}</td>
                       <td>{t.units?.toFixed(4) ?? '—'}</td>
                       <td>{t.unitPrice !== null ? money(t.unitPrice) : '—'}</td>
-                      <td className={t.amount < 0 ? 'ny529__neg' : undefined}>{money(t.amount)}</td>
+                      <td className={t.amount < 0 ? 'fin-dash__neg' : undefined}>{money(t.amount)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           )}
-          <p className="ny529__note">
+          <p className="fin-dash__note">
             {statements.length} statement{statements.length === 1 ? '' : 's'} read · {checksOk}/{checksTotal} math checks passed
             {files.some((f) => f.status !== 'parsed') && ` · ${files.filter((f) => f.status !== 'parsed').length} file(s) not read`}
             {data.folder.folderUrl && (
@@ -313,10 +313,10 @@ export function Ny529Dashboard({ data, onDismissFlag }: { data: Data; onDismissF
 
 function Stat({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: 'good' | 'bad' }) {
   return (
-    <div className="ny529__stat">
-      <span className="ny529__stat-label">{label}</span>
-      <span className={`ny529__stat-value${tone === 'bad' ? ' ny529__neg' : ''}`}>{value}</span>
-      {sub && <span className="ny529__stat-sub">{sub}</span>}
+    <div className="fin-dash__stat">
+      <span className="fin-dash__stat-label">{label}</span>
+      <span className={`fin-dash__stat-value${tone === 'bad' ? ' fin-dash__neg' : ''}`}>{value}</span>
+      {sub && <span className="fin-dash__stat-sub">{sub}</span>}
     </div>
   );
 }

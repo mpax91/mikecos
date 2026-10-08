@@ -16317,13 +16317,13 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   font-size: 18px;
 }
 
-.ny529__flags {
+.fin-dash__flags {
   display: flex;
   flex-direction: column;
   gap: 6px;
   margin: 0 0 14px;
 }
-.ny529__flag {
+.fin-dash__flag {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -16333,18 +16333,18 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   background: var(--color-card-bg);
   font-size: 13.5px;
 }
-.ny529__flag--warn {
+.fin-dash__flag--warn {
   background: #fffaf3;
   border-color: #ecd3b4;
 }
-.ny529__flag--warn .ny529__flag-icon {
+.fin-dash__flag--warn .fin-dash__flag-icon {
   color: #8a3f06;
 }
-.ny529__flag-msg {
+.fin-dash__flag-msg {
   flex: 1;
 }
 
-.ny529__stats {
+.fin-dash__stats {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   background: var(--color-card-bg);
@@ -16353,7 +16353,7 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   margin: 0 0 16px;
   overflow: hidden;
 }
-.ny529__stat {
+.fin-dash__stat {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -16361,55 +16361,55 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   border-right: 1px solid var(--color-border);
   min-width: 0;
 }
-.ny529__stat:last-child {
+.fin-dash__stat:last-child {
   border-right: none;
 }
-.ny529__stat-label {
+.fin-dash__stat-label {
   font-size: 11.5px;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--color-muted);
 }
-.ny529__stat-value {
+.fin-dash__stat-value {
   font-size: 28px;
   line-height: 1.1;
   color: var(--color-ink);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
-.ny529__stat-sub {
+.fin-dash__stat-sub {
   font-size: 12.5px;
   color: var(--color-muted);
 }
 
-.ny529__grid {
+.fin-dash__grid {
   display: grid;
   grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
   gap: 16px;
 }
-.ny529__card {
+.fin-dash__card {
   background: var(--color-card-bg);
   border: var(--border-hairline);
   border-radius: 14px;
   padding: 16px 20px;
   min-width: 0;
 }
-.ny529__card-head {
+.fin-dash__card-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
-.ny529__card-title {
+.fin-dash__card-title {
   margin: 0 0 12px;
   font-size: 14px;
   font-weight: 600;
   color: var(--color-ink);
 }
-.ny529__card-head .ny529__card-title {
+.fin-dash__card-head .fin-dash__card-title {
   margin: 0;
 }
-.ny529__subtitle {
+.fin-dash__subtitle {
   margin: 20px 0 8px;
   font-size: 12px;
   font-weight: 600;
@@ -16417,16 +16417,16 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   text-transform: uppercase;
   color: var(--color-muted);
 }
-.ny529__note {
+.fin-dash__note {
   margin: 10px 0 0;
   font-size: 12px;
   color: var(--color-muted);
 }
-.ny529__muted {
+.fin-dash__muted {
   color: var(--color-muted);
   font-size: 12.5px;
 }
-.ny529__neg {
+.fin-dash__neg {
   color: #a3341f;
 }
 
@@ -16472,7 +16472,7 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 .ny529__key--proj {
   background: repeating-linear-gradient(45deg, rgba(42, 111, 176, 0.45) 0 2px, rgba(42, 111, 176, 0.15) 2px 4px);
 }
-.ny529__gap {
+.fin-dash__gap {
   margin-top: 12px;
   padding: 8px 10px;
   border-radius: 8px;
@@ -16480,7 +16480,7 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   border: 1px solid #ecd3b4;
   font-size: 13px;
 }
-.ny529__gap--ok {
+.fin-dash__gap--ok {
   background: #f1f7f2;
   border-color: #cfe3d4;
 }
@@ -16531,16 +16531,16 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   color: var(--color-muted);
 }
 
-.ny529__table-wrap {
+.fin-dash__table-wrap {
   overflow-x: auto;
 }
-.ny529__table {
+.fin-dash__table {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
-.ny529__table th {
+.fin-dash__table th {
   text-align: left;
   font-size: 11px;
   font-weight: 600;
@@ -16551,12 +16551,12 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   border-bottom: 1px solid var(--color-border);
   white-space: nowrap;
 }
-.ny529__table td {
+.fin-dash__table td {
   padding: 8px 10px 8px 0;
   border-bottom: 1px solid var(--color-border);
   white-space: nowrap;
 }
-.ny529__table tr:last-child td {
+.fin-dash__table tr:last-child td {
   border-bottom: none;
 }
 .ny529__proj-value {
@@ -16636,21 +16636,21 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 }
 
 @media (max-width: 860px) {
-  .ny529__grid {
+  .fin-dash__grid {
     grid-template-columns: minmax(0, 1fr);
   }
 }
 @media (max-width: 720px) {
-  .ny529__stats {
+  .fin-dash__stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .ny529__stat:nth-child(2) {
+  .fin-dash__stat:nth-child(2) {
     border-right: none;
   }
-  .ny529__stat:nth-child(-n + 2) {
+  .fin-dash__stat:nth-child(-n + 2) {
     border-bottom: 1px solid var(--color-border);
   }
-  .ny529__stat-value {
+  .fin-dash__stat-value {
     font-size: 22px;
   }
   .ny529__months {
@@ -16800,17 +16800,17 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
     flex-direction: column;
   }
 }
-.ny529__card--full {
+.fin-dash__card--full {
   grid-column: 1 / -1;
 }
 
 /* ADT (monthly bill) dashboard — AdtDashboard.tsx; shares the ny529 card system */
-.adt__years {
+.fin-dash__years {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
-.adt__year {
+.fin-dash__year {
   display: grid;
   grid-template-columns: 40px minmax(0, 1fr) 64px 24px;
   align-items: center;
@@ -16818,25 +16818,25 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
-.adt__year-label {
+.fin-dash__year-label {
   color: var(--color-muted);
 }
-.adt__year-track {
+.fin-dash__year-track {
   height: 10px;
   border-radius: 5px;
   background: #efeae0;
   overflow: hidden;
 }
-.adt__year-bar {
+.fin-dash__year-bar {
   display: block;
   height: 100%;
   border-radius: 5px;
   background: #2a6fb0;
 }
-.adt__year-value {
+.fin-dash__year-value {
   text-align: right;
 }
-.adt__year-bills {
+.fin-dash__year-bills {
   text-align: right;
   color: var(--color-muted);
   font-size: 12px;
@@ -16855,6 +16855,95 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   margin: 0;
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+/* Ally Bank (checking + savings) dashboard — AllyDashboard.tsx; fin-dash card system */
+.ally__range {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  margin: 0 0 10px;
+}
+.ally__swatch {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  margin-right: 6px;
+  vertical-align: 1px;
+}
+.ally__recurring {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13.5px;
+}
+.ally__recurring li {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: baseline;
+}
+.ally__recurring-day {
+  color: var(--color-muted);
+  font-size: 12px;
+}
+.ally__recurring-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ally__recurring-amt {
+  font-variant-numeric: tabular-nums;
+}
+.ally__flow-cell {
+  width: 18%;
+  min-width: 60px;
+}
+.ally__flow-bar {
+  display: block;
+  height: 8px;
+  border-radius: 4px;
+  min-width: 2px;
+}
+.ally__flow-bar--in,
+.ally__flow-bar--out {
+  /* neutral: blue/orange already mean Savings/Checking on this page */
+  background: #a39c90;
+}
+.ally__txn-tools {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.ally__txn-tools input,
+.ally__txn-tools select {
+  font: inherit;
+  font-size: 13px;
+  padding: 4px 8px;
+  border: var(--border-hairline);
+  border-radius: 8px;
+  background: var(--color-card-bg);
+  color: inherit;
+}
+.fin-dash__table td.ally__desc {
+  min-width: 220px;
+  max-width: 460px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.fin-dash__table td.ally__amt {
+  white-space: nowrap;
+  text-align: right;
+}
+.finance-page__row-parts {
+  display: block;
+  font-size: 12px;
+  color: var(--color-muted);
+  text-align: right;
 }
 .finance-page__row-sub {
   display: block;

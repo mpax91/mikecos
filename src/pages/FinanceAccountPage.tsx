@@ -5,6 +5,7 @@ import type { FinanceDashboard as Data } from '../api/types';
 import { useReportTabMeta } from '../contexts/TabsContext';
 import { Ny529Dashboard } from '../components/Ny529Dashboard';
 import { AdtDashboard } from '../components/AdtDashboard';
+import { AllyDashboard } from '../components/AllyDashboard';
 
 export function FinanceAccountPage() {
   const { id } = useParams<{ id: string }>();
@@ -28,7 +29,9 @@ export function FinanceAccountPage() {
       ? null
       : data.kind === 'adt'
         ? [t.institution, t.type, data.account?.accountLast ? `••${data.account.accountLast}` : null, data.summary.latest?.services].filter(Boolean).join(' · ')
-        : [
+        : data.kind === 'ally'
+          ? [t.institution, ...data.summary.accounts.filter((a) => a.open).map((a) => `${a.label} ••${a.last4}`)].join(' · ')
+          : [
             t.institution,
             data.account?.accountType,
             data.account ? `••${data.account.accountLast}` : null,
@@ -72,7 +75,13 @@ export function FinanceAccountPage() {
           No statements read yet — run <strong>Scan Now</strong> in <Link to="/settings?cat=statements">Settings → Statements</Link>.
         </div>
       )}
-      {data && data.statements.length > 0 && (data.kind === 'adt' ? <AdtDashboard data={data} onDismissFlag={dismiss} /> : <Ny529Dashboard data={data} onDismissFlag={dismiss} />)}
+      {data && data.statements.length > 0 && (data.kind === 'adt' ? (
+          <AdtDashboard data={data} onDismissFlag={dismiss} />
+        ) : data.kind === 'ally' ? (
+          <AllyDashboard data={data} onDismissFlag={dismiss} />
+        ) : (
+          <Ny529Dashboard data={data} onDismissFlag={dismiss} />
+        ))}
     </div>
   );
 }

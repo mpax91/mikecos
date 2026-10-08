@@ -11,10 +11,23 @@ export interface StatementCheck {
 export interface ParsedTransaction {
   date: string; // YYYY-MM-DD
   description: string;
-  kind: 'aip' | 'contribution' | 'withdrawal' | 'payment' | 'adjustment' | 'other';
+  kind:
+    | 'aip'
+    | 'contribution'
+    | 'withdrawal'
+    | 'payment'
+    | 'adjustment'
+    | 'deposit'
+    | 'interest'
+    | 'transfer_in'
+    | 'transfer_out'
+    | 'fee'
+    | 'other';
   amount: number;
   units: number | null;
   unitPrice: number | null;
+  /** Multi-account statements (Ally): the account's last 4 digits. */
+  account?: string | null;
 }
 
 export interface ParsedStatement {

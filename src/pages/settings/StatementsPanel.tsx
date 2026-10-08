@@ -193,7 +193,7 @@ function LiveFolderCard({ folder, busy, scanMsg, onScan, onChanged }: { folder: 
           </div>
         </div>
         <div className="statements-settings__live-actions">
-          {(folder.templateId === 'ny529' || folder.templateId === 'adt') && (
+          {(folder.templateId === 'ny529' || folder.templateId === 'adt' || folder.templateId === 'ally') && (
             <Link to={`/finance/${folder.id}`} className="btn btn--ghost btn--sm">
               Dashboard
             </Link>

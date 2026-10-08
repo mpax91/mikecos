@@ -1,10 +1,11 @@
 import type { ParsedStatement } from '../common';
 import { parseNy529 } from './ny529';
 import { parseAdt } from './adt';
+import { parseAlly } from './ally';
 
 /** Per-folder templates (one per Drive folder, all on the shared base
- * engine). Build order per progress.md: 529 and ADT are live; American Express
- * Bank and the rest are added one folder at a time. */
+ * engine). Build order per progress.md: 529 and ADT are live, Ally Bank built;
+ * American Express Bank and the rest are added one folder at a time. */
 export interface StatementTemplate {
   id: string;
   name: string;
@@ -60,6 +61,23 @@ export const TEMPLATES: StatementTemplate[] = [
       phone: '1-800-238-2727',
     },
     parse: parseAdt,
+    isStatementFile: (name) => /statement/i.test(name),
+  },
+  {
+    id: 'ally',
+    name: 'Ally Bank Checking & Savings (Monthly)',
+    folderNames: ['Ally Bank', 'Ally'],
+    account: {
+      nickname: 'Ally Bank',
+      institution: 'Ally Bank',
+      type: 'Checking & Savings',
+      owner: 'household',
+      cadence: 'monthly',
+      kind: 'balance',
+      site: 'https://www.ally.com',
+      phone: '1-877-247-2559',
+    },
+    parse: parseAlly,
     isStatementFile: (name) => /statement/i.test(name),
   },
 ];
