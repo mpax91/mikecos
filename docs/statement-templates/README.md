@@ -25,6 +25,31 @@ ids in `statement_folders.meta_json.vault`. Values follow the LATEST
 statement; backfills never roll back. Build note content with
 `vaultDoc.ts` and validate new node shapes against the editor schema.
 
+## Payment Quick Facts (every bill / card account — Mike, 2026-10-07)
+
+The one exception to "Quick Facts are Mike's": up to six auto-updating
+facts, written only where they apply and tagged **Auto-Updates** —
+**Due Date · Auto-Pay · Paid With · Latest Bill · Average Bill (12 Mo) ·
+Average Bill (All-Time)**. They are `vault_facts` rows with
+`managed_key = 'pay:*'` (so they appear in Vault search and Rollups).
+Editing one makes it Mike's own fact; deleting one keeps it deleted
+(`vault_fact_releases`). Code: `worker/src/accountPayers.ts`.
+
+- **Templates:** a template with bills/statement balances builds a
+  `BillingFacts` snapshot with `billingFromBills(...)` (date, amount
+  charged, total due / statement balance, due date, autopay as printed)
+  and stores it as `meta.billing` in the folder's `meta_json`; merge
+  `payerFlags(...)` into its flag list. `engine.derive` then calls
+  `syncPaymentFacts` for the folder's Vault entry. Averages use what each
+  bill charged; Latest Bill uses the total due / statement balance.
+- **Paid With** comes from `account_payers` (one row per Vault entry:
+  `autopay` | `on_file`, a Wallet payment card or free text for a bank
+  account, optional due day). Set from the Vault entry (tap Paid With /
+  "＋ Payment Method") or from Wallet → card → **Pays For → Add Account**.
+- Auto-Pay: the latest statement wins when it says; otherwise the payer
+  mode. Flags: autopay with no card set, statement vs. Wallet mismatch,
+  paying card inactive or deleted from Wallet.
+
 ## Tax Packet ("Tax Packet · <year>")
 Each template contributes a section via `syncTaxPacketSection`
 (`taxPacket.ts`): tax documents → Links; its section (heading = account

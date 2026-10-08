@@ -16915,3 +16915,168 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
     width: 840px;
   }
 }
+
+/* ---- Account payers (0092): auto-updating payment Quick Facts, the
+   Payment Method picker, and Wallet "Pays For" ---- */
+.vault-facts__row--auto {
+  background: #f6f9fc;
+}
+.vault-facts__auto::after {
+  content: 'Auto-Updates';
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  background: #e6eef7;
+  color: #2a5a8a;
+  border: 1px solid #cddcec;
+}
+@media (max-width: 520px) {
+  .vault-facts__auto::after {
+    content: 'Auto';
+  }
+}
+.vault-facts__row--editing:has(.vault-facts__auto-hint) {
+  flex-wrap: wrap;
+}
+.vault-facts__auto-hint {
+  flex-basis: 100%;
+  font-size: 11.5px;
+  color: var(--color-muted);
+}
+.vault-facts__payer-add {
+  margin-top: 6px;
+  border: none;
+  background: none;
+  padding: 4px 0;
+  font-size: 12.5px;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+.vault-facts__payer-add:hover {
+  color: var(--color-ink);
+}
+
+.account-payer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.account-payer__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--color-muted);
+}
+.account-payer__field > span {
+  font-weight: var(--weight-medium);
+}
+.account-payer__hint {
+  font-size: 11.5px;
+  color: var(--color-muted);
+  margin-top: -4px;
+}
+.account-payer__seg {
+  display: flex;
+  border: var(--border-hairline);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.account-payer__seg button {
+  flex: 1;
+  border: none;
+  background: var(--color-paper);
+  padding: 8px 0;
+  font-size: 13px;
+  color: var(--color-ink);
+  cursor: pointer;
+}
+.account-payer__seg button + button {
+  border-left: var(--border-hairline);
+}
+.account-payer__seg button.is-on {
+  background: #2a5a8a;
+  color: #fff;
+  font-weight: 600;
+}
+.account-payer__remove {
+  margin-right: auto;
+  color: #a33a2c;
+}
+
+.pays-for__body {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.pays-for__empty {
+  font-size: 12.5px;
+  color: var(--color-muted);
+}
+.pays-for__group-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-muted);
+  margin-bottom: 2px;
+}
+.pays-for__group-title span {
+  margin-left: 4px;
+}
+.pays-for__row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 0;
+  font-size: 13px;
+  min-width: 0;
+}
+.pays-for__name {
+  color: var(--color-ink);
+  text-decoration: none;
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pays-for__name:hover {
+  text-decoration: underline;
+}
+.pays-for__meta {
+  margin-left: auto;
+  color: var(--color-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.pays-for__edit {
+  border: none;
+  background: none;
+  color: var(--color-muted);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0;
+}
+.pays-for__add {
+  align-self: flex-start;
+  border: none;
+  background: none;
+  padding: 2px 0;
+  font-size: 12.5px;
+  color: #2a5a8a;
+  cursor: pointer;
+  font-weight: 500;
+}
+.lost-wallet__paid {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--color-muted);
+}
+.lost-wallet__paid a {
+  color: #2a5a8a;
+}

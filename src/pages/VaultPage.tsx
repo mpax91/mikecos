@@ -6,6 +6,7 @@ import { EntityCard } from '../components/EntityCard';
 import { NewFileTile, NewPasswordTile } from '../components/NewItemTiles';
 import { Section } from '../components/Section';
 import { VaultFactsTable, type FactLike } from '../components/VaultFactsTable';
+import { AccountPayerModal } from '../components/AccountPayerModal';
 import { VaultLinkRow } from '../components/VaultLinkRow';
 import { VaultNoteRow } from '../components/VaultNoteRow';
 import { VaultNoteModal } from '../components/VaultNoteModal';
@@ -19,6 +20,8 @@ import { ExpirationModal } from '../components/ExpirationModal';
 import { useIsCompact } from '../hooks/useIsMobile';
 import { formatRelativeTime } from '../utils/formatRelativeTime';
 import { useTabs, useReportTabMeta } from '../contexts/TabsContext';
+
+const PAYER_KEYS = new Set(['pay:paid_with', 'pay:autopay', 'pay:due']);
 
 // is_password entries are type='note' children too (see the is_jot/is_list
 // flag-on-existing-type precedent) — excluded here so a password card
@@ -49,6 +52,7 @@ export function VaultPage() {
   const [entryTitle, setEntryTitle] = useState('');
   const [addingLink, setAddingLink] = useState(false);
   const [editingLink, setEditingLink] = useState<Entity | null>(null);
+  const [payerOpen, setPayerOpen] = useState(false);
   const [deleting, setDeleting] = useState<Entity | null>(null);
   const [renaming, setRenaming] = useState<Entity | null>(null);
   const [settingExpiration, setSettingExpiration] = useState<Entity | null>(null);
@@ -372,9 +376,30 @@ export function VaultPage() {
               />
             </div>
 
-            <Section title="Quick facts" defaultExpanded={true}>
-              <VaultFactsTable facts={detail.facts} onAdd={addFact} onUpdate={updateFact} onDelete={deleteFact} onReorder={reorderFacts} />
+            <Section title="Quick Facts" defaultExpanded={true}>
+              <VaultFactsTable
+                facts={detail.facts}
+                onAdd={addFact}
+                onUpdate={updateFact}
+                onDelete={deleteFact}
+                onReorder={reorderFacts}
+                onManagedClick={(f) => {
+                  // Paid With / Auto-Pay / Due Date come from the payment
+                  // method — tapping them opens its picker, not an inline edit.
+                  if (f.managed_key && PAYER_KEYS.has(f.managed_key)) {
+                    setPayerOpen(true);
+                    return true;
+                  }
+                  return false;
+                }}
+              />
+              {!detail.facts.some((f) => f.managed_key === 'pay:paid_with') && (
+                <button type="button" className="vault-facts__payer-add" onClick={() => setPayerOpen(true)}>
+                  ＋ Payment Method
+                </button>
+              )}
             </Section>
+            {payerOpen && <AccountPayerModal entryId={detail.id} onClose={() => setPayerOpen(false)} onSaved={() => loadDetail(detail.id)} />}
 
             {pinned.length > 0 && (
               <Section title="Pinned" count={pinned.length} defaultExpanded={true}>

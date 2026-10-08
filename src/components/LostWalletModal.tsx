@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
-import type { PaymentCard, WalletCard } from '../api/types';
+import { Link } from 'react-router-dom';
+import type { CardPaidAccount, PaymentCard, WalletCard } from '../api/types';
 import { isPhoneLabel, telHref } from '../utils/phone';
 
 type Kind = 'payment' | 'loyalty';
@@ -20,6 +21,7 @@ interface Row {
   name: string;
   subtitle: string;
   phoneFacts: Fact[];
+  paidAccounts: CardPaidAccount[];
 }
 
 /** "Lost my wallet?" — Mike's own framing when asked how this should work
@@ -39,6 +41,9 @@ export function LostWalletModal({ onClose }: { onClose: () => void }) {
   const [factsByCard, setFactsByCard] = useState<Map<string, Fact[]>>(new Map());
   const [have, setHave] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState('');
+  // Accounts each payment card pays (account_payers) — once a missing card
+  // is replaced, these are the ones to update with the new number.
+  const [paidByCard, setPaidByCard] = useState<Map<string, CardPaidAccount[]>>(new Map());
 
   useEffect(() => {
     api.listPaymentCards().then((cards) => setPayment(cards.filter((c) => c.active)));
@@ -55,6 +60,9 @@ export function LostWalletModal({ onClose }: { onClose: () => void }) {
       ...payment.map((c) => api.listPaymentCardFacts(c.id).then((facts) => [`payment:${c.id}`, facts] as const)),
       ...loyalty.map((c) => api.listWalletCardFacts(c.id).then((facts) => [`loyalty:${c.id}`, facts] as const)),
     ]).then((entries) => setFactsByCard(new Map(entries)));
+    Promise.all(payment.map((c) => api.listCardPaidAccounts(c.id).catch(() => [] as CardPaidAccount[]).then((rows) => [c.id, rows] as const))).then((entries) =>
+      setPaidByCard(new Map(entries))
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [payment, loyalty]);
 
@@ -68,6 +76,7 @@ export function LostWalletModal({ onClose }: { onClose: () => void }) {
         name: c.nickname,
         subtitle: [c.cardType === 'debit' ? 'Debit' : 'Credit', c.network, c.last4 ? `••${c.last4}` : null].filter(Boolean).join(' · '),
         phoneFacts: (factsByCard.get(key) ?? []).filter((f) => f.value && isPhoneLabel(f.label)),
+        paidAccounts: paidByCard.get(c.id) ?? [],
       });
     }
     for (const c of loyalty ?? []) {
@@ -78,10 +87,11 @@ export function LostWalletModal({ onClose }: { onClose: () => void }) {
         name: c.name,
         subtitle: c.category,
         phoneFacts: (factsByCard.get(key) ?? []).filter((f) => f.value && isPhoneLabel(f.label)),
+        paidAccounts: [],
       });
     }
     return out.sort((a, b) => a.name.localeCompare(b.name));
-  }, [payment, loyalty, factsByCard]);
+  }, [payment, loyalty, factsByCard, paidByCard]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -157,6 +167,20 @@ export function LostWalletModal({ onClose }: { onClose: () => void }) {
                         <div>
                           <div className="lost-wallet__row-name">{r.name}</div>
                           <div className="lost-wallet__row-sub">{r.subtitle}</div>
+                          {r.paidAccounts.length > 0 && (
+                            <div className="lost-wallet__paid">
+                              Update after replacing:{' '}
+                              {r.paidAccounts.map((a, i) => (
+                                <span key={a.entryId}>
+                                  {i > 0 && ', '}
+                                  <Link to={`/vault/${a.entryId}`} onClick={onClose}>
+                                    {a.title}
+                                  </Link>{' '}
+                                  ({a.mode === 'autopay' ? 'Auto-Pay' : 'On File'})
+                                </span>
+                              ))}
+                            </div>
+                          )}
                         </div>
                         <div className="lost-wallet__missing-phones">
                           {r.phoneFacts.length === 0 ? (

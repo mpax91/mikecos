@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { Env } from './types';
 import { decryptField, encryptField } from './cryptoField';
+import { detachCard, syncAccountsForCard } from './accountPayers';
 
 const now = () => new Date().toISOString();
 const uid = () => crypto.randomUUID();
@@ -341,6 +342,8 @@ paymentCardsRouter.patch('/cards/:id', async (c) => {
     fields.push('updated_at = ?');
     values.push(now(), id);
     await c.env.DB.prepare(`UPDATE payment_cards SET ${fields.join(', ')} WHERE id = ?`).bind(...values).run();
+    // "Paid With" facts show the card's nickname + last 4.
+    if (body.nickname !== undefined || body.last4 !== undefined) await syncAccountsForCard(c.env, id);
   }
 
   const row = await c.env.DB.prepare('SELECT * FROM payment_cards WHERE id = ?').bind(id).first<PaymentCardRow>();
@@ -358,6 +361,9 @@ paymentCardsRouter.delete('/cards/:id', async (c) => {
   if (!existing) return c.json({ error: 'not found' }, 404);
   if (existing.cover_art_key) await c.env.FILES.delete(existing.cover_art_key).catch(() => {});
   if (existing.back_art_key) await c.env.FILES.delete(existing.back_art_key).catch(() => {});
+  // Accounts this card paid keep their payer as text ("… (Removed From
+  // Wallet)") and get flagged, rather than silently losing it.
+  await detachCard(c.env, id);
   // Explicit child cleanup rather than relying on cascade — same reasoning
   // as wallet.ts's card delete and rewards.ts's card delete.
   await c.env.DB.batch([

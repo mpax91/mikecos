@@ -244,12 +244,24 @@ vaultRouter.post('/entries/:id/facts/reorder', async (c) => {
   return c.json({ ok: true });
 });
 
+/** An auto-updating fact Mike edited or deleted stays his (see
+ * accountPayers.ts and migrations/0092_account_payers.sql). */
+async function releaseManagedFact(c: { env: Env }, entryId: string, managedKey: string): Promise<void> {
+  await c.env.DB.prepare('INSERT OR IGNORE INTO vault_fact_releases (entry_id, managed_key, released_at) VALUES (?, ?, ?)').bind(entryId, managedKey, now()).run();
+}
+
 vaultRouter.patch('/facts/:id', async (c) => {
   const id = c.req.param('id');
   const body = await c.req.json<{ label?: string; value?: string | null }>();
-  const existing = await db(c).prepare('SELECT entry_id FROM vault_facts WHERE id = ?').bind(id).first<{ entry_id: string }>();
+  const existing = await db(c).prepare('SELECT entry_id, managed_key FROM vault_facts WHERE id = ?').bind(id).first<{ entry_id: string; managed_key: string | null }>();
   if (!existing) return c.json({ error: 'not found' }, 404);
   const sets: string[] = [];
+  // Mike's edits win: editing an auto-updating fact makes it his own (no
+  // managed_key) and records the release so the sync never re-creates it.
+  if (existing.managed_key && (body.label !== undefined || body.value !== undefined)) {
+    sets.push('managed_key = NULL');
+    await releaseManagedFact(c, existing.entry_id, existing.managed_key);
+  }
   const binds: unknown[] = [];
   if (body.label !== undefined) {
     const label = body.label.trim();
@@ -275,7 +287,8 @@ vaultRouter.patch('/facts/:id', async (c) => {
 
 vaultRouter.delete('/facts/:id', async (c) => {
   const id = c.req.param('id');
-  const existing = await db(c).prepare('SELECT entry_id FROM vault_facts WHERE id = ?').bind(id).first<{ entry_id: string }>();
+  const existing = await db(c).prepare('SELECT entry_id, managed_key FROM vault_facts WHERE id = ?').bind(id).first<{ entry_id: string; managed_key: string | null }>();
+  if (existing?.managed_key) await releaseManagedFact(c, existing.entry_id, existing.managed_key);
   await db(c).prepare('DELETE FROM vault_facts WHERE id = ?').bind(id).run();
   if (existing) await reindexEntry(c, existing.entry_id);
   return c.json({ ok: true });

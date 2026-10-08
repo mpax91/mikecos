@@ -11,6 +11,8 @@ export interface FactLike {
   label: string;
   value: string | null;
   position: number;
+  /** Set on auto-updating facts (e.g. 'pay:due' from accountPayers.ts). */
+  managed_key?: string | null;
 }
 
 /** Single inline grey completion (not a dropdown of several matches — see
@@ -100,12 +102,17 @@ export function VaultFactsTable({
   onUpdate,
   onDelete,
   onReorder,
+  onManagedClick,
 }: {
   facts: FactLike[];
   onAdd: (label: string, value: string) => void;
   onUpdate: (fact: FactLike, patch: { label?: string; value?: string }) => void;
   onDelete: (fact: FactLike) => void;
   onReorder: (orderedIds: string[]) => void;
+  /** Tapping an auto-updating fact: return true when the caller handled it
+   * (e.g. Paid With opens the payment picker); otherwise it edits inline,
+   * which turns it into Mike's own fact. */
+  onManagedClick?: (fact: FactLike) => boolean;
   }) {
   const [adding, setAdding] = useState(false);
   const [newLabel, setNewLabel] = useState('');
@@ -169,6 +176,7 @@ export function VaultFactsTable({
           onCopy={() => copy(f)}
           onUpdate={onUpdate}
           onDelete={onDelete}
+          onManagedClick={onManagedClick}
           onMoveUp={i > 0 ? () => move(f, -1) : undefined}
           onMoveDown={i < facts.length - 1 ? () => move(f, 1) : undefined}
         />
@@ -211,6 +219,7 @@ function FactRow({
   onCopy,
   onUpdate,
   onDelete,
+  onManagedClick,
   onMoveUp,
   onMoveDown,
 }: {
@@ -219,6 +228,7 @@ function FactRow({
   onCopy: () => void;
   onUpdate: (fact: FactLike, patch: { label?: string; value?: string }) => void;
   onDelete: (fact: FactLike) => void;
+  onManagedClick?: (fact: FactLike) => boolean;
   onMoveUp?: () => void;
   onMoveDown?: () => void;
 }) {
@@ -254,12 +264,19 @@ function FactRow({
         <button type="button" className="vault-facts__delete" onClick={() => onDelete(fact)} title="Delete">
           ✕
         </button>
+        {fact.managed_key && <div className="vault-facts__auto-hint">Saving a change makes this your own fact — it stops auto-updating.</div>}
       </div>
     );
   }
 
   return (
-    <div className="vault-facts__row" onClick={() => setEditing(true)}>
+    <div
+      className={`vault-facts__row${fact.managed_key ? ' vault-facts__row--auto' : ''}`}
+      onClick={() => {
+        if (fact.managed_key && onManagedClick?.(fact)) return;
+        setEditing(true);
+      }}
+    >
       <span className="vault-facts__label">{fact.label}</span>
       <span className="vault-facts__value">
         {fact.value && /^https?:\/\/\S+$/.test(fact.value) ? (
@@ -270,6 +287,7 @@ function FactRow({
           fact.value || <span className="vault-facts__value--empty">—</span>
         )}
       </span>
+      {fact.managed_key && <span className="vault-facts__auto" title="Updates automatically from your statements and Wallet" />}
       {fact.value && (
         <button
           type="button"

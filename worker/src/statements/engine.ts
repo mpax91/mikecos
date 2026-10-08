@@ -8,6 +8,7 @@ import { doc, docText, heading, markAuto } from './vaultDoc';
 import type { Block } from './vaultDoc';
 import { deriveNy529 } from './ny529Derive';
 import { deriveAdt } from './adtDerive';
+import { syncPaymentFacts } from '../accountPayers';
 
 /** Base statements engine: lists a registered Drive folder, reads any PDF
  * not seen before (or modified since), stores normalized statement +
@@ -171,6 +172,10 @@ export async function derive(env: Env, folder: FolderRow): Promise<void> {
   const fresh = (await loadFolder(env, folder.id)) ?? folder;
   if (folder.template_id === 'ny529') await deriveNy529(env, fresh);
   else if (folder.template_id === 'adt') await deriveAdt(env, fresh);
+  // Payment Quick Facts (Due Date, Auto-Pay, Paid With, bill amounts) from
+  // the billing snapshot the template just stored + the account's payer.
+  const after = await loadFolder(env, folder.id);
+  if (after?.vault_entry_id) await syncPaymentFacts(env, after.vault_entry_id);
 }
 
 /** Nightly: every live folder, looping each until its backlog is read. */

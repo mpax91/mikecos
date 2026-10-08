@@ -53,6 +53,7 @@ import { emailRouter, syncAllAccounts } from './email';
 import { bookmarksRouter } from './bookmarks';
 import { cloudRouter, keepCloudTokensAlive } from './cloud';
 import { statementsRouter } from './statements/router';
+import { accountPayersRouter } from './accountPayersRouter';
 import { scanAllLiveFolders, statementsScanDue } from './statements/engine';
 import { contactsAssistantRouter } from './contactsAssistant';
 import { betsEnrichmentRouter } from './betsEnrichment';
@@ -87,6 +88,7 @@ app.route('/api/email', emailRouter);
 app.route('/api/bookmarks', bookmarksRouter);
 app.route('/api/cloud', cloudRouter);
 app.route('/api/statements', statementsRouter);
+app.route('/api/account-payers', accountPayersRouter);
 app.route('/api/contacts/ask', contactsAssistantRouter);
 app.route('/api/bets/enrichment', betsEnrichmentRouter);
 

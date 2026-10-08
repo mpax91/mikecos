@@ -8,6 +8,8 @@ import { crossCheckAdt } from './templates/adt';
 import type { AdtValues } from './templates/adt';
 import { templateById } from './templates';
 import { summarizeAdt, unpaidCarry } from './adtSummary';
+import { billingFromBills, payerFlags } from '../accountPayers';
+import type { BillingFacts } from '../accountPayers';
 import type { AdtStmtRow, AdtTxnRow } from './adtSummary';
 
 /** ADT outputs: Vault entry "ADT Home Security" (per the Vault entry
@@ -19,6 +21,7 @@ import type { AdtStmtRow, AdtTxnRow } from './adtSummary';
 interface FolderMeta {
   vault?: { note?: { noteId?: string; written?: string[] }; links?: Record<string, string> };
   payTask?: { year: number; taskId: string };
+  billing?: BillingFacts | null;
 }
 
 /** No new bill this many days after the last invoice date → flag. */
@@ -61,6 +64,25 @@ export async function deriveAdt(env: Env, folder: FolderRow): Promise<void> {
   const latestValues = stmts[stmts.length - 1]?.values;
   const fileUrl = (fileId: string) => files.find((f) => f.file_id === fileId)?.web_url ?? null;
 
+  // ---- Vault entry ----
+  let meta: FolderMeta = {};
+  try {
+    meta = folder.meta_json ? JSON.parse(folder.meta_json) : {};
+  } catch {
+    meta = {};
+  }
+  const entry = await ensureVaultEntry(env, folder.vault_entry_id, template.account.nickname);
+  if (entry.id !== folder.vault_entry_id) {
+    await env.DB.prepare('UPDATE statement_folders SET vault_entry_id = ?, updated_at = ? WHERE id = ?').bind(entry.id, new Date().toISOString(), folder.id).run();
+  }
+  if (entry.created) {
+    meta.vault = {};
+    await seedFacts(env, entry.id, [
+      { label: 'Account', value: latestValues?.accountLast ? `••${latestValues.accountLast}` : null },
+      { label: 'Customer Service', value: template.account.phone ?? null },
+    ]);
+  }
+
   // ---- Flags ----
   const flags: { key: string; severity: 'warn' | 'info'; message: string }[] = [];
   for (const f of files) {
@@ -90,26 +112,14 @@ export async function deriveAdt(env: Env, folder: FolderRow): Promise<void> {
       flags.push({ key: `missing_after:${latest.invoiceDate}`, severity: 'warn', message: `No ADT bill in the Drive folder since ${fmtMdy(latest.invoiceDate)} — download the latest from MyADT.com` });
     }
   }
+  // ---- Billing snapshot → payer flags (account_payers) ----
+  const billing = billingFromBills(
+    s.bills.map((b) => ({ date: b.invoiceDate, amount: b.billed, totalDue: b.totalDue, dueDate: b.dueDate, autopay: b.autopay }))
+  );
+  meta.billing = billing;
+  flags.push(...(await payerFlags(env, entry.id, template.account.nickname, billing)));
   await syncFlags(env, folder.id, flags);
 
-  // ---- Vault entry ----
-  let meta: FolderMeta = {};
-  try {
-    meta = folder.meta_json ? JSON.parse(folder.meta_json) : {};
-  } catch {
-    meta = {};
-  }
-  const entry = await ensureVaultEntry(env, folder.vault_entry_id, template.account.nickname);
-  if (entry.id !== folder.vault_entry_id) {
-    await env.DB.prepare('UPDATE statement_folders SET vault_entry_id = ?, updated_at = ? WHERE id = ?').bind(entry.id, new Date().toISOString(), folder.id).run();
-  }
-  if (entry.created) {
-    meta.vault = {};
-    await seedFacts(env, entry.id, [
-      { label: 'Account', value: latestValues?.accountLast ? `••${latestValues.accountLast}` : null },
-      { label: 'Customer Service', value: template.account.phone ?? null },
-    ]);
-  }
   meta.vault = meta.vault ?? {};
 
   const sections: AutoSection[] = [];

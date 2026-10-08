@@ -1884,6 +1884,9 @@ export interface VaultFact {
   // never user-set. See detectFactValue in worker/src/vault.ts.
   value_type?: 'date' | 'currency' | null;
   value_norm?: string | null;
+  // 'pay:*' = an auto-updating payment fact (worker/src/accountPayers.ts);
+  // NULL = Mike's own fact.
+  managed_key?: string | null;
 }
 
 export interface VaultEntryDetail extends Entity {
@@ -2455,3 +2458,27 @@ export interface Ny529Dashboard {
 }
 
 export type FinanceDashboard = Ny529Dashboard | AdtDashboard;
+
+// ---- Account payers (0092_account_payers.sql) — which card pays which
+// account. 'autopay' = charges the card by itself; 'on_file' = the card is
+// saved there and Mike clicks Pay. ----
+export type AccountPayerMode = 'autopay' | 'on_file';
+
+export interface AccountPayer {
+  entryId: string;
+  mode: AccountPayerMode;
+  paymentCardId: string | null;
+  payerText: string | null;
+  dueDay: number | null;
+  label: string | null;
+}
+
+/** One account a payment card pays (Wallet "Pays For"). */
+export interface CardPaidAccount {
+  entryId: string;
+  title: string;
+  mode: AccountPayerMode;
+  folderId: string | null;
+  latestBill: string | null;
+  due: string | null;
+}

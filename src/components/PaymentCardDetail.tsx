@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../api/client';
-import type { PaymentCard, PaymentCardFact } from '../api/types';
+import type { CardPaidAccount, PaymentCard, PaymentCardFact } from '../api/types';
+import { AccountPayerModal } from './AccountPayerModal';
 import { CardImageLightbox } from './CardImageLightbox';
 import { isPhoneLabel, telHref } from '../utils/phone';
 
@@ -21,9 +23,21 @@ export function PaymentCardDetail({ card, onClose, onEdit }: { card: PaymentCard
   const [facts, setFacts] = useState<PaymentCardFact[]>([]);
   const [copiedFactId, setCopiedFactId] = useState<string | null>(null);
 
+  const [paysOpen, setPaysOpen] = useState(false);
+  const [paidAccounts, setPaidAccounts] = useState<CardPaidAccount[]>([]);
+  const [payerModal, setPayerModal] = useState<{ entryId?: string } | null>(null);
+
   useEffect(() => {
     api.listPaymentCardFacts(card.id).then(setFacts).catch(() => {});
   }, [card.id]);
+
+  const loadPaidAccounts = useCallback(() => {
+    api.listCardPaidAccounts(card.id).then(setPaidAccounts).catch(() => {});
+  }, [card.id]);
+  useEffect(loadPaidAccounts, [loadPaidAccounts]);
+
+  const autoPays = paidAccounts.filter((a) => a.mode === 'autopay');
+  const onFile = paidAccounts.filter((a) => a.mode === 'on_file');
 
   function copyFact(fact: PaymentCardFact) {
     if (!fact.value) return;
@@ -182,6 +196,43 @@ export function PaymentCardDetail({ card, onClose, onEdit }: { card: PaymentCard
           </div>
         )}
 
+        <div className="wallet-barcode-view__details pays-for">
+          <button type="button" className="wallet-barcode-view__details-toggle" onClick={() => setPaysOpen((v) => !v)}>
+            {paysOpen ? '▾' : '▸'} Pays For{paidAccounts.length ? ` (${paidAccounts.length})` : ''}
+          </button>
+          {paysOpen && (
+            <div className="pays-for__body">
+              {paidAccounts.length === 0 && <div className="pays-for__empty">No accounts linked yet — add the ones that charge this card or keep it on file.</div>}
+              {[
+                { title: 'Auto-Pay', rows: autoPays },
+                { title: 'On File', rows: onFile },
+              ]
+                .filter((g) => g.rows.length)
+                .map((g) => (
+                  <div key={g.title} className="pays-for__group">
+                    <div className="pays-for__group-title">
+                      {g.title} <span>{g.rows.length}</span>
+                    </div>
+                    {g.rows.map((a) => (
+                      <div key={a.entryId} className="pays-for__row">
+                        <Link to={`/vault/${a.entryId}`} className="pays-for__name" onClick={onClose}>
+                          {a.title || 'Untitled Entry'}
+                        </Link>
+                        <span className="pays-for__meta">{[a.latestBill, a.due ? `Due ${a.due}` : null].filter(Boolean).join(' · ')}</span>
+                        <button type="button" className="pays-for__edit" onClick={() => setPayerModal({ entryId: a.entryId })} aria-label={`Edit ${a.title}`}>
+                          Edit
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              <button type="button" className="pays-for__add" onClick={() => setPayerModal({})}>
+                ＋ Add Account
+              </button>
+            </div>
+          )}
+        </div>
+
         {card.notes && (
           <div className="wallet-barcode-view__notes">
             <div className="wallet-barcode-view__notes-body" style={{ marginTop: 0 }}>
@@ -194,6 +245,17 @@ export function PaymentCardDetail({ card, onClose, onEdit }: { card: PaymentCard
           Edit card
         </button>
       </div>
+
+      {payerModal && (
+        <div onClick={(e) => e.stopPropagation()}>
+          <AccountPayerModal
+            cardId={payerModal.entryId ? undefined : card.id}
+            entryId={payerModal.entryId}
+            onClose={() => setPayerModal(null)}
+            onSaved={loadPaidAccounts}
+          />
+        </div>
+      )}
 
       {lightboxSide && (
         <CardImageLightbox frontUrl={card.coverArtUrl} backUrl={card.backArtUrl} side={lightboxSide} onSide={setLightboxSide} onClose={() => setLightboxSide(null)} />
