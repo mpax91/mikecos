@@ -107,3 +107,11 @@ Live templates: `ny529` (529.md), `adt` (adt.md), `ally` (ally.md), `amazon` (am
 **Multi-account statements** (Ally): `ParsedTransaction.account` = last 4
 digits (stored in `statement_transactions.account`, migration 0093);
 key accounts by last 4, never by product name.
+
+### Yearly "File <year> Taxes" task (Mike, 2026-10-08)
+Created January 2 of the next year, **due March 1** (time for year-end
+statements/forms and to book the accountant), filed under that year's Tax
+Packet with a "Tax Packet · <year>" link attached. One per year — never
+re-created after it's checked off or deleted; not created once March 1 has
+passed. Tax Packets are **kept** (audit look-back), not deleted.
+`syncTaxFilingTask` in taxPacket.ts, run after the nightly scan.

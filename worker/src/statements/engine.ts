@@ -12,6 +12,7 @@ import { deriveAlly } from './allyDerive';
 import { deriveAmazon } from './amazonDerive';
 import { syncPaymentFacts } from '../accountPayers';
 import { syncCardFacts } from '../cardFacts';
+import { syncTaxFilingTask } from './taxPacket';
 import type { CardFacts } from '../cardFacts';
 
 /** Base statements engine: lists a registered Drive folder, reads any PDF
@@ -207,6 +208,7 @@ export async function scanAllLiveFolders(env: Env): Promise<void> {
       console.error('Statements scan failed', folder.folder_name, err);
     }
   }
+  await syncTaxFilingTask(env, easternToday()).catch((err) => console.error('Tax filing task failed', err));
 }
 
 /** True when the nightly scan is due: ~3:20am Eastern, or any later hour

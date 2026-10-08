@@ -1,5 +1,5 @@
 import type { Env } from '../types';
-import { ensureVaultEntry, syncAutoNote, syncManagedLinks } from './engine';
+import { appOrigin, ensureVaultEntry, syncAutoNote, syncManagedLinks, syncReminderTask } from './engine';
 import type { AutoNoteState, AutoSection } from './engine';
 import { bullets, para } from './vaultDoc';
 import type { Block } from './vaultDoc';
@@ -64,4 +64,41 @@ export async function syncTaxPacketSection(env: Env, year: number, folderId: str
   )
     .bind(year, entry.id, JSON.stringify(sections), JSON.stringify(children))
     .run();
+}
+
+/** Yearly "File <year> Taxes" task (Mike, 2026-10-08): created on January 2
+ * of the following year, due March 1 (time for the year-end statements
+ * and tax forms to arrive and to book the accountant), filed under that
+ * year's Tax Packet with a link to it as an attachment. One per year: kept
+ * current while open, never re-created once Mike checks it off or deletes
+ * it, and not created at all once March 1 has passed (that year is
+ * already being handled). Packets themselves are kept for audits. Runs
+ * after the nightly statements scan. */
+export async function syncTaxFilingTask(env: Env, today: string): Promise<void> {
+  const year = Number(today.slice(0, 4)) - 1;
+  const due = `${year + 1}-03-01`;
+  if (today < `${year + 1}-01-02`) return;
+  const row = await env.DB.prepare('SELECT * FROM statement_tax_packets WHERE year = ?').bind(year).first<PacketRow>();
+  if (!row) return; // no packet for that year — nothing to point at
+  const children: Record<string, unknown> = row.children_json ? JSON.parse(row.children_json) : {};
+  const existing = children.fileTask as { year: number; taskId: string } | undefined;
+  if (!existing && today > due) return;
+  const packet = await env.DB.prepare(`SELECT id FROM entities WHERE id = ? AND type = 'vault_entry'`).bind(row.vault_entry_id).first<{ id: string }>();
+  const next = await syncReminderTask(env, existing, year, { title: `File ${year} Taxes`, due, parentId: packet?.id ?? null });
+  // Attach the packet as a link the first time the task is made.
+  if (next && next.taskId !== existing?.taskId && packet) {
+    const url = `${appOrigin(env)}/vault/${packet.id}`;
+    const ts = new Date().toISOString();
+    await env.DB.prepare(
+      `INSERT INTO entities (id, type, title, content, parent_id, is_top_level, status, position, last_touched, created_at, updated_at, search_text)
+       VALUES (?, 'link', ?, ?, ?, 0, NULL, 0, ?, ?, ?, ?)`
+    )
+      .bind(crypto.randomUUID(), `Tax Packet · ${year}`, JSON.stringify({ url, auto: 'once' }), next.taskId, ts, ts, ts, `Tax Packet · ${year} ${url}`)
+      .run();
+  }
+  if (JSON.stringify(next) !== JSON.stringify(existing)) {
+    if (next) children.fileTask = next;
+    else delete children.fileTask;
+    await env.DB.prepare('UPDATE statement_tax_packets SET children_json = ? WHERE year = ?').bind(JSON.stringify(children), year).run();
+  }
 }
