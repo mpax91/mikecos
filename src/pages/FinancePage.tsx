@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
-import type { AccountOwner, FinanceAccount } from '../api/types';
+import type { AccountOwner, FinanceAccount, FinanceAttentionItem } from '../api/types';
 import { useReportTabMeta } from '../contexts/TabsContext';
 
 const money = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -17,6 +17,23 @@ export function FinancePage() {
   const [accounts, setAccounts] = useState<FinanceAccount[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [owner, setOwner] = useState<AccountOwner | null>(null);
+  const [attention, setAttention] = useState<FinanceAttentionItem[]>([]);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const load = () =>
+      api
+        .getFinanceAttention()
+        .then((a) => setAttention(a.items))
+        .catch(() => {});
+    load();
+    window.addEventListener('mikeos:attention-changed', load);
+    return () => window.removeEventListener('mikeos:attention-changed', load);
+  }, []);
+  const dismissIssue = (id: string) => {
+    setAttention((xs) => xs.filter((x) => x.id !== id));
+    api.dismissStatementFlag(id).catch(() => {});
+  };
 
   useEffect(() => {
     api
@@ -50,6 +67,28 @@ export function FinancePage() {
         </Link>
       </div>
       <p className="links-page__subhead">Accounts read from your statement PDFs in Google Drive, refreshed nightly.</p>
+
+      {attention.length > 0 && (
+        <section className="finance-attention" aria-label="Accounts Need Attention">
+          <h2 className="finance-attention__title">
+            <span aria-hidden="true">⚠</span> Accounts Need Attention <span className="finance-attention__count">{attention.length}</span>
+          </h2>
+          <ul className="finance-attention__list">
+            {attention.map((a) => (
+              <li key={a.id} className="finance-attention__item">
+                <button type="button" className="finance-attention__open" onClick={() => navigate(`/finance/${a.folderId}`)}>
+                  <span className="finance-attention__account">{a.account}</span>
+                  <span className="finance-attention__msg">{a.message}</span>
+                  <span className="finance-attention__age">{fmtDate(a.createdAt.slice(0, 10))}</span>
+                </button>
+                <button type="button" className="btn btn--ghost btn--sm" onClick={() => dismissIssue(a.id)}>
+                  Dismiss
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <div className="finance-page__owners" role="tablist">
         {(['household', 'chase'] as AccountOwner[]).map((o) => (

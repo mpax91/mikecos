@@ -123,6 +123,27 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
     };
   }, []);
 
+  // Finance: open "Accounts Need Attention" issues across every statements
+  // account (worker statements/attention.ts). Unlike Inbox, the badge is
+  // hidden at 0 — Mike only wants to see it when something needs action.
+  const [financeIssues, setFinanceIssues] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    const load = () =>
+      api
+        .getFinanceAttention()
+        .then((a) => !cancelled && setFinanceIssues(a.count))
+        .catch(() => {});
+    load();
+    const interval = setInterval(load, UNREAD_POLL_MS);
+    window.addEventListener('mikeos:attention-changed', load);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      window.removeEventListener('mikeos:attention-changed', load);
+    };
+  }, []);
+
   // Plain click navigates the current tab (default NavLink behavior, left
   // untouched below). Cmd/ctrl-click — and right-click's "Open in New Tab" —
   // open the section in a new background tab instead, Chrome-style: the new
@@ -144,7 +165,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
   }
 
   function renderItem({ path, label, kind }: NavItemDef) {
-    const badge = kind === 'inbox' ? inboxUnreadCount : null;
+    const badge = kind === 'inbox' ? inboxUnreadCount : kind === 'finance' && financeIssues > 0 ? financeIssues : null;
     return (
       <NavLink
         key={path}
@@ -155,7 +176,11 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
       >
         <span className="sidebar__nav-icon">{tabIcon(kind)}</span>
         {label}
-        {badge !== null && <span className="sidebar__nav-badge">{badge}</span>}
+        {badge !== null && (
+          <span className={`sidebar__nav-badge${kind === 'finance' ? ' sidebar__nav-badge--alert' : ''}`} title={kind === 'finance' ? `${badge} account issue${badge === 1 ? '' : 's'} need attention` : undefined}>
+            {badge}
+          </span>
+        )}
       </NavLink>
     );
   }

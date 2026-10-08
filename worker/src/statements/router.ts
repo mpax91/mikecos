@@ -11,6 +11,7 @@ import { summarizeAdt } from './adtSummary';
 import { loadAllyData } from './allyDerive';
 import { accountLabel, summarizeAlly } from './allySummary';
 import { loadAmazonData } from './amazonDerive';
+import { listAttention } from './attention';
 import { summarizeAmazon } from './amazonSummary';
 
 /** Statements API, mounted at /api/statements. */
@@ -257,6 +258,12 @@ statementsRouter.get('/folders/:id/dashboard', async (c) => {
     flags: flags ?? [],
     topupTask,
   });
+});
+
+// Accounts Need Attention — the Finance sidebar badge and strip.
+statementsRouter.get('/attention', async (c) => {
+  const items = await listAttention(c.env, easternToday());
+  return c.json({ count: items.length, items });
 });
 
 statementsRouter.post('/flags/:id/dismiss', async (c) => {

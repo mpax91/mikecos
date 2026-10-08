@@ -2661,3 +2661,18 @@ export interface WaitingList {
   open: WaitingItem[];
   received: WaitingItem[];
 }
+
+// ---- Accounts Need Attention (worker/src/statements/attention.ts) ----
+export interface FinanceAttentionItem {
+  id: string; // statement_flags.id
+  folderId: string;
+  account: string;
+  owner: string;
+  severity: string;
+  message: string;
+  createdAt: string;
+}
+export interface FinanceAttention {
+  count: number;
+  items: FinanceAttentionItem[];
+}

@@ -156,8 +156,9 @@ export function merchantOf(description: string): string {
 }
 const title = (s: string) =>
   s
-    .toLowerCase()
-    .replace(/\b([a-z])/g, (c) => c.toUpperCase())
+    .split(/\s+/)
+    .map((w) => (/^[A-Z]{2,3}$/.test(w) ? w : w.toLowerCase().replace(/\b([a-z])/g, (c) => c.toUpperCase())))
+    .join(' ')
     .replace(/\bCvs\b/, 'CVS')
     .trim();
 

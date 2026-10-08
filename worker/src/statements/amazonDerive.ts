@@ -11,6 +11,7 @@ import { categoryOf, summarizeAmazon } from './amazonSummary';
 import type { AmazonStmtRow, AmazonTxnRow } from './amazonSummary';
 import { addMonths } from './adtSummary';
 import { billingFromBills, loadPayer, payerFlags } from '../accountPayers';
+import { cardChargeFlags } from './anomalies';
 import type { BillingFacts } from '../accountPayers';
 import type { CardFacts } from '../cardFacts';
 
@@ -149,6 +150,9 @@ export async function deriveAmazon(env: Env, folder: FolderRow): Promise<void> {
       flags.push({ key: `utilization:${latest.closingDate}`, severity: 'info', message: `${s.utilization.toFixed(0)}% of the ${fmtMoney(s.creditLine ?? 0)} credit line was in use at the ${when} closing — over 30% can lower a credit score` });
     }
   }
+
+  // ---- Duplicate charges, subscription price increases (anomalies.ts) ----
+  flags.push(...cardChargeFlags(name, stmts.map((x) => x.id), txns));
 
   // ---- Billing snapshot → payer flags + payment Quick Facts ----
   // A card's "bill" is its statement balance. The statement only says

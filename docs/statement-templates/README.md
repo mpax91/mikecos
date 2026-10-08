@@ -115,3 +115,24 @@ Packet with a "Tax Packet · <year>" link attached. One per year — never
 re-created after it's checked off or deleted; not created once March 1 has
 passed. Tax Packets are **kept** (audit look-back), not deleted.
 `syncTaxFilingTask` in taxPacket.ts, run after the nightly scan.
+
+### Accounts Need Attention + shared anomaly rules (Mike, 2026-10-08)
+- **Badge + strip:** open flags whose dedupe-key prefix is an "attention"
+  key (`statements/attention.ts`: past_due, carried, interest, fee, od,
+  od_returned, return, missing_after, missing, gap*, aip_missed*,
+  high_bill, dup_charge, price_up, payer — *only if within 13 months)
+  count on the Finance sidebar badge (hidden at 0) and list in the
+  "Accounts Need Attention" strip on Finance (`GET /api/statements/attention`).
+  Everything else (check, file, dup file, change, rate, utilization,
+  apy_drop…) stays on the dashboard. **New templates: reuse these prefixes**
+  for money/action flags so they're picked up automatically.
+- **Shared rules (`statements/anomalies.ts`), backtested to stay quiet:**
+  `highBillFlag` (≥25% and ≥$15 over the median of the prior 12, above all
+  of them, and ≥25% over the same month last year once 2 years exist; 6+
+  prior bills) — wired into ADT; on 112 ADT bills it fires twice (Mar 2019
+  $87.81 vs $60.97, Oct 2020 $104.32 vs $18.92). `cardChargeFlags`:
+  duplicate charge (identical description incl. Amazon order no. + amount
+  ≥$10 within 1 day — 0 hits in 12 years) and subscription price increase
+  (merchant once in each of the 3 prior statements at one amount, +≥$1 and
+  +≥5% — 0 hits in 12 years) — wired into the Amazon card. Every new bill
+  template should call `highBillFlag`; every card template `cardChargeFlags`.

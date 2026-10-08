@@ -9,6 +9,7 @@ import type { AdtValues } from './templates/adt';
 import { templateById } from './templates';
 import { summarizeAdt, unpaidCarry } from './adtSummary';
 import { billingFromBills, payerFlags } from '../accountPayers';
+import { highBillFlag } from './anomalies';
 import type { BillingFacts } from '../accountPayers';
 import type { AdtStmtRow, AdtTxnRow } from './adtSummary';
 
@@ -112,6 +113,9 @@ export async function deriveAdt(env: Env, folder: FolderRow): Promise<void> {
       flags.push({ key: `missing_after:${latest.invoiceDate}`, severity: 'warn', message: `No ADT bill in the Drive folder since ${fmtMdy(latest.invoiceDate)} — download the latest from MyADT.com` });
     }
   }
+  // ---- Bill higher than normal (anomalies.ts) ----
+  const high = highBillFlag(template.account.nickname, s.bills.map((b) => ({ date: b.invoiceDate, amount: b.billed })));
+  if (high) flags.push(high);
   // ---- Billing snapshot → payer flags (account_payers) ----
   const billing = billingFromBills(
     s.bills.map((b) => ({ date: b.invoiceDate, amount: b.billed, totalDue: b.totalDue, dueDate: b.dueDate, autopay: b.autopay }))
