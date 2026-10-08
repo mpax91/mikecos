@@ -16,7 +16,9 @@
     { "id": "G", "length": 40, "turn": 90, "label": "Door wall" }
   ],
   "openings": [
-    { "wall": "G", "type": "door", "offset": 3, "width": 28, "hinge": "end", "label": "Master Bedroom", "notes": "Swings out into the bedroom; hinges on the left as seen from the bedroom" }
+    { "wall": "C", "type": "window", "offset": 5, "width": 28, "label": "Bench window" },
+    { "wall": "D", "type": "window", "offset": 5, "width": 28, "label": "Bay window" },
+    { "wall": "E", "type": "window", "offset": 2.5, "width": 24, "label": "Back window" }
   ],
-  "notes": "Measured: A 71, B 21.5, C 38, D 38, E 38 (to the far side of the shelf nook), nook depth 15, door frame to back wall 152, hallway 40, widest 56, ceiling 101, door 28 with a 9\" return on the left. Derived: B's angle (48.1°, from the 16\" bump-out 56 − 40), D at 45° (the only angle that lands the walk on the 152\" depth), nook width 8.9\" (38\" back wall minus the window span to the clothes-wall line), the 3\" return right of the door (40 − 9 − 28), and F = 152 − 15. Assumed square: the nook's side wall. Windows on C, D and E not yet measured, so not drawn."
+  "notes": "Measured: A 71, B 21.5, C 38, D 38, E 38 (to the far side of the shelf nook), nook depth 15, door frame to back wall 152, hallway 40, widest 56, ceiling 101, 28\" doorway with a 9\" return on its left. Derived: B's angle (48.1°, from the 16\" bump-out 56 − 40), D at 45° (the only angle that lands the walk on the 152\" depth), nook width 8.9\" (38\" back wall minus the window span to the clothes-wall line), the 3\" return right of the doorway (40 − 9 − 28), and F = 152 − 15. Assumed square: the nook's side wall. Doorway on wall G (offset 3, 28\" wide) is an opening only — the door swings out into the bedroom and is drawn on the bedroom's wall E. Window sizes/positions are placeholders until measured."
 }
