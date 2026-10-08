@@ -6,6 +6,7 @@ import { useReportTabMeta } from '../contexts/TabsContext';
 import { Ny529Dashboard } from '../components/Ny529Dashboard';
 import { AdtDashboard } from '../components/AdtDashboard';
 import { AllyDashboard } from '../components/AllyDashboard';
+import { AmazonDashboard } from '../components/AmazonDashboard';
 
 export function FinanceAccountPage() {
   const { id } = useParams<{ id: string }>();
@@ -31,6 +32,8 @@ export function FinanceAccountPage() {
         ? [t.institution, t.type, data.account?.accountLast ? `••${data.account.accountLast}` : null, data.summary.latest?.services].filter(Boolean).join(' · ')
         : data.kind === 'ally'
           ? [t.institution, ...data.summary.accounts.filter((a) => a.open).map((a) => `${a.label} ••${a.last4}`)].join(' · ')
+          : data.kind === 'amazon'
+            ? [t.institution, t.type, data.account?.accountLast ? `Visa ••${data.account.accountLast}` : null, data.summary.purchaseApr !== null ? `${data.summary.purchaseApr}% APR` : null].filter(Boolean).join(' · ')
           : [
             t.institution,
             data.account?.accountType,
@@ -79,6 +82,8 @@ export function FinanceAccountPage() {
           <AdtDashboard data={data} onDismissFlag={dismiss} />
         ) : data.kind === 'ally' ? (
           <AllyDashboard data={data} onDismissFlag={dismiss} />
+        ) : data.kind === 'amazon' ? (
+          <AmazonDashboard data={data} onDismissFlag={dismiss} />
         ) : (
           <Ny529Dashboard data={data} onDismissFlag={dismiss} />
         ))}

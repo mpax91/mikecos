@@ -10,6 +10,8 @@ import { loadAdtData } from './adtDerive';
 import { summarizeAdt } from './adtSummary';
 import { loadAllyData } from './allyDerive';
 import { accountLabel, summarizeAlly } from './allySummary';
+import { loadAmazonData } from './amazonDerive';
+import { summarizeAmazon } from './amazonSummary';
 
 /** Statements API, mounted at /api/statements. */
 export const statementsRouter = new Hono<{ Bindings: Env }>();
@@ -191,6 +193,7 @@ statementsRouter.get('/accounts', async (c) => {
     let headline:
       | { kind: 'balance'; value: number; asOf: string | null; principal?: number; earnings?: number; parts?: { label: string; value: number }[] }
       | { kind: 'bill'; value: number; asOf: string | null; monthly: number | null; status: string }
+      | { kind: 'card'; value: number; asOf: string | null; status: string; dueDate: string | null; minimum: number | null; pointsValue: number | null }
       | null = null;
     if (row.template_id === 'ny529') {
       const { stmts, txns } = await loadNy529Data(c.env, row.id);
@@ -204,6 +207,10 @@ statementsRouter.get('/accounts', async (c) => {
       const { stmts, txns } = await loadAllyData(c.env, row.id);
       const s = summarizeAlly(stmts, txns, easternToday());
       if (s.asOf) headline = { kind: 'balance', value: s.total, asOf: s.asOf, parts: s.accounts.filter((a) => a.open).map((a) => ({ label: accountLabel(a.kind, a.last4), value: a.balance })) };
+    } else if (row.template_id === 'amazon') {
+      const { stmts, txns } = await loadAmazonData(c.env, row.id);
+      const s = summarizeAmazon(stmts, txns, easternToday());
+      if (s.latest) headline = { kind: 'card', value: s.balance, asOf: s.asOf, status: s.status, dueDate: s.latest.dueDate, minimum: s.latest.minimumPayment, pointsValue: s.pointsValue };
     }
     out.push({ ...folderJson(row, stats.get(row.id)), headline });
   }
@@ -215,6 +222,7 @@ statementsRouter.get('/folders/:id/dashboard', async (c) => {
   if (!row) return c.json({ error: 'not found' }, 404);
   if (row.template_id === 'adt') return c.json(await adtDashboard(c.env, row));
   if (row.template_id === 'ally') return c.json(await allyDashboard(c.env, row));
+  if (row.template_id === 'amazon') return c.json(await amazonDashboard(c.env, row));
   if (row.template_id !== 'ny529') return c.json({ error: 'No dashboard for this template yet' }, 400);
   const stats = await folderStats(c.env);
   const { stmts, txns, files } = await loadNy529Data(c.env, row.id);
@@ -318,5 +326,38 @@ async function allyDashboard(env: Env, row: FolderRow) {
     transactionsSince: since || null,
     files: files.map((f) => ({ fileId: f.file_id, name: f.file_name, url: f.web_url, status: f.status, error: f.error })),
     flags: await openFlags(env, row.id),
+  };
+}
+
+/** Amazon Prime Visa (credit card) dashboard payload. Activity rows are
+ * capped to the last 24 statements — the full history stays in D1. */
+async function amazonDashboard(env: Env, row: FolderRow) {
+  const stats = await folderStats(env);
+  const { stmts, txns, files } = await loadAmazonData(env, row.id);
+  const summary = summarizeAmazon(stmts, txns, easternToday());
+  let payTask: { id: string; title: string; due: string | null; status: string | null } | null = null;
+  try {
+    const meta = row.meta_json ? JSON.parse(row.meta_json) : {};
+    if (meta.payTask?.taskId) {
+      const t = await env.DB.prepare('SELECT id, title, due_date, status FROM entities WHERE id = ?').bind(meta.payTask.taskId).first<{ id: string; title: string; due_date: string | null; status: string | null }>();
+      if (t) payTask = { id: t.id, title: t.title, due: t.due_date, status: t.status };
+    }
+  } catch {
+    // no reminder bookkeeping yet
+  }
+  const since = stmts.length > 24 ? stmts[stmts.length - 25].periodEnd : '';
+  const last = stmts[stmts.length - 1];
+  return {
+    kind: 'amazon' as const,
+    folder: folderJson(row, stats.get(row.id)),
+    template: templateById(row.template_id)?.account ?? null,
+    account: last ? { accountLast: last.values.accountLast } : null,
+    summary,
+    statements: stmts.map((s) => ({ id: s.id, periodStart: s.periodStart, periodEnd: s.periodEnd, fileId: s.fileId, checks: s.checks })),
+    transactions: txns.filter((t) => t.date > since).map(({ date, description, kind, amount }) => ({ date, description, kind, amount })),
+    transactionsSince: since || null,
+    files: files.map((f) => ({ fileId: f.file_id, name: f.file_name, url: f.web_url, status: f.status, error: f.error })),
+    flags: await openFlags(env, row.id),
+    payTask,
   };
 }

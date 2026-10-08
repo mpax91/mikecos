@@ -22,6 +22,11 @@ export interface ParsedTransaction {
     | 'transfer_in'
     | 'transfer_out'
     | 'fee'
+    // credit cards (Amazon Prime Visa)
+    | 'purchase'
+    | 'refund'
+    | 'reward'
+    | 'cash_advance'
     | 'other';
   amount: number;
   units: number | null;

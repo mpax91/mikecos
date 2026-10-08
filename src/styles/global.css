@@ -16939,6 +16939,35 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
   white-space: nowrap;
   text-align: right;
 }
+/* Amazon Prime Visa (credit card) dashboard — AmazonDashboard.tsx; reuses
+ * the fin-dash card system and the Ally range/filter/table classes. */
+.amazon__task {
+  margin: 0 0 10px;
+  font-size: 13.5px;
+  color: var(--color-muted);
+}
+.amazon__task strong {
+  color: var(--color-text, inherit);
+  font-weight: 600;
+}
+.fin-dash__year.amazon__cat {
+  grid-template-columns: minmax(0, 120px) minmax(0, 1fr) 64px 0;
+}
+.amazon__cat .fin-dash__year-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.amazon__cat-bar {
+  background: #c0662e;
+}
+.ally__recurring-day.amazon__date {
+  font-size: 12px;
+  white-space: nowrap;
+}
+.ally__recurring li:has(.amazon__date) {
+  grid-template-columns: 96px minmax(0, 1fr) auto;
+}
 .finance-page__row-parts {
   display: block;
   font-size: 12px;

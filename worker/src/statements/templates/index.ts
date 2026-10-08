@@ -2,9 +2,10 @@ import type { ParsedStatement } from '../common';
 import { parseNy529 } from './ny529';
 import { parseAdt } from './adt';
 import { parseAlly } from './ally';
+import { parseAmazon } from './amazon';
 
 /** Per-folder templates (one per Drive folder, all on the shared base
- * engine). Build order per progress.md: 529 and ADT are live, Ally Bank built;
+ * engine). Build order per progress.md: 529 is live; ADT, Ally Bank and Amazon Prime Visa built;
  * American Express Bank and the rest are added one folder at a time. */
 export interface StatementTemplate {
   id: string;
@@ -18,8 +19,10 @@ export interface StatementTemplate {
     owner: 'household' | 'chase';
     cadence: 'monthly' | 'quarterly';
     /** 'balance' accounts count toward Finance totals; 'bill' accounts
-     * (utilities, services) show their latest bill instead. */
-    kind: 'balance' | 'bill';
+     * (utilities, services) show their latest bill instead; 'card' accounts
+     * (credit cards) show the statement balance owed — a liability, kept
+     * out of the Household total and summed as "Card Balances". */
+    kind: 'balance' | 'bill' | 'card';
     site?: string;
     phone?: string;
   };
@@ -79,6 +82,25 @@ export const TEMPLATES: StatementTemplate[] = [
     },
     parse: parseAlly,
     isStatementFile: (name) => /statement/i.test(name),
+  },
+  {
+    id: 'amazon',
+    name: 'Amazon Prime Visa (Monthly Credit Card)',
+    folderNames: ['Amazon Prime Credit Card', 'Amazon Prime Visa'],
+    account: {
+      nickname: 'Amazon Prime Visa',
+      institution: 'Chase',
+      type: 'Rewards Credit Card',
+      owner: 'household',
+      cadence: 'monthly',
+      kind: 'card',
+      site: 'https://www.chase.com/amazon',
+      phone: '1-888-247-4080',
+    },
+    parse: parseAmazon,
+    // Monthly statements are "Amazon - YYYY.MM.DD.pdf"; the year-end
+    // "Annual Summary" PDFs ("Amazon - 2015.pdf") are skipped.
+    isStatementFile: (name) => /\d{4}\.\d{2}\.\d{2}/.test(name),
   },
 ];
 

@@ -2359,8 +2359,13 @@ export interface FinanceAccount extends StatementFolder {
   headline:
     | { kind: 'balance'; value: number; asOf: string | null; principal?: number; earnings?: number; parts?: { label: string; value: number }[] }
     | { kind: 'bill'; value: number; asOf: string | null; monthly: number | null; status: AdtBillStatus }
+    /** Credit cards: the statement balance owed (a liability — not added to
+     * the account total; summed as Card Balances). */
+    | { kind: 'card'; value: number; asOf: string | null; status: CardStatus; dueDate: string | null; minimum: number | null; pointsValue: number | null }
     | null;
 }
+
+export type CardStatus = 'paid' | 'due' | 'past_due' | 'credit' | 'none';
 
 export type AdtBillStatus = 'paid' | 'autopay' | 'due' | 'past_due' | 'credit' | 'none';
 
@@ -2534,7 +2539,83 @@ export interface AllyDashboard {
   flags: { id: string; severity: 'warn' | 'info'; message: string; created_at: string }[];
 }
 
-export type FinanceDashboard = Ny529Dashboard | AdtDashboard | AllyDashboard;
+export interface AmazonStatementRow {
+  closingDate: string;
+  openingDate: string;
+  previousBalance: number;
+  paid: number;
+  credits: number;
+  purchases: number;
+  fees: number;
+  interest: number;
+  newBalance: number;
+  minimumPayment: number;
+  dueDate: string | null;
+  carried: number;
+  pointsEarned: number | null;
+  pointsTotal: number | null;
+  fileId: string;
+  checksOk: boolean;
+}
+
+export interface AmazonSummary {
+  asOf: string | null;
+  latest: AmazonStatementRow | null;
+  status: CardStatus;
+  balance: number;
+  creditLine: number | null;
+  availableCredit: number | null;
+  utilization: number | null;
+  purchaseApr: number | null;
+  pointsBalance: number | null;
+  pointsValue: number | null;
+  pointsAsOf: string | null;
+  lifetimePointsEarned: number;
+  lifetimePointsRedeemed: number;
+  rewardCredits: number;
+  shopWithPoints: number;
+  rewardRate: number | null;
+  ytdPurchases: number;
+  ytdNet: number;
+  ytdPointsEarned: number;
+  last12Net: number;
+  last12Amazon: number;
+  avgMonthlyNet: number | null;
+  lifetimeNet: number;
+  firstStatement: string | null;
+  paidInFullStreak: number;
+  carriedStatements: string[];
+  totalInterest: number;
+  totalFees: number;
+  totalStatementCredits: number;
+  charges: { date: string; description: string; kind: 'fee' | 'interest' | 'credit'; amount: number }[];
+  changes: { date: string; what: 'apr' | 'credit_line' | 'cash_line' | 'rewards'; from: string; to: string }[];
+  statements: AmazonStatementRow[];
+  years: { year: number; statements: number; purchases: number; refunds: number; net: number; amazon: number; pointsEarned: number; interest: number; fees: number }[];
+  months: { closingDate: string; purchases: number; net: number; balance: number }[];
+  points: { closingDate: string; total: number; earned: number; redeemed: number }[];
+  categories: { category: string; points: number; last12: number }[];
+  topMerchants: { merchant: string; amount: number; count: number }[];
+  nextStatementExpected: string | null;
+  nextDue: { date: string; amount: number; minimum: number } | null;
+}
+
+export interface AmazonDashboard {
+  kind: 'amazon';
+  folder: StatementFolder;
+  template: { nickname: string; institution: string; type: string; site?: string; phone?: string } | null;
+  account: { accountLast: string } | null;
+  summary: AmazonSummary;
+  statements: { id: string; periodStart: string; periodEnd: string; fileId: string; checks: StatementCheckRow[] }[];
+  /** Last 24 statements only (transactionsSince = exclusive start). */
+  transactions: { date: string; description: string; kind: string; amount: number }[];
+  transactionsSince: string | null;
+  files: { fileId: string; name: string; url: string | null; status: string; error: string | null }[];
+  flags: { id: string; severity: 'warn' | 'info'; message: string; created_at: string }[];
+  payTask: { id: string; title: string; due: string | null; status: string | null } | null;
+}
+
+export type FinanceDashboard = Ny529Dashboard | AdtDashboard | AllyDashboard | AmazonDashboard;
 
 // ---- Account payers (0092_account_payers.sql) — which card pays which
 // account. 'autopay' = charges the card by itself; 'on_file' = the card is

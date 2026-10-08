@@ -30,11 +30,14 @@ export function FinancePage() {
 
   const shown = (accounts ?? []).filter((a) => a.owner === owner);
   // Balances (529, savings) add up; bills (ADT, utilities) don't — they get
-  // their own monthly total instead.
-  const balances = shown.filter((a) => a.headline?.kind !== 'bill');
+  // their own monthly total instead. Credit card balances are owed, so they
+  // stay out of the accounts total and get their own "Card Balances" sum.
+  const balances = shown.filter((a) => a.headline?.kind !== 'bill' && a.headline?.kind !== 'card');
   const bills = shown.filter((a) => a.headline?.kind === 'bill');
+  const cards = shown.filter((a) => a.headline?.kind === 'card');
   const total = balances.reduce((s, a) => s + (a.headline?.value ?? 0), 0);
   const monthlyBills = bills.reduce((s, a) => s + (a.headline?.kind === 'bill' ? (a.headline.monthly ?? 0) : 0), 0);
+  const cardTotal = cards.reduce((s, a) => s + Math.max(0, a.headline?.value ?? 0), 0);
 
   return (
     <div className="finance-page">
@@ -80,6 +83,12 @@ export function FinancePage() {
                 <span className="cloud-meters__stat-value">{money(monthlyBills)}</span>
               </div>
             )}
+            {cards.length > 0 && (
+              <div className="finance-page__total">
+                <span className="cloud-meters__stat-label">Card Balances</span>
+                <span className="cloud-meters__stat-value">{money(cardTotal)}</span>
+              </div>
+            )}
           </div>
           <div className="cloud-meters__rows">
             {shown.map((a) => (
@@ -98,6 +107,20 @@ export function FinancePage() {
                     <span className="finance-page__row-sub">
                       {a.headline.status === 'past_due' ? 'Past Due' : a.headline.status === 'autopay' ? 'Autopay' : a.headline.status === 'credit' ? 'Credit' : a.headline.status === 'due' ? 'Due' : 'Latest Bill'}
                       {a.headline.monthly !== null ? ` · ${money(a.headline.monthly)}/mo` : ''}
+                    </span>
+                  )}
+                  {a.headline?.kind === 'card' && (
+                    <span className="finance-page__row-sub">
+                      {a.headline.status === 'past_due'
+                        ? 'Past Due'
+                        : a.headline.status === 'paid'
+                          ? 'Nothing Due'
+                          : a.headline.status === 'credit'
+                            ? 'Credit'
+                            : a.headline.dueDate
+                              ? `Due ${fmtDate(a.headline.dueDate)}`
+                              : 'Statement Balance'}
+                      {a.headline.pointsValue !== null ? ` · ${money(a.headline.pointsValue)} in points` : ''}
                     </span>
                   )}
                   {a.headline?.kind === 'balance' &&
