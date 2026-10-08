@@ -53,10 +53,6 @@ export const PAY_LABELS: Record<(typeof PAY_KEYS)[number], string> = {
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 export const fmtMoney = (n: number) => `${n < 0 ? '-' : ''}$${Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const fmtMdy = (iso: string) => {
-  const [y, m, d] = iso.split('-').map(Number);
-  return `${m}/${d}/${y}`;
-};
 const ordinal = (n: number) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`;
 
 /** Builds the billing snapshot from a template's bills (oldest first).
@@ -121,7 +117,10 @@ export async function syncPaymentFacts(env: Env, entryId: string, billing?: Bill
 
   // Statement wins on Auto-Pay when it says; otherwise the payer setting.
   const autopay = billing?.autopay ?? (payer ? payer.mode === 'autopay' : null);
-  const due = billing?.dueDate ? fmtMdy(billing.dueDate) : payer?.due_day ? `${ordinal(payer.due_day)} of Each Month` : null;
+  // Due Date is the day of the month ("14th"), not one statement's date —
+  // a Quick Fact should stay true month to month (Mike, 2026-10-08).
+  const dueDay = billing?.dueDate ? Number(billing.dueDate.slice(8, 10)) : payer?.due_day ?? null;
+  const due = dueDay ? ordinal(dueDay) : null;
 
   const want: Record<string, string | null> = {
     'pay:due': due,

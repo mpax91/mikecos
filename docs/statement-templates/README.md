@@ -46,6 +46,10 @@ Editing one makes it Mike's own fact; deleting one keeps it deleted
   `autopay` | `on_file`, a Wallet payment card or free text for a bank
   account, optional due day). Set from the Vault entry (tap Paid With /
   "＋ Payment Method") or from Wallet → card → **Pays For → Add Account**.
+- **Due Date is a day of the month** ("14th"), never a full date (Mike,
+  2026-10-08): the day of the latest bill's due date, or the payer's due
+  day when no statement prints one. The exact date of the current bill
+  belongs in the auto note's current-bill section, not in Quick Facts.
 - Auto-Pay: the latest statement wins when it says; otherwise the payer
   mode. Flags: autopay with no card set, statement vs. Wallet mismatch,
   paying card inactive or deleted from Wallet.
