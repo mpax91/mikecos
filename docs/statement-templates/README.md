@@ -136,3 +136,28 @@ passed. Tax Packets are **kept** (audit look-back), not deleted.
   (merchant once in each of the 3 prior statements at one amount, +≥$1 and
   +≥5% — 0 hits in 12 years) — wired into the Amazon card. Every new bill
   template should call `highBillFlag`; every card template `cardChargeFlags`.
+
+## Cash Placement (bank templates)
+
+`worker/src/statements/cashPlacement.ts` — rule-based suggestions on the
+Finance page (card) and the bank's dashboard (info flag + "Cash Placement"
+card). Never on the Accounts Need Attention badge: its flags use the
+`cash_` key prefix, synced separately (`syncFlags(..., { scope: 'cash_' })`)
+and left out of the Finance row's flag count.
+
+To plug a new bank template in, add an entry to `CASH_SOURCES` returning
+the folder's statements as `CashStatement[]` (oldest first): per account
+`last4`, `kind` (checking / savings), `label`, ending `balance`, `apy`
+(APY earned), `avgBalance` (average daily balance, or null) and `outflow`
+(money that left for outside the bank — transfers between the bank's own
+accounts excluded). See `allyCashStatements` in `allySummary.ts`. Rules:
+
+1. Idle checking: buffer = max(median, largest) monthly outflow over the
+   last 12 statements × 1.2; idle = 3-statement average balance − buffer;
+   suggest moving to the same bank's savings when ≥ $50/yr.
+2. Cross-bank savings (2+ banks, same owner): suggest moving savings to
+   the higher-APY bank when ≥ $25/yr, capped so the target bank stays
+   ≤ $250K (FDIC).
+
+Both must hold on the latest AND the previous statement; the smaller
+amount is shown.

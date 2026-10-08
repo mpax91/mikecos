@@ -3,6 +3,7 @@ import { cloudAccess } from '../cloud';
 import { detectFactValue, reindexEntry } from '../vault';
 import { UnreadableStatement } from './common';
 import { pdfToText } from './pdfText';
+import { isCashTemplate, syncCashPlacementFlags } from './cashPlacement';
 import { templateById } from './templates';
 import { doc, docText, heading, markAuto } from './vaultDoc';
 import type { Block } from './vaultDoc';
@@ -196,6 +197,8 @@ export async function derive(env: Env, folder: FolderRow): Promise<void> {
   }
   // Bills & Due Dates: due day / Auto-Pay rows + the monthly pay task.
   await syncBills(env);
+  // Cash Placement info flags (idle checking cash, cross-bank savings rates).
+  if (isCashTemplate(folder.template_id)) await syncCashPlacementFlags(env);
 }
 
 /** Nightly: every live folder, looping each until its backlog is read. */
@@ -295,11 +298,24 @@ export async function syncReminderTask(
 }
 
 /** Recomputes a folder's flags from the full set of current conditions. */
-export async function syncFlags(env: Env, folderId: string, flags: { key: string; severity: 'warn' | 'info'; message: string }[]): Promise<void> {
+/** Flag-key prefixes owned by a cross-folder sync (Cash Placement) rather
+ * than the folder's template — a template's own syncFlags leaves them be. */
+const SCOPED_FLAG_PREFIXES = ['cash_'];
+
+/** `opts.scope`: only flags whose key starts with it are compared/resolved
+ * (used by Cash Placement). Without it, every key outside the scoped
+ * prefixes belongs to the template's sync. */
+export async function syncFlags(
+  env: Env,
+  folderId: string,
+  flags: { key: string; severity: 'warn' | 'info'; message: string }[],
+  opts: { scope?: string } = {}
+): Promise<void> {
   const { results } = await env.DB.prepare('SELECT id, dedupe_key, message, resolved_at FROM statement_flags WHERE folder_row_id = ?')
     .bind(folderId)
     .all<{ id: string; dedupe_key: string; message: string; resolved_at: string | null }>();
-  const byKey = new Map((results ?? []).map((r) => [r.dedupe_key, r]));
+  const inScope = (key: string) => (opts.scope ? key.startsWith(opts.scope) : !SCOPED_FLAG_PREFIXES.some((p) => key.startsWith(p)));
+  const byKey = new Map((results ?? []).filter((r) => inScope(r.dedupe_key)).map((r) => [r.dedupe_key, r]));
   const wanted = new Set(flags.map((f) => f.key));
   const stmts: D1PreparedStatement[] = [];
   for (const f of flags) {

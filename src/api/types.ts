@@ -2575,6 +2575,7 @@ export interface AllyDashboard {
   transactionsSince: string | null;
   files: { fileId: string; name: string; url: string | null; status: string; error: string | null }[];
   flags: { id: string; severity: 'warn' | 'info'; message: string; created_at: string }[];
+  cashPlacement?: { bank: CashBankPlacement | null; suggestions: CashSuggestion[]; rules: CashPlacement['rules'] };
 }
 
 export interface AmazonStatementRow {
@@ -2711,4 +2712,54 @@ export interface FinanceAttentionItem {
 export interface FinanceAttention {
   count: number;
   items: FinanceAttentionItem[];
+}
+
+// ---- Cash Placement (worker/src/statements/cashPlacement.ts) ----
+export interface CashIdleCalc {
+  asOf: string;
+  checking: { last4: string; label: string; apy: number | null };
+  savings: { last4: string; label: string; apy: number | null; balance: number } | null;
+  months: number;
+  medianOutflow: number;
+  largestOutflow: number;
+  largestMonth: string | null;
+  buffer: number;
+  avgBalance: number;
+  idle: number;
+  gainPerYear: number;
+}
+export type CashIdleStatus = 'suggest' | 'not_held' | 'below_threshold' | 'no_idle' | 'no_savings' | 'insufficient_history' | 'stale';
+export interface CashBankPlacement {
+  folderId: string;
+  bank: string;
+  owner: AccountOwner;
+  status: CashIdleStatus;
+  current: CashIdleCalc | null;
+  previous: CashIdleCalc | null;
+}
+export interface CashSuggestion {
+  id: string;
+  kind: 'idle' | 'move';
+  owner: AccountOwner;
+  folderId: string;
+  toFolderId: string;
+  bank: string;
+  toBank: string;
+  fromLabel: string;
+  toLabel: string;
+  fromApy: number;
+  toApy: number;
+  amount: number;
+  gainPerYear: number;
+  asOf: string;
+  heldSince: string;
+  buffer?: number;
+  fdicCapped?: boolean;
+  message: string;
+}
+export interface CashPlacement {
+  today: string;
+  rules: { bufferMonths: number; cushionPct: number; minIdleGain: number; minMoveGain: number; fdicLimit: number };
+  banks: CashBankPlacement[];
+  suggestions: CashSuggestion[];
 }

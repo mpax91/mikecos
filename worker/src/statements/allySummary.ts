@@ -1,6 +1,7 @@
 import { round2 } from './common';
 import type { StatementCheck } from './common';
 import type { AllyAccountKind, AllyValues } from './templates/ally';
+import type { CashStatement } from './cashPlacement';
 
 /** Pure summary of the Ally Bank statements (shared by the derive, the
  * Finance row and the dashboard). One combined statement per month covers
@@ -118,6 +119,44 @@ export function payeeOf(description: string): string {
     .slice(0, 48);
 }
 
+/** A transfer between two accounts on this statement (or an overdraft
+ * transfer from the linked savings) — not money in or out of Ally. */
+export function isInternalTransfer(t: AllyTxnRow, ownLast4: Set<string>): boolean {
+  if (t.kind !== 'transfer_in' && t.kind !== 'transfer_out') return false;
+  if (t.description.startsWith('Overdraft Transfer')) return true; // always from the linked savings
+  const m = t.description.match(/(?:X{4,}|x{4,}|\b\d{6})(\d{4})\b/);
+  return !!m && ownLast4.has(m[1]) && m[1] !== t.account;
+}
+
+/** Ally's side of Cash Placement (cashPlacement.ts): per statement, each
+ * account's balance / APY earned / average daily balance, and what left
+ * each account for outside Ally (internal transfers excluded). */
+export function allyCashStatements(stmts: AllyStmtRow[], txns: AllyTxnRow[]): CashStatement[] {
+  const ownLast4 = new Set(stmts.flatMap((s) => s.values.accounts.map((a) => a.last4)));
+  const outflow = new Map<string, Record<string, number>>();
+  let i = 0;
+  for (const t of txns) {
+    while (i < stmts.length && stmts[i].periodEnd < t.date) i++;
+    if (i >= stmts.length) break;
+    if (t.amount >= 0 || !t.account || isInternalTransfer(t, ownLast4)) continue;
+    const row = outflow.get(stmts[i].periodEnd) ?? {};
+    row[t.account] = round2((row[t.account] ?? 0) - t.amount);
+    outflow.set(stmts[i].periodEnd, row);
+  }
+  return stmts.map((s) => ({
+    date: s.periodEnd,
+    accounts: s.values.accounts.map((a) => ({
+      last4: a.last4,
+      kind: a.kind,
+      label: accountLabel(a.kind, a.last4),
+      balance: a.ending,
+      apy: a.apy,
+      avgBalance: a.avgDailyBalance,
+      outflow: outflow.get(s.periodEnd)?.[a.last4] ?? 0,
+    })),
+  }));
+}
+
 export function summarizeAlly(stmts: AllyStmtRow[], txns: AllyTxnRow[], today: string): AllySummary {
   const latest = stmts[stmts.length - 1] ?? null;
   const ownLast4 = new Set(stmts.flatMap((s) => s.values.accounts.map((a) => a.last4)));
@@ -182,12 +221,7 @@ export function summarizeAlly(stmts: AllyStmtRow[], txns: AllyTxnRow[], today: s
   const interestYears = [...years.values()].sort((a, b) => a.year - b.year);
 
   // ---- Money in / out per statement (outside-Ally money only) ----
-  const internal = (t: AllyTxnRow) => {
-    if (t.kind !== 'transfer_in' && t.kind !== 'transfer_out') return false;
-    if (t.description.startsWith('Overdraft Transfer')) return true; // always from the linked savings
-    const m = t.description.match(/(?:X{4,}|x{4,}|\b\d{6})(\d{4})\b/);
-    return !!m && ownLast4.has(m[1]) && m[1] !== t.account;
-  };
+  const internal = (t: AllyTxnRow) => isInternalTransfer(t, ownLast4);
   const byStmt = new Map<string, AllyMonthFlow>();
   const stmtFor = (date: string) => stmts.find((s) => s.periodEnd >= date)?.periodEnd ?? null;
   for (const t of txns) {

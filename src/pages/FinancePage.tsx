@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
-import type { AccountOwner, FinanceAccount, FinanceAttentionItem } from '../api/types';
+import type { AccountOwner, CashPlacement, FinanceAccount, FinanceAttentionItem } from '../api/types';
+import { CashPlacementCard } from '../components/CashPlacementCard';
 import { useReportTabMeta } from '../contexts/TabsContext';
 
 const money = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -18,6 +19,7 @@ export function FinancePage() {
   const [error, setError] = useState<string | null>(null);
   const [owner, setOwner] = useState<AccountOwner | null>(null);
   const [attention, setAttention] = useState<FinanceAttentionItem[]>([]);
+  const [cash, setCash] = useState<CashPlacement | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -34,6 +36,13 @@ export function FinancePage() {
     setAttention((xs) => xs.filter((x) => x.id !== id));
     api.dismissStatementFlag(id).catch(() => {});
   };
+
+  useEffect(() => {
+    api
+      .getCashPlacement()
+      .then(setCash)
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     api
@@ -177,6 +186,8 @@ export function FinancePage() {
           </div>
         </div>
       )}
+
+      <CashPlacementCard data={cash} owner={owner} />
     </div>
   );
 }

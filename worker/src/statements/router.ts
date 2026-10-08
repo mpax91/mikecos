@@ -12,6 +12,7 @@ import { loadAllyData } from './allyDerive';
 import { accountLabel, summarizeAlly } from './allySummary';
 import { loadAmazonData } from './amazonDerive';
 import { listAttention } from './attention';
+import { getCashPlacement } from './cashPlacement';
 import { summarizeAmazon } from './amazonSummary';
 
 /** Statements API, mounted at /api/statements. */
@@ -30,7 +31,8 @@ async function folderStats(env: Env): Promise<Map<string, FolderStats>> {
   const [files, stmts, flags] = await env.DB.batch([
     env.DB.prepare(`SELECT folder_row_id, SUM(CASE WHEN status = 'skipped' THEN 0 ELSE 1 END) AS total, SUM(CASE WHEN status = 'parsed' THEN 1 ELSE 0 END) AS parsed FROM statement_files GROUP BY folder_row_id`),
     env.DB.prepare('SELECT folder_row_id, MAX(period_end) AS last FROM statements GROUP BY folder_row_id'),
-    env.DB.prepare('SELECT folder_row_id, COUNT(*) AS n FROM statement_flags WHERE resolved_at IS NULL AND dismissed_at IS NULL GROUP BY folder_row_id'),
+    // Cash Placement suggestions are info notes, not issues — left out of the row's ⚠ count.
+    env.DB.prepare("SELECT folder_row_id, COUNT(*) AS n FROM statement_flags WHERE resolved_at IS NULL AND dismissed_at IS NULL AND dedupe_key NOT LIKE 'cash\\_%' ESCAPE '\\' GROUP BY folder_row_id"),
   ]);
   const out = new Map<string, FolderStats>();
   const get = (id: string) => out.get(id) ?? (out.set(id, { total: 0, parsed: 0, lastPeriodEnd: null, openFlags: 0 }), out.get(id)!);
@@ -260,6 +262,9 @@ statementsRouter.get('/folders/:id/dashboard', async (c) => {
   });
 });
 
+// Cash Placement — rule-based suggestions for the Finance card.
+statementsRouter.get('/cash-placement', async (c) => c.json(await getCashPlacement(c.env)));
+
 // Accounts Need Attention — the Finance sidebar badge and strip.
 statementsRouter.get('/attention', async (c) => {
   const items = await listAttention(c.env, easternToday());
@@ -317,8 +322,14 @@ async function allyDashboard(env: Env, row: FolderRow) {
   const { stmts, txns, files } = await loadAllyData(env, row.id);
   const summary = summarizeAlly(stmts, txns, easternToday());
   const since = stmts.length > 24 ? stmts[stmts.length - 25].periodEnd : '';
+  const placement = await getCashPlacement(env);
   return {
     kind: 'ally' as const,
+    cashPlacement: {
+      bank: placement.banks.find((b) => b.folderId === row.id) ?? null,
+      suggestions: placement.suggestions.filter((x) => x.folderId === row.id || x.toFolderId === row.id),
+      rules: placement.rules,
+    },
     folder: folderJson(row, stats.get(row.id)),
     template: templateById(row.template_id)?.account ?? null,
     summary,

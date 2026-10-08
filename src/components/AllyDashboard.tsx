@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { AllyDashboard as Data } from '../api/types';
 import { FinanceLineChart } from './FinanceLineChart';
+import { CashPlacementDetail } from './CashPlacementCard';
 import type { LineSeries } from './FinanceLineChart';
 
 // Same validated pair as the 529 / ADT dashboards (dataviz validator: CVD ΔE 20).
@@ -173,6 +174,8 @@ export function AllyDashboard({ data, onDismissFlag }: { data: Data; onDismissFl
           )}
           <p className="fin-dash__note">Payees seen in at least 3 of the last 6 statements; amount is the latest payment.</p>
         </section>
+
+        {data.cashPlacement && <CashPlacementDetail bank={data.cashPlacement.bank} suggestions={data.cashPlacement.suggestions} rules={data.cashPlacement.rules} />}
 
         <section className="fin-dash__card fin-dash__card--full">
           <h3 className="fin-dash__card-title">Money In &amp; Out</h3>
