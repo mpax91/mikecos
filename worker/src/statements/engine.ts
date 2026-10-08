@@ -11,6 +11,7 @@ import { deriveAdt } from './adtDerive';
 import { deriveAlly } from './allyDerive';
 import { deriveAmazon } from './amazonDerive';
 import { syncPaymentFacts } from '../accountPayers';
+import { syncBills } from '../bills';
 import { syncCardFacts } from '../cardFacts';
 import { syncTaxFilingTask } from './taxPacket';
 import type { CardFacts } from '../cardFacts';
@@ -193,6 +194,8 @@ export async function derive(env: Env, folder: FolderRow): Promise<void> {
     }
     if (card) await syncCardFacts(env, after.vault_entry_id, card, easternToday(), after.id);
   }
+  // Bills & Due Dates: due day / Auto-Pay rows + the monthly pay task.
+  await syncBills(env);
 }
 
 /** Nightly: every live folder, looping each until its backlog is read. */

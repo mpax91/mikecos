@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
 import type { MeetingsRangeResponse, MonthResponse, RangeMeetingItem } from '../api/types';
 import { getHolidays } from '../utils/holidays';
+import { fmtBillMoney } from '../utils/bills';
 import { useReportTabMeta } from '../contexts/TabsContext';
 
 // Same fixed home-timezone treatment as the Day/Week views' own meeting
@@ -405,6 +406,13 @@ export function MonthPage() {
                     <span className={`month-page__cell-date${isToday ? ' is-today' : ''}`}>{formatDayNum(date)}</span>
                   </div>
                   {holidays.length > 0 && <div className="month-page__cell-holiday">{holidays.join(' · ')}</div>}
+                  {(data.autopayBills ?? [])
+                    .filter((b) => b.date === date)
+                    .map((b) => (
+                      <div key={b.billId} className="month-page__cell-autopay" title={`On Auto-Pay${b.amount != null ? ` · ${fmtBillMoney(b.amount)}` : ''} — nothing to do`}>
+                        Auto-Pay · {b.name}
+                      </div>
+                    ))}
                   <MonthMeetingList meetings={dayMeetings} cellDate={date} realToday={realToday} />
                   <MonthTaskBadge count={taskCount} />
                 </div>

@@ -10,7 +10,7 @@ import { templateById } from './templates';
 import { categoryOf, summarizeAmazon } from './amazonSummary';
 import type { AmazonStmtRow, AmazonTxnRow } from './amazonSummary';
 import { addMonths } from './adtSummary';
-import { billingFromBills, loadPayer, payerFlags } from '../accountPayers';
+import { billingFromBills, payerFlags } from '../accountPayers';
 import { cardChargeFlags } from './anomalies';
 import type { BillingFacts } from '../accountPayers';
 import type { CardFacts } from '../cardFacts';
@@ -158,7 +158,12 @@ export async function deriveAmazon(env: Env, folder: FolderRow): Promise<void> {
   // A card's "bill" is its statement balance. The statement only says
   // AutoPay when a Chase AutoPay payment posts ("AUTOMATIC PAYMENT").
   const billing = billingFromBills(
-    s.statements.map((r, i) => ({ date: r.closingDate, amount: r.newBalance, totalDue: r.newBalance, dueDate: r.dueDate, autopay: stmts[i].values.autopay }))
+    s.statements.map((r, i) => {
+      // Paid = the next statement shows this balance paid off in full.
+      const next = s.statements[i + 1];
+      const paid = r.newBalance <= 0.005 ? true : next ? next.carried <= 0.005 : null;
+      return { date: r.closingDate, amount: r.newBalance, totalDue: r.newBalance, dueDate: r.dueDate, autopay: stmts[i].values.autopay, paid };
+    })
   );
   meta.billing = billing;
   // ---- Card snapshot → card Quick Facts (cardFacts.ts, synced by engine.derive) ----
@@ -300,25 +305,12 @@ export async function deriveAmazon(env: Env, folder: FolderRow): Promise<void> {
     { key: 'folder', title: `Drive Folder · ${folder.folder_name}`, url: folder.folder_url },
   ]);
 
-  // ---- Reminder: pay the statement balance by its due date ----
-  // One task per statement (keyed by its closing month), with the due date
-  // so it shows on the Calendar. Skipped when the card is on AutoPay (per
-  // the statement or Mike's payer setting). An open task is cleared when
-  // the next statement arrives — that statement then shows whether it was
-  // paid (and raises the interest / carried-balance flags if not).
-  const payer = await loadPayer(env, entry.id);
-  const onAutopay = lv?.autopay === true || payer?.mode === 'autopay';
-  const key = latest ? Number(latest.closingDate.slice(0, 7).replace('-', '')) : 0;
-  // A new task is only made while the due date is still ahead (going live
-  // after it passed shouldn't create an overdue chore); one already made
-  // stays until the next statement arrives or Mike checks it off.
-  const haveTask = meta.payTask?.year === key;
-  const due = latest && latest.dueDate && latest.newBalance > 0.005 && !onAutopay && (haveTask || latest.dueDate >= today) ? latest : null;
-  if (meta.payTask && meta.payTask.year !== key) {
+  // ---- Pay reminders moved to Bills & Due Dates (bills.ts, 2026-10-08) ----
+  // One monthly task per bill lives there now; clear any old per-statement
+  // task so there are never two for the same bill.
+  if (meta.payTask) {
     await syncReminderTask(env, meta.payTask, meta.payTask.year, null);
     meta.payTask = undefined;
   }
-  const want = due ? { title: `Pay ${name} (${fmtMoney(due.newBalance)}) by ${fmtMdy(due.dueDate!)}`, due: due.dueDate!, parentId: entry.id } : null;
-  if (want || meta.payTask) meta.payTask = await syncReminderTask(env, meta.payTask, key, want);
   await env.DB.prepare('UPDATE statement_folders SET meta_json = ? WHERE id = ?').bind(JSON.stringify(meta), folder.id).run();
 }

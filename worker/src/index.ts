@@ -55,6 +55,7 @@ import { bookmarksRouter } from './bookmarks';
 import { cloudRouter, keepCloudTokensAlive } from './cloud';
 import { statementsRouter } from './statements/router';
 import { accountPayersRouter } from './accountPayersRouter';
+import { afterBillTaskSpawned, billsOnCalendar, billsRouter } from './bills';
 import { scanAllLiveFolders, statementsScanDue } from './statements/engine';
 import { contactsAssistantRouter } from './contactsAssistant';
 import { betsEnrichmentRouter } from './betsEnrichment';
@@ -91,6 +92,7 @@ app.route('/api/bookmarks', bookmarksRouter);
 app.route('/api/cloud', cloudRouter);
 app.route('/api/statements', statementsRouter);
 app.route('/api/account-payers', accountPayersRouter);
+app.route('/api/bills', billsRouter);
 app.route('/api/contacts/ask', contactsAssistantRouter);
 app.route('/api/bets/enrichment', betsEnrichmentRouter);
 
@@ -421,6 +423,9 @@ async function spawnDueRecurringTasks(db: D1Database, todayIso: string): Promise
       .prepare(`UPDATE recurring_task_definitions SET current_task_id = ?, last_spawned_due_date = ?, updated_at = ? WHERE id = ?`)
       .bind(id, dueDate, ts, def.id)
       .run();
+    // A Bills & Due Dates task (bills.ts): amount in the title, the
+    // statement's exact due date, and checked off if already paid.
+    if (def.bill_id) await afterBillTaskSpawned(db, def.bill_id, def.id, id, dueDate);
   }
 }
 
@@ -3389,6 +3394,7 @@ app.get('/api/recurring', async (c) => {
     `SELECT r.*, p.title as project_title
      FROM recurring_task_definitions r
      LEFT JOIN entities p ON p.id = r.project_id
+     WHERE r.bill_id IS NULL -- bills are managed in Settings → Bills & Due Dates
      ORDER BY r.created_at DESC`
   ).all<RecurringWithProject>();
   return c.json(results ?? []);
@@ -3638,6 +3644,8 @@ app.get('/api/today', async (c) => {
     birthdays: birthdayContacts ?? [],
     anniversaries: anniversaryContacts ?? [],
     completed,
+    // Auto-Pay bills due that day (Bills & Due Dates) — shown, not checkable.
+    autopayBills: await billsOnCalendar(c.env.DB, date, date),
   });
 });
 
@@ -3730,11 +3738,13 @@ app.get('/api/week', async (c) => {
     }
   }
 
+  const autopayBills = await billsOnCalendar(c.env.DB, start, end);
   const byDay = days.map((date) => ({
     date,
     isToday: date === todayInRange,
     tasks: withProject.filter((t) => t.due_date === date),
     completed: completedByDay.get(date) ?? [],
+    autopayBills: autopayBills.filter((b) => b.date === date),
   }));
 
   return c.json({ start, end, days: byDay, overdue, unscheduled });
@@ -3771,7 +3781,7 @@ app.get('/api/month', async (c) => {
     (results ?? []).map(async (task) => ({ ...task, project: await resolveProject(task.parent_id) }))
   );
 
-  return c.json({ start, end, tasks });
+  return c.json({ start, end, tasks, autopayBills: await billsOnCalendar(c.env.DB, start, end) });
 });
 
 // Bedford Hills, NY 10507 — Mike's fixed home location for the Week/Day

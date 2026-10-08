@@ -9,6 +9,7 @@ export interface RecurringTaskDefinition {
   active: number; // 0 | 1
   current_task_id: string | null;
   last_spawned_due_date: string | null;
+  bill_id?: string | null; // set for Bills & Due Dates tasks (bills.ts)
   created_at: string;
   updated_at: string;
 }

@@ -28,6 +28,17 @@ export interface BillingFacts {
   autopay: boolean | null; // what the latest bill says (null = it doesn't say)
   avg12: { amount: number; bills: number } | null;
   avgAll: { amount: number; bills: number } | null;
+  /** Recent bills (oldest first, last 6) for Bills & Due Dates: what was
+   * due when, and whether the NEXT statement shows it paid (null = no next
+   * statement yet, or the template can't tell). */
+  cycles?: BillCycle[];
+}
+
+export interface BillCycle {
+  date: string; // statement / invoice date
+  dueDate: string | null;
+  amount: number; // total due on that bill
+  paid: boolean | null;
 }
 
 export interface PayerRow {
@@ -53,12 +64,12 @@ export const PAY_LABELS: Record<(typeof PAY_KEYS)[number], string> = {
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 export const fmtMoney = (n: number) => `${n < 0 ? '-' : ''}$${Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const ordinal = (n: number) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`;
+export const ordinal = (n: number) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`;
 
 /** Builds the billing snapshot from a template's bills (oldest first).
  * Averages use what each bill charged (`amount`), not carried balances. */
 export function billingFromBills(
-  bills: { date: string; amount: number; totalDue: number; dueDate: string | null; autopay: boolean | null }[]
+  bills: { date: string; amount: number; totalDue: number; dueDate: string | null; autopay: boolean | null; paid?: boolean | null }[]
 ): BillingFacts | null {
   if (!bills.length) return null;
   const latest = bills[bills.length - 1];
@@ -74,6 +85,7 @@ export function billingFromBills(
     autopay: latest.autopay,
     avg12: avg(bills.filter((b) => b.date > cut)),
     avgAll: avg(bills),
+    cycles: bills.slice(-6).map((b) => ({ date: b.date, dueDate: b.dueDate, amount: round2(b.totalDue), paid: b.paid ?? null })),
   };
 }
 
@@ -92,7 +104,7 @@ export async function payerLabel(env: Env, payer: PayerRow | null): Promise<stri
 }
 
 /** The statement folder (if any) behind a Vault entry, with its billing snapshot. */
-async function folderBilling(env: Env, entryId: string): Promise<{ folderId: string; billing: BillingFacts | null } | null> {
+export async function folderBilling(env: Env, entryId: string): Promise<{ folderId: string; billing: BillingFacts | null } | null> {
   const row = await env.DB.prepare(`SELECT id, meta_json FROM statement_folders WHERE vault_entry_id = ? AND status = 'live' LIMIT 1`)
     .bind(entryId)
     .first<{ id: string; meta_json: string | null }>();
@@ -106,6 +118,17 @@ async function folderBilling(env: Env, entryId: string): Promise<{ folderId: str
   return { folderId: row.id, billing };
 }
 
+/** The day of the month a bill is due, as the statements (else the payer
+ * setting) say — the same number the Due Date Quick Fact shows. */
+export function autoDueDayFrom(billing: BillingFacts | null | undefined, payer: PayerRow | null): number | null {
+  return billing?.dueDate ? Number(billing.dueDate.slice(8, 10)) : payer?.due_day ?? null;
+}
+
+/** Auto-Pay as the statements (else the payer setting) say. */
+export function autoAutopayFrom(billing: BillingFacts | null | undefined, payer: PayerRow | null): boolean | null {
+  return billing?.autopay ?? (payer ? payer.mode === 'autopay' : null);
+}
+
 /** Writes the payment Quick Facts for one account. `billing` is passed by
  * a template's derive; otherwise it is read from the folder's snapshot. */
 export async function syncPaymentFacts(env: Env, entryId: string, billing?: BillingFacts | null): Promise<void> {
@@ -116,10 +139,10 @@ export async function syncPaymentFacts(env: Env, entryId: string, billing?: Bill
   const paidWith = await payerLabel(env, payer);
 
   // Statement wins on Auto-Pay when it says; otherwise the payer setting.
-  const autopay = billing?.autopay ?? (payer ? payer.mode === 'autopay' : null);
+  const autopay = autoAutopayFrom(billing, payer);
   // Due Date is the day of the month ("14th"), not one statement's date —
   // a Quick Fact should stay true month to month (Mike, 2026-10-08).
-  const dueDay = billing?.dueDate ? Number(billing.dueDate.slice(8, 10)) : payer?.due_day ?? null;
+  const dueDay = autoDueDayFrom(billing, payer);
   const due = dueDay ? ordinal(dueDay) : null;
 
   const want: Record<string, string | null> = {

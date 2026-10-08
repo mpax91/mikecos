@@ -9,6 +9,7 @@ import { ConfirmModal } from '../components/ConfirmModal';
 import { BlankLine } from '../components/BlankLine';
 import { WeatherWidget } from '../components/WeatherWidget';
 import { getHolidays } from '../utils/holidays';
+import { fmtBillMoney } from '../utils/bills';
 import { useReportTabMeta } from '../contexts/TabsContext';
 
 /** Blank ruled lines shown below each day's real tasks — see BlankLine. */
@@ -193,6 +194,22 @@ function DayColumn({
             </a>
           );
         })}
+        {/* Auto-Pay bills (Bills & Due Dates): a marker, no checkbox. */}
+        {(day.autopayBills ?? []).map((b) => (
+          <Link
+            key={b.billId}
+            to={b.entryId ? `/vault/${b.entryId}` : '/settings?cat=bills'}
+            className="week-page__row week-page__row--autopay"
+            title={`${b.name}${b.amount != null ? ` (${fmtBillMoney(b.amount)})` : ''} — on Auto-Pay, nothing to do`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <span className="autopay-tag">Auto-Pay</span>
+            <span className="week-page__row-title">
+              {b.name}
+              {b.amount != null ? ` (${fmtBillMoney(b.amount)})` : ''}
+            </span>
+          </Link>
+        ))}
         {day.tasks.map((t) => (
           <DraggableTaskRow key={t.id} task={t} onToggle={onToggle} onOpen={onOpen} />
         ))}
@@ -209,7 +226,7 @@ function DayColumn({
             Day view's own 10-row default; unlike that page, there's no "add
             another line" here since a full week of per-column add buttons
             would clutter the grid more than it'd help. */}
-        {Array.from({ length: Math.max(0, BLANK_LINES_PER_DAY - day.tasks.length - meetings.length - day.completed.length) }).map((_, i) => (
+        {Array.from({ length: Math.max(0, BLANK_LINES_PER_DAY - day.tasks.length - meetings.length - day.completed.length - (day.autopayBills?.length ?? 0)) }).map((_, i) => (
           <BlankLine key={i} onSubmit={(title) => onQuickAdd(day.date, title)} />
         ))}
       </div>

@@ -140,6 +140,8 @@ export interface TodayResponse {
    * same item, as a nudge to do it or actually give it a due date. Null
    * when there's no unscheduled backlog to draw from. */
   spotlight: TodayTask | null;
+  /** Auto-Pay bills due this day (Bills & Due Dates) — shown, never checkable. */
+  autopayBills?: AutopayBill[];
   /** Contacts whose birthday/anniversary falls on this exact date
    * (month+day match; year is optional and irrelevant to the match). */
   birthdays: ImportantDateContact[];
@@ -194,6 +196,8 @@ export interface WeekDay {
    * with a strikethrough as a record of what got done, not an editable
    * list. */
   completed: CompletionItem[];
+  /** Auto-Pay bills due this day (Bills & Due Dates). */
+  autopayBills?: AutopayBill[];
 }
 
 /** One day's forecast from GET /api/weather — the worker's already reduced
@@ -234,6 +238,38 @@ export interface MonthResponse {
   start: string;
   end: string;
   tasks: TodayTask[];
+  autopayBills?: AutopayBill[];
+}
+
+/** An Auto-Pay bill on the Calendar (Bills & Due Dates): no task, no
+ * checkbox — just a marker on its due date. */
+export interface AutopayBill {
+  billId: string;
+  date: string;
+  name: string;
+  amount: number | null;
+  entryId: string | null;
+}
+
+/** A row in Settings → Bills & Due Dates (GET /api/bills). */
+export interface Bill {
+  id: string;
+  source: 'statement' | 'manual';
+  name: string;
+  entryId: string | null;
+  folderId: string | null;
+  enabled: boolean;
+  dueDay: number | null;
+  dueDayLabel: string | null;
+  autoDueDay: number | null;
+  dueEdited: boolean;
+  autopay: boolean;
+  autoAutopay: boolean | null;
+  autopayEdited: boolean;
+  amount: number | null;
+  latest: { amount: number; dueDate: string | null } | null;
+  nextDue: string | null;
+  openTask: { id: string; title: string; dueDate: string | null } | null;
 }
 
 /** One real Google Calendar event (not a MikeOS task) from GET

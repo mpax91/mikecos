@@ -70,10 +70,10 @@ $72,391 net spending; paid in full and on time for the last 35 statements.
   10 days after the expected closing, interest / fee / carried balance /
   past due on the latest statement, APR / credit-line / cash-line / rewards
   change on the latest, utilization ≥ 30%, plus `payerFlags`.
-- Task **"Pay Amazon Prime Visa ($X) by M/D/YYYY"** due on the due date (shows
-  on the Calendar) — one per statement, skipped when on AutoPay (statement or
-  the account's payer set to Auto-Pay); only created while the due date is
-  ahead; an open one is cleared when the next statement arrives.
+- Pay reminders live in Settings → Bills & Due Dates (`worker/src/bills.ts`,
+  2026-10-08): a monthly **"Pay Amazon Prime Visa ($X)"** task on the due
+  date unless on Auto-Pay; it checks itself off when the next statement
+  shows the balance paid (`carried` = 0 → `paid` in the billing cycles).
 - Finance row: balance, "Due <date> · $X in points"; dashboard
   `AmazonDashboard.tsx` (stats, Spending by Statement, Spend by Year, Rewards
   Points, Points by Category, Top Merchants, Fees & Interest, Transactions —

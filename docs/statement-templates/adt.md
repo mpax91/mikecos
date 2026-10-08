@@ -56,8 +56,10 @@ prior Total = this Previous Balance.
 - Flags: unreadable/duplicate files, failed checks, past-due or carried
   balance on the latest bill, rate change on the latest bill, no new bill
   45 days after the last invoice.
-- Task "Pay ADT Bill ($X) by <date>" only when the latest bill isn't on
-  automatic payment (one per bill; cleared when the next bill arrives).
+- Pay reminders live in Settings → Bills & Due Dates (`worker/src/bills.ts`,
+  2026-10-08): Auto-Pay → an Auto-Pay marker on the Calendar; otherwise a
+  monthly "Pay ADT Home Security ($X)" task. The derive passes `paid` per
+  bill (next bill's previous balance + payments ≤ 0) in the billing cycles.
 - No Tax Packet lines (not deductible).
 
 ## Report card (2026-10-06, local workerd)

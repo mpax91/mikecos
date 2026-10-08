@@ -118,7 +118,12 @@ export async function deriveAdt(env: Env, folder: FolderRow): Promise<void> {
   if (high) flags.push(high);
   // ---- Billing snapshot → payer flags (account_payers) ----
   const billing = billingFromBills(
-    s.bills.map((b) => ({ date: b.invoiceDate, amount: b.billed, totalDue: b.totalDue, dueDate: b.dueDate, autopay: b.autopay }))
+    s.bills.map((b, i) => {
+      // Paid = the next bill shows the previous balance paid off.
+      const next = s.bills[i + 1];
+      const paid = b.totalDue <= 0.005 ? true : next ? next.previousBalance + next.payments <= 0.005 : null;
+      return { date: b.invoiceDate, amount: b.billed, totalDue: b.totalDue, dueDate: b.dueDate, autopay: b.autopay, paid };
+    })
   );
   meta.billing = billing;
   flags.push(...(await payerFlags(env, entry.id, template.account.nickname, billing)));
@@ -219,17 +224,10 @@ export async function deriveAdt(env: Env, folder: FolderRow): Promise<void> {
     { key: 'folder', title: `Drive Folder · ${folder.folder_name}`, url: folder.folder_url },
   ]);
 
-  // ---- Reminder: only when the latest bill isn't on automatic payment ----
-  // One task per bill (keyed by its invoice month): kept until Mike checks
-  // it off; an open one is cleared when the next bill arrives (that bill
-  // then shows any unpaid balance and raises the past-due flag instead).
-  const due = latest && latest.dueDate && !latest.autopay && latest.totalDue > 0.005 ? latest : null;
-  const key = latest ? Number(latest.invoiceDate.slice(0, 7).replace('-', '')) : 0;
-  if (meta.payTask && meta.payTask.year !== key) {
+  // ---- Pay reminders moved to Bills & Due Dates (bills.ts, 2026-10-08) ----
+  if (meta.payTask) {
     await syncReminderTask(env, meta.payTask, meta.payTask.year, null);
     meta.payTask = undefined;
   }
-  const want = due ? { title: `Pay ADT Bill (${fmtMoney(due.totalDue)}) by ${fmtMdy(due.dueDate!)}`, due: due.dueDate!, parentId: entry.id } : null;
-  if (want || meta.payTask) meta.payTask = await syncReminderTask(env, meta.payTask, key, want);
   await env.DB.prepare('UPDATE statement_folders SET meta_json = ? WHERE id = ?').bind(JSON.stringify(meta), folder.id).run();
 }

@@ -8,6 +8,7 @@ import { ConfirmModal } from '../components/ConfirmModal';
 import { BlankLine } from '../components/BlankLine';
 import { WeatherWidget } from '../components/WeatherWidget';
 import { getHolidays } from '../utils/holidays';
+import { fmtBillMoney } from '../utils/bills';
 import { buildMeetingNoteTitle, meetingHasEnded } from '../utils/meetingNotes';
 import { useReportTabMeta } from '../contexts/TabsContext';
 import { OPEN_BRIEFING_EVENT } from '../components/BriefingModal';
@@ -345,7 +346,7 @@ export function TodayPage() {
   const completed = data?.completed ?? [];
 
   const holidays = getHolidays(date);
-  const blankCount = Math.max(0, DEFAULT_ROWS + extraRows - dueToday.length - completed.length);
+  const blankCount = Math.max(0, DEFAULT_ROWS + extraRows - dueToday.length - completed.length - (data?.autopayBills?.length ?? 0));
 
   // Birthdays and anniversaries for the viewed day, combined into one list
   // (sorted by name) for the Important Dates panel — see /api/today.
@@ -519,6 +520,17 @@ export function TodayPage() {
           <div className="today-page__section">
             {overdue.length > 0 && <div className="today-page__section-title">{isToday ? 'Today' : formatHeaderDate(date)}</div>}
             <div className="today-page__list today-page__list--ruled task-list card">
+              {/* Auto-Pay bills due this day (Bills & Due Dates) — a marker,
+                  not a task: no checkbox, nothing to do. */}
+              {(data.autopayBills ?? []).map((b) => (
+                <Link key={b.billId} to={b.entryId ? `/vault/${b.entryId}` : '/settings?cat=bills'} className="task-row autopay-row" title="On Auto-Pay — nothing to do">
+                  <span className="autopay-tag">Auto-Pay</span>
+                  <span className="task-row__title">
+                    {b.name}
+                    {b.amount != null ? ` (${fmtBillMoney(b.amount)})` : ''}
+                  </span>
+                </Link>
+              ))}
               {dueToday.map((task) => renderRow(task, true))}
               {/* What got checked off that day, shown struck through at the
                   bottom of the same list rather than just vanishing (or
