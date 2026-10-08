@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ContextMenu, type ContextMenuItem } from '../components/ContextMenu';
 
-export type TabKind = 'today' | 'projects-list' | 'notes-list' | 'jots-list' | 'settings' | 'project' | 'folder' | 'note' | 'stats' | 'boards-list' | 'board' | 'contacts-list' | 'contact' | 'journal' | 'dashboard' | 'news' | 'links' | 'lists-list' | 'list' | 'vault-list' | 'vault' | 'vault-rollups' | 'wallet-list' | 'bets' | 'media-list' | 'bar-list' | 'home-list' | 'habits' | 'inbox' | 'cloud' | 'finance';
+export type TabKind = 'today' | 'projects-list' | 'notes-list' | 'jots-list' | 'settings' | 'project' | 'folder' | 'note' | 'stats' | 'boards-list' | 'board' | 'contacts-list' | 'contact' | 'journal' | 'dashboard' | 'news' | 'links' | 'lists-list' | 'list' | 'vault-list' | 'vault' | 'vault-rollups' | 'wallet-list' | 'bets' | 'media-list' | 'bar-list' | 'home-list' | 'habits' | 'inbox' | 'cloud' | 'finance' | 'waiting';
 
 export interface Tab {
   id: string;
@@ -27,6 +27,7 @@ function inferTabMeta(path: string): { kind: TabKind; title: string } {
   if (path === '/settings') return { kind: 'settings', title: 'Settings' };
   if (path === '/stats') return { kind: 'stats', title: 'Stats' };
   if (path === '/boards') return { kind: 'boards-list', title: 'Boards' };
+  if (path === '/waiting') return { kind: 'waiting', title: 'Waiting For' };
   if (path === '/contacts') return { kind: 'contacts-list', title: 'Contacts' };
   if (path === '/journal' || path.startsWith('/journal/')) return { kind: 'journal', title: 'Journal' };
   if (path === '/dashboard') return { kind: 'dashboard', title: 'Dashboard' };
@@ -305,6 +306,7 @@ export function tabIcon(kind: TabKind): string {
   if (kind === 'links') return '🔗';
   if (kind === 'cloud') return '☁️';
   if (kind === 'finance') return '💵';
+  if (kind === 'waiting') return '⏳';
   if (kind === 'lists-list' || kind === 'list') return '☑️';
   if (kind === 'vault-list' || kind === 'vault') return '🗄️';
   if (kind === 'wallet-list') return '🎫';

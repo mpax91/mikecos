@@ -62,6 +62,7 @@ const SIDEBAR_SECTIONS: NavSectionDef[] = [
     items: [
       { path: '/projects', label: 'Projects', kind: 'projects-list' },
       { path: '/boards', label: 'Boards', kind: 'boards-list' },
+      { path: '/waiting', label: 'Waiting For', kind: 'waiting' },
     ],
   },
   {

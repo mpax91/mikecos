@@ -68,6 +68,8 @@ export interface Entity {
    * field, never expiry_task_id. */
   archived_at?: string | null; // set while a project/list is archived (status 'archived')
   expires_at: string | null;
+  waiting_source_id?: string | null; // Waiting For check-back task: the handed-off task (migration 0095)
+  waiting_since?: string | null;
   /** Only present on task entities returned as children of another entity —
    * one level of the task's own child tasks, attached by the API so the
    * project view can render subtasks nested under their parent. */
@@ -2639,4 +2641,23 @@ export interface CardPaidAccount {
   folderId: string | null;
   latestBill: string | null;
   due: string | null;
+}
+
+// ---- Waiting For (worker/src/waitingRouter.ts, migration 0095) ----
+export interface WaitingItem {
+  id: string; // the check-back task
+  title: string;
+  status: string | null;
+  dueDate: string | null;
+  since: string | null;
+  updatedAt: string;
+  sourceId: string | null;
+  sourceTitle: string | null;
+  sourceParentId: string | null;
+  sourceParentTitle: string | null;
+  sourceParentType: string | null;
+}
+export interface WaitingList {
+  open: WaitingItem[];
+  received: WaitingItem[];
 }

@@ -1,6 +1,8 @@
 import type { AuthenticationResponseJSON, PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON, RegistrationResponseJSON } from '@simplewebauthn/browser';
-import type { AuthCredentialSummary, AuthStatus, Bet, BetLeg, BetGameNote, BetOption, BetOptionCategory, BetPromo, BetPromoStatus, BetScheduleGame, BetTransaction, BetTransactionType, VaultEntryDetail, VaultFact, BriefingResponse, CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, CreditScoreEntry, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitDirection, HabitEvent, HabitLog, HabitSummary, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsFeedsResponse, NewsFolder, NewsSavedArticle, NewsSettings, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, VoterFieldsBackfillChunkResponse,
+import type { WaitingList, AuthCredentialSummary, AuthStatus, Bet, BetLeg, BetGameNote, BetOption, BetOptionCategory, BetPromo, BetPromoStatus, BetScheduleGame, BetTransaction, BetTransactionType, VaultEntryDetail, VaultFact, BriefingResponse, CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, CreditScoreEntry, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitDirection, HabitEvent, HabitLog, HabitSummary, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsFeedsResponse, NewsFolder, NewsSavedArticle, NewsSettings, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, VoterFieldsBackfillChunkResponse,
   ContactAskResponse, BetGameEnrichment, VaultFactLabel, VaultRollupGroup, WalletCard, WalletCardFact, WalletCategory, WalletCardIdSecret, RewardsCard, RewardsBonus, RewardsPerk, RewardsImportResult, RewardsMerchant, RewardsOffer, PaymentCard, PaymentCardFact, PaymentCardSecrets, BankAccountSuggestion, PlexLibrary, PlexItem, PlexItemDetail, PlexIssue, PlexMissingEpisode, PlexSyncChunkResult, PlexAiringCheckChunkResult, PlexAiringScanChunkResult, MediaCatalogItem, MediaCatalogFormat, BarItem, BarItemDetail, BarItemType, BarTasting, BarTopTastingEntry, HomeFloor, HomeFloorLayout, HomeRoom, HomePoint, HomeRoomSpecPayload, HomeFixture, HomeFixtureType, HomeWallItem, HomeWallItemType, ElectricalPanel, ElectricalBreaker, ElectricalBreakerWithFixtures, WeatherResponse, WeekResponse, EmailAccount, EmailInboxFeed, EmailPeekResult, EmailSyncResult, BookmarksResponse, BookmarksImportResult, CloudProviderId, CloudProviderInfo, CloudAccount, CloudBrowseResponse, CloudSearchResponse, StatementFolder, StatementDriveAccount, StatementScanResult, FinanceAccount, Ny529Dashboard, FinanceDashboard, StatementFolderStatus, AccountOwner, AccountPayer, AccountPayerMode, CardPaidAccount } from './types';
+
+import { emitTaskCompleted } from '../utils/taskEvents';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -132,16 +134,22 @@ export const api = {
 
   deleteFileKey: (key: string) => request<{ ok: true }>(`/api/files/${key}`, { method: 'DELETE' }),
 
-  updateEntity: (
+  /** `opts.quiet` skips the Waiting For "follow up?" toast that checking a
+   * task off normally offers (e.g. "Got It" on the Waiting For page). */
+  updateEntity: async (
     id: string,
     patch: Partial<
       Pick<Entity, 'title' | 'content' | 'status' | 'parent_id' | 'position' | 'pinned' | 'due_date' | 'due_time' | 'last_touched' | 'expires_at'>
-    >
-  ) =>
-    request<Entity>(`/api/entities/${id}`, {
+    >,
+    opts?: { quiet?: boolean }
+  ) => {
+    const entity = await request<Entity>(`/api/entities/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(patch),
-    }),
+    });
+    if (patch.status === 'done' && !opts?.quiet && entity?.type === 'task') emitTaskCompleted(entity);
+    return entity;
+  },
 
   deleteEntity: (id: string) =>
     request<{ ok: true }>(`/api/entities/${id}`, { method: 'DELETE' }),
@@ -508,6 +516,12 @@ export const api = {
     const qs = params.toString();
     return request<CompletionsResponse>(`/api/stats/completions${qs ? `?${qs}` : ''}`);
   },
+
+  /** Waiting For (worker/src/waitingRouter.ts): a check-back task due
+   * `days` from today (or on `dueDate`) for a task Mike just handed off. */
+  createFollowUp: (sourceId: string, opts: { days?: number; dueDate?: string }) =>
+    request<Entity>('/api/waiting', { method: 'POST', body: JSON.stringify({ sourceId, ...opts }) }),
+  listWaiting: () => request<WaitingList>('/api/waiting'),
 
   /** Quick-add on the Today page — a standalone task with no project,
    * due on the given date. */

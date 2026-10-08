@@ -6,6 +6,8 @@ import { TodayPage } from './pages/TodayPage';
 import { WeekPage } from './pages/WeekPage';
 import { MonthPage } from './pages/MonthPage';
 import { ProjectsList } from './pages/ProjectsList';
+import { WaitingPage } from './pages/WaitingPage';
+import { FollowUpToast } from './components/FollowUpToast';
 import { ProjectDetail } from './pages/ProjectDetail';
 import { NotesPage } from './pages/NotesPage';
 import { JotsPage } from './pages/JotsPage';
@@ -54,6 +56,7 @@ export default function App() {
     <div className="app-shell">
       <SearchPalette />
       <BriefingModal />
+      <FollowUpToast />
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="main">
         <TabBar onMenuClick={() => setSidebarOpen(true)} />
@@ -67,6 +70,7 @@ export default function App() {
             <Route path="/today/month" element={<MonthPage />} />
             <Route path="/today/month/:month" element={<MonthPage />} />
             <Route path="/projects" element={<ProjectsList />} />
+            <Route path="/waiting" element={<WaitingPage />} />
             <Route path="/projects/:id" element={<ProjectDetail />} />
             <Route path="/notes" element={<NotesPage />} />
             <Route path="/notes/:id" element={<NotesPage />} />

@@ -24,6 +24,8 @@ export interface Entity {
   archived_at: string | null; // ISO — set when a project/list is archived (status 'archived'), null otherwise; see migrations/0086_project_archive.sql
   expires_at: string | null; // 'YYYY-MM-DD' — a note/file's expiration date (insurance card, registration...); see migrations/0039_entity_expiration.sql
   expiry_task_id: string | null; // the auto-created reminder task (due 30 days before expires_at), kept in sync by syncExpiryTask — null when expires_at is null
+  waiting_source_id?: string | null; // Waiting For: the handed-off task this check-back follows up on (migrations/0095_waiting_for.sql)
+  waiting_since?: string | null; // 'YYYY-MM-DD' the follow-up was first set
   is_password: number; // 0 | 1 — a Vault Password card is stored as type='note' with this flag set, not a distinct type (see migrations/0041_vault_passwords.sql, same trick as is_jot/is_list)
 
   subtasks?: Entity[]; // attached in-memory for task children only, not a DB column
