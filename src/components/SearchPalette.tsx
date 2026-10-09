@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import type { SearchGroupKey, SearchGroupResult, SearchResult } from '../api/types';
 import { formatRelativeTime } from '../utils/formatRelativeTime';
+import { highlightMatch } from '../utils/highlightMatch';
 
 // Fired by anything that wants to open the palette without importing it
 // directly (the sidebar's search box) — kept as a plain window event
@@ -32,27 +33,6 @@ const GROUP_META: Record<SearchGroupKey, { label: string; icon: string }> = {
 const GROUP_ORDER: SearchGroupKey[] = ['notes', 'jots', 'lists', 'projects', 'vault', 'wallet', 'rewards', 'payment_cards', 'boards', 'contacts', 'journal', 'meeting_notes', 'links', 'media'];
 const CHIP_GROUPS: SearchGroupKey[] = ['notes', 'jots', 'lists', 'projects', 'vault', 'wallet', 'rewards', 'payment_cards', 'boards', 'journal', 'meeting_notes', 'links'];
 const DEFAULT_VISIBLE_PER_GROUP = 4;
-
-/** Bolds every case-insensitive occurrence of `query` inside `text` —
- * that's the whole point of a snippet (showing *why* something matched),
- * so the highlight isn't optional polish. */
-function highlight(text: string, query: string): React.ReactNode {
-  if (!query.trim()) return text;
-  const q = query.trim();
-  const lower = text.toLowerCase();
-  const lowerQ = q.toLowerCase();
-  const parts: React.ReactNode[] = [];
-  let i = 0;
-  let idx = lower.indexOf(lowerQ);
-  while (idx !== -1) {
-    if (idx > i) parts.push(text.slice(i, idx));
-    parts.push(<mark key={idx}>{text.slice(idx, idx + q.length)}</mark>);
-    i = idx + q.length;
-    idx = lower.indexOf(lowerQ, i);
-  }
-  if (i < text.length) parts.push(text.slice(i));
-  return parts;
-}
 
 interface FlatRow {
   result: SearchResult;
@@ -282,10 +262,10 @@ export function SearchPalette() {
                       onClick={() => openResult(r)}
                     >
                       <div className="search-palette__result-main">
-                        <span className="search-palette__result-title">{highlight(r.title, query)}</span>
+                        <span className="search-palette__result-title">{highlightMatch(r.title, query)}</span>
                         {r.parentTitle && <span className="search-palette__result-parent">in {r.parentTitle}</span>}
                       </div>
-                      {r.snippet && <div className="search-palette__result-snippet">{highlight(r.snippet, query)}</div>}
+                      {r.snippet && <div className="search-palette__result-snippet">{highlightMatch(r.snippet, query)}</div>}
                       <span className="search-palette__result-time">{formatRelativeTime(r.updatedAt)}</span>
                     </div>
                   );

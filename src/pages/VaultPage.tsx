@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
-import type { Entity, VaultEntryDetail } from '../api/types';
+import type { Entity, SearchResult, VaultEntryDetail } from '../api/types';
 import { EntityCard } from '../components/EntityCard';
 import { NewFileTile, NewPasswordTile } from '../components/NewItemTiles';
 import { Section } from '../components/Section';
@@ -19,6 +19,7 @@ import { RenameModal } from '../components/RenameModal';
 import { ExpirationModal } from '../components/ExpirationModal';
 import { useIsCompact } from '../hooks/useIsMobile';
 import { formatRelativeTime } from '../utils/formatRelativeTime';
+import { highlightMatch } from '../utils/highlightMatch';
 import { useTabs, useReportTabMeta } from '../contexts/TabsContext';
 
 const PAYER_KEYS = new Set(['pay:paid_with', 'pay:autopay', 'pay:due']);
@@ -26,6 +27,9 @@ const PAYER_KEYS = new Set(['pay:paid_with', 'pay:autopay', 'pay:due']);
 // is_password entries are type='note' children too (see the is_jot/is_list
 // flag-on-existing-type precedent) — excluded here so a password card
 // doesn't also render in the plain Notes section below.
+const VAULT_KIND_LABEL: Record<string, string> = { vault_entry: 'Entry', note: 'Note', file: 'Attachment', task: 'Task' };
+const VAULT_KIND_ICON: Record<string, string> = { vault_entry: '🗄️', note: '📝', file: '📎', task: '☑️' };
+
 const isPlainNote = (c: Entity) => c.type === 'note' && c.is_password !== 1;
 
 /** Vault — the Evernote-replacement filing cabinet. An entry is a lightweight
@@ -64,6 +68,13 @@ export function VaultPage() {
   // VaultNoteModal ever sees it.
   const [openNoteHighlight, setOpenNoteHighlight] = useState<string | undefined>(undefined);
   const [openPassword, setOpenPassword] = useState<Entity | null>(null);
+  // Vault-only search (sidebar box) — /api/search with scope=vault, so it
+  // matches entry titles + Quick Facts, notes, attachments and passwords
+  // filed under an entry, and nothing outside Vault. Kept while clicking
+  // through results so Mike can open one after another.
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<SearchResult[] | null>(null);
+  const [searching, setSearching] = useState(false);
 
   const load = useCallback(() => {
     api.listVaultEntries().then(setEntries).catch((e) => setError(String(e)));
@@ -102,6 +113,38 @@ export function VaultPage() {
     navigate('.', { replace: true, state: null });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.state, children]);
+
+  useEffect(() => {
+    const q = query.trim();
+    if (!q) {
+      setResults(null);
+      setSearching(false);
+      return;
+    }
+    setSearching(true);
+    let cancelled = false;
+    const t = window.setTimeout(() => {
+      api
+        .search(q, ['vault'])
+        .then((r) => {
+          if (cancelled) return;
+          setResults(r.groups.find((g) => g.key === 'vault')?.results ?? []);
+        })
+        .catch(() => !cancelled && setResults([]))
+        .finally(() => !cancelled && setSearching(false));
+    }, 200);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [query]);
+
+  function openSearchResult(r: SearchResult) {
+    const state: { openId?: string; highlight?: string } = {};
+    if (r.openId) state.openId = r.openId;
+    if (r.kind === 'note') state.highlight = query.trim();
+    navigate(r.path, Object.keys(state).length ? { state } : undefined);
+  }
 
   useReportTabMeta(detail ? entryTitle || 'Untitled Entry' : 'Vault', detail ? 'vault' : 'vault-list');
 
@@ -305,7 +348,54 @@ export function VaultPage() {
       <div className={`notes-page${isCompact ? ' notes-page--mobile' : ''}`}>
         {showList && (
           <div className="notes-page__sidebar">
-            {entries.length === 0 ? (
+            <div className="vault-search">
+              <input
+                type="search"
+                className="vault-search__input"
+                placeholder="Search Vault…"
+                aria-label="Search Vault"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') setQuery('');
+                  if (e.key === 'Enter' && results?.length) openSearchResult(results[0]);
+                }}
+              />
+            </div>
+            {query.trim() ? (
+              <div className="notes-page__list vault-search__results" aria-live="polite">
+                {results === null || (searching && !results.length) ? (
+                  <div className="empty-state empty-state--section">Searching…</div>
+                ) : results.length === 0 ? (
+                  <div className="empty-state empty-state--section">No Vault matches for “{query.trim()}”.</div>
+                ) : (
+                  results.map((r) => (
+                    <div
+                      key={r.id}
+                      className={`notes-page__row${(r.openId && openNote?.id === r.openId) || (!r.openId && r.path === `/vault/${id}`) ? ' is-active' : ''}`}
+                      onClick={() => openSearchResult(r)}
+                    >
+                      <span className="vault-search__kind" title={VAULT_KIND_LABEL[r.kind] ?? 'Item'} aria-hidden="true">
+                        {VAULT_KIND_ICON[r.kind] ?? '•'}
+                      </span>
+                      <div className="notes-page__row-body">
+                        <div className="notes-page__row-title-row">
+                          <span className="notes-page__row-title">{highlightMatch(r.title, query)}</span>
+                          <span className="last-modified-badge" title={new Date(r.updatedAt).toLocaleString()}>
+                            {formatRelativeTime(r.updatedAt)}
+                          </span>
+                        </div>
+                        <div className="notes-page__row-snippet">
+                          {VAULT_KIND_LABEL[r.kind] ?? 'Item'}
+                          {r.parentTitle ? ` · ${r.parentTitle}` : ''}
+                        </div>
+                        {r.snippet && <div className="notes-page__row-snippet">{highlightMatch(r.snippet, query)}</div>}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            ) : entries.length === 0 ? (
               <div className="empty-state empty-state--section">Nothing filed yet — add your first entry.</div>
             ) : (
               <div className="notes-page__list">

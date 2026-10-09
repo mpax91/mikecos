@@ -2905,6 +2905,54 @@ a {
   flex: 1;
 }
 
+/* Vault page's own search (VaultPage.tsx) — scope=vault only */
+.vault-search {
+  padding: 10px 12px;
+  border-bottom: var(--border-hairline);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--color-card-bg);
+}
+.notes-page--mobile .vault-search {
+  padding: 0 0 10px;
+  border-bottom: none;
+  background: var(--color-paper);
+}
+.vault-search__input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  font-size: 14px;
+  border: var(--border-hairline);
+  border-radius: 10px;
+  background: var(--color-paper);
+  color: var(--color-ink);
+}
+.notes-page--mobile .vault-search__input {
+  background: var(--color-card-bg);
+}
+.vault-search__input:focus {
+  outline: 2px solid var(--color-accent-secondary);
+  outline-offset: -2px; /* inset — the sidebar scrolls, so an outside ring gets clipped */
+}
+.vault-search__kind {
+  flex: 0 0 auto;
+  width: 18px;
+  font-size: 14px;
+  line-height: 20px;
+  text-align: center;
+}
+.vault-search__results mark {
+  background: var(--color-postit);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+.notes-page__row.is-active mark {
+  color: #3a2a10;
+}
+
 .notes-page__row-snippet {
   font-size: 12px;
   color: var(--color-muted);

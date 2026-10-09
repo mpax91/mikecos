@@ -6027,6 +6027,10 @@ async function runSearch(db: D1Database, q: string, scope: Set<SearchGroup>, inc
   const results: SearchResult[] = [];
 
   const wantsEntities = scope.has('notes') || scope.has('jots') || scope.has('lists') || scope.has('projects') || scope.has('vault');
+  // The Vault page's own search box asks for scope=vault alone — keep the
+  // SQL to Vault entries and their children so the 80-row cap isn't spent
+  // on notes/tasks elsewhere that would be filtered out anyway.
+  const vaultOnly = scope.size === 1 && scope.has('vault');
   const wantsBoards = scope.has('boards');
   const wantsContacts = scope.has('contacts');
   const wantsJournal = scope.has('journal');
@@ -6047,7 +6051,7 @@ async function runSearch(db: D1Database, q: string, scope: Set<SearchGroup>, inc
           .prepare(
             `SELECT e.*, p.type as parent_type, p.is_jot as parent_is_jot, p.is_list as parent_is_list, p.title as parent_title
              FROM entities e LEFT JOIN entities p ON p.id = e.parent_id
-             WHERE e.type IN ('note','task','project','file','vault_entry') AND (e.title LIKE ? OR e.search_text LIKE ?)
+             WHERE e.type IN ('note','task','project','file','vault_entry') AND (e.title LIKE ? OR e.search_text LIKE ?)${vaultOnly ? ` AND (e.type = 'vault_entry' OR p.type = 'vault_entry')` : ''}
              ORDER BY e.updated_at DESC LIMIT 80`
           )
           .bind(like, like)
