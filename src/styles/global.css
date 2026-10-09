@@ -5603,56 +5603,94 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 }
 
 .month-page__upcoming-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  /* Caps the list's own height rather than letting 20 items run the page
-     out indefinitely — it scrolls internally once there's more than
-     roughly this many rows' worth. */
+  /* Caps the list's own height rather than letting 20 rows run the page
+     out indefinitely — it scrolls internally past roughly this many. */
   max-height: 360px;
   overflow-y: auto;
+  border: var(--border-hairline);
+  border-radius: 8px;
 }
 
-.month-page__upcoming-group {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.month-page__upcoming-date {
-  font-size: 11.5px;
-  font-weight: var(--weight-medium);
-  color: var(--color-accent);
-  margin-bottom: 2px;
-}
-
-.month-page__upcoming-row {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 3px 4px;
-  border-radius: 6px;
-  cursor: pointer;
+.month-page__upcoming-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
   font-size: 13px;
 }
 
-.month-page__upcoming-row:hover {
+.month-page__upcoming-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--color-sidebar);
+  text-align: left;
+  font-size: 11px;
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+  padding: 6px 10px;
+  border-bottom: var(--border-hairline);
+}
+
+.month-page__upcoming-table td {
+  padding: 6px 10px;
+  border-top: var(--border-hairline);
+  vertical-align: baseline;
+}
+
+.month-page__upcoming-table th + th,
+.month-page__upcoming-table td + td {
+  border-left: var(--border-hairline);
+}
+
+/* Heavier rule where a new day starts, so the day groups read at a glance. */
+.month-page__upcoming-group + .month-page__upcoming-group tr:first-child td {
+  border-top: 2px solid var(--color-border, rgba(0, 0, 0, 0.18));
+}
+.month-page__upcoming-group:first-of-type tr:first-child td {
+  border-top: none;
+}
+
+.month-page__upcoming-row {
+  cursor: pointer;
+}
+
+.month-page__upcoming-row:hover td {
   background: var(--color-sidebar);
 }
 
+.month-page__upcoming-date {
+  width: 110px;
+}
+td.month-page__upcoming-date {
+  font-size: 12px;
+  font-weight: var(--weight-medium);
+  color: var(--color-accent);
+  white-space: nowrap;
+}
+
 .month-page__upcoming-time {
-  flex-shrink: 0;
-  font-size: 11.5px;
+  width: 84px;
+}
+td.month-page__upcoming-time {
+  font-size: 12px;
   color: var(--color-muted);
   font-variant-numeric: tabular-nums;
-  min-width: 62px;
+  white-space: nowrap;
 }
 
 .month-page__upcoming-label {
-  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+@media (max-width: 600px) {
+  .month-page__upcoming-date { width: 92px; }
+  .month-page__upcoming-time { width: 68px; }
+  .month-page__upcoming-table th,
+  .month-page__upcoming-table td { padding: 6px 8px; }
 }
 
 /* On a real desktop window, the grid's columns already span the full

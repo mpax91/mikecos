@@ -116,12 +116,9 @@ function MonthTaskBadge({ count }: { count: number }) {
   );
 }
 
-/** One line in the Upcoming list below the grid — a task or a meeting,
- * whichever `item` actually is, both reduced to the same {date, time, label}
- * shape so they can share one sorted, rendered list (see buildUpcomingItems).
- * `time` is null for an open task (no time of day) or an all-day meeting —
- * both render the same as the date-only rows in the reference Android
- * widget Mike pointed to, sorted after that day's timed entries. */
+/** One row in the Upcoming table below the grid — a calendar event reduced
+ * to {date, time, label}. `time` is null for an all-day event, which shows
+ * "All Day" and sorts ahead of that day's timed events. */
 interface UpcomingItem {
   key: string;
   date: string;
@@ -168,32 +165,41 @@ function MonthMeetingList({ meetings, cellDate, realToday }: { meetings: RangeMe
   );
 }
 
-/** The scrollable list below the month grid — every task and meeting from
+/** The scrollable list below the month grid — every calendar event from
  * today forward in this page's visible range, chronological across day
- * boundaries (unlike the grid above, which only shows what's due to a
- * specific cell). Mirrors the reference Android widget Mike pointed to:
- * grouped under a date header, timed entries before date-only ones on the
- * same day. Rendered on every screen size per Mike's own note ("probably
- * on desktop too, but for sure on tablet") rather than gated to a
- * breakpoint — a bird's-eye "what's coming" list is just as useful with
- * room to spare on a desktop monitor as it is on a tablet. */
+ * boundaries. Events only (Mike, 2026-10-09): tasks already show as the
+ * per-cell "N open tasks" badge and live on Day/Week, so listing them here
+ * buried the actual meetings. Laid out as a ruled Date / Time / Event table
+ * so the rows are easy to scan — the date shows once per day, with a
+ * heavier rule where a new day starts. */
 function UpcomingList({ items, realToday }: { items: UpcomingItem[]; realToday: string }) {
   if (items.length === 0) return null;
   return (
     <div className="month-page__upcoming">
       <div className="month-page__upcoming-title">Upcoming</div>
       <div className="month-page__upcoming-list">
-        {groupUpcomingByDate(items).map((group) => (
-          <div key={group.date} className="month-page__upcoming-group">
-            <div className="month-page__upcoming-date">{formatUpcomingDateHeader(group.date, realToday)}</div>
-            {group.items.map((item) => (
-              <div key={item.key} className="month-page__upcoming-row" onClick={item.onClick}>
-                {item.time && <span className="month-page__upcoming-time">{item.time}</span>}
-                <span className="month-page__upcoming-label">{item.label}</span>
-              </div>
-            ))}
-          </div>
-        ))}
+        <table className="month-page__upcoming-table">
+          <thead>
+            <tr>
+              <th className="month-page__upcoming-date">Date</th>
+              <th className="month-page__upcoming-time">Time</th>
+              <th>Event</th>
+            </tr>
+          </thead>
+          {groupUpcomingByDate(items).map((group) => (
+            <tbody key={group.date} className="month-page__upcoming-group">
+              {group.items.map((item, i) => (
+                <tr key={item.key} className="month-page__upcoming-row" onClick={item.onClick}>
+                  <td className="month-page__upcoming-date">
+                    {i === 0 ? formatUpcomingDateHeader(group.date, realToday) : ''}
+                  </td>
+                  <td className="month-page__upcoming-time">{item.time ?? 'All Day'}</td>
+                  <td className="month-page__upcoming-label" title={item.label}>{item.label}</td>
+                </tr>
+              ))}
+            </tbody>
+          ))}
+        </table>
       </div>
     </div>
   );
@@ -271,7 +277,8 @@ export function MonthPage() {
     return map;
   }, [meetingsData]);
 
-  // The Upcoming list below the grid — Mike's reference was an Android
+  // The Upcoming list below the grid (calendar events only — no tasks) —
+  // Mike's reference was an Android
   // calendar widget that lists what's ahead chronologically regardless of
   // which day it falls on, rather than requiring a scan across grid cells.
   // Built from the same data.tasks / meetingsData already fetched for the
@@ -284,20 +291,6 @@ export function MonthPage() {
   // this page in opening that day's Day view.
   const upcomingItems = useMemo<UpcomingItem[]>(() => {
     const items: UpcomingItem[] = [];
-    if (data) {
-      for (const t of data.tasks) {
-        const date = t.due_date!;
-        if (date < realToday) continue;
-        items.push({
-          key: `task:${t.id}`,
-          date,
-          time: null,
-          sortTime: Infinity, // date-only entries sort after that day's timed meetings
-          label: t.title || 'Untitled Task',
-          onClick: () => openDay(date),
-        });
-      }
-    }
     if (meetingsData) {
       for (const m of meetingsData.meetings) {
         if (m.date < realToday) continue;
@@ -305,7 +298,7 @@ export function MonthPage() {
           key: `meeting:${m.id}`,
           date: m.date,
           time: m.allDay ? null : formatMeetingTime(m.start),
-          sortTime: m.allDay ? Infinity : new Date(m.start).getHours() * 60 + new Date(m.start).getMinutes(),
+          sortTime: m.allDay ? -1 : new Date(m.start).getHours() * 60 + new Date(m.start).getMinutes(),
           label: m.title,
           onClick: () => openDay(m.date),
         });
@@ -314,7 +307,7 @@ export function MonthPage() {
     items.sort((a, b) => (a.date === b.date ? a.sortTime - b.sortTime : a.date < b.date ? -1 : 1));
     return items.slice(0, MAX_UPCOMING_ITEMS);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, meetingsData, realToday]);
+  }, [meetingsData, realToday]);
 
   const gridDates = useMemo(() => {
     const dates: string[] = [];
