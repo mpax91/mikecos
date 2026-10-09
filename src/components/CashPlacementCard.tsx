@@ -77,7 +77,42 @@ const STATUS_TEXT: Record<CashBankPlacement['status'], string> = {
 };
 
 /** Dashboard card: the numbers behind the suggestion, always shown. */
-export function CashPlacementDetail({ bank, suggestions, rules }: { bank: CashBankPlacement | null; suggestions: CashSuggestion[]; rules: CashPlacement['rules'] }) {
+/** `savingsOnly`: a bank with no checking (American Express) — only the
+ * cross-bank savings rule applies, so the checking-buffer facts are hidden. */
+export function CashPlacementDetail({
+  bank,
+  suggestions,
+  rules,
+  savingsOnly,
+}: {
+  bank: CashBankPlacement | null;
+  suggestions: CashSuggestion[];
+  rules: CashPlacement['rules'];
+  savingsOnly?: { label: string; apy: number | null };
+}) {
+  if (savingsOnly) {
+    return (
+      <section className="fin-dash__card fin-dash__card--full cash-place-detail">
+        <h3 className="fin-dash__card-title">Cash Placement</h3>
+        {suggestions.length > 0 && (
+          <ul className="cash-place__list cash-place__list--compact">
+            {suggestions.map((s) => (
+              <SuggestionRow key={s.id} s={s} linked={false} />
+            ))}
+          </ul>
+        )}
+        <p className="cash-place-detail__status">
+          {suggestions.length
+            ? 'The suggestion above has held for 2 statements in a row.'
+            : `No move suggested between ${savingsOnly.label} (${pct(savingsOnly.apy)}) and your other banks’ savings right now.`}
+        </p>
+        <p className="fin-dash__note">
+          Savings only, so there’s no checking buffer here. Across banks, a move is suggested when another bank’s savings APY beats this one by at least {money0(rules.minMoveGain)}/yr on the
+          balance for 2 statements in a row, never pushing a bank over the {money0(rules.fdicLimit)} FDIC limit.
+        </p>
+      </section>
+    );
+  }
   const c = bank?.current ?? null;
   return (
     <section className="fin-dash__card fin-dash__card--full cash-place-detail">

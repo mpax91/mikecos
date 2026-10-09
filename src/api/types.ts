@@ -2654,7 +2654,56 @@ export interface AmazonDashboard {
   payTask: { id: string; title: string; due: string | null; status: string | null } | null;
 }
 
-export type FinanceDashboard = Ny529Dashboard | AdtDashboard | AllyDashboard | AmazonDashboard;
+export interface AmexBankSummary {
+  asOf: string | null;
+  last4: string | null;
+  label: string;
+  product: string | null;
+  holders: string | null;
+  balance: number;
+  apy: number | null;
+  rate: number | null;
+  interestYtd: number;
+  interestLifetime: number;
+  firstStatement: string | null;
+  series: { date: string; balance: number }[];
+  apyPoints: { date: string; apy: number; earned: number | null }[];
+  rateChanges: { date: string; from: number; to: number }[];
+  interestYears: { year: number; total: number; statements: number; december: boolean }[];
+  flows: { month: string; statementDate: string; moneyIn: number; moneyOut: number; interest: number; net: number }[];
+  counterparties: { name: string; moneyIn: number; moneyOut: number; count: number; lastDate: string }[];
+  gaps: string[];
+  nextExpected: string | null;
+  events: { date: string; kind: string; description: string; amount: number }[];
+}
+
+export interface AmexBankDashboard {
+  kind: 'amexBank';
+  folder: StatementFolder;
+  template: { nickname: string; institution: string; type: string; site?: string; phone?: string } | null;
+  summary: AmexBankSummary;
+  statements: {
+    id: string;
+    periodStart: string;
+    periodEnd: string;
+    fileId: string;
+    checks: StatementCheckRow[];
+    beginning: number;
+    credits: number;
+    debits: number;
+    interest: number;
+    ending: number;
+    apy: number | null;
+  }[];
+  /** Last 24 statements only (transactionsSince = exclusive start). */
+  transactions: { date: string; description: string; kind: string; amount: number }[];
+  transactionsSince: string | null;
+  files: { fileId: string; name: string; url: string | null; status: string; error: string | null }[];
+  flags: { id: string; severity: 'warn' | 'info'; message: string; created_at: string }[];
+  cashPlacement?: { bank: CashBankPlacement | null; suggestions: CashSuggestion[]; rules: CashPlacement['rules'] };
+}
+
+export type FinanceDashboard = Ny529Dashboard | AdtDashboard | AllyDashboard | AmazonDashboard | AmexBankDashboard;
 
 // ---- Account payers (0092_account_payers.sql) — which card pays which
 // account. 'autopay' = charges the card by itself; 'on_file' = the card is

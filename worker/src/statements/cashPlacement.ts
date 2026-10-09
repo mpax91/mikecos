@@ -5,6 +5,8 @@ import { easternToday, syncFlags } from './engine';
 import { templateById } from './templates';
 import { loadAllyData } from './allyDerive';
 import { allyCashStatements } from './allySummary';
+import { loadAmexBankData } from './amexBankDerive';
+import { amexCashStatements } from './amexBankSummary';
 
 /** Cash Placement (Mike, 2026-10-08) — rule-based, no AI, recomputed from
  * the statements every time they change. Two rules:
@@ -15,8 +17,8 @@ import { allyCashStatements } from './allySummary';
  *     stay conservative). Idle = average checking balance over the last 3
  *     statements − buffer. Gain = idle × (savings APY − checking APY), both
  *     the "APY earned" on the latest statement. Suggest when ≥ $50/yr.
- *  2. Cross-bank savings (needs 2+ banks; American Express Bank plugs in
- *     later). Suggest moving a savings balance to a bank whose savings APY
+ *  2. Cross-bank savings (needs 2+ banks — Ally and American Express
+ *     Bank). Suggest moving a savings balance to a bank whose savings APY
  *     is higher when it gains ≥ $25/yr — never above $250K at the target
  *     bank (FDIC).
  *
@@ -69,6 +71,12 @@ const CASH_SOURCES: Record<string, Loader> = {
   ally: async (env, folder) => {
     const { stmts, txns } = await loadAllyData(env, folder.id);
     return allyCashStatements(stmts, txns);
+  },
+  // Savings only: idleCalc() returns null (no checking), the cross-bank
+  // savings rule compares it with Ally's savings.
+  amexBank: async (env, folder) => {
+    const { stmts, txns } = await loadAmexBankData(env, folder.id);
+    return amexCashStatements(stmts, txns);
   },
 };
 export const isCashTemplate = (templateId: string | null) => !!templateId && templateId in CASH_SOURCES;

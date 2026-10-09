@@ -3,10 +3,11 @@ import { parseNy529 } from './ny529';
 import { parseAdt } from './adt';
 import { parseAlly } from './ally';
 import { parseAmazon } from './amazon';
+import { parseAmexBank } from './amexBank';
 
 /** Per-folder templates (one per Drive folder, all on the shared base
- * engine). Build order per progress.md: 529 is live; ADT, Ally Bank and Amazon Prime Visa built;
- * American Express Bank and the rest are added one folder at a time. */
+ * engine). Build order per progress.md: 529 is live; ADT, Ally Bank, Amazon Prime Visa and
+ * American Express Bank built; the rest are added one folder at a time. */
 export interface StatementTemplate {
   id: string;
   name: string;
@@ -105,6 +106,25 @@ export const TEMPLATES: StatementTemplate[] = [
     // Monthly statements are "Amazon - YYYY.MM.DD.pdf"; the year-end
     // "Annual Summary" PDFs ("Amazon - 2015.pdf") are skipped.
     isStatementFile: (name) => /\d{4}\.\d{2}\.\d{2}/.test(name),
+  },
+  {
+    id: 'amexBank',
+    name: 'American Express High Yield Savings (Monthly)',
+    folderNames: ['American Express Bank', 'Amex Bank', 'American Express Savings'],
+    account: {
+      nickname: 'American Express Savings',
+      institution: 'American Express National Bank',
+      type: 'High Yield Savings',
+      owner: 'household',
+      cadence: 'monthly',
+      kind: 'balance',
+      site: 'https://personalsavings.americanexpress.com',
+      phone: '1-800-446-6307',
+    },
+    parse: parseAmexBank,
+    // Monthly statements are "AMEX FSB - YYYY.MM.DD.pdf"; a 1099 or other
+    // document dropped in the folder is skipped (and a 1099 feeds Tax Packet).
+    isStatementFile: (name) => /\d{4}\.\d{2}\.\d{2}/.test(name) && !/1099/.test(name),
   },
 ];
 

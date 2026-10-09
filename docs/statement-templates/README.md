@@ -102,7 +102,7 @@ of the "Tax Items · <year>" note. No Quick Facts are written.
    shared `fin-dash__*` card CSS.
 6. Report card in `<folder>.md`; Mike clicks **Go Live** in Settings → Statements.
 
-Live templates: `ny529` (529.md), `adt` (adt.md), `ally` (ally.md), `amazon` (amazon.md — first credit card; account kind `card`).
+Live templates: `ny529` (529.md), `adt` (adt.md), `ally` (ally.md), `amazon` (amazon.md — first credit card; account kind `card`), `amexBank` (amexBank.md — savings only; two text layouts + image-only scans).
 
 **Multi-account statements** (Ally): `ParsedTransaction.account` = last 4
 digits (stored in `statement_transactions.account`, migration 0093);
@@ -150,7 +150,10 @@ the folder's statements as `CashStatement[]` (oldest first): per account
 `last4`, `kind` (checking / savings), `label`, ending `balance`, `apy`
 (APY earned), `avgBalance` (average daily balance, or null) and `outflow`
 (money that left for outside the bank — transfers between the bank's own
-accounts excluded). See `allyCashStatements` in `allySummary.ts`. Rules:
+accounts excluded). See `allyCashStatements` in `allySummary.ts`, or
+`amexCashStatements` in `amexBankSummary.ts` for a savings-only bank
+(no checking → `idleCalc` is null; only rule 2 applies, and the dashboard
+shows `CashPlacementDetail` with `savingsOnly`). Rules:
 
 1. Idle checking: buffer = max(median, largest) monthly outflow over the
    last 12 statements × 1.2; idle = 3-statement average balance − buffer;

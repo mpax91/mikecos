@@ -10,6 +10,7 @@ import type { Block } from './vaultDoc';
 import { deriveNy529 } from './ny529Derive';
 import { deriveAdt } from './adtDerive';
 import { deriveAlly } from './allyDerive';
+import { deriveAmexBank } from './amexBankDerive';
 import { deriveAmazon } from './amazonDerive';
 import { syncPaymentFacts } from '../accountPayers';
 import { syncBills } from '../bills';
@@ -181,6 +182,7 @@ export async function derive(env: Env, folder: FolderRow): Promise<void> {
   else if (folder.template_id === 'adt') await deriveAdt(env, fresh);
   else if (folder.template_id === 'ally') await deriveAlly(env, fresh);
   else if (folder.template_id === 'amazon') await deriveAmazon(env, fresh);
+  else if (folder.template_id === 'amexBank') await deriveAmexBank(env, fresh);
   // Payment Quick Facts (Due Date, Auto-Pay, Paid With, bill amounts) from
   // the billing snapshot the template just stored + the account's payer.
   const after = await loadFolder(env, folder.id);
