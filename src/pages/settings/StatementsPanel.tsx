@@ -170,6 +170,7 @@ function LiveFolderCard({ folder, busy, scanMsg, onScan, onChanged }: { folder: 
   const year = new Date().getFullYear();
   const [limit, setLimit] = useState(String(s?.nyLimit ?? ''));
   const [ret, setRet] = useState(String(s?.projectionReturnPct ?? ''));
+  const [redeemAt, setRedeemAt] = useState(String(s?.redeemAt ?? ''));
   const [saving, setSaving] = useState(false);
 
   async function save(patch: { owner?: AccountOwner; settings?: Record<string, unknown> }) {
@@ -214,6 +215,19 @@ function LiveFolderCard({ folder, busy, scanMsg, onScan, onChanged }: { folder: 
             <option value="chase">Chase</option>
           </select>
         </label>
+        {s?.redeemAt !== undefined && (
+          <label className="statements-settings__field" title="A “Redeem …” task appears once the card’s available rewards reach this amount and checks itself off when a statement shows them redeemed. 0 turns it off.">
+            <span>Redeem Reminder At ($)</span>
+            <input
+              type="number"
+              min={0}
+              step={5}
+              value={redeemAt}
+              onChange={(e) => setRedeemAt(e.target.value)}
+              onBlur={() => redeemAt !== '' && Number(redeemAt) >= 0 && Number(redeemAt) !== s.redeemAt && save({ settings: { redeemAt: Number(redeemAt) } })}
+            />
+          </label>
+        )}
         {folder.templateId === 'ny529' && s && (
           <>
             <label className="statements-settings__field">
@@ -263,6 +277,11 @@ function LiveFolderCard({ folder, busy, scanMsg, onScan, onChanged }: { folder: 
           </>
         )}
       </div>
+      {s?.redeemAt !== undefined && (
+        <p className="statements-settings__hint">
+          {s.redeemAt > 0 ? `A Redeem task appears once this card’s rewards reach $${s.redeemAt} and checks itself off when a statement shows them redeemed.` : 'Redeem reminder is off.'} Set 0 to turn it off.
+        </p>
+      )}
       {folder.templateId === 'ny529' && (
         <p className="statements-settings__hint">NY allows $10,000/yr for joint filers ($5,000 single), NY plan only, contributions by Dec 31. Check it each January.</p>
       )}

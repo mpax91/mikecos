@@ -18,6 +18,7 @@ import { syncBills } from '../bills';
 import { syncCardFacts } from '../cardFacts';
 import { syncTaxFilingTask } from './taxPacket';
 import type { CardFacts } from '../cardFacts';
+import { syncRedeemReminder } from './rewards';
 
 /** Base statements engine: lists a registered Drive folder, reads any PDF
  * not seen before (or modified since), stores normalized statement +
@@ -202,6 +203,8 @@ export async function derive(env: Env, folder: FolderRow): Promise<void> {
     }
     if (card) await syncCardFacts(env, after.vault_entry_id, card, easternToday(), after.id);
   }
+  // Card rewards: "Redeem …" task once the balance reaches the threshold.
+  if (templateById(folder.template_id)?.account.kind === 'card') await syncRedeemReminder(env, folder.id, easternToday());
   // Bills & Due Dates: due day / Auto-Pay rows + the monthly pay task.
   await syncBills(env);
   // Cash Placement info flags (idle checking cash, cross-bank savings rates).

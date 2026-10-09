@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { AmazonDashboard as Data } from '../api/types';
 import { FinanceLineChart } from './FinanceLineChart';
+import { CardRewardsPanel } from './CardRewardsPanel';
 import type { LineSeries } from './FinanceLineChart';
 
 // Same validated pair as the other Finance dashboards (dataviz validator:
@@ -178,6 +179,10 @@ export function AmazonDashboard({ data, onDismissFlag }: { data: Data; onDismiss
             {s.shopWithPoints > 0 ? `, ${money(s.shopWithPoints, false)} at Amazon checkout` : ''}.
           </p>
         </section>
+
+        {data.rewards && (
+          <CardRewardsPanel rewards={data.rewards} redeemAt={data.redeemAt} redeemTask={data.redeemTask} redeemQuietUntil={data.redeemQuietUntil} color={POINTS_COLOR} />
+        )}
 
         <section className="fin-dash__card">
           <h3 className="fin-dash__card-title">Points by Category</h3>

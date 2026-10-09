@@ -14,6 +14,8 @@ import { billingFromBills, payerFlags } from '../accountPayers';
 import { cardChargeFlags } from './anomalies';
 import type { BillingFacts } from '../accountPayers';
 import type { CardFacts } from '../cardFacts';
+import { rewardsFromAmexCard } from './rewards';
+import type { CardRewards } from './rewards';
 
 /** Amex Blue Cash Everyday outputs: Vault entry "Amex Blue Cash Everyday"
  * (Vault entry standard, docs/statement-templates/README.md), flags
@@ -29,6 +31,8 @@ interface FolderMeta {
   vault?: { note?: { noteId?: string; written?: string[] }; links?: Record<string, string> };
   billing?: BillingFacts | null;
   card?: CardFacts;
+  rewards?: CardRewards; // → Rewards on Finance + the redeem reminder (engine.derive)
+  rewardsName?: string;
 }
 
 const NEW_STATEMENT_GRACE_DAYS = 10;
@@ -188,6 +192,8 @@ export async function deriveAmexCard(env: Env, folder: FolderRow): Promise<void>
     })
   );
   meta.billing = billing;
+  meta.rewards = rewardsFromAmexCard(s, today);
+  meta.rewardsName = name;
   // ---- Card snapshot → Card Quick Facts (cardFacts.ts, synced by engine.derive) ----
   // The statement doesn't print earn rates; Rewards comes from the Wallet
   // card's Rewards card.

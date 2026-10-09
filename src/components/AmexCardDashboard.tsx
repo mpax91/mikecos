@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { AmexCardDashboard as Data } from '../api/types';
 import { FinanceLineChart } from './FinanceLineChart';
+import { CardRewardsPanel } from './CardRewardsPanel';
 import type { LineSeries } from './FinanceLineChart';
 
 // Same validated pair as the other Finance dashboards (dataviz validator:
@@ -172,6 +173,10 @@ export function AmexCardDashboard({ data, onDismissFlag }: { data: Data; onDismi
             {money(s.lifetimeRewardsRedeemed, false)} redeemed as statement credits.
           </p>
         </section>
+
+        {data.rewards && (
+          <CardRewardsPanel rewards={data.rewards} redeemAt={data.redeemAt} redeemTask={data.redeemTask} redeemQuietUntil={data.redeemQuietUntil} color={REWARD_COLOR} />
+        )}
 
         <section className="fin-dash__card">
           <h3 className="fin-dash__card-title">Top Merchants (12 Mo)</h3>

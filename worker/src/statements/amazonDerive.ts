@@ -14,6 +14,8 @@ import { billingFromBills, payerFlags } from '../accountPayers';
 import { cardChargeFlags } from './anomalies';
 import type { BillingFacts } from '../accountPayers';
 import type { CardFacts } from '../cardFacts';
+import { rewardsFromAmazon } from './rewards';
+import type { CardRewards } from './rewards';
 
 /** Amazon Prime Visa outputs: Vault entry "Amazon Prime Visa" (per the
  * Vault entry standard in docs/statement-templates/README.md), flags
@@ -29,6 +31,8 @@ interface FolderMeta {
   payTask?: { year: number; taskId: string };
   billing?: BillingFacts | null;
   card?: CardFacts;
+  rewards?: CardRewards; // → Rewards on Finance + the redeem reminder (engine.derive)
+  rewardsName?: string;
 }
 
 const NEW_STATEMENT_GRACE_DAYS = 10;
@@ -166,6 +170,8 @@ export async function deriveAmazon(env: Env, folder: FolderRow): Promise<void> {
     })
   );
   meta.billing = billing;
+  meta.rewards = rewardsFromAmazon(s, today);
+  meta.rewardsName = name;
   // ---- Card snapshot → card Quick Facts (cardFacts.ts, synced by engine.derive) ----
   if (lv) {
     const earn = (lv.points?.earned ?? [])

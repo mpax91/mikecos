@@ -2339,6 +2339,11 @@ export interface EmailSyncResult {
 export type StatementFolderStatus = 'live' | 'needs_template' | 'ignored';
 export type AccountOwner = 'household' | 'chase';
 
+/** Credit-card folders (worker/src/statements/rewards.ts). redeemAt 0 = off. */
+export interface CardRewardsSettingsShape {
+  redeemAt: number;
+}
+
 export interface Ny529SettingsShape {
   nyLimit: number;
   limitConfirmedYear: number | null;
@@ -2358,7 +2363,7 @@ export interface StatementFolder {
   status: StatementFolderStatus;
   owner: AccountOwner;
   vaultEntryId: string | null;
-  settings: Ny529SettingsShape | null;
+  settings: (Partial<Ny529SettingsShape> & Partial<CardRewardsSettingsShape>) | null;
   lastScanAt: string | null;
   lastError: string | null;
   coverage: { total: number; parsed: number };
@@ -2652,6 +2657,10 @@ export interface AmazonDashboard {
   files: { fileId: string; name: string; url: string | null; status: string; error: string | null }[];
   flags: { id: string; severity: 'warn' | 'info'; message: string; created_at: string }[];
   payTask: { id: string; title: string; due: string | null; status: string | null } | null;
+  rewards: CardRewards | null;
+  redeemAt: number;
+  redeemTask: { id: string; title: string; due: string | null } | null;
+  redeemQuietUntil: number | null;
 }
 
 export interface AmexBankSummary {
@@ -2719,6 +2728,7 @@ export interface AmexCardStatementRow {
   apr: number | null;
   rewardDollars: number | null;
   rewardsEarned: number | null;
+  rewardsBridged: boolean;
   fileId: string;
   checksOk: boolean;
 }
@@ -2774,6 +2784,46 @@ export interface AmexCardDashboard {
   transactionsSince: string | null;
   files: { fileId: string; name: string; url: string | null; status: string; error: string | null }[];
   flags: { id: string; severity: 'warn' | 'info'; message: string; created_at: string }[];
+  rewards: CardRewards | null;
+  redeemAt: number;
+  redeemTask: { id: string; title: string; due: string | null } | null;
+  redeemQuietUntil: number | null;
+}
+
+// ---- Card rewards (worker/src/statements/rewards.ts) — all money in $,
+// years = statement closing year ----
+export interface RewardsYear {
+  year: number;
+  statements: number;
+  earned: number;
+  net: number;
+  rate: number | null;
+  partial: boolean;
+  current: boolean;
+}
+
+export interface CardRewards {
+  unit: 'dollars' | 'points';
+  unitLabel: string;
+  pointsPerDollar: number;
+  available: number | null;
+  availablePoints: number | null;
+  asOf: string | null;
+  earnedAllTime: number;
+  redeemedAllTime: number;
+  earnedYtd: number;
+  rate12: number | null;
+  since: string | null;
+  years: RewardsYear[];
+}
+
+export interface RewardsOverview {
+  available: number;
+  earnedAllTime: number;
+  redeemedAllTime: number;
+  earnedYtd: number;
+  years: { year: number; earned: number; net: number; rate: number | null; partial: boolean; current: boolean; byCard: { folderId: string; earned: number }[] }[];
+  cards: { folderId: string; name: string; owner: AccountOwner; rewards: CardRewards; redeemAt: number }[];
 }
 
 export type FinanceDashboard = Ny529Dashboard | AdtDashboard | AllyDashboard | AmazonDashboard | AmexBankDashboard | AmexCardDashboard;

@@ -166,3 +166,31 @@ shows `CashPlacementDetail` with `savingsOnly`). Rules:
 
 Both must hold on the latest AND the previous statement; the smaller
 amount is shown.
+
+## Card rewards (every credit-card template — Mike, 2026-10-09)
+
+`worker/src/statements/rewards.ts`. A card template's derive stores
+`meta.rewards` (a `CardRewards` built from its summary — add a
+`rewardsFrom<Template>()` for each new card) and `meta.rewardsName` (the
+account nickname). All money is in dollars (points ÷ `pointsPerDollar`);
+"calendar year" = the statement's closing year; a year is marked partial
+(≈) when it has fewer than 12 statements or a month whose earnings had to
+be estimated. Also add the template to `cardRewardsFor` in `router.ts` so
+it shows on Finance (`GET /api/statements/rewards?owner=`) and its
+dashboard payload carries `rewards` + `redeemInfo` (→ `CardRewardsPanel`).
+
+**Redeem reminder:** `engine.derive` runs `syncRedeemReminder` for every
+`kind: 'card'` folder. Threshold = folder setting `redeemAt` (Settings →
+Statements → the card → Redeem Reminder At, default $50, 0 = off). At or
+above it → task "Redeem <name> $X Cash Back" (points cards: "N Points
+($X)") due that day, parented to the Vault entry, title follows the
+balance. When a statement shows the balance back under the threshold, the
+task checks itself off (with a task_completions row). If Mike checks it off
+or deletes it while the balance is still up (statements lag a month), the
+next reminder waits until another `redeemAt` dollars pile up
+(`meta.redeemTask.quietUntil`); dropping under the threshold resets that.
+Taking the folder off live or setting 0 deletes an open task.
+
+Amex earnings across a missing statement are bridged (change in balance +
+redemptions seen) and marked `rewardsBridged` — an estimate, since a
+redemption printed only on the missing statement goes unseen.

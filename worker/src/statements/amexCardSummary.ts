@@ -44,6 +44,7 @@ export interface AmexCardStatementRow {
   apr: number | null;
   rewardDollars: number | null; // balance printed on this statement (as of the previous closing)
   rewardsEarned: number | null; // cash back earned since the previous snapshot (null = no chain)
+  rewardsBridged: boolean; // the previous month's statement is missing — rewardsEarned spans the gap (an estimate)
   fileId: string;
   checksOk: boolean;
 }
@@ -159,6 +160,7 @@ export function summarizeAmexCard(stmts: AmexCardStmtRow[], txns: AmexCardTxnRow
   // ---- Reward dollars: earned between consecutive snapshots ----
   const redemptions = txns.filter((t) => t.kind === 'reward');
   const earnedAt = new Map<string, number>(); // closing date → earned since previous snapshot
+  const bridged = new Set<string>();
   let prevSnap: { asOf: string; balance: number } | null = null;
   for (let i = 0; i < stmts.length; i++) {
     const v = stmts[i].values;
@@ -167,10 +169,13 @@ export function summarizeAmexCard(stmts: AmexCardStmtRow[], txns: AmexCardTxnRow
       continue;
     }
     const snap = { asOf: v.rewardDollarsAsOf, balance: v.rewardDollars };
-    const consecutive = i > 0 && prevSnap && addMonths(stmts[i - 1].periodEnd, 1).slice(0, 7) === v.closingDate.slice(0, 7);
-    if (prevSnap && consecutive) {
+    const consecutive = i > 0 && addMonths(stmts[i - 1].periodEnd, 1).slice(0, 7) === v.closingDate.slice(0, 7);
+    if (prevSnap) {
+      // Across missing months the change in balance still counts; only a
+      // redemption printed on a missing statement goes unseen (estimate).
       const redeemed = -redemptions.filter((t) => t.date > prevSnap!.asOf && t.date <= snap.asOf).reduce((s, t) => s + t.amount, 0);
       earnedAt.set(v.closingDate, round2(Math.max(0, snap.balance - prevSnap.balance + redeemed)));
+      if (!consecutive) bridged.add(v.closingDate);
     }
     prevSnap = snap;
   }
@@ -193,6 +198,7 @@ export function summarizeAmexCard(stmts: AmexCardStmtRow[], txns: AmexCardTxnRow
       apr: v.apr.purchases,
       rewardDollars: v.rewardDollars,
       rewardsEarned: earnedAt.get(v.closingDate) ?? null,
+      rewardsBridged: bridged.has(v.closingDate),
       fileId: s.fileId,
       checksOk: s.checks.every((c) => c.ok),
     };

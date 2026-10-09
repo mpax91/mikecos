@@ -18,6 +18,8 @@ import { listAttention } from './attention';
 import { getCashPlacement } from './cashPlacement';
 import { summarizeAmazon } from './amazonSummary';
 import { summarizeAmexCard } from './amexCardSummary';
+import { cardRewardsSettings, combineRewards, rewardsFromAmazon, rewardsFromAmexCard, syncRedeemReminder } from './rewards';
+import type { CardRewards, RedeemTaskState, RewardsCardLine } from './rewards';
 
 /** Statements API, mounted at /api/statements. */
 export const statementsRouter = new Hono<{ Bindings: Env }>();
@@ -50,6 +52,7 @@ function folderJson(row: FolderRow, stats?: FolderStats) {
   const t = templateById(row.template_id);
   let settings: unknown = null;
   if (row.template_id === 'ny529') settings = ny529Settings(row);
+  else if (t?.account.kind === 'card') settings = cardRewardsSettings(row);
   return {
     id: row.id,
     accountId: row.cloud_account_id,
@@ -177,6 +180,8 @@ statementsRouter.patch('/folders/:id', async (c) => {
   // Settings changes (limit, confirmation) re-derive right away so the
   // reminder and Vault note reflect them without waiting for tonight.
   if (body.settings && updated.status === 'live') await derive(c.env, updated);
+  // Card taken off live → its redeem reminder goes too.
+  else if (body.status && templateById(updated.template_id)?.account.kind === 'card') await syncRedeemReminder(c.env, updated.id, easternToday());
   return c.json(folderJson(updated));
 });
 
@@ -230,6 +235,52 @@ statementsRouter.get('/accounts', async (c) => {
     out.push({ ...folderJson(row, stats.get(row.id)), headline });
   }
   return c.json(out);
+});
+
+/** Rewards for one live card folder, straight from its statements. */
+async function cardRewardsFor(env: Env, row: FolderRow): Promise<CardRewards | null> {
+  const today = easternToday();
+  if (row.template_id === 'amazon') {
+    const { stmts, txns } = await loadAmazonData(env, row.id);
+    return stmts.length ? rewardsFromAmazon(summarizeAmazon(stmts, txns, today), today) : null;
+  }
+  if (row.template_id === 'amexCard') {
+    const { stmts, txns } = await loadAmexCardData(env, row.id);
+    return stmts.length ? rewardsFromAmexCard(summarizeAmexCard(stmts, txns, today), today) : null;
+  }
+  return null;
+}
+
+/** The redeem reminder's open task (if any) + the threshold, for a dashboard. */
+async function redeemInfo(env: Env, row: FolderRow) {
+  let state: RedeemTaskState | undefined;
+  try {
+    state = row.meta_json ? JSON.parse(row.meta_json).redeemTask : undefined;
+  } catch {
+    state = undefined;
+  }
+  const task = state?.taskId
+    ? await env.DB.prepare('SELECT id, title, due_date, status FROM entities WHERE id = ?').bind(state.taskId).first<{ id: string; title: string; due_date: string | null; status: string | null }>()
+    : null;
+  return {
+    redeemAt: cardRewardsSettings(row).redeemAt,
+    redeemTask: task && task.status !== 'done' ? { id: task.id, title: task.title, due: task.due_date } : null,
+    redeemQuietUntil: !task && state?.quietUntil !== undefined ? state.quietUntil : null,
+  };
+}
+
+// Rewards across every live credit card (Finance), for one owner.
+statementsRouter.get('/rewards', async (c) => {
+  const owner = c.req.query('owner') === 'chase' ? 'chase' : 'household';
+  const { results } = await c.env.DB.prepare(`SELECT * FROM statement_folders WHERE status = 'live' AND owner = ? ORDER BY folder_name`).bind(owner).all<FolderRow>();
+  const cards: RewardsCardLine[] = [];
+  for (const row of results ?? []) {
+    const t = templateById(row.template_id);
+    if (t?.account.kind !== 'card') continue;
+    const rewards = await cardRewardsFor(c.env, row);
+    if (rewards) cards.push({ folderId: row.id, name: t.account.nickname, owner: row.owner, rewards, redeemAt: cardRewardsSettings(row).redeemAt });
+  }
+  return c.json(combineRewards(cards));
 });
 
 statementsRouter.get('/folders/:id/dashboard', async (c) => {
@@ -419,6 +470,8 @@ async function amazonDashboard(env: Env, row: FolderRow) {
   const last = stmts[stmts.length - 1];
   return {
     kind: 'amazon' as const,
+    rewards: summary.latest ? rewardsFromAmazon(summary, easternToday()) : null,
+    ...(await redeemInfo(env, row)),
     folder: folderJson(row, stats.get(row.id)),
     template: templateById(row.template_id)?.account ?? null,
     account: last ? { accountLast: last.values.accountLast } : null,
@@ -442,6 +495,8 @@ async function amexCardDashboard(env: Env, row: FolderRow) {
   const last = stmts[stmts.length - 1];
   return {
     kind: 'amexCard' as const,
+    rewards: summary.latest ? rewardsFromAmexCard(summary, easternToday()) : null,
+    ...(await redeemInfo(env, row)),
     folder: folderJson(row, stats.get(row.id)),
     template: templateById(row.template_id)?.account ?? null,
     account: last ? { accountLast: last.values.accountLast, accountEnding: last.values.accountEnding } : null,
