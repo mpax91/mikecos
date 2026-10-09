@@ -1,7 +1,7 @@
 import type { Env } from '../types';
 import { cloudAccess } from '../cloud';
 import { detectFactValue, reindexEntry } from '../vault';
-import { UnreadableStatement } from './common';
+import { NotAStatement, UnreadableStatement } from './common';
 import { pdfToText } from './pdfText';
 import { isCashTemplate, syncCashPlacementFlags } from './cashPlacement';
 import { templateById } from './templates';
@@ -12,6 +12,7 @@ import { deriveAdt } from './adtDerive';
 import { deriveAlly } from './allyDerive';
 import { deriveAmexBank } from './amexBankDerive';
 import { deriveAmazon } from './amazonDerive';
+import { deriveAmexCard } from './amexCardDerive';
 import { syncPaymentFacts } from '../accountPayers';
 import { syncBills } from '../bills';
 import { syncCardFacts } from '../cardFacts';
@@ -133,7 +134,10 @@ export async function scanFolder(env: Env, folder: FolderRow): Promise<ScanResul
         }
       } catch (err) {
         error = err instanceof Error ? err.message : String(err);
-        if (err instanceof UnreadableStatement) {
+        if (err instanceof NotAStatement) {
+          // e.g. a notice letter saved under a statement's file name
+          status = 'skipped';
+        } else if (err instanceof UnreadableStatement) {
           status = 'unreadable';
           result.unreadable++;
         } else {
@@ -183,6 +187,7 @@ export async function derive(env: Env, folder: FolderRow): Promise<void> {
   else if (folder.template_id === 'ally') await deriveAlly(env, fresh);
   else if (folder.template_id === 'amazon') await deriveAmazon(env, fresh);
   else if (folder.template_id === 'amexBank') await deriveAmexBank(env, fresh);
+  else if (folder.template_id === 'amexCard') await deriveAmexCard(env, fresh);
   // Payment Quick Facts (Due Date, Auto-Pay, Paid With, bill amounts) from
   // the billing snapshot the template just stored + the account's payer.
   const after = await loadFolder(env, folder.id);

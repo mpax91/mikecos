@@ -4,10 +4,11 @@ import { parseAdt } from './adt';
 import { parseAlly } from './ally';
 import { parseAmazon } from './amazon';
 import { parseAmexBank } from './amexBank';
+import { parseAmexCard } from './amexCard';
 
 /** Per-folder templates (one per Drive folder, all on the shared base
- * engine). Build order per progress.md: 529 is live; ADT, Ally Bank, Amazon Prime Visa and
- * American Express Bank built; the rest are added one folder at a time. */
+ * engine). Build order per progress.md: 529 is live; ADT, Ally Bank, Amazon Prime Visa,
+ * American Express Bank and the Amex Blue Cash Everyday card built; the rest are added one folder at a time. */
 export interface StatementTemplate {
   id: string;
   name: string;
@@ -125,6 +126,27 @@ export const TEMPLATES: StatementTemplate[] = [
     // Monthly statements are "AMEX FSB - YYYY.MM.DD.pdf"; a 1099 or other
     // document dropped in the folder is skipped (and a 1099 feeds Tax Packet).
     isStatementFile: (name) => /\d{4}\.\d{2}\.\d{2}/.test(name) && !/1099/.test(name),
+  },
+  {
+    id: 'amexCard',
+    name: 'American Express Blue Cash Everyday (Monthly Credit Card)',
+    folderNames: ['American Express Credit Card', 'Amex Credit Card', 'American Express Card'],
+    account: {
+      nickname: 'Amex Blue Cash Everyday',
+      institution: 'American Express',
+      type: 'Cash Back Credit Card',
+      owner: 'household',
+      cadence: 'monthly',
+      kind: 'card',
+      network: 'American Express',
+      site: 'https://www.americanexpress.com',
+      phone: '1-888-258-3741',
+    },
+    parse: parseAmexCard,
+    // Monthly statements are "AMEX CC - YYYY.MM.pdf"; the year-end
+    // summaries ("AMEX CC - 2024.pdf") are skipped. Notice letters saved
+    // under a monthly name are recognized by the parser (NotAStatement).
+    isStatementFile: (name) => /\d{4}\.\d{2}/.test(name),
   },
 ];
 

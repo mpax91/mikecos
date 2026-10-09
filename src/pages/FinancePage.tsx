@@ -168,7 +168,7 @@ export function FinancePage() {
                             : a.headline.dueDate
                               ? `Due ${fmtDate(a.headline.dueDate)}`
                               : 'Statement Balance'}
-                      {a.headline.pointsValue !== null ? ` · ${money(a.headline.pointsValue)} in points` : ''}
+                      {a.headline.pointsValue !== null ? ` · ${money(a.headline.pointsValue)} in rewards` : ''}
                     </span>
                   )}
                   {a.headline?.kind === 'balance' &&

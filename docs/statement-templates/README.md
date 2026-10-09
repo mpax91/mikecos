@@ -98,11 +98,13 @@ of the "Tax Items · <year>" note. No Quick Facts are written.
    Tax Packet section.
 5. Dashboard: `/api/statements/folders/:id/dashboard` switches on the
    template and returns a `kind`; `FinanceAccountPage` renders the matching
-   component (`Ny529Dashboard`, `AdtDashboard`, `AllyDashboard`, `AmazonDashboard`) on the
+   component (`Ny529Dashboard`, `AdtDashboard`, `AllyDashboard`, `AmazonDashboard`, `AmexBankDashboard`, `AmexCardDashboard`) on the
    shared `fin-dash__*` card CSS.
 6. Report card in `<folder>.md`; Mike clicks **Go Live** in Settings → Statements.
 
-Live templates: `ny529` (529.md), `adt` (adt.md), `ally` (ally.md), `amazon` (amazon.md — first credit card; account kind `card`), `amexBank` (amexBank.md — savings only; two text layouts + image-only scans).
+Live templates: `ny529` (529.md), `adt` (adt.md), `ally` (ally.md), `amazon` (amazon.md — first credit card; account kind `card`), `amexBank` (amexBank.md — savings only; two text layouts + image-only scans), `amexCard` (amexCard.md — second credit card; reward dollars instead of points; notice letters skipped via `NotAStatement`).
+
+A PDF that reads fine but isn't a statement (e.g. a notice letter saved under a monthly file name) → the template throws `NotAStatement` (common.ts) and the engine records it as Skipped, like a non-statement file name.
 
 **Multi-account statements** (Ally): `ParsedTransaction.account` = last 4
 digits (stored in `statement_transactions.account`, migration 0093);

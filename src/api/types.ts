@@ -2703,7 +2703,80 @@ export interface AmexBankDashboard {
   cashPlacement?: { bank: CashBankPlacement | null; suggestions: CashSuggestion[]; rules: CashPlacement['rules'] };
 }
 
-export type FinanceDashboard = Ny529Dashboard | AdtDashboard | AllyDashboard | AmazonDashboard | AmexBankDashboard;
+export interface AmexCardStatementRow {
+  closingDate: string;
+  openingDate: string;
+  previousBalance: number;
+  paid: number;
+  credits: number;
+  purchases: number;
+  fees: number;
+  interest: number;
+  newBalance: number;
+  minimumPayment: number;
+  dueDate: string | null;
+  carried: number;
+  apr: number | null;
+  rewardDollars: number | null;
+  rewardsEarned: number | null;
+  fileId: string;
+  checksOk: boolean;
+}
+
+export interface AmexCardSummary {
+  asOf: string | null;
+  latest: AmexCardStatementRow | null;
+  status: CardStatus;
+  balance: number;
+  creditLine: number | null;
+  availableCredit: number | null;
+  utilization: number | null;
+  purchaseApr: number | null;
+  penaltyApr: number | null;
+  onPenaltyApr: boolean;
+  rewardDollars: number | null;
+  rewardDollarsAsOf: string | null;
+  lifetimeRewardsEarned: number;
+  lifetimeRewardsRedeemed: number;
+  ytdRewardsEarned: number;
+  rewardRate: number | null;
+  ytdPurchases: number;
+  ytdNet: number;
+  last12Net: number;
+  avgMonthlyNet: number | null;
+  lifetimeNet: number;
+  firstStatement: string | null;
+  paidInFullStreak: number;
+  carriedStatements: string[];
+  lateFees: { date: string; amount: number }[];
+  totalInterest: number;
+  totalFees: number;
+  charges: { date: string; description: string; kind: 'fee' | 'interest' | 'credit'; amount: number }[];
+  changes: { date: string; what: 'apr' | 'credit_line' | 'cash_line' | 'penalty_on' | 'penalty_off'; from: string; to: string }[];
+  statements: AmexCardStatementRow[];
+  years: { year: number; statements: number; purchases: number; refunds: number; net: number; rewardsEarned: number; interest: number; fees: number }[];
+  months: { closingDate: string; purchases: number; net: number; balance: number }[];
+  rewards: { asOf: string; balance: number }[];
+  topMerchants: { merchant: string; amount: number; count: number }[];
+  nextStatementExpected: string | null;
+  nextDue: { date: string; amount: number; minimum: number } | null;
+}
+
+export interface AmexCardDashboard {
+  kind: 'amexCard';
+  folder: StatementFolder;
+  template: { nickname: string; institution: string; type: string; site?: string; phone?: string } | null;
+  account: { accountLast: string; accountEnding: string } | null;
+  summary: AmexCardSummary;
+  statements: { id: string; periodStart: string; periodEnd: string; fileId: string; checks: StatementCheckRow[] }[];
+  /** Last 24 statements only (transactionsSince = exclusive start). */
+  transactions: { date: string; description: string; kind: string; amount: number }[];
+  transactionsSince: string | null;
+  files: { fileId: string; name: string; url: string | null; status: string; error: string | null }[];
+  flags: { id: string; severity: 'warn' | 'info'; message: string; created_at: string }[];
+}
+
+export type FinanceDashboard = Ny529Dashboard | AdtDashboard | AllyDashboard | AmazonDashboard | AmexBankDashboard | AmexCardDashboard;
 
 // ---- Account payers (0092_account_payers.sql) — which card pays which
 // account. 'autopay' = charges the card by itself; 'on_file' = the card is

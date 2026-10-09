@@ -45,6 +45,12 @@ export interface ParsedStatement {
 
 export class UnreadableStatement extends Error {}
 
+/** Thrown by a template when a PDF in the folder reads fine but isn't a
+ * statement (e.g. an Amex "important notice" letter saved under a
+ * statement's file name). The engine records it as Skipped — not counted
+ * in coverage, never flagged. */
+export class NotAStatement extends Error {}
+
 /** "$1,234.56", "-$7.06", "($7.06)", "1,234.56" → number. */
 export function money(raw: string): number {
   const s = raw.trim();

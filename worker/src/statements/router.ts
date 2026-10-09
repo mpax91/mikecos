@@ -13,9 +13,11 @@ import { accountLabel, summarizeAlly } from './allySummary';
 import { loadAmexBankData } from './amexBankDerive';
 import { summarizeAmexBank } from './amexBankSummary';
 import { loadAmazonData } from './amazonDerive';
+import { loadAmexCardData } from './amexCardDerive';
 import { listAttention } from './attention';
 import { getCashPlacement } from './cashPlacement';
 import { summarizeAmazon } from './amazonSummary';
+import { summarizeAmexCard } from './amexCardSummary';
 
 /** Statements API, mounted at /api/statements. */
 export const statementsRouter = new Hono<{ Bindings: Env }>();
@@ -220,6 +222,10 @@ statementsRouter.get('/accounts', async (c) => {
       const { stmts, txns } = await loadAmazonData(c.env, row.id);
       const s = summarizeAmazon(stmts, txns, easternToday());
       if (s.latest) headline = { kind: 'card', value: s.balance, asOf: s.asOf, status: s.status, dueDate: s.latest.dueDate, minimum: s.latest.minimumPayment, pointsValue: s.pointsValue };
+    } else if (row.template_id === 'amexCard') {
+      const { stmts, txns } = await loadAmexCardData(c.env, row.id);
+      const s = summarizeAmexCard(stmts, txns, easternToday());
+      if (s.latest) headline = { kind: 'card', value: s.balance, asOf: s.asOf, status: s.status, dueDate: s.latest.dueDate, minimum: s.latest.minimumPayment, pointsValue: s.rewardDollars };
     }
     out.push({ ...folderJson(row, stats.get(row.id)), headline });
   }
@@ -233,6 +239,7 @@ statementsRouter.get('/folders/:id/dashboard', async (c) => {
   if (row.template_id === 'ally') return c.json(await allyDashboard(c.env, row));
   if (row.template_id === 'amazon') return c.json(await amazonDashboard(c.env, row));
   if (row.template_id === 'amexBank') return c.json(await amexBankDashboard(c.env, row));
+  if (row.template_id === 'amexCard') return c.json(await amexCardDashboard(c.env, row));
   if (row.template_id !== 'ny529') return c.json({ error: 'No dashboard for this template yet' }, 400);
   const stats = await folderStats(c.env);
   const { stmts, txns, files } = await loadNy529Data(c.env, row.id);
@@ -422,5 +429,27 @@ async function amazonDashboard(env: Env, row: FolderRow) {
     files: files.map((f) => ({ fileId: f.file_id, name: f.file_name, url: f.web_url, status: f.status, error: f.error })),
     flags: await openFlags(env, row.id),
     payTask,
+  };
+}
+
+/** Amex Blue Cash Everyday (credit card) dashboard payload. Activity rows
+ * are capped to the last 24 statements — the full history stays in D1. */
+async function amexCardDashboard(env: Env, row: FolderRow) {
+  const stats = await folderStats(env);
+  const { stmts, txns, files } = await loadAmexCardData(env, row.id);
+  const summary = summarizeAmexCard(stmts, txns, easternToday());
+  const since = stmts.length > 24 ? stmts[stmts.length - 25].periodEnd : '';
+  const last = stmts[stmts.length - 1];
+  return {
+    kind: 'amexCard' as const,
+    folder: folderJson(row, stats.get(row.id)),
+    template: templateById(row.template_id)?.account ?? null,
+    account: last ? { accountLast: last.values.accountLast, accountEnding: last.values.accountEnding } : null,
+    summary,
+    statements: stmts.map((s) => ({ id: s.id, periodStart: s.periodStart, periodEnd: s.periodEnd, fileId: s.fileId, checks: s.checks })),
+    transactions: txns.filter((t) => t.date > since).map(({ date, description, kind, amount }) => ({ date, description, kind, amount })),
+    transactionsSince: since || null,
+    files: files.map((f) => ({ fileId: f.file_id, name: f.file_name, url: f.web_url, status: f.status, error: f.error })),
+    flags: await openFlags(env, row.id),
   };
 }

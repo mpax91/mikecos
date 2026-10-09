@@ -8,6 +8,7 @@ import { AdtDashboard } from '../components/AdtDashboard';
 import { AllyDashboard } from '../components/AllyDashboard';
 import { AmazonDashboard } from '../components/AmazonDashboard';
 import { AmexBankDashboard } from '../components/AmexBankDashboard';
+import { AmexCardDashboard } from '../components/AmexCardDashboard';
 
 export function FinanceAccountPage() {
   const { id } = useParams<{ id: string }>();
@@ -35,6 +36,8 @@ export function FinanceAccountPage() {
           ? [t.institution, ...data.summary.accounts.filter((a) => a.open).map((a) => `${a.label} ••${a.last4}`)].join(' · ')
           : data.kind === 'amazon'
             ? [t.institution, t.type, data.account?.accountLast ? `Visa ••${data.account.accountLast}` : null, data.summary.purchaseApr !== null ? `${data.summary.purchaseApr}% APR` : null].filter(Boolean).join(' · ')
+            : data.kind === 'amexCard'
+              ? [t.institution, t.type, data.account?.accountEnding ? `Card ••${data.account.accountEnding.replace(/\D/g, '').slice(-5)}` : null, data.summary.purchaseApr !== null ? `${data.summary.purchaseApr}% APR${data.summary.onPenaltyApr ? ' (penalty)' : ''}` : null].filter(Boolean).join(' · ')
             : data.kind === 'amexBank'
               ? [t.institution, data.summary.label, data.summary.apy !== null ? `${data.summary.apy.toFixed(2)}% APY` : null].filter(Boolean).join(' · ')
           : [
@@ -89,6 +92,8 @@ export function FinanceAccountPage() {
           <AmazonDashboard data={data} onDismissFlag={dismiss} />
         ) : data.kind === 'amexBank' ? (
           <AmexBankDashboard data={data} onDismissFlag={dismiss} />
+        ) : data.kind === 'amexCard' ? (
+          <AmexCardDashboard data={data} onDismissFlag={dismiss} />
         ) : (
           <Ny529Dashboard data={data} onDismissFlag={dismiss} />
         ))}
