@@ -5,6 +5,7 @@ import type { MeetingsRangeResponse, MonthResponse, RangeMeetingItem } from '../
 import { getHolidays } from '../utils/holidays';
 import { fmtBillMoney } from '../utils/bills';
 import { useReportTabMeta } from '../contexts/TabsContext';
+import { buildMeetingNoteTitle, meetingHasEnded } from '../utils/meetingNotes';
 
 // Same fixed home-timezone treatment as the Day/Week views' own meeting
 // times — see TodayPage's MEETING_TZ comment.
@@ -125,6 +126,7 @@ interface UpcomingItem {
   time: string | null; // pre-formatted, e.g. "11:00 AM" — null means date-only
   sortTime: number; // minutes since midnight for same-day ordering; timed entries first
   label: string;
+  meeting: RangeMeetingItem;
   onClick: () => void;
 }
 
@@ -172,7 +174,15 @@ function MonthMeetingList({ meetings, cellDate, realToday }: { meetings: RangeMe
  * buried the actual meetings. Laid out as a ruled Date / Time / Event table
  * so the rows are easy to scan — the date shows once per day, with a
  * heavier rule where a new day starts. */
-function UpcomingList({ items, realToday }: { items: UpcomingItem[]; realToday: string }) {
+function UpcomingList({
+  items,
+  realToday,
+  onOpenNote,
+}: {
+  items: UpcomingItem[];
+  realToday: string;
+  onOpenNote: (m: RangeMeetingItem) => void;
+}) {
   if (items.length === 0) return null;
   return (
     <div className="month-page__upcoming">
@@ -184,6 +194,7 @@ function UpcomingList({ items, realToday }: { items: UpcomingItem[]; realToday: 
               <th className="month-page__upcoming-date">Date</th>
               <th className="month-page__upcoming-time">Time</th>
               <th>Event</th>
+              <th className="month-page__upcoming-actions" aria-label="Links" />
             </tr>
           </thead>
           {groupUpcomingByDate(items).map((group) => (
@@ -195,6 +206,9 @@ function UpcomingList({ items, realToday }: { items: UpcomingItem[]; realToday: 
                   </td>
                   <td className="month-page__upcoming-time">{item.time ?? 'All Day'}</td>
                   <td className="month-page__upcoming-label" title={item.label}>{item.label}</td>
+                  <td className="month-page__upcoming-actions" onClick={(e) => e.stopPropagation()}>
+                    <UpcomingLinks m={item.meeting} onOpenNote={onOpenNote} />
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -202,6 +216,41 @@ function UpcomingList({ items, realToday }: { items: UpcomingItem[]; realToday: 
         </table>
       </div>
     </div>
+  );
+}
+
+/** The same two links a meeting row has on the Day view — 📅 opens the
+ * event in Google Calendar, 📝 opens its note (or creates one for an event
+ * that hasn't ended yet). Same classes and rules as TodayPage. */
+function UpcomingLinks({ m, onOpenNote }: { m: RangeMeetingItem; onOpenNote: (m: RangeMeetingItem) => void }) {
+  const noteDisabled = !m.hasNote && meetingHasEnded(m);
+  return (
+    <span className="today-page__meeting-actions">
+      <a
+        className="today-page__meeting-icon-btn"
+        href={m.gcalUrl ?? undefined}
+        target="_blank"
+        rel="noreferrer"
+        title="Open in Google Calendar"
+        aria-disabled={!m.gcalUrl}
+        onClick={(e) => {
+          if (!m.gcalUrl) e.preventDefault();
+        }}
+      >
+        📅
+      </a>
+      <button
+        type="button"
+        className={`today-page__meeting-icon-btn${m.hasNote ? ' today-page__meeting-icon-btn--active' : ''}`}
+        title={m.hasNote ? 'Open Note' : noteDisabled ? 'No Note for This Meeting' : 'Create Note'}
+        aria-disabled={noteDisabled}
+        onClick={() => {
+          if (!noteDisabled) onOpenNote(m);
+        }}
+      >
+        📝
+      </button>
+    </span>
   );
 }
 
@@ -250,12 +299,33 @@ export function MonthPage() {
   // have overlay" treatment as the Day view's meetings fetch — a failed or
   // unconfigured fetch just means no meeting badges rather than blocking
   // the rest of the page.
-  useEffect(() => {
+  const loadMeetings = useCallback(() => {
     api
       .getMeetingsRange(gridStart, gridEnd)
       .then(setMeetingsData)
       .catch(() => setMeetingsData(null));
   }, [gridStart, gridEnd]);
+
+  useEffect(() => {
+    loadMeetings();
+  }, [loadMeetings]);
+
+  // The Upcoming table's 📝 link — same behavior as TodayPage's
+  // openMeetingNote: open the linked note, else (only for an event that
+  // hasn't ended) create one titled from the event and open it.
+  async function openMeetingNote(m: RangeMeetingItem) {
+    if (m.hasNote) {
+      const { noteEntityId } = await api.getMeetingNote(m.id);
+      if (noteEntityId) {
+        navigate(`/notes/${noteEntityId}`);
+        return;
+      }
+      loadMeetings(); // stale hasNote — the worker dropped the dangling link
+    }
+    if (meetingHasEnded(m)) return;
+    const { noteEntityId } = await api.createMeetingNote(m.id, buildMeetingNoteTitle(m));
+    navigate(`/notes/${noteEntityId}`);
+  }
 
   const taskCountByDate = useMemo(() => {
     const map = new Map<string, number>();
@@ -300,6 +370,7 @@ export function MonthPage() {
           time: m.allDay ? null : formatMeetingTime(m.start),
           sortTime: m.allDay ? -1 : new Date(m.start).getHours() * 60 + new Date(m.start).getMinutes(),
           label: m.title,
+          meeting: m,
           onClick: () => openDay(m.date),
         });
       }
@@ -412,7 +483,7 @@ export function MonthPage() {
               );
             })}
           </div>
-          <UpcomingList items={upcomingItems} realToday={realToday} />
+          <UpcomingList items={upcomingItems} realToday={realToday} onOpenNote={openMeetingNote} />
         </div>
       )}
     </div>

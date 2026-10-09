@@ -5636,7 +5636,7 @@ a.today-page__important-dates-row--voter:hover .today-page__important-dates-name
 .month-page__upcoming-table td {
   padding: 6px 10px;
   border-top: var(--border-hairline);
-  vertical-align: baseline;
+  vertical-align: middle;
 }
 
 .month-page__upcoming-table th + th,
@@ -5686,8 +5686,22 @@ td.month-page__upcoming-time {
   white-space: nowrap;
 }
 
+.month-page__upcoming-actions {
+  width: 72px;
+}
+td.month-page__upcoming-actions {
+  padding-top: 2px;
+  padding-bottom: 2px;
+  cursor: default;
+}
+td.month-page__upcoming-actions .today-page__meeting-actions {
+  justify-content: flex-end;
+}
+
 @media (max-width: 600px) {
   .month-page__upcoming-date { width: 92px; }
+  .month-page__upcoming-actions { width: 60px; }
+  td.month-page__upcoming-actions { padding-left: 2px; padding-right: 4px; }
   .month-page__upcoming-time { width: 68px; }
   .month-page__upcoming-table th,
   .month-page__upcoming-table td { padding: 6px 8px; }
