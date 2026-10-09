@@ -5771,22 +5771,21 @@ td.month-page__upcoming-actions .today-page__meeting-actions {
 .settings-page__categories {
   display: flex;
   flex-direction: column;
-  gap: 2px;
   flex: 0 0 200px;
 }
 
+/* Desktop: a plain list with hairline dividers (Mike, 2026-10-09 — the
+   pills were overkill with a mouse). Phones keep the pill row, see the
+   max-width: 640px block. */
 .settings-page__category {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
-  border: var(--border-hairline);
-  /* A subdued pill at rest, not plain text — without this an inactive
-     category (everything except whichever one is currently open) had no
-     visual affordance of being clickable at all, especially on touch
-     where there's no hover state to reveal it. */
-  background: rgba(120, 120, 120, 0.06);
-  border-radius: 999px;
+  padding: 9px 10px;
+  border: none;
+  border-bottom: var(--border-hairline);
+  border-radius: 0;
+  background: none;
   font-size: 13px;
   font-weight: var(--weight-medium);
   color: var(--color-ink);
@@ -5794,14 +5793,19 @@ td.month-page__upcoming-actions .today-page__meeting-actions {
   text-align: left;
 }
 
+.settings-page__category:last-child {
+  border-bottom: none;
+}
+
 .settings-page__category:hover {
-  background: rgba(47, 74, 60, 0.12);
+  background: rgba(47, 74, 60, 0.06);
 }
 
 .settings-page__category.is-active {
-  background: var(--color-accent);
-  border-color: var(--color-accent);
-  color: var(--color-accent-text);
+  background: rgba(47, 74, 60, 0.1);
+  color: var(--color-accent);
+  font-weight: var(--weight-semibold, 600);
+  box-shadow: inset 3px 0 0 var(--color-accent);
 }
 
 .settings-page__category-icon {
@@ -8293,9 +8297,32 @@ td.month-page__upcoming-actions .today-page__meeting-actions {
     gap: 6px;
   }
 
+  /* Pills on a phone — a horizontal row of tap targets needs the
+     affordance (no hover on touch). */
   .settings-page__category {
     flex: 0 0 auto;
     white-space: nowrap;
+    padding: 8px 12px;
+    border: var(--border-hairline);
+    border-radius: 999px;
+    background: rgba(120, 120, 120, 0.06);
+    box-shadow: none;
+  }
+
+  .settings-page__category:last-child {
+    border-bottom: var(--border-hairline);
+  }
+
+  .settings-page__category:hover {
+    background: rgba(47, 74, 60, 0.12);
+  }
+
+  .settings-page__category.is-active {
+    background: var(--color-accent);
+    border-color: var(--color-accent);
+    color: var(--color-accent-text);
+    font-weight: var(--weight-medium);
+    box-shadow: none;
   }
 
   /* The note composer (input + reminder checkbox + Add button) was one
