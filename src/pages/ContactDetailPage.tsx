@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
 import type { Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, VoterDiff } from '../api/types';
-import { partyTone, PartyPill, VoterDiffBox, VoterInsightSection } from '../components/VoterInsight';
+import { partyTone, VoterDiffBox, VoterInsightSection } from '../components/VoterInsight';
 import { Modal } from '../components/Modal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { KebabMenu } from '../components/KebabMenu';
@@ -506,7 +506,6 @@ export function ContactDetailPage() {
   const anniversary = formatDate(contact.anniversary_month, contact.anniversary_day, contact.anniversary_year);
   const isPinned = contact.pinned === 1;
   const tz = timezoneForCity(contact.city);
-  const voterInsight = contact.voterRecords[0]?.insight;
   // Card birthday first; else the voter file's age (birthday without a year).
   const age = ageFrom(contact.birthday_month, contact.birthday_day, contact.birthday_year) ?? (birthday ? contact.voterRecords[0]?.voter_age ?? null : null);
 
@@ -544,7 +543,6 @@ export function ContactDetailPage() {
 
       <div className="contact-detail__meta">
         <span className="chip">{circleLabel(contact.circle)}</span>
-        <PartyPill code={voterInsight?.partyCode} name={voterInsight?.partyName ?? contact.voterRecords[0]?.party} />
       </div>
 
       <div className="contact-detail__card">

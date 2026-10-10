@@ -7906,8 +7906,8 @@ td.month-page__upcoming-actions .today-page__meeting-actions {
 .party-pill {
   display: inline-flex;
   align-items: center;
-  margin-left: 6px;
-  padding: 2px 9px;
+  margin-left: 4px;
+  padding: 1px 9px;
   border-radius: 999px;
   font-size: 12px;
   font-weight: var(--weight-medium);
@@ -7915,6 +7915,9 @@ td.month-page__upcoming-actions .today-page__meeting-actions {
 }
 .party-pill--dem { color: var(--color-party-dem); background: var(--color-party-dem-bg); }
 .party-pill--rep { color: var(--color-party-rep); background: var(--color-party-rep-bg); }
+.party-pill--ind { color: var(--color-party-ind); background: var(--color-party-ind-bg); }
+.party-pill--grn { color: var(--color-party-grn); background: var(--color-party-grn-bg); }
+.party-pill--lbt { color: var(--color-party-lbt); background: var(--color-party-lbt-bg); }
 .party-pill--other { color: var(--color-muted); background: var(--color-sidebar); }
 
 .party-dot {
@@ -7927,6 +7930,9 @@ td.month-page__upcoming-actions .today-page__meeting-actions {
 }
 .party-dot--dem { background: var(--color-party-dem); }
 .party-dot--rep { background: var(--color-party-rep); }
+.party-dot--ind { background: var(--color-party-ind); }
+.party-dot--grn { background: var(--color-party-grn); }
+.party-dot--lbt { background: var(--color-party-lbt); }
 
 .voter-diff {
   margin: 0 0 20px;

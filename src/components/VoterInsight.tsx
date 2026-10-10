@@ -12,9 +12,15 @@ import type { HouseholdMember, TurnoutCount, VoterDiff, VoterInsight, VoterRecor
  * The voter-file phone is deliberately NOT on the main card — it's
  * unreliable; it stays in the panel, labeled as such. */
 
-export function partyTone(code: string | null | undefined): 'dem' | 'rep' | 'other' {
+/** Party color family: red REP/CON, blue DEM/WOR, purple unaffiliated /
+ * Independence, green Green, amber Libertarian, grey anything else. */
+export type PartyTone = 'dem' | 'rep' | 'ind' | 'grn' | 'lbt' | 'other';
+export function partyTone(code: string | null | undefined): PartyTone {
   if (code === 'DEM' || code === 'WOR') return 'dem';
   if (code === 'REP' || code === 'CON') return 'rep';
+  if (code === 'NON' || code === 'BLK' || code === 'IND') return 'ind';
+  if (code === 'GRE') return 'grn';
+  if (code === 'LBT') return 'lbt';
   return 'other';
 }
 
@@ -287,7 +293,7 @@ export function VoterInsightSection({ records, household }: { records: VoterReco
         <span className="voter-insight__summary">
           {registered && (
             <span className="voter-insight__stat">
-              Registered <strong>{registered}</strong>
+              Registered <PartyPill code={ins?.partyCode} name={registered} />
             </span>
           )}
           {r0.calculated_party && (
