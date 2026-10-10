@@ -182,7 +182,7 @@ export function ContactsListPage() {
       </div>
 
       {/* Search spans the list's full width; filters sit on one line under
-          it — a Labels dropdown (Mike's Google labels, most-used first;
+          it — a Labels dropdown (Mike's Google labels, A–Z;
           circles are the fallback when no labels exist yet), the check-in
           chip and the voter-roll toggle. */}
       <input

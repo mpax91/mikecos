@@ -988,12 +988,12 @@ app.post('/api/contacts/name-case/fix', async (c) => {
 const VOTER_LABEL = 'Voter';
 
 // GET /api/contacts/labels — every label on Mike's own contacts (voter-roll
-// entries have none) with how many people carry it, most-used first. Drives
+// entries have none) with how many people carry it, A–Z. Drives
 // the Contacts filter bar and the label picker. Registered before :id.
 app.get('/api/contacts/labels', async (c) => {
   const { results } = await c.env.DB.prepare(
     `SELECT j.value AS label, COUNT(*) AS n FROM contacts, json_each(contacts.labels) j
-     WHERE contacts.source != 'voter_file' GROUP BY lower(j.value) ORDER BY n DESC, label COLLATE NOCASE`
+     WHERE contacts.source != 'voter_file' GROUP BY lower(j.value) ORDER BY label COLLATE NOCASE`
   ).all<{ label: string; n: number }>();
   const labels = (results ?? []).filter((r) => r.label.toLowerCase() !== VOTER_LABEL.toLowerCase()).map((r) => ({ label: r.label, count: r.n }));
   // Automatic "Voter" label: everyone with a voter record (the roll plus
@@ -1001,7 +1001,8 @@ app.get('/api/contacts/labels', async (c) => {
   // Roll on, so the count matches what the list then shows.
   const voters = await c.env.DB.prepare('SELECT COUNT(DISTINCT contact_id) AS n FROM voter_records').first<{ n: number }>();
   if (voters?.n) labels.push({ label: VOTER_LABEL, count: voters.n });
-  labels.sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+  // Alphabetical (Mike, 2026-10-10) — not by how many contacts carry it.
+  labels.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base', numeric: true }));
   return c.json({ labels });
 });
 
