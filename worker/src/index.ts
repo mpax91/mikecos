@@ -859,6 +859,11 @@ app.get('/api/contacts', async (c) => {
     sql += ' AND circle = ?';
     binds.push(circle);
   }
+  const label = c.req.query('label')?.trim();
+  if (label) {
+    sql += ' AND EXISTS (SELECT 1 FROM json_each(contacts.labels) WHERE lower(json_each.value) = lower(?))';
+    binds.push(label);
+  }
   if (remindersOnly) {
     sql += " AND id IN (SELECT contact_id FROM contact_notes WHERE remind_resolved = 0 AND remind_at IS NOT NULL AND remind_at <= ?)";
     binds.push(now());
@@ -884,7 +889,8 @@ app.get('/api/contacts', async (c) => {
     contacts = contacts
       .map((ct) => {
         const nameScore = fuzzyNameScore(ct.name, q);
-        const fieldScore = textIncludes(ct.headline, q) || textIncludes(ct.company, q) || textIncludes(ct.title, q) ? 40 : 0;
+        const fieldScore =
+          textIncludes(ct.headline, q) || textIncludes(ct.company, q) || textIncludes(ct.title, q) || textIncludes(ct.labels, q) ? 40 : 0;
         const noteScore = noteHitIds.has(ct.id) ? 25 : 0;
         return { ct, score: Math.max(nameScore, fieldScore, noteScore) };
       })
@@ -907,8 +913,8 @@ app.post('/api/contacts', async (c) => {
        (id, name, company, title, circle, emails, phones, address, headline, city,
         birthday_month, birthday_day, birthday_year,
         anniversary_month, anniversary_day, anniversary_year,
-        pinned, source, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'manual', ?, ?)`
+        pinned, source, created_at, updated_at, labels)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'manual', ?, ?, ?)`
   )
     .bind(
       id,
@@ -928,7 +934,8 @@ app.post('/api/contacts', async (c) => {
       body.anniversary_day ?? null,
       body.anniversary_year ?? null,
       ts,
-      ts
+      ts,
+      JSON.stringify(cleanLabels(Array.isArray(body.labels) ? (body.labels as unknown[]).filter((l): l is string => typeof l === 'string') : []))
     )
     .run();
   const contact = await c.env.DB.prepare('SELECT * FROM contacts WHERE id = ?').bind(id).first<Contact>();
@@ -953,6 +960,17 @@ app.post('/api/contacts', async (c) => {
 // this router matches whichever is registered first rather than always
 // preferring the static route — so this has to come first or every request
 // here gets swallowed by the :id handler as a "contact not found".
+// GET /api/contacts/labels — every label on Mike's own contacts (voter-roll
+// entries have none) with how many people carry it, most-used first. Drives
+// the Contacts filter bar and the label picker. Registered before :id.
+app.get('/api/contacts/labels', async (c) => {
+  const { results } = await c.env.DB.prepare(
+    `SELECT j.value AS label, COUNT(*) AS n FROM contacts, json_each(contacts.labels) j
+     WHERE contacts.source != 'voter_file' GROUP BY lower(j.value) ORDER BY n DESC, label COLLATE NOCASE`
+  ).all<{ label: string; n: number }>();
+  return c.json({ labels: (results ?? []).map((r) => ({ label: r.label, count: r.n })) });
+});
+
 app.get('/api/contacts/duplicates', async (c) => {
   const { results } = await c.env.DB.prepare('SELECT id, name, circle, source FROM contacts').all<{
     id: string;
@@ -1232,6 +1250,10 @@ app.patch('/api/contacts/:id', async (c) => {
   if (body.circle !== undefined && CIRCLES.includes(body.circle as ContactCircle)) fields.push(['circle', body.circle]);
   if (body.emails !== undefined) fields.push(['emails', JSON.stringify(body.emails)]);
   if (body.phones !== undefined) fields.push(['phones', JSON.stringify(body.phones)]);
+  if (body.labels !== undefined) {
+    const list = Array.isArray(body.labels) ? (body.labels as unknown[]) : [];
+    fields.push(['labels', JSON.stringify(cleanLabels(list.filter((l): l is string => typeof l === 'string')))]);
+  }
   if (body.pinned !== undefined) fields.push(['pinned', body.pinned ? 1 : 0]);
 
   if (fields.length > 0) {
@@ -1294,6 +1316,9 @@ app.post('/api/contacts/:id/merge', async (c) => {
   if (!target.anniversary_month && source.anniversary_month) {
     fields.push(['anniversary_month', source.anniversary_month], ['anniversary_day', source.anniversary_day], ['anniversary_year', source.anniversary_year]);
   }
+
+  const unionLabels = mergeLabels(target.labels, mergeLabels(source.labels, []));
+  if (unionLabels.length !== mergeLabels(target.labels, []).length) fields.push(['labels', JSON.stringify(unionLabels)]);
 
   const targetEmails = JSON.parse(target.emails || '[]') as string[];
   const targetEmailSet = new Set(targetEmails.map(normalizeEmail));
@@ -1396,6 +1421,8 @@ interface ParsedContactRecord {
   company: string | null;
   title: string | null;
   circleHint: ContactCircle | null;
+  /** The source's own labels/groups (Google "Labels", vCard CATEGORIES). */
+  labels: string[];
   birthday_month: number | null;
   birthday_day: number | null;
   birthday_year: number | null;
@@ -1568,6 +1595,36 @@ const CIRCLE_ALIASES: Record<string, ContactCircle> = {
 // import, rather than everyone landing in 'other' and needing manual
 // re-sorting — this is what lets an already-organized address book carry
 // its structure straight over.
+/** User labels only: Google's system groups ("* myContacts", "* starred")
+ * dropped, trimmed, de-duplicated case-insensitively, order kept. */
+function cleanLabels(labels: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of labels) {
+    const l = raw.trim();
+    if (!l || l.startsWith('*') || /^(my contacts|starred|other contacts)$/i.test(l)) continue;
+    const k = l.toLowerCase();
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(l);
+  }
+  return out;
+}
+
+/** Union of two label lists (JSON string or array), first list's order. */
+function mergeLabels(existing: string | string[] | null | undefined, incoming: string[]): string[] {
+  let base: string[] = [];
+  if (Array.isArray(existing)) base = existing;
+  else if (existing) {
+    try {
+      base = JSON.parse(existing) as string[];
+    } catch {
+      base = [];
+    }
+  }
+  return cleanLabels([...base, ...incoming]);
+}
+
 function circleFromLabel(labels: string[]): ContactCircle | null {
   for (const label of labels) {
     const hit = CIRCLE_ALIASES[label.toLowerCase().trim()];
@@ -1636,6 +1693,7 @@ function parseContactsCsv(text: string): ParsedContactRecord[] {
       company: companyIdx >= 0 ? get(companyIdx) || null : null,
       title: titleIdx >= 0 ? get(titleIdx) || null : null,
       circleHint: labelsIdx >= 0 ? circleFromLabel(splitLabels(get(labelsIdx))) : null,
+      labels: labelsIdx >= 0 ? cleanLabels(splitLabels(get(labelsIdx))) : [],
       birthday_month: bday.month,
       birthday_day: bday.day,
       birthday_year: bday.year,
@@ -1887,6 +1945,7 @@ function parseVoterCsv(text: string): ParsedContactRecord[] {
       company: null,
       title: null,
       circleHint: null,
+      labels: [],
       relations: [],
       ...fields,
       raw,
@@ -1952,6 +2011,7 @@ function parseVCard(text: string): ParsedContactRecord[] {
       company: org || null,
       title: title || null,
       circleHint: circleFromLabel(categories),
+      labels: cleanLabels(categories),
       birthday_month: bday.month,
       birthday_day: bday.day,
       birthday_year: bday.year,
@@ -2343,6 +2403,12 @@ async function processDecisionChunk(
         if (!existing.birthday_month && r.birthday_month) {
           fields.push(['birthday_month', r.birthday_month], ['birthday_day', r.birthday_day], ['birthday_year', r.birthday_year]);
         }
+        // Labels are additive: the file's labels join whatever the contact
+        // has (a re-import of the Google CSV is how labels arrive).
+        const existingLabels = mergeLabels(existing.labels, []);
+        const mergedLabelList = mergeLabels(existing.labels, r.labels ?? []);
+        if (mergedLabelList.length !== existingLabels.length) fields.push(['labels', JSON.stringify(mergedLabelList)]);
+
         const existingEmails = JSON.parse(existing.emails || '[]') as string[];
         const existingEmailSet = new Set(existingEmails.map(normalizeEmail));
         const mergedEmails = [...existingEmails, ...r.emails.filter((e) => !existingEmailSet.has(normalizeEmail(e)))];
@@ -2383,8 +2449,8 @@ async function processDecisionChunk(
                (id, name, company, title, circle, emails, phones, address, city,
                 birthday_month, birthday_day, birthday_year,
                 anniversary_month, anniversary_day, anniversary_year,
-                pinned, source, import_batch_id, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, 0, ?, ?, ?, ?)`
+                pinned, source, import_batch_id, created_at, updated_at, labels)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, 0, ?, ?, ?, ?, ?)`
           )
           .bind(
             contactId,
@@ -2402,7 +2468,8 @@ async function processDecisionChunk(
             kind === 'voter_file' ? 'voter_file' : 'contact_import',
             batchId,
             ts,
-            ts
+            ts,
+            JSON.stringify(r.labels ?? [])
           )
       );
       newCount++;

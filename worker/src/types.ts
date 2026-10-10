@@ -138,6 +138,7 @@ export interface Contact {
   pinned: number; // 0 | 1
   source: string;
   import_batch_id: string | null;
+  labels: string; // JSON string[] — the user's own labels (migration 0098)
   created_at: string;
   updated_at: string;
 }

@@ -893,6 +893,7 @@ export interface Contact {
   import_batch_id: string | null;
   created_at: string;
   updated_at: string;
+  labels?: string; // JSON string[] — Mike's own labels (Google Contacts), migration 0098
 }
 
 export interface ContactConnection {

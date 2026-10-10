@@ -7,6 +7,7 @@ import { ConfirmModal } from '../components/ConfirmModal';
 import { KebabMenu } from '../components/KebabMenu';
 import { useTabs, useReportTabMeta } from '../contexts/TabsContext';
 import { ContactsAskPanel } from './ContactsAskPanel';
+import { contactLabels } from '../utils/contactLabels';
 
 const CIRCLES: { value: ContactCircle; label: string }[] = [
   { value: 'family', label: 'Family' },
@@ -16,6 +17,8 @@ const CIRCLES: { value: ContactCircle; label: string }[] = [
   { value: 'professional', label: 'Professional' },
   { value: 'other', label: 'Other' },
 ];
+
+const LABELS_SHOWN = 10;
 
 function circleLabel(circle: ContactCircle): string {
   return CIRCLES.find((c) => c.value === circle)?.label ?? 'Other';
@@ -34,6 +37,9 @@ function ContactCard({
 }) {
   const { openTab, showContextMenu } = useTabs();
   const isPinned = contact.pinned === 1;
+  // Mike's own Google labels; a circle only shows when there are no labels
+  // and it says something (not "Other"). Company stays on the card itself.
+  const labels = contactLabels(contact);
   return (
     <div
       className={`card project-card${isPinned ? ' is-pinned' : ''}`}
@@ -57,10 +63,17 @@ function ContactCard({
           <span className="project-card__title-text">{contact.name}</span>
         </p>
         {contact.headline && <p className="contact-card__headline">{contact.headline}</p>}
-        <div className="project-card__stats">
-          <span>{circleLabel(contact.circle)}</span>
-          {contact.company && <span>{contact.company}</span>}
-        </div>
+        {(labels.length > 0 || contact.circle !== 'other') && (
+          <div className="contact-labels contact-labels--row">
+            {labels.length > 0
+              ? labels.map((l) => (
+                  <span key={l} className="contact-label">
+                    {l}
+                  </span>
+                ))
+              : <span className="contact-label contact-label--circle">{circleLabel(contact.circle)}</span>}
+          </div>
+        )}
       </div>
       <KebabMenu
         items={[
@@ -85,6 +98,9 @@ export function ContactsListPage() {
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [circleFilter, setCircleFilter] = useState<ContactCircle | null>(null);
+  const [labelFilter, setLabelFilter] = useState<string | null>(null);
+  const [allLabels, setAllLabels] = useState<{ label: string; count: number }[]>([]);
+  const [showAllLabels, setShowAllLabels] = useState(false);
   const [remindersOnly, setRemindersOnly] = useState(false);
   const [reminderCount, setReminderCount] = useState(0);
   // Standalone voter-roll entries (12k+ people Mike has never met) are
@@ -103,16 +119,21 @@ export function ContactsListPage() {
       .listContacts({
         q: query || undefined,
         circle: circleFilter ?? undefined,
+        label: labelFilter ?? undefined,
         remindersOnly: remindersOnly || undefined,
         includeVoters: includeVoters || undefined,
       })
       .then(setContacts)
       .catch((e) => setError(String(e)));
-  }, [query, circleFilter, remindersOnly, includeVoters]);
+  }, [query, circleFilter, labelFilter, remindersOnly, includeVoters]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    api.listContactLabels().then((r) => setAllLabels(r.labels)).catch(() => {});
+  }, []);
 
   // The "N need a check-in" count in the toolbar is independent of the
   // current filter/search state, so it's fetched on its own rather than
@@ -168,26 +189,55 @@ export function ContactsListPage() {
           placeholder={includeVoters ? 'Search contacts, notes, and the voter roll…' : 'Search contacts and notes…'}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          style={{ maxWidth: 260 }}
+          className="contacts-search"
         />
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        {/* Mike's own labels replace the fixed circles once any exist
+            (most-used first; the rest behind "+N More"). Circles remain the
+            fallback for an address book with no labels yet. */}
+        <div className="contacts-filter-chips">
           <button
             type="button"
-            className={`chip${circleFilter === null ? ' is-active' : ''}`}
-            onClick={() => setCircleFilter(null)}
+            className={`chip${circleFilter === null && labelFilter === null ? ' is-active' : ''}`}
+            onClick={() => {
+              setCircleFilter(null);
+              setLabelFilter(null);
+            }}
           >
             All
           </button>
-          {CIRCLES.map((c) => (
-            <button
-              key={c.value}
-              type="button"
-              className={`chip${circleFilter === c.value ? ' is-active' : ''}`}
-              onClick={() => setCircleFilter(circleFilter === c.value ? null : c.value)}
-            >
-              {c.label}
-            </button>
-          ))}
+          {allLabels.length > 0 ? (
+            <>
+              {(showAllLabels ? allLabels : allLabels.slice(0, LABELS_SHOWN))
+                .concat(labelFilter && !showAllLabels && !allLabels.slice(0, LABELS_SHOWN).some((l) => l.label === labelFilter) ? allLabels.filter((l) => l.label === labelFilter) : [])
+                .map((l) => (
+                  <button
+                    key={l.label}
+                    type="button"
+                    className={`chip${labelFilter === l.label ? ' is-active' : ''}`}
+                    onClick={() => setLabelFilter(labelFilter === l.label ? null : l.label)}
+                    title={`${l.count} contact${l.count === 1 ? '' : 's'}`}
+                  >
+                    {l.label} <span className="chip__count">{l.count}</span>
+                  </button>
+                ))}
+              {allLabels.length > LABELS_SHOWN && (
+                <button type="button" className="chip chip--ghost" onClick={() => setShowAllLabels((v) => !v)}>
+                  {showAllLabels ? 'Fewer' : `+${allLabels.length - LABELS_SHOWN} More`}
+                </button>
+              )}
+            </>
+          ) : (
+            CIRCLES.map((c) => (
+              <button
+                key={c.value}
+                type="button"
+                className={`chip${circleFilter === c.value ? ' is-active' : ''}`}
+                onClick={() => setCircleFilter(circleFilter === c.value ? null : c.value)}
+              >
+                {c.label}
+              </button>
+            ))
+          )}
         </div>
         {reminderCount > 0 && (
           <button
@@ -212,7 +262,7 @@ export function ContactsListPage() {
         <div className="empty-state">Loading…</div>
       ) : contacts.length === 0 ? (
         <div className="empty-state">
-          {query || circleFilter || remindersOnly
+          {query || circleFilter || labelFilter || remindersOnly
             ? 'No contacts match.'
             : 'No contacts yet — add someone to start keeping notes and staying in touch.'}
         </div>

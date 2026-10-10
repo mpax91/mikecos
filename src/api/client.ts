@@ -261,10 +261,11 @@ export const api = {
 
   // ---- Contacts (personal CRM) ----
 
-  listContacts: (opts?: { q?: string; circle?: ContactCircle; remindersOnly?: boolean; includeVoters?: boolean }) => {
+  listContacts: (opts?: { q?: string; circle?: ContactCircle; label?: string; remindersOnly?: boolean; includeVoters?: boolean }) => {
     const params = new URLSearchParams();
     if (opts?.q) params.set('q', opts.q);
     if (opts?.circle) params.set('circle', opts.circle);
+    if (opts?.label) params.set('label', opts.label);
     if (opts?.remindersOnly) params.set('reminders', '1');
     if (opts?.includeVoters) params.set('voters', '1');
     const qs = params.toString();
@@ -273,6 +274,9 @@ export const api = {
 
   createContact: (params: { name: string; circle?: ContactCircle }) =>
     request<Contact>('/api/contacts', { method: 'POST', body: JSON.stringify(params) }),
+
+  /** Mike's own contact labels (from Google) with counts, most-used first. */
+  listContactLabels: () => request<{ labels: { label: string; count: number }[] }>('/api/contacts/labels'),
 
   getContact: (id: string) => request<ContactDetail>(`/api/contacts/${id}`),
 

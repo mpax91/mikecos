@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
 import type { Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, VoterDiff } from '../api/types';
 import { partyTone, VoterDiffBox, VoterInsightSection } from '../components/VoterInsight';
+import { contactLabels } from '../utils/contactLabels';
 import { Modal } from '../components/Modal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { KebabMenu } from '../components/KebabMenu';
@@ -63,6 +64,20 @@ function EditDetailsModal({ contact, onSave, onClose }: { contact: ContactDetail
   const [aMonth, setAMonth] = useState(contact.anniversary_month?.toString() ?? '');
   const [aDay, setADay] = useState(contact.anniversary_day?.toString() ?? '');
   const [aYear, setAYear] = useState(contact.anniversary_year?.toString() ?? '');
+  const [labels, setLabels] = useState<string[]>(contactLabels(contact));
+  const [labelDraft, setLabelDraft] = useState('');
+  const [knownLabels, setKnownLabels] = useState<string[]>([]);
+  useEffect(() => {
+    api.listContactLabels().then((r) => setKnownLabels(r.labels.map((l) => l.label))).catch(() => {});
+  }, []);
+  function addLabel(raw: string) {
+    const l = raw.trim();
+    if (!l) return;
+    // Reuse the existing spelling of a known label ("bedford bee" → "Bedford Bee").
+    const known = knownLabels.find((k) => k.toLowerCase() === l.toLowerCase()) ?? l;
+    setLabels((prev) => (prev.some((p) => p.toLowerCase() === known.toLowerCase()) ? prev : [...prev, known]));
+    setLabelDraft('');
+  }
 
   function num(s: string): number | null {
     const n = parseInt(s, 10);
@@ -74,6 +89,7 @@ function EditDetailsModal({ contact, onSave, onClose }: { contact: ContactDetail
     onSave({
       name: name.trim(),
       circle,
+      labels: labelDraft.trim() && !labels.some((l) => l.toLowerCase() === labelDraft.trim().toLowerCase()) ? [...labels, labelDraft.trim()] : labels,
       headline: headline.trim() || null,
       company: company.trim() || null,
       title: title.trim() || null,
@@ -101,6 +117,38 @@ function EditDetailsModal({ contact, onSave, onClose }: { contact: ContactDetail
     <Modal title="Edit Contact" onClose={onClose}>
       <div className="contact-edit-form">
         <input autoFocus placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
+        <label className="contact-edit-form__label">Labels</label>
+        <div className="contact-labels contact-labels--edit">
+          {labels.map((l) => (
+            <span key={l} className="contact-label">
+              {l}
+              <button type="button" className="contact-label__remove" aria-label={`Remove ${l}`} onClick={() => setLabels((prev) => prev.filter((p) => p !== l))}>
+                ✕
+              </button>
+            </span>
+          ))}
+          <input
+            className="contact-labels__input"
+            list="contact-label-options"
+            placeholder={labels.length ? 'Add a label…' : 'Add a label (Enter)…'}
+            value={labelDraft}
+            onChange={(e) => setLabelDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ',') {
+                e.preventDefault();
+                addLabel(labelDraft);
+              }
+            }}
+          />
+          <datalist id="contact-label-options">
+            {knownLabels
+              .filter((k) => !labels.some((l) => l.toLowerCase() === k.toLowerCase()))
+              .map((k) => (
+                <option key={k} value={k} />
+              ))}
+          </datalist>
+        </div>
+        <label className="contact-edit-form__label">Circle</label>
         <select value={circle} onChange={(e) => setCircle(e.target.value as ContactCircle)}>
           {CIRCLES.map((c) => (
             <option key={c.value} value={c.value}>
@@ -506,6 +554,7 @@ export function ContactDetailPage() {
   const anniversary = formatDate(contact.anniversary_month, contact.anniversary_day, contact.anniversary_year);
   const isPinned = contact.pinned === 1;
   const tz = timezoneForCity(contact.city);
+  const cardLabels = contactLabels(contact);
   // Card birthday first; else the voter file's age (birthday without a year).
   const age = ageFrom(contact.birthday_month, contact.birthday_day, contact.birthday_year) ?? (birthday ? contact.voterRecords[0]?.voter_age ?? null : null);
 
@@ -541,9 +590,16 @@ export function ContactDetailPage() {
 
       {contact.headline && <div className="contact-detail__headline">{contact.headline}</div>}
 
-      <div className="contact-detail__meta">
-        <span className="chip">{circleLabel(contact.circle)}</span>
-      </div>
+      {(cardLabels.length > 0 || contact.circle !== 'other') && (
+        <div className="contact-detail__meta contact-labels">
+          {cardLabels.map((l) => (
+            <span key={l} className="contact-label">
+              {l}
+            </span>
+          ))}
+          {contact.circle !== 'other' && <span className="contact-label contact-label--circle">{circleLabel(contact.circle)}</span>}
+        </div>
+      )}
 
       <div className="contact-detail__card">
         <div className="contact-detail__avatar">{initials(contact.name)}</div>
