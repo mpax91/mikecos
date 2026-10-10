@@ -2265,13 +2265,14 @@ function titleCaseWord(word: string): string {
   return word.toLowerCase().replace(/(^|['-])([a-z])/g, (_m, sep: string, ch: string) => sep + ch.toUpperCase());
 }
 
-/** Fix a name typed all-lowercase or ALL-CAPS ("sal villani" → "Sal
- * Villani"); anything already mixed-case ("McCabe", "deLuca") is Mike's
- * spelling and stays as-is. */
+/** Fix a person's name typed all-lowercase ("sal villani" → "Sal
+ * Villani"). Left alone: anything with a capital already ("McCabe",
+ * "deLuca"), ALL-CAPS (usually a company acronym — ADT, CVS, USAA), and
+ * anything with an @ or a digit (an email or handle saved as the name). */
 function tidyNameCase(name: string): string {
   const t = name.trim();
-  if (!/[a-z]/i.test(t)) return t;
-  if (t === t.toLowerCase() || t === t.toUpperCase()) return titleCaseName(t);
+  if (!/[a-z]/.test(t) || /[@\d]/.test(t)) return t;
+  if (t === t.toLowerCase()) return titleCaseName(t);
   return t;
 }
 
