@@ -196,7 +196,15 @@ export function ContactsListPage() {
         {allLabels.length > 0 ? (
           <label className="contacts-filter-select">
             <span className="contacts-filter-select__label">Label</span>
-            <select value={labelFilter ?? ''} onChange={(e) => setLabelFilter(e.target.value || null)}>
+            <select
+              value={labelFilter ?? ''}
+              onChange={(e) => {
+                const v = e.target.value || null;
+                setLabelFilter(v);
+                // "Voter" means the roll — show it.
+                if (v === VOTER_LABEL) setIncludeVoters(true);
+              }}
+            >
               <option value="">All</option>
               {allLabels.map((l) => (
                 <option key={l.label} value={l.label}>

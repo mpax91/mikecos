@@ -977,14 +977,10 @@ app.get('/api/contacts/labels', async (c) => {
      WHERE contacts.source != 'voter_file' GROUP BY lower(j.value) ORDER BY n DESC, label COLLATE NOCASE`
   ).all<{ label: string; n: number }>();
   const labels = (results ?? []).filter((r) => r.label.toLowerCase() !== VOTER_LABEL.toLowerCase()).map((r) => ({ label: r.label, count: r.n }));
-  // Automatic "Voter" label: Mike's own contacts with a voter record (the
-  // bare roll entries add to it only when the Voter Roll toggle is on).
-  const voters = await c.env.DB.prepare(
-    `SELECT COUNT(DISTINCT vr.contact_id) AS n FROM voter_records vr JOIN contacts ct ON ct.id = vr.contact_id
-     WHERE ct.source != 'voter_file' OR EXISTS (SELECT 1 FROM json_each(ct.labels) j WHERE lower(j.value) = lower(?))`
-  )
-    .bind(VOTER_LABEL)
-    .first<{ n: number }>();
+  // Automatic "Voter" label: everyone with a voter record (the roll plus
+  // Mike's merged contacts). Picking it in the dropdown turns the Voter
+  // Roll on, so the count matches what the list then shows.
+  const voters = await c.env.DB.prepare('SELECT COUNT(DISTINCT contact_id) AS n FROM voter_records').first<{ n: number }>();
   if (voters?.n) labels.push({ label: VOTER_LABEL, count: voters.n });
   labels.sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
   return c.json({ labels });
