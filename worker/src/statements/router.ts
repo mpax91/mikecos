@@ -14,11 +14,13 @@ import { loadAmexBankData } from './amexBankDerive';
 import { summarizeAmexBank } from './amexBankSummary';
 import { loadAmazonData } from './amazonDerive';
 import { loadAmexCardData } from './amexCardDerive';
+import { loadBofaCardData } from './bofaCardDerive';
 import { listAttention } from './attention';
 import { getCashPlacement } from './cashPlacement';
 import { summarizeAmazon } from './amazonSummary';
 import { summarizeAmexCard } from './amexCardSummary';
-import { cardRewardsSettings, combineRewards, rewardsFromAmazon, rewardsFromAmexCard, syncRedeemReminder } from './rewards';
+import { bofaGaps, summarizeBofaCard } from './bofaCardSummary';
+import { cardRewardsSettings, combineRewards, rewardsFromAmazon, rewardsFromAmexCard, rewardsFromBofaCard, syncRedeemReminder } from './rewards';
 import type { CardRewards, RedeemTaskState, RewardsCardLine } from './rewards';
 
 /** Statements API, mounted at /api/statements. */
@@ -231,6 +233,10 @@ statementsRouter.get('/accounts', async (c) => {
       const { stmts, txns } = await loadAmexCardData(c.env, row.id);
       const s = summarizeAmexCard(stmts, txns, easternToday());
       if (s.latest) headline = { kind: 'card', value: s.balance, asOf: s.asOf, status: s.status, dueDate: s.latest.dueDate, minimum: s.latest.minimumPayment, pointsValue: s.rewardDollars };
+    } else if (row.template_id === 'bofaCard') {
+      const { stmts, txns } = await loadBofaCardData(c.env, row.id);
+      const s = summarizeBofaCard(stmts, txns, easternToday());
+      if (s.latest) headline = { kind: 'card', value: s.balance, asOf: s.asOf, status: s.status, dueDate: s.nextDue ? s.latest.dueDate : null, minimum: s.nextDue ? s.latest.minimumPayment : null, pointsValue: s.cashBackAvailable };
     }
     out.push({ ...folderJson(row, stats.get(row.id)), headline });
   }
@@ -247,6 +253,10 @@ async function cardRewardsFor(env: Env, row: FolderRow): Promise<CardRewards | n
   if (row.template_id === 'amexCard') {
     const { stmts, txns } = await loadAmexCardData(env, row.id);
     return stmts.length ? rewardsFromAmexCard(summarizeAmexCard(stmts, txns, today), today) : null;
+  }
+  if (row.template_id === 'bofaCard') {
+    const { stmts, txns } = await loadBofaCardData(env, row.id);
+    return stmts.length ? rewardsFromBofaCard(summarizeBofaCard(stmts, txns, today), today) : null;
   }
   return null;
 }
@@ -291,6 +301,7 @@ statementsRouter.get('/folders/:id/dashboard', async (c) => {
   if (row.template_id === 'amazon') return c.json(await amazonDashboard(c.env, row));
   if (row.template_id === 'amexBank') return c.json(await amexBankDashboard(c.env, row));
   if (row.template_id === 'amexCard') return c.json(await amexCardDashboard(c.env, row));
+  if (row.template_id === 'bofaCard') return c.json(await bofaCardDashboard(c.env, row));
   if (row.template_id !== 'ny529') return c.json({ error: 'No dashboard for this template yet' }, 400);
   const stats = await folderStats(c.env);
   const { stmts, txns, files } = await loadNy529Data(c.env, row.id);
@@ -500,6 +511,31 @@ async function amexCardDashboard(env: Env, row: FolderRow) {
     folder: folderJson(row, stats.get(row.id)),
     template: templateById(row.template_id)?.account ?? null,
     account: last ? { accountLast: last.values.accountLast, accountEnding: last.values.accountEnding } : null,
+    summary,
+    statements: stmts.map((s) => ({ id: s.id, periodStart: s.periodStart, periodEnd: s.periodEnd, fileId: s.fileId, checks: s.checks })),
+    transactions: txns.filter((t) => t.date > since).map(({ date, description, kind, amount }) => ({ date, description, kind, amount })),
+    transactionsSince: since || null,
+    files: files.map((f) => ({ fileId: f.file_id, name: f.file_name, url: f.web_url, status: f.status, error: f.error })),
+    flags: await openFlags(env, row.id),
+  };
+}
+
+/** Bank of America Customized Cash Rewards (credit card) dashboard payload.
+ * Activity rows are capped to the last 24 statements. */
+async function bofaCardDashboard(env: Env, row: FolderRow) {
+  const stats = await folderStats(env);
+  const { stmts, txns, files } = await loadBofaCardData(env, row.id);
+  const summary = summarizeBofaCard(stmts, txns, easternToday());
+  const since = stmts.length > 24 ? stmts[stmts.length - 25].periodEnd : '';
+  const last = stmts[stmts.length - 1];
+  return {
+    kind: 'bofaCard' as const,
+    rewards: summary.latest ? rewardsFromBofaCard(summary, easternToday()) : null,
+    ...(await redeemInfo(env, row)),
+    folder: folderJson(row, stats.get(row.id)),
+    template: templateById(row.template_id)?.account ?? null,
+    account: last ? { accountLast: last.values.accountLast } : null,
+    gaps: bofaGaps(stmts, files),
     summary,
     statements: stmts.map((s) => ({ id: s.id, periodStart: s.periodStart, periodEnd: s.periodEnd, fileId: s.fileId, checks: s.checks })),
     transactions: txns.filter((t) => t.date > since).map(({ date, description, kind, amount }) => ({ date, description, kind, amount })),

@@ -17859,3 +17859,11 @@ td.month-page__upcoming-actions .today-page__meeting-actions {
     align-items: flex-start;
   }
 }
+
+/* BofA card dashboard — the Payments card's label/value rows */
+.bofa__kv td {
+  white-space: normal;
+}
+.bofa__kv td:last-child {
+  text-align: right;
+}

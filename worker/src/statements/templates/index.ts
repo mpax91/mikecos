@@ -5,10 +5,12 @@ import { parseAlly } from './ally';
 import { parseAmazon } from './amazon';
 import { parseAmexBank } from './amexBank';
 import { parseAmexCard } from './amexCard';
+import { parseBofaCard } from './bofaCard';
 
 /** Per-folder templates (one per Drive folder, all on the shared base
  * engine). Build order per progress.md: 529 is live; ADT, Ally Bank, Amazon Prime Visa,
- * American Express Bank and the Amex Blue Cash Everyday card built; the rest are added one folder at a time. */
+ * American Express Bank, the Amex Blue Cash Everyday card and the Bank of America
+ * Customized Cash Rewards card built; the rest are added one folder at a time. */
 export interface StatementTemplate {
   id: string;
   name: string;
@@ -147,6 +149,27 @@ export const TEMPLATES: StatementTemplate[] = [
     // summaries ("AMEX CC - 2024.pdf") are skipped. Notice letters saved
     // under a monthly name are recognized by the parser (NotAStatement).
     isStatementFile: (name) => /\d{4}\.\d{2}/.test(name),
+  },
+  {
+    id: 'bofaCard',
+    name: 'Bank of America Customized Cash Rewards (Monthly Credit Card)',
+    folderNames: ['Bank of America Credit Card', 'BofA Credit Card', 'Bank of America Card'],
+    account: {
+      nickname: 'BofA Customized Cash Rewards',
+      institution: 'Bank of America',
+      type: 'Cash Back Credit Card',
+      owner: 'household',
+      cadence: 'monthly',
+      kind: 'card',
+      network: 'Visa Signature',
+      site: 'https://www.bankofamerica.com',
+      phone: '1-800-637-7455',
+    },
+    parse: parseBofaCard,
+    // Monthly statements are "BOA CC - YYYY.MM.DD.pdf"; the year-end
+    // summaries ("BOA CC - 2024.pdf") and the "BOA Cash Rewards Scorecard"
+    // sheet are skipped.
+    isStatementFile: (name) => /\d{4}\.\d{2}\.\d{2}/.test(name),
   },
 ];
 

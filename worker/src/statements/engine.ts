@@ -13,6 +13,7 @@ import { deriveAlly } from './allyDerive';
 import { deriveAmexBank } from './amexBankDerive';
 import { deriveAmazon } from './amazonDerive';
 import { deriveAmexCard } from './amexCardDerive';
+import { deriveBofaCard } from './bofaCardDerive';
 import { syncPaymentFacts } from '../accountPayers';
 import { syncBills } from '../bills';
 import { syncCardFacts } from '../cardFacts';
@@ -189,6 +190,7 @@ export async function derive(env: Env, folder: FolderRow): Promise<void> {
   else if (folder.template_id === 'amazon') await deriveAmazon(env, fresh);
   else if (folder.template_id === 'amexBank') await deriveAmexBank(env, fresh);
   else if (folder.template_id === 'amexCard') await deriveAmexCard(env, fresh);
+  else if (folder.template_id === 'bofaCard') await deriveBofaCard(env, fresh);
   // Payment Quick Facts (Due Date, Auto-Pay, Paid With, bill amounts) from
   // the billing snapshot the template just stored + the account's payer.
   const after = await loadFolder(env, folder.id);

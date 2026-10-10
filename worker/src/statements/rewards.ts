@@ -4,6 +4,7 @@ import type { FolderRow } from './engine';
 import { loadFolder } from './engine';
 import type { AmexCardSummary } from './amexCardSummary';
 import type { AmazonSummary } from './amazonSummary';
+import type { BofaCardSummary } from './bofaCardSummary';
 
 /** Card rewards in one shape, whatever the card pays in (Amex Reward
  * Dollars are $1 each, Chase points are 100 per $1). Every credit-card
@@ -123,6 +124,34 @@ export function rewardsFromAmazon(s: AmazonSummary, today: string): CardRewards 
         current: y.year === cy,
       };
     }),
+  };
+}
+
+/** Bank of America prints each month's cash back exactly; only months
+ * missing from Drive (not quiet no-activity months) are bridged estimates. */
+export function rewardsFromBofaCard(s: BofaCardSummary, today: string): CardRewards {
+  const cy = thisYear(today);
+  return {
+    unit: 'dollars',
+    unitLabel: 'Cash Back',
+    pointsPerDollar: 1,
+    available: s.cashBackAvailable,
+    availablePoints: s.cashBackAvailable,
+    asOf: s.cashBackAsOf,
+    earnedAllTime: s.lifetimeCashBackEarned,
+    redeemedAllTime: s.lifetimeCashBackRedeemed,
+    earnedYtd: s.ytdCashBackEarned,
+    rate12: s.rewardRate,
+    since: s.firstStatement,
+    years: s.years.map((y) => ({
+      year: y.year,
+      statements: y.statements,
+      earned: y.cashBackEarned,
+      net: y.net,
+      rate: y.net > 0 ? round2((y.cashBackEarned / y.net) * 100) : null,
+      partial: y.estimated || (y.statements < 12 && (y.year === cy || y.year === s.years[0]?.year)),
+      current: y.year === cy,
+    })),
   };
 }
 

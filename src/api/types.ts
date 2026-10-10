@@ -2790,6 +2790,109 @@ export interface AmexCardDashboard {
   redeemQuietUntil: number | null;
 }
 
+export interface BofaCardStatementRow {
+  closingDate: string;
+  openingDate: string;
+  previousBalance: number;
+  paid: number;
+  credits: number;
+  purchases: number;
+  fees: number;
+  interest: number;
+  newBalance: number;
+  minimumPayment: number;
+  dueDate: string | null;
+  carried: number;
+  apr: number | null;
+  cashBackAvailable: number | null;
+  cashBackEarned: number | null;
+  cashBackRedeemed: number | null;
+  cashBackBridged: number;
+  cashBackGapRedeemed: number;
+  autopay: boolean | null;
+  fileId: string;
+  checksOk: boolean;
+}
+
+export interface BofaCardYear {
+  year: number;
+  statements: number;
+  purchases: number;
+  refunds: number;
+  net: number;
+  cashBackEarned: number;
+  base: number;
+  bonus: number;
+  relationship: number;
+  interest: number;
+  fees: number;
+  hiddenFees?: number;
+  hiddenInterest?: number;
+  estimated: boolean;
+}
+
+export interface BofaCardSummary {
+  asOf: string | null;
+  latest: BofaCardStatementRow | null;
+  status: CardStatus;
+  balance: number;
+  creditLine: number | null;
+  availableCredit: number | null;
+  utilization: number | null;
+  purchaseApr: number | null;
+  penaltyApr: number | null;
+  onPenaltyApr: boolean;
+  cardType: string | null;
+  cashBackAvailable: number | null;
+  cashBackAsOf: string | null;
+  lifetimeCashBackEarned: number;
+  lifetimeCashBackRedeemed: number;
+  lifetimeBridged: number;
+  ytdCashBackEarned: number;
+  rewardRate: number | null;
+  ytdPurchases: number;
+  ytdNet: number;
+  last12Net: number;
+  avgMonthlyNet: number | null;
+  lifetimeNet: number;
+  firstStatement: string | null;
+  paidInFullStreak: number;
+  carriedStatements: string[];
+  lateFees: { date: string; amount: number }[];
+  totalInterest: number;
+  totalFees: number;
+  autopayShare: number | null;
+  latestPaymentAutopay: boolean | null;
+  charges: { date: string; description: string; kind: 'fee' | 'interest' | 'credit'; amount: number }[];
+  changes: { date: string; what: 'apr' | 'credit_line' | 'cash_line' | 'penalty_on' | 'penalty_off'; from: string; to: string }[];
+  statements: BofaCardStatementRow[];
+  years: BofaCardYear[];
+  months: { closingDate: string; purchases: number; net: number; balance: number }[];
+  cashBack: { asOf: string; available: number; earned: number }[];
+  topMerchants: { merchant: string; amount: number; count: number }[];
+  nextStatementExpected: string | null;
+  nextDue: { date: string; amount: number; minimum: number } | null;
+}
+
+export interface BofaCardDashboard {
+  kind: 'bofaCard';
+  folder: StatementFolder;
+  template: { nickname: string; institution: string; type: string; site?: string; phone?: string } | null;
+  account: { accountLast: string } | null;
+  /** Months with no statement: missing from Drive vs quiet (no activity, $0 balance). */
+  gaps: { missing: string[]; quiet: string[] };
+  summary: BofaCardSummary;
+  statements: { id: string; periodStart: string; periodEnd: string; fileId: string; checks: StatementCheckRow[] }[];
+  transactions: { date: string; description: string; kind: string; amount: number }[];
+  transactionsSince: string | null;
+  files: { fileId: string; name: string; url: string | null; status: string; error: string | null }[];
+  flags: { id: string; severity: 'warn' | 'info'; message: string; created_at: string }[];
+  rewards: CardRewards | null;
+  redeemAt: number;
+  redeemTask: { id: string; title: string; due: string | null } | null;
+  redeemQuietUntil: number | null;
+}
+
 // ---- Card rewards (worker/src/statements/rewards.ts) — all money in $,
 // years = statement closing year ----
 export interface RewardsYear {
@@ -2826,7 +2929,7 @@ export interface RewardsOverview {
   cards: { folderId: string; name: string; owner: AccountOwner; rewards: CardRewards; redeemAt: number }[];
 }
 
-export type FinanceDashboard = Ny529Dashboard | AdtDashboard | AllyDashboard | AmazonDashboard | AmexBankDashboard | AmexCardDashboard;
+export type FinanceDashboard = Ny529Dashboard | AdtDashboard | AllyDashboard | AmazonDashboard | AmexBankDashboard | AmexCardDashboard | BofaCardDashboard;
 
 // ---- Account payers (0092_account_payers.sql) — which card pays which
 // account. 'autopay' = charges the card by itself; 'on_file' = the card is
