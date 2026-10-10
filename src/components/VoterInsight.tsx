@@ -4,15 +4,15 @@ import type { HouseholdMember, TurnoutCount, VoterDiff, VoterInsight, VoterRecor
 
 /* Voter-file pieces of the contact page (Mike, 2026-10-10), modeled on the
  * Bedford Voter Intelligence app's voter card:
- * - PartyPill + HouseholdGlance live in the always-visible main card
- *   (party and spouse's name at a glance).
+ * - PartyPill sits by the name; household members show in Connections
+ *   (always visible, with party + age — spouse's name at a glance).
  * - VoterDiffBox is the "check before overwriting": the card never takes
  *   voter-file values over Mike's own without a click.
  * - VoterInsightSection is the collapsed deep-dive panel.
  * The voter-file phone is deliberately NOT on the main card — it's
  * unreliable; it stays in the panel, labeled as such. */
 
-function partyTone(code: string | null | undefined): 'dem' | 'rep' | 'other' {
+export function partyTone(code: string | null | undefined): 'dem' | 'rep' | 'other' {
   if (code === 'DEM' || code === 'WOR') return 'dem';
   if (code === 'REP' || code === 'CON') return 'rep';
   return 'other';
@@ -41,30 +41,6 @@ function fmtDate(iso: string | null): string | null {
   if (!iso) return null;
   const [y, m, d] = iso.split('-');
   return `${m}/${d}/${y}`;
-}
-
-/** Household line inside the main contact card. */
-export function HouseholdGlance({ members }: { members: HouseholdMember[] }) {
-  if (members.length === 0) return null;
-  return (
-    <div className="contact-detail__field household-glance">
-      <span className="contact-detail__field-icon">🏠</span>
-      <span className="contact-detail__field-value household-glance__list">
-        {members.map((m, i) => (
-          <span key={m.contactId} className="household-glance__member">
-            <span className={`party-dot party-dot--${partyTone(m.partyCode)}`} aria-hidden />
-            <Link to={`/contacts/${m.contactId}`} className="household-glance__name">
-              {m.name}
-            </Link>
-            <span className="household-glance__meta">
-              {[m.partyCode, m.age != null ? m.age : null].filter((v) => v != null && v !== '').join(' · ')}
-            </span>
-            {i < members.length - 1 && <span className="household-glance__sep" aria-hidden />}
-          </span>
-        ))}
-      </span>
-    </div>
-  );
 }
 
 /** Where Mike's card and the voter file disagree. Nothing is overwritten
@@ -213,6 +189,11 @@ function VoterRecordInsight({ r, household }: { r: VoterRecord; household: House
             <span>
               Local (Odd-Year) <strong>{ins.splits.local.voted}/{ins.splits.local.eligible}</strong>
             </span>
+            {ins.lastVoted && (
+              <span>
+                Last Voted <strong>{ins.lastVoted}</strong>
+              </span>
+            )}
             <span>
               Primaries <strong>{ins.splits.primary.eligible > 0 ? `${ins.splits.primary.voted}/${ins.splits.primary.eligible}` : `${ins.splits.primary.voted} · not counted`}</strong>
             </span>
@@ -294,26 +275,29 @@ export function VoterInsightSection({ records, household }: { records: VoterReco
   const [open, setOpen] = useState(false);
   if (records.length === 0) return null;
   const ins: VoterInsight | undefined = records[0].insight;
+  const r0 = records[0];
+  const registered = ins?.partyName ?? r0.party;
   return (
-    <div className="voter-insight">
+    <div className={`voter-insight${open ? ' is-open' : ''}`}>
       <button type="button" className="voter-insight__header" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
-        <span className="contact-detail__section-title voter-insight__title">Voter Insight</span>
-        <span className="voter-insight__summary">
-          {ins && ins.turnout.eligible > 0 && (
-            <span className="voter-insight__stat">
-              Turnout <strong>{pct(ins.turnout)}</strong> ({ins.turnout.voted}/{ins.turnout.eligible})
-            </span>
-          )}
-          {ins?.lastVoted && (
-            <span className="voter-insight__stat">
-              Last Voted <strong>{ins.lastVoted}</strong>
-            </span>
-          )}
-          {records[0].calculated_party && <span className="voter-insight__stat">{records[0].calculated_party}</span>}
+        <span className="voter-insight__caret" aria-hidden>
+          ›
         </span>
-        <span className="voter-insight__caret">{open ? '▾' : '▸'}</span>
+        <span className="voter-insight__title">Voter Insight</span>
+        <span className="voter-insight__summary">
+          {registered && (
+            <span className="voter-insight__stat">
+              Registered <strong>{registered}</strong>
+            </span>
+          )}
+          {r0.calculated_party && (
+            <span className="voter-insight__stat">
+              Calculated <strong>{r0.calculated_party}</strong>
+            </span>
+          )}
+        </span>
+        <span className="voter-insight__toggle">{open ? 'Hide Details' : 'Show Details'}</span>
       </button>
-      {!open && ins?.insights[0] && <p className="contact-detail__section-hint voter-insight__hint">{ins.insights[0]}</p>}
       {open &&
         records.map((r, i) => (
           <div key={r.id} className="voter-insight__card">

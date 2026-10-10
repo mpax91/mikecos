@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
 import type { Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, VoterDiff } from '../api/types';
-import { HouseholdGlance, PartyPill, VoterDiffBox, VoterInsightSection } from '../components/VoterInsight';
+import { partyTone, PartyPill, VoterDiffBox, VoterInsightSection } from '../components/VoterInsight';
 import { Modal } from '../components/Modal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { KebabMenu } from '../components/KebabMenu';
@@ -27,6 +27,15 @@ function formatDate(month: number | null, day: number | null, year: number | nul
   if (!month || !day) return null;
   const monthName = new Date(2000, month - 1, 1).toLocaleString(undefined, { month: 'long' });
   return year ? `${monthName} ${day}, ${year}` : `${monthName} ${day}`;
+}
+
+/** Age today from a birthday (needs the year). */
+function ageFrom(month: number | null, day: number | null, year: number | null): number | null {
+  if (!month || !day || !year) return null;
+  const now = new Date();
+  let age = now.getFullYear() - year;
+  if (now.getMonth() + 1 < month || (now.getMonth() + 1 === month && now.getDate() < day)) age--;
+  return age >= 0 && age < 130 ? age : null;
 }
 
 function initials(name: string): string {
@@ -140,8 +149,8 @@ function EditDetailsModal({ contact, onSave, onClose }: { contact: ContactDetail
 /** Who this person is connected to — manual entries and anything pulled in
  * from a Google Contacts "Relation" column on import (both live in
  * contact_connections, see 0031_contact_headline_city_connections.sql).
- * Voter-file household members show in the main card instead
- * (HouseholdGlance), with party and age. Inspired by "Thanks Bud"'s Orbit view, kept much
+ * Voter-file household members are listed here too (party + age), with
+ * any manual label for the same person (Spouse) folded into their row. Inspired by "Thanks Bud"'s Orbit view, kept much
  * simpler: a flat list rather than a graph, since that's what actually
  * answers "who's connected to who" for a name Mike's about to run into. */
 function ConnectionsSection({
@@ -180,7 +189,15 @@ function ConnectionsSection({
     setAdding(false);
   }
 
-  if (contact.connections.length === 0 && !adding) {
+  // Voter-file household members are connections too (always visible here,
+  // with party + age). A manual connection to the same person (e.g. Spouse)
+  // folds into that household row instead of listing them twice.
+  const household = contact.householdMembers;
+  const householdIds = new Set(household.map((m) => m.contactId));
+  const labelsFor = (id: string) => contact.connections.filter((c) => c.related_contact_id === id);
+  const otherConnections = contact.connections.filter((c) => !c.related_contact_id || !householdIds.has(c.related_contact_id));
+
+  if (contact.connections.length === 0 && household.length === 0 && !adding) {
     return (
       <>
         <h2 className="contact-detail__section-title">Connections</h2>
@@ -198,7 +215,29 @@ function ConnectionsSection({
     <>
       <h2 className="contact-detail__section-title">Connections</h2>
       <div className="connections-list">
-        {contact.connections.map((conn: ContactConnection & { direction: 'from' | 'to' }) => (
+        {household.map((m) => (
+          <div key={`household-${m.contactId}`} className="connection-row">
+            <span className="chip chip--accent">Household</span>
+            {labelsFor(m.contactId).map((conn) => (
+              <span key={conn.id} className="chip connection-row__label">
+                {conn.label}
+                {conn.direction === 'from' && (
+                  <button type="button" className="connection-row__label-delete" title={`Remove "${conn.label}"`} onClick={() => onDelete(conn.id)}>
+                    ✕
+                  </button>
+                )}
+              </span>
+            ))}
+            <span className={`party-dot party-dot--${partyTone(m.partyCode)}`} aria-hidden />
+            <Link to={`/contacts/${m.contactId}`} className="connection-row__name">
+              {m.name}
+            </Link>
+            <span className="connection-row__hint connection-row__hint--meta">
+              {[m.partyCode, m.age != null ? `Age ${m.age}` : null].filter(Boolean).join(' · ')}
+            </span>
+          </div>
+        ))}
+        {otherConnections.map((conn: ContactConnection & { direction: 'from' | 'to' }) => (
           <div key={conn.id} className="connection-row">
             <span className="chip">{conn.label}</span>
             {conn.related_contact_id ? (
@@ -468,6 +507,8 @@ export function ContactDetailPage() {
   const isPinned = contact.pinned === 1;
   const tz = timezoneForCity(contact.city);
   const voterInsight = contact.voterRecords[0]?.insight;
+  // Card birthday first; else the voter file's age (birthday without a year).
+  const age = ageFrom(contact.birthday_month, contact.birthday_day, contact.birthday_year) ?? (birthday ? contact.voterRecords[0]?.voter_age ?? null : null);
 
   return (
     <div className="contact-detail">
@@ -580,7 +621,10 @@ export function ContactDetailPage() {
           {birthday && (
             <div className="contact-detail__field">
               <span className="contact-detail__field-icon">🎂</span>
-              <span className="contact-detail__field-value">{birthday}</span>
+              <span className="contact-detail__field-value">
+                {birthday}
+                {age != null && <span className="contact-detail__age"> ({age})</span>}
+              </span>
             </div>
           )}
           {anniversary && (
@@ -589,8 +633,7 @@ export function ContactDetailPage() {
               <span className="contact-detail__field-value">{anniversary}</span>
             </div>
           )}
-          <HouseholdGlance members={contact.householdMembers} />
-          {phones.length === 0 && emails.length === 0 && !contact.address && !contact.city && !contact.company && !contact.title && !birthday && !anniversary && contact.householdMembers.length === 0 && (
+          {phones.length === 0 && emails.length === 0 && !contact.address && !contact.city && !contact.company && !contact.title && !birthday && !anniversary && (
             <div className="contact-detail__field contact-detail__field--empty">No contact info yet — click Edit to add some.</div>
           )}
         </div>

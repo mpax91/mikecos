@@ -7928,32 +7928,6 @@ td.month-page__upcoming-actions .today-page__meeting-actions {
 .party-dot--dem { background: var(--color-party-dem); }
 .party-dot--rep { background: var(--color-party-rep); }
 
-.household-glance__list {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 0;
-}
-.household-glance__member {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.household-glance__name {
-  font-weight: 600;
-  color: var(--color-ink);
-}
-.household-glance__meta {
-  font-size: 12px;
-  color: var(--color-muted);
-}
-.household-glance__sep {
-  width: 1px;
-  height: 14px;
-  margin: 0 10px;
-  background: var(--color-border);
-}
-
 .voter-diff {
   margin: 0 0 20px;
   padding: 14px 16px;
@@ -8023,41 +7997,67 @@ td.month-page__upcoming-actions .today-page__meeting-actions {
   align-items: center;
   gap: 12px;
   width: 100%;
-  background: none;
-  border: none;
-  padding: 0;
+  padding: 12px 16px;
+  background: var(--color-card-bg);
+  border: var(--border-hairline);
+  border-radius: var(--radius-card);
   cursor: pointer;
   text-align: left;
+  font: inherit;
+  transition: border-color 0.15s, background 0.15s;
+}
+.voter-insight__header:hover {
+  border-color: var(--color-placeholder);
+}
+.voter-insight.is-open .voter-insight__header {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.voter-insight__caret {
+  display: inline-block;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--color-muted);
+  transition: transform 0.15s;
+}
+.voter-insight.is-open .voter-insight__caret {
+  transform: rotate(90deg);
 }
 .voter-insight__title {
-  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-ink);
   white-space: nowrap;
 }
 .voter-insight__summary {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 14px;
+  gap: 2px 16px;
   flex: 1;
   min-width: 0;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--color-muted);
 }
 .voter-insight__stat strong {
   color: var(--color-ink);
   font-weight: 600;
 }
-.voter-insight__caret {
-  color: var(--color-muted);
-  font-size: 13px;
+.voter-insight__toggle {
+  font-size: 12.5px;
+  color: var(--color-accent);
+  white-space: nowrap;
 }
-.voter-insight__hint {
-  margin-top: 6px;
-}
+
 .voter-insight__card {
-  margin-top: 12px;
   padding: 16px;
   background: var(--color-card-bg);
   border: var(--border-hairline);
+  border-top: none;
+  border-radius: 0 0 var(--radius-card) var(--radius-card);
+}
+.voter-insight__card + .voter-insight__card {
+  margin-top: 12px;
+  border-top: var(--border-hairline);
   border-radius: var(--radius-card);
 }
 .voter-insight__multi {
@@ -8178,6 +8178,33 @@ td.month-page__upcoming-actions .today-page__meeting-actions {
   color: var(--color-ink);
   line-height: 1.5;
 }
+.connection-row {
+  flex-wrap: wrap;
+}
+.connection-row__hint--meta {
+  font-size: 12px;
+  color: var(--color-muted);
+}
+.connection-row__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.connection-row__label-delete {
+  border: none;
+  background: none;
+  padding: 0 0 0 2px;
+  font-size: 10px;
+  color: var(--color-placeholder);
+  cursor: pointer;
+}
+.connection-row__label-delete:hover {
+  color: var(--color-ink);
+}
+.contact-detail__age {
+  color: var(--color-muted);
+}
+
 .voter-household {
   display: flex;
   flex-direction: column;
@@ -8227,10 +8254,15 @@ td.month-page__upcoming-actions .today-page__meeting-actions {
   }
   .voter-insight__header {
     flex-wrap: wrap;
+    row-gap: 4px;
   }
   .voter-insight__summary {
     order: 3;
     flex-basis: 100%;
+    padding-left: 22px;
+  }
+  .voter-insight__toggle {
+    margin-left: auto;
   }
 }
 
