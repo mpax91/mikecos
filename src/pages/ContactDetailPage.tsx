@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
 import type { Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, VoterDiff } from '../api/types';
 import { partyTone, VoterDiffBox, VoterInsightSection } from '../components/VoterInsight';
-import { contactLabels } from '../utils/contactLabels';
+import { contactLabels, displayLabels, VOTER_LABEL } from '../utils/contactLabels';
 import { Modal } from '../components/Modal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { KebabMenu } from '../components/KebabMenu';
@@ -68,7 +68,7 @@ function EditDetailsModal({ contact, onSave, onClose }: { contact: ContactDetail
   const [labelDraft, setLabelDraft] = useState('');
   const [knownLabels, setKnownLabels] = useState<string[]>([]);
   useEffect(() => {
-    api.listContactLabels().then((r) => setKnownLabels(r.labels.map((l) => l.label))).catch(() => {});
+    api.listContactLabels().then((r) => setKnownLabels(r.labels.map((l) => l.label).filter((l) => l !== VOTER_LABEL))).catch(() => {});
   }, []);
   function addLabel(raw: string) {
     const l = raw.trim();
@@ -554,7 +554,7 @@ export function ContactDetailPage() {
   const anniversary = formatDate(contact.anniversary_month, contact.anniversary_day, contact.anniversary_year);
   const isPinned = contact.pinned === 1;
   const tz = timezoneForCity(contact.city);
-  const cardLabels = contactLabels(contact);
+  const cardLabels = displayLabels(contact, contact.voterRecords.length > 0);
   // Card birthday first; else the voter file's age (birthday without a year).
   const age = ageFrom(contact.birthday_month, contact.birthday_day, contact.birthday_year) ?? (birthday ? contact.voterRecords[0]?.voter_age ?? null : null);
 
@@ -593,7 +593,7 @@ export function ContactDetailPage() {
       {(cardLabels.length > 0 || contact.circle !== 'other') && (
         <div className="contact-detail__meta contact-labels">
           {cardLabels.map((l) => (
-            <span key={l} className="contact-label">
+            <span key={l} className={`contact-label${l === VOTER_LABEL ? ' contact-label--voter' : ''}`}>
               {l}
             </span>
           ))}

@@ -894,6 +894,7 @@ export interface Contact {
   created_at: string;
   updated_at: string;
   labels?: string; // JSON string[] — Mike's own labels (Google Contacts), migration 0098
+  is_voter?: number; // list only: 1 when the contact has a voter record → automatic "Voter" label
 }
 
 export interface ContactConnection {

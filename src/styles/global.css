@@ -8295,6 +8295,11 @@ td.month-page__upcoming-actions .today-page__meeting-actions {
   border: var(--border-hairline);
   white-space: nowrap;
 }
+.contact-label--voter {
+  color: var(--color-muted);
+  background: transparent;
+  border-style: dashed;
+}
 .contact-label--circle {
   color: var(--color-muted);
   background: transparent;

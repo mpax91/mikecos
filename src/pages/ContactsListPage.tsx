@@ -7,7 +7,7 @@ import { ConfirmModal } from '../components/ConfirmModal';
 import { KebabMenu } from '../components/KebabMenu';
 import { useTabs, useReportTabMeta } from '../contexts/TabsContext';
 import { ContactsAskPanel } from './ContactsAskPanel';
-import { contactLabels } from '../utils/contactLabels';
+import { displayLabels, VOTER_LABEL } from '../utils/contactLabels';
 
 const CIRCLES: { value: ContactCircle; label: string }[] = [
   { value: 'family', label: 'Family' },
@@ -37,7 +37,7 @@ function ContactCard({
   const isPinned = contact.pinned === 1;
   // Mike's own Google labels; a circle only shows when there are no labels
   // and it says something (not "Other"). Company stays on the card itself.
-  const labels = contactLabels(contact);
+  const labels = displayLabels(contact);
   return (
     <div
       className={`card project-card${isPinned ? ' is-pinned' : ''}`}
@@ -65,7 +65,7 @@ function ContactCard({
           <div className="contact-labels contact-labels--row">
             {labels.length > 0
               ? labels.map((l) => (
-                  <span key={l} className="contact-label">
+                  <span key={l} className={`contact-label${l === VOTER_LABEL ? ' contact-label--voter' : ''}`}>
                     {l}
                   </span>
                 ))

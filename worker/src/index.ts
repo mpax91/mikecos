@@ -849,7 +849,9 @@ app.get('/api/contacts', async (c) => {
   const remindersOnly = c.req.query('reminders') === '1';
   const includeVoters = c.req.query('voters') === '1';
 
-  let sql = 'SELECT * FROM contacts WHERE 1=1';
+  // is_voter: has a voter record (bare roll entry or merged into one of
+  // Mike's contacts) — shown as the automatic "Voter" label (2026-10-10).
+  let sql = 'SELECT contacts.*, EXISTS (SELECT 1 FROM voter_records vr WHERE vr.contact_id = contacts.id) AS is_voter FROM contacts WHERE 1=1';
   const binds: unknown[] = [];
 
   if (!includeVoters) {
@@ -861,8 +863,11 @@ app.get('/api/contacts', async (c) => {
   }
   const label = c.req.query('label')?.trim();
   if (label) {
-    sql += ' AND EXISTS (SELECT 1 FROM json_each(contacts.labels) WHERE lower(json_each.value) = lower(?))';
+    sql += ' AND (EXISTS (SELECT 1 FROM json_each(contacts.labels) WHERE lower(json_each.value) = lower(?))';
     binds.push(label);
+    // "Voter" is automatic: anyone with a voter record.
+    if (label.toLowerCase() === VOTER_LABEL.toLowerCase()) sql += ' OR EXISTS (SELECT 1 FROM voter_records vr WHERE vr.contact_id = contacts.id)';
+    sql += ')';
   }
   if (remindersOnly) {
     sql += " AND id IN (SELECT contact_id FROM contact_notes WHERE remind_resolved = 0 AND remind_at IS NOT NULL AND remind_at <= ?)";
@@ -960,6 +965,9 @@ app.post('/api/contacts', async (c) => {
 // this router matches whichever is registered first rather than always
 // preferring the static route — so this has to come first or every request
 // here gets swallowed by the :id handler as a "contact not found".
+/** The automatic label every contact with a voter record carries. */
+const VOTER_LABEL = 'Voter';
+
 // GET /api/contacts/labels — every label on Mike's own contacts (voter-roll
 // entries have none) with how many people carry it, most-used first. Drives
 // the Contacts filter bar and the label picker. Registered before :id.
@@ -968,7 +976,18 @@ app.get('/api/contacts/labels', async (c) => {
     `SELECT j.value AS label, COUNT(*) AS n FROM contacts, json_each(contacts.labels) j
      WHERE contacts.source != 'voter_file' GROUP BY lower(j.value) ORDER BY n DESC, label COLLATE NOCASE`
   ).all<{ label: string; n: number }>();
-  return c.json({ labels: (results ?? []).map((r) => ({ label: r.label, count: r.n })) });
+  const labels = (results ?? []).filter((r) => r.label.toLowerCase() !== VOTER_LABEL.toLowerCase()).map((r) => ({ label: r.label, count: r.n }));
+  // Automatic "Voter" label: Mike's own contacts with a voter record (the
+  // bare roll entries add to it only when the Voter Roll toggle is on).
+  const voters = await c.env.DB.prepare(
+    `SELECT COUNT(DISTINCT vr.contact_id) AS n FROM voter_records vr JOIN contacts ct ON ct.id = vr.contact_id
+     WHERE ct.source != 'voter_file' OR EXISTS (SELECT 1 FROM json_each(ct.labels) j WHERE lower(j.value) = lower(?))`
+  )
+    .bind(VOTER_LABEL)
+    .first<{ n: number }>();
+  if (voters?.n) labels.push({ label: VOTER_LABEL, count: voters.n });
+  labels.sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+  return c.json({ labels });
 });
 
 app.get('/api/contacts/duplicates', async (c) => {
