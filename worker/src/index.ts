@@ -923,7 +923,7 @@ app.post('/api/contacts', async (c) => {
   )
     .bind(
       id,
-      body.name.trim(),
+      tidyNameCase(body.name),
       body.company ?? null,
       body.title ?? null,
       circle,
@@ -965,6 +965,25 @@ app.post('/api/contacts', async (c) => {
 // this router matches whichever is registered first rather than always
 // preferring the static route — so this has to come first or every request
 // here gets swallowed by the :id handler as a "contact not found".
+// POST /api/contacts/name-case/fix[?dry=1] — one-time tidy of Mike's own
+// contacts whose names came in all-lowercase or ALL-CAPS ("sal villani").
+// Mixed-case names are left alone. Voter-roll entries are untouched (their
+// own cleanup is /api/contacts/voter-names/*). Returns what changed.
+app.post('/api/contacts/name-case/fix', async (c) => {
+  const dry = c.req.query('dry') === '1';
+  const { results } = await c.env.DB.prepare("SELECT id, name FROM contacts WHERE source != 'voter_file'").all<{ id: string; name: string }>();
+  const changes = (results ?? []).map((r) => ({ id: r.id, from: r.name, to: tidyNameCase(r.name) })).filter((x) => x.to !== x.from);
+  if (!dry && changes.length > 0) {
+    const ts = now();
+    for (let i = 0; i < changes.length; i += 50) {
+      await c.env.DB.batch(
+        changes.slice(i, i + 50).map((x) => c.env.DB.prepare('UPDATE contacts SET name = ?, updated_at = ? WHERE id = ?').bind(x.to, ts, x.id))
+      );
+    }
+  }
+  return c.json({ dry, count: changes.length, changes: changes.map(({ from, to }) => ({ from, to })) });
+});
+
 /** The automatic label every contact with a voter record carries. */
 const VOTER_LABEL = 'Voter';
 
@@ -1012,6 +1031,48 @@ app.get('/api/contacts/duplicates', async (c) => {
         key,
         personal: { id: bucket.personal[0].id, name: bucket.personal[0].name, circle: bucket.personal[0].circle },
         voters: bucket.voters.map((v) => ({ id: v.id, name: v.name })),
+      });
+    }
+  }
+  // Fallback for nicknames the table doesn't know: same last name and one
+  // first name is the start of the other ("Sal" / "Salvatore", "Jon" /
+  // "Jonathan"), at least 3 letters. Still only a suggestion — Mike
+  // confirms every merge. Personal contacts already linked to the roll are
+  // skipped (they have a voter record).
+  const matchedPersonal = new Set(candidates.map((cand) => cand.personal.id));
+  const { results: linkedRows } = await c.env.DB.prepare(
+    "SELECT DISTINCT vr.contact_id FROM voter_records vr JOIN contacts ct ON ct.id = vr.contact_id WHERE ct.source != 'voter_file'"
+  ).all<{ contact_id: string }>();
+  const linked = new Set((linkedRows ?? []).map((r) => r.contact_id));
+  const firstLast = (name: string): [string, string] | null => {
+    const key = nameMatchKey(name);
+    const parts = key.split(' ');
+    return parts.length >= 2 ? [parts[0], parts[parts.length - 1]] : null;
+  };
+  const rawFirst = (name: string) => normalizeName(name).replace(/[.,]/g, '').split(' ').filter((p) => p && !NAME_HONORIFICS.has(p))[0] ?? '';
+  const votersByLast = new Map<string, typeof rows>();
+  for (const r of rows) {
+    if (r.source !== 'voter_file') continue;
+    const fl = firstLast(r.name);
+    if (!fl) continue;
+    if (!votersByLast.has(fl[1])) votersByLast.set(fl[1], []);
+    votersByLast.get(fl[1])!.push(r);
+  }
+  const prefixOf = (a: string, b: string) => a.length >= 3 && b.length >= 3 && a !== b && (a.startsWith(b) || b.startsWith(a));
+  for (const p of rows) {
+    if (p.source === 'voter_file' || matchedPersonal.has(p.id) || linked.has(p.id)) continue;
+    const fl = firstLast(p.name);
+    if (!fl) continue;
+    const pFirsts = [fl[0], rawFirst(p.name)];
+    const voters = (votersByLast.get(fl[1]) ?? []).filter((v) => {
+      const vFirsts = [firstLast(v.name)![0], rawFirst(v.name)];
+      return pFirsts.some((a) => vFirsts.some((b) => prefixOf(a, b)));
+    });
+    if (voters.length > 0) {
+      candidates.push({
+        key: `${fl[0]} ${fl[1]}`,
+        personal: { id: p.id, name: p.name, circle: p.circle },
+        voters: voters.map((v) => ({ id: v.id, name: v.name })),
       });
     }
   }
@@ -1691,7 +1752,7 @@ function parseContactsCsv(text: string): ParsedContactRecord[] {
   for (const row of rows.slice(1)) {
     const get = (idx: number) => (idx >= 0 && idx < row.length ? row[idx].trim() : '');
     const fromParts = [get(firstIdx), get(lastIdx)].filter(Boolean).join(' ');
-    const name = fromParts || (nameIdx >= 0 ? get(nameIdx) : '');
+    const name = tidyNameCase(fromParts || (nameIdx >= 0 ? get(nameIdx) : ''));
     if (!name) continue;
     const bday = birthdayIdx >= 0 ? parseDateParts(get(birthdayIdx)) : { month: null, day: null, year: null };
     const raw: Record<string, string> = {};
@@ -2018,7 +2079,7 @@ function parseVCard(text: string): ParsedContactRecord[] {
     }
     if (!name) continue;
     records.push({
-      name,
+      name: tidyNameCase(name),
       emails,
       phones,
       address,
@@ -2122,6 +2183,56 @@ const NICKNAME_CANON: Record<string, string> = {
   ron: 'ronald', ronnie: 'ronald',
   vince: 'vincent',
   walt: 'walter',
+  // Added 2026-10-10 ("Sal Villani" vs the roll's "Salvatore Villani").
+  sal: 'salvatore',
+  alex: 'alexander', xander: 'alexander',
+  tim: 'timothy', timmy: 'timothy',
+  jon: 'jonathan', jonny: 'jonathan',
+  nate: 'nathaniel', nathan: 'nathaniel',
+  zach: 'zachary', zack: 'zachary',
+  josh: 'joshua',
+  jake: 'jacob',
+  jeff: 'jeffrey',
+  doug: 'douglas',
+  phil: 'philip', phillip: 'philip',
+  pete: 'peter',
+  ray: 'raymond',
+  stan: 'stanley',
+  fred: 'frederick', freddie: 'frederick',
+  hank: 'henry', harry: 'henry',
+  lou: 'louis',
+  leo: 'leonard', len: 'leonard', lenny: 'leonard',
+  gabe: 'gabriel',
+  marty: 'martin',
+  mickey: 'michael',
+  sue: 'susan', susie: 'susan', suzy: 'susan',
+  jen: 'jennifer', jenny: 'jennifer', jenn: 'jennifer',
+  jess: 'jessica', jessie: 'jessica',
+  abby: 'abigail', abbie: 'abigail', abbi: 'abigail',
+  pam: 'pamela',
+  deb: 'deborah', debbie: 'deborah', debra: 'deborah',
+  cindy: 'cynthia',
+  mandy: 'amanda',
+  vicky: 'victoria', vicki: 'victoria', tori: 'victoria',
+  sandy: 'sandra',
+  terri: 'teresa', terry: 'teresa', theresa: 'teresa',
+  becky: 'rebecca',
+  steph: 'stephanie',
+  val: 'valerie',
+  dom: 'dominic', dominick: 'dominic',
+  gina: 'regina',
+  angie: 'angela',
+  barb: 'barbara',
+  connie: 'constance',
+  dot: 'dorothy', dottie: 'dorothy',
+  fran: 'frances',
+  ginny: 'virginia',
+  judy: 'judith',
+  kim: 'kimberly',
+  lynn: 'linda',
+  millie: 'mildred',
+  nan: 'nancy',
+  trish: 'patricia',
 };
 
 function canonicalFirstName(token: string): string {
@@ -2152,6 +2263,16 @@ function nameMatchKey(n: string): string {
 // half-covered list of special cases here.
 function titleCaseWord(word: string): string {
   return word.toLowerCase().replace(/(^|['-])([a-z])/g, (_m, sep: string, ch: string) => sep + ch.toUpperCase());
+}
+
+/** Fix a name typed all-lowercase or ALL-CAPS ("sal villani" → "Sal
+ * Villani"); anything already mixed-case ("McCabe", "deLuca") is Mike's
+ * spelling and stays as-is. */
+function tidyNameCase(name: string): string {
+  const t = name.trim();
+  if (!/[a-z]/i.test(t)) return t;
+  if (t === t.toLowerCase() || t === t.toUpperCase()) return titleCaseName(t);
+  return t;
 }
 
 function titleCaseName(name: string): string {
