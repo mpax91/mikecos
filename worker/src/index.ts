@@ -3977,6 +3977,30 @@ app.get('/api/meetings', async (c) => {
 // meeting comes back tagged with its own local `date` so the caller can
 // bucket occurrences by day the same way /api/month already buckets tasks
 // by due_date.
+// GET /api/meetings/raw?uid=<prefix> — diagnostic: the raw VEVENT blocks
+// (unfolded, DESCRIPTION dropped) whose UID starts with `uid`, across the
+// active feeds. For chasing "where did this event come from" bugs.
+app.get('/api/meetings/raw', async (c) => {
+  const uid = (c.req.query('uid') || '').trim();
+  if (uid.length < 6) return c.json({ error: 'uid prefix (6+ chars) required' }, 400);
+  const sources = await fetchFeedSources(c.env.DB);
+  const blocks: { calendar: string; lines: string[] }[] = [];
+  for (const s of sources) {
+    const unfolded = s.ics.replace(/\r?\n[ \t]/g, '').split(/\r?\n/);
+    let cur: string[] | null = null;
+    for (const line of unfolded) {
+      if (line === 'BEGIN:VEVENT') { cur = []; continue; }
+      if (line === 'END:VEVENT') {
+        if (cur && cur.some((l) => l.startsWith('UID:' + uid))) blocks.push({ calendar: s.calendar, lines: cur });
+        cur = null;
+        continue;
+      }
+      if (cur && !line.startsWith('DESCRIPTION')) cur.push(line.slice(0, 160));
+    }
+  }
+  return c.json({ uid, blocks });
+});
+
 app.get('/api/meetings/range', async (c) => {
   const start = c.req.query('start');
   const end = c.req.query('end');
