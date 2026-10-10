@@ -555,6 +555,13 @@ export function ContactDetailPage() {
   const isPinned = contact.pinned === 1;
   const tz = timezoneForCity(contact.city);
   const cardLabels = displayLabels(contact, contact.voterRecords.length > 0);
+  // Google's official search link (maps.google.com/?q= now often lands on a
+  // blank map). Adds the city when the address line doesn't already have it.
+  const mapsQuery =
+    contact.address && contact.city && !contact.address.toLowerCase().includes(contact.city.toLowerCase())
+      ? `${contact.address}, ${contact.city}`
+      : contact.address ?? '';
+  const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapsQuery)}`;
   // Card birthday first; else the voter file's age (birthday without a year).
   const age = ageFrom(contact.birthday_month, contact.birthday_day, contact.birthday_year) ?? (birthday ? contact.voterRecords[0]?.voter_age ?? null : null);
 
@@ -635,11 +642,13 @@ export function ContactDetailPage() {
           {contact.address && (
             <div className="contact-detail__field">
               <span className="contact-detail__field-icon">📍</span>
-              <span className="contact-detail__field-value">{contact.address}</span>
+              <a className="contact-detail__field-value contact-detail__field-link" href={mapsUrl} target="_blank" rel="noreferrer" title="Open in Google Maps">
+                {contact.address}
+              </a>
               <span className="contact-detail__field-actions">
                 <a
                   className="contact-detail__field-action"
-                  href={`https://maps.google.com/?q=${encodeURIComponent(contact.address)}`}
+                  href={mapsUrl}
                   target="_blank"
                   rel="noreferrer"
                   title="Open in Maps"

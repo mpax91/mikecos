@@ -7643,6 +7643,16 @@ td.month-page__upcoming-actions .today-page__meeting-actions {
   font-style: italic;
 }
 
+.contact-detail__field-link {
+  color: inherit;
+  text-decoration: none;
+}
+.contact-detail__field-link:hover {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .contact-detail__local-time {
   color: var(--color-muted);
   font-style: normal;
