@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
-import type { Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, HouseholdMember, VoterHistoryEntry, VoterRecord } from '../api/types';
+import type { Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, VoterDiff } from '../api/types';
+import { HouseholdGlance, PartyPill, VoterDiffBox, VoterInsightSection } from '../components/VoterInsight';
 import { Modal } from '../components/Modal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { KebabMenu } from '../components/KebabMenu';
@@ -136,185 +137,11 @@ function EditDetailsModal({ contact, onSave, onClose }: { contact: ContactDetail
   );
 }
 
-/** The voter-file data blended into this contact — kept in its own
- * section, visually separate from the personal info Mike maintains
- * himself (see migrations/0018_contact_import.sql). `raw_data` is shown
- * as a collapsible "all imported fields" list so whatever columns a
- * given voter file happens to have — even ones we don't parse into a
- * dedicated field — are still there to look up, not silently dropped.
- *
- * Collapsed by default: personal contact info is the primary thing this
- * card is about, and voter data — even when it's there — is secondary
- * reference material, not something that should compete with it for
- * attention the moment the page loads. */
-function VoterRecordSection({ records }: { records: VoterRecord[] }) {
-  const [sectionOpen, setSectionOpen] = useState(false);
-  const [openIds, setOpenIds] = useState<Set<string>>(new Set());
-  if (records.length === 0) return null;
-
-  function toggle(id: string) {
-    setOpenIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  return (
-    <div className="voter-record-section">
-      {/* Collapsed by default with just the party affiliation visible —
-          Mike's call after comparing this against the Bedford Voter
-          Intelligence app's much richer (but always-expanded) card: this
-          data is useful to have but not something he wants taking up
-          space on every voter-sourced contact by default. */}
-      <button
-        type="button"
-        className="voter-record-section__header"
-        onClick={() => setSectionOpen((v) => !v)}
-        aria-expanded={sectionOpen}
-      >
-        <span className="contact-detail__section-title voter-record-section__title">
-          Voter Record
-          {records[0]?.party && <span className="chip chip--accent voter-record-section__party">{records[0].party}</span>}
-        </span>
-        <span className="voter-record-section__caret">{sectionOpen ? '▾' : '▸'}</span>
-      </button>
-
-      {!sectionOpen && (
-        <p className="contact-detail__section-hint voter-record-section__hint">
-          From the Bedford voter file — click to view registration, address, and voting history.
-        </p>
-      )}
-
-      {sectionOpen &&
-      records.map((r) => {
-        const history = r.voting_history ? (JSON.parse(r.voting_history) as VoterHistoryEntry[]) : [];
-        const voted = history.filter((h) => !h.code.toUpperCase().startsWith('VOTE METHOD'));
-        const raw = JSON.parse(r.raw_data) as Record<string, string>;
-        const isOpen = openIds.has(r.id);
-        // Raw values already carry their own prefix ("CD-17", not "17") —
-        // don't re-prefix, or it doubles up as "CD-CD-17".
-        const districts = [r.cd, r.sd, r.ad, r.ld].filter(Boolean);
-        return (
-          <div key={r.id} className="voter-record">
-            <div className="voter-record__group">
-              <div className="voter-record__group-title">Profile</div>
-              <div className="voter-record__grid">
-                {r.voter_age != null && (
-                  <div className="voter-record__field">
-                    <span className="voter-record__field-label">Age</span> {r.voter_age}
-                  </div>
-                )}
-                {r.gender && (
-                  <div className="voter-record__field">
-                    <span className="voter-record__field-label">Gender</span> {r.gender}
-                  </div>
-                )}
-                {r.registered_date && (
-                  <div className="voter-record__field">
-                    <span className="voter-record__field-label">Registered</span> {r.registered_date}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {(r.phone || r.polling_place) && (
-              <div className="voter-record__group">
-                <div className="voter-record__group-title">Contact &amp; Polling</div>
-                {r.phone && (
-                  <div className="voter-record__field">
-                    <span className="voter-record__field-label">Phone</span> {r.phone}
-                  </div>
-                )}
-                {r.polling_place && (
-                  <div className="voter-record__field">
-                    <span className="voter-record__field-label">Polling Place</span> {r.polling_place}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {(r.party || r.calculated_party || r.household_party || r.causeway_tag || r.gop_matrix) && (
-              <div className="voter-record__group">
-                <div className="voter-record__group-title">Political Profile</div>
-                <div className="voter-record__grid">
-                  {r.party && (
-                    <div className="voter-record__field">
-                      <span className="voter-record__field-label">Registration</span> {r.party}
-                    </div>
-                  )}
-                  {r.calculated_party && (
-                    <div className="voter-record__field">
-                      <span className="voter-record__field-label">Calculated</span> {r.calculated_party}
-                    </div>
-                  )}
-                </div>
-                {r.household_party && (
-                  <div className="voter-record__field">
-                    <span className="voter-record__field-label">Household Party</span> {r.household_party}
-                  </div>
-                )}
-                {r.causeway_tag && (
-                  <div className="voter-record__field">
-                    <span className="voter-record__field-label">Causeway Tag</span> {r.causeway_tag}
-                  </div>
-                )}
-                {r.gop_matrix && (
-                  <div className="voter-record__field">
-                    <span className="voter-record__field-label">GOP Matrix</span> {r.gop_matrix}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {districts.length > 0 && (
-              <div className="voter-record__field">
-                <span className="voter-record__field-label">Districts</span> {districts.join(' · ')}
-              </div>
-            )}
-
-            {voted.length > 0 && (
-              <div className="voter-record__field">
-                <span className="voter-record__field-label">Voting History ({voted.length})</span>
-                <div className="voter-record__history">
-                  {voted.map((h) => (
-                    <span key={h.code} className="chip" title={h.value !== h.code ? h.value : undefined}>
-                      {h.code}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <button type="button" className="voter-record__toggle" onClick={() => toggle(r.id)}>
-              {isOpen ? 'Hide' : 'Show'} all imported fields
-            </button>
-
-            {isOpen && (
-              <div className="voter-record__raw">
-                {Object.entries(raw)
-                  .filter(([, v]) => v)
-                  .map(([k, v]) => (
-                    <div key={k} className="voter-record__raw-row">
-                      <span className="voter-record__raw-key">{k}</span>
-                      <span className="voter-record__raw-value">{v}</span>
-                    </div>
-                  ))}
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 /** Who this person is connected to — manual entries and anything pulled in
  * from a Google Contacts "Relation" column on import (both live in
- * contact_connections, see 0031_contact_headline_city_connections.sql),
- * plus household members computed live from the voter file's shared
- * household code. Inspired by "Thanks Bud"'s Orbit view, kept much
+ * contact_connections, see 0031_contact_headline_city_connections.sql).
+ * Voter-file household members show in the main card instead
+ * (HouseholdGlance), with party and age. Inspired by "Thanks Bud"'s Orbit view, kept much
  * simpler: a flat list rather than a graph, since that's what actually
  * answers "who's connected to who" for a name Mike's about to run into. */
 function ConnectionsSection({
@@ -353,7 +180,7 @@ function ConnectionsSection({
     setAdding(false);
   }
 
-  if (contact.connections.length === 0 && contact.householdMembers.length === 0 && !adding) {
+  if (contact.connections.length === 0 && !adding) {
     return (
       <>
         <h2 className="contact-detail__section-title">Connections</h2>
@@ -371,15 +198,6 @@ function ConnectionsSection({
     <>
       <h2 className="contact-detail__section-title">Connections</h2>
       <div className="connections-list">
-        {contact.householdMembers.map((m: HouseholdMember) => (
-          <div key={`household-${m.contactId}`} className="connection-row">
-            <span className="chip chip--accent">Household</span>
-            <Link to={`/contacts/${m.contactId}`} className="connection-row__name">
-              {m.name}
-            </Link>
-            <span className="connection-row__hint">from the voter file</span>
-          </div>
-        ))}
         {contact.connections.map((conn: ContactConnection & { direction: 'from' | 'to' }) => (
           <div key={conn.id} className="connection-row">
             <span className="chip">{conn.label}</span>
@@ -479,7 +297,8 @@ function MergeDuplicateModal({
         <>
           <p className="contact-detail__section-hint" style={{ marginTop: 0 }}>
             Search for the duplicate contact — it'll be folded into "{currentContact.name}" (filling in anything
-            blank, keeping everything already here) and then removed.
+            blank, keeping everything already here) and then removed. Your own card always survives a merge with a
+            voter-roll entry, and if the voter file disagrees with something on it, you'll be asked before anything changes.
           </p>
           <input autoFocus placeholder="Search contacts and the voter roll…" value={query} onChange={(e) => setQuery(e.target.value)} />
           {searching && <div className="empty-state empty-state--section">Searching…</div>}
@@ -593,8 +412,19 @@ export function ContactDetailPage() {
   async function handleMerge(mergeFromId: string) {
     const merged = await api.mergeContact(contactId, mergeFromId);
     setMerging(false);
+    // Merging Mike's own card into a voter-roll contact keeps HIS card —
+    // follow it there.
+    if (merged.id !== contactId) {
+      navigate(`/contacts/${merged.id}`, { replace: true });
+      return;
+    }
     setContact((prev) => (prev ? { ...prev, ...merged } : prev));
     load(); // notes/voterRecords moved over by the merge — refetch to pick them up
+  }
+
+  async function handleVoterDiff(d: VoterDiff, decision: 'use' | 'keep') {
+    await api.reviewVoterDiff(contactId, d.field, d.voter, decision);
+    load();
   }
 
   async function handleAddNote() {
@@ -637,6 +467,7 @@ export function ContactDetailPage() {
   const anniversary = formatDate(contact.anniversary_month, contact.anniversary_day, contact.anniversary_year);
   const isPinned = contact.pinned === 1;
   const tz = timezoneForCity(contact.city);
+  const voterInsight = contact.voterRecords[0]?.insight;
 
   return (
     <div className="contact-detail">
@@ -672,6 +503,7 @@ export function ContactDetailPage() {
 
       <div className="contact-detail__meta">
         <span className="chip">{circleLabel(contact.circle)}</span>
+        <PartyPill code={voterInsight?.partyCode} name={voterInsight?.partyName ?? contact.voterRecords[0]?.party} />
       </div>
 
       <div className="contact-detail__card">
@@ -757,13 +589,16 @@ export function ContactDetailPage() {
               <span className="contact-detail__field-value">{anniversary}</span>
             </div>
           )}
-          {phones.length === 0 && emails.length === 0 && !contact.address && !contact.city && !contact.company && !contact.title && !birthday && !anniversary && (
+          <HouseholdGlance members={contact.householdMembers} />
+          {phones.length === 0 && emails.length === 0 && !contact.address && !contact.city && !contact.company && !contact.title && !birthday && !anniversary && contact.householdMembers.length === 0 && (
             <div className="contact-detail__field contact-detail__field--empty">No contact info yet — click Edit to add some.</div>
           )}
         </div>
       </div>
 
-      <VoterRecordSection records={contact.voterRecords} />
+      <VoterDiffBox diffs={contact.voterDiffs ?? []} onDecide={handleVoterDiff} />
+
+      <VoterInsightSection records={contact.voterRecords} household={contact.householdMembers} />
 
       <ConnectionsSection contact={contact} onAdd={handleAddConnection} onDelete={handleDeleteConnection} />
 

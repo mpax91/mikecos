@@ -175,6 +175,7 @@ export interface VoterRecord {
   ad: string | null;
   ld: string | null;
   gop_matrix: string | null;
+  voter_key?: string | null;
   raw_data: string; // JSON
   import_batch_id: string;
   created_at: string;

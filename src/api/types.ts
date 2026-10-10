@@ -909,6 +909,49 @@ export interface ContactConnection {
 export interface HouseholdMember {
   contactId: string;
   name: string;
+  /** In Mike's own contacts (not a bare voter-roll entry). */
+  personal?: boolean;
+  party?: string | null;
+  partyCode?: string | null;
+  age?: number | null;
+  turnout?: TurnoutCount;
+}
+
+export interface TurnoutCount {
+  voted: number;
+  eligible: number;
+}
+
+export type ElectionKind = 'general' | 'local' | 'primary' | 'presidentialPrimary' | 'special' | 'village';
+
+/** worker/src/voterInsight.ts — rule-based, derived from raw_data. */
+export interface VoterInsight {
+  voterKey: string | null;
+  partyCode: string | null;
+  partyName: string | null;
+  born: string | null;
+  registered: string | null;
+  elections: { code: string; date: string; kind: ElectionKind; voted: boolean; eligible: boolean; method: string | null }[];
+  turnout: TurnoutCount;
+  splits: { general: TurnoutCount; local: TurnoutCount; primary: TurnoutCount };
+  lastVoted: string | null;
+  methods: Record<string, number>;
+  ed: string | null;
+  townCode: string | null;
+  status: string | null;
+  partyChange: string | null;
+  partyPositions: string[];
+  electedOffice: string | null;
+  cellPhone: string | null;
+  insights: string[];
+}
+
+/** A field where Mike's card and the voter file disagree, not yet answered. */
+export interface VoterDiff {
+  field: 'address' | 'city' | 'birthday';
+  label: string;
+  mine: string;
+  voter: string;
 }
 
 // ---- Contact / voter-file import ----
@@ -953,7 +996,7 @@ export interface ImportPreviewResponse {
   fresh: ImportMatch[];
   /** voter_file + mode: 'replace' only — what committing it will delete
    * before writing the new file's rows. */
-  replacing?: { voterRecordCount: number; voterOnlyContactCount: number };
+  replacing?: { voterRecordCount: number; voterOnlyContactCount: number; keptContactCount?: number };
   /** contacts + mode: 'replace' only — previously-imported contacts (source
    * = 'contact_import') this file doesn't mention at all, by name, so
    * Settings can show exactly who before deleting them. Pass their ids back
@@ -1226,6 +1269,8 @@ export interface VoterRecord {
   import_batch_id: string;
   created_at: string;
   updated_at: string;
+  voter_key?: string | null;
+  insight?: VoterInsight;
 }
 
 /** One entry in VoterRecord.voting_history — an election/participation
@@ -1245,6 +1290,7 @@ export interface ContactDetail extends Contact {
   voterRecords: VoterRecord[];
   connections: (ContactConnection & { direction: 'from' | 'to' })[];
   householdMembers: HouseholdMember[];
+  voterDiffs?: VoterDiff[];
 }
 
 /** Manual dedup — for the pairs the import matcher's automatic name/

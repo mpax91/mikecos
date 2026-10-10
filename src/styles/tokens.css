@@ -19,6 +19,15 @@
 
   --color-card-bg: #FFFFFF;
 
+  /* Voter Insight — party + voted chips (2026-10-10) */
+  --color-party-dem: #2F5E9E;
+  --color-party-dem-bg: #EAF0F8;
+  --color-party-rep: #A83A32;
+  --color-party-rep-bg: #F7EAE8;
+  --color-vote-yes: #2E6A45;
+  --color-vote-yes-bg: #E6F0E8;
+  --color-vote-yes-border: #B9D3C0;
+
   /* Standard file-type colors, matched to their familiar real-world icons */
   --color-pdf: #D93831;
   --color-pdf-dark: #B32B26;

@@ -485,6 +485,11 @@ export function ContactImportPanel() {
               <span>{preview.totalRows.toLocaleString()} rows in "{preview.filename}"</span>
               <span>will replace {preview.replacing.voterRecordCount.toLocaleString()} existing voter record{preview.replacing.voterRecordCount === 1 ? '' : 's'}</span>
               <span>and remove {preview.replacing.voterOnlyContactCount.toLocaleString()} voter-only contact{preview.replacing.voterOnlyContactCount === 1 ? '' : 's'}</span>
+              {!!preview.replacing.keptContactCount && (
+                <span>
+                  keeping {preview.replacing.keptContactCount.toLocaleString()} merged or annotated contact{preview.replacing.keptContactCount === 1 ? '' : 's'} — re-linked to the new file by NYS voter ID
+                </span>
+              )}
             </div>
           ) : preview.replacingContacts ? (
             <div className="contact-import__preview-summary">

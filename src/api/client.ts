@@ -288,8 +288,15 @@ export const api = {
    * only fills blank fields, unions emails/phones) and deletes mergeFromId,
    * moving its notes and any voter record over. For duplicates the import
    * matcher's name/nickname rules don't catch on their own. */
+  /** Returns the surviving contact — Mike's own card always survives a
+   * merge with a voter-roll contact, so its id can differ from `id`. */
   mergeContact: (id: string, mergeFromId: string) =>
     request<Contact>(`/api/contacts/${id}/merge`, { method: 'POST', body: JSON.stringify({ mergeFromId }) }),
+
+  /** Voter File Differs check: 'use' writes the voter value over Mike's,
+   * 'keep' leaves his and stops asking until the voter value changes. */
+  reviewVoterDiff: (id: string, field: string, voter: string, decision: 'use' | 'keep') =>
+    request<Contact>(`/api/contacts/${id}/voter-review`, { method: 'POST', body: JSON.stringify({ field, voter, decision }) }),
 
   /** Scans for likely duplicates already in the database — a personal
    * contact whose name matches one or more standalone voter-roll contacts.

@@ -59,6 +59,7 @@ import { afterBillTaskSpawned, billsOnCalendar, billsRouter } from './bills';
 import { scanAllLiveFolders, statementsScanDue } from './statements/engine';
 import { contactsAssistantRouter } from './contactsAssistant';
 import { betsEnrichmentRouter } from './betsEnrichment';
+import { buildVoterInsight, ELECTION_CODE_RE, titleCaseVoterText, voterDiffs, voterKeyOf, type VoterDiff } from './voterInsight';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -1009,33 +1010,163 @@ app.get('/api/contacts/:id', async (c) => {
   // direction obvious in context).
   const [{ results: connFrom }, { results: connTo }] = await Promise.all([
     c.env.DB.prepare('SELECT * FROM contact_connections WHERE contact_id = ? ORDER BY created_at ASC').bind(id).all<ContactConnection>(),
-    c.env.DB.prepare('SELECT * FROM contact_connections WHERE related_contact_id = ? ORDER BY created_at ASC').bind(id).all<ContactConnection>(),
+    c.env.DB.prepare(
+      `SELECT cc.*, c.name AS from_name FROM contact_connections cc JOIN contacts c ON c.id = cc.contact_id
+       WHERE cc.related_contact_id = ? ORDER BY cc.created_at ASC`
+    )
+      .bind(id)
+      .all<ContactConnection & { from_name: string }>(),
   ]);
+  // A 'to' row was created on the OTHER person's card ("Jonathan: Spouse →
+  // Lauren"); on Lauren's card it must name Jonathan, not Lauren herself.
   const connections = [
     ...(connFrom ?? []).map((row) => ({ ...row, direction: 'from' as const })),
-    ...(connTo ?? []).map((row) => ({ ...row, direction: 'to' as const })),
+    ...(connTo ?? []).map(({ from_name, ...row }) => ({ ...row, related_contact_id: row.contact_id, related_name: from_name, direction: 'to' as const })),
   ];
 
   // Household members, computed live from the voter file rather than
   // stored — see 0031_contact_headline_city_connections.sql and
   // 0018_contact_import.sql's household_code comment. Anyone sharing this
   // contact's household_code(s), across any of their voter_records rows,
-  // excluding this contact itself.
+  // excluding this contact itself. Carries party / age / turnout so the
+  // card can show "Lauren Spano · Republican · 42 · 8/21" at a glance.
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: HOME_TZ });
   const householdCodes = [...new Set((voterRecords ?? []).map((v) => v.household_code).filter((code): code is string => !!code))];
-  let householdMembers: { contactId: string; name: string }[] = [];
+  let householdMembers: HouseholdMemberOut[] = [];
   if (householdCodes.length > 0) {
     const placeholders = householdCodes.map(() => '?').join(', ');
     const { results: memberRows } = await c.env.DB.prepare(
-      `SELECT DISTINCT c.id, c.name FROM voter_records vr JOIN contacts c ON c.id = vr.contact_id
+      `SELECT c.id, c.name, c.source, vr.party, vr.voter_age, vr.calculated_party, vr.household_party, vr.registered_date, vr.raw_data
+       FROM voter_records vr JOIN contacts c ON c.id = vr.contact_id
        WHERE vr.household_code IN (${placeholders}) AND vr.contact_id != ?`
     )
       .bind(...householdCodes, id)
-      .all<{ id: string; name: string }>();
-    householdMembers = (memberRows ?? []).map((m) => ({ contactId: m.id, name: m.name }));
+      .all<{ id: string; name: string; source: string; party: string | null; voter_age: number | null; calculated_party: string | null; household_party: string | null; registered_date: string | null; raw_data: string }>();
+    const seen = new Set<string>();
+    for (const m of memberRows ?? []) {
+      if (seen.has(m.id)) continue;
+      seen.add(m.id);
+      const ins = buildVoterInsight(m.raw_data, m, today);
+      householdMembers.push({
+        contactId: m.id,
+        name: m.name,
+        personal: m.source !== 'voter_file',
+        party: ins.partyName,
+        partyCode: ins.partyCode,
+        age: m.voter_age,
+        turnout: ins.turnout,
+      });
+    }
+    householdMembers.sort((a, b) => (b.age ?? 0) - (a.age ?? 0));
   }
 
-  return c.json({ ...contact, notes: notes ?? [], voterRecords: voterRecords ?? [], connections, householdMembers });
+  const records = (voterRecords ?? []).map((vr) => ({ ...vr, insight: buildVoterInsight(vr.raw_data, vr, today) }));
+  const voterDiffList = contact.source === 'voter_file' ? [] : await pendingVoterDiffs(c.env.DB, contact, voterRecords ?? []);
+
+  return c.json({
+    ...contact,
+    notes: notes ?? [],
+    voterRecords: records,
+    connections,
+    householdMembers,
+    voterDiffs: voterDiffList.map(({ apply: _apply, ...d }) => d),
+  });
 });
+
+interface HouseholdMemberOut {
+  contactId: string;
+  name: string;
+  personal: boolean;
+  party: string | null;
+  partyCode: string | null;
+  age: number | null;
+  turnout: { voted: number; eligible: number };
+}
+
+/** Voter-file values for a contact's fields — from the newest voter record
+ * (the same extractVoterFields mapping the importer uses). */
+function voterFieldsFor(voterRecords: VoterRecord[]) {
+  const vr = [...voterRecords].sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0];
+  if (!vr) return null;
+  let raw: Record<string, string>;
+  try {
+    raw = JSON.parse(vr.raw_data) as Record<string, string>;
+  } catch {
+    return null;
+  }
+  const f = extractVoterFields(raw);
+  return { address: f.address, city: f.city, birthday_month: f.birthday_month, birthday_day: f.birthday_day, birthday_year: f.birthday_year };
+}
+
+/** Differences between a personal contact and its voter record that Mike
+ * hasn't already answered "Keep Mine" to (for this same voter value). */
+async function pendingVoterDiffs(db: D1Database, contact: Contact, voterRecords: VoterRecord[]): Promise<VoterDiff[]> {
+  const voter = voterFieldsFor(voterRecords);
+  if (!voter) return [];
+  const diffs = voterDiffs(contact, voter);
+  if (diffs.length === 0) return [];
+  const { results } = await db
+    .prepare('SELECT field, voter_value FROM contact_voter_reviews WHERE contact_id = ?')
+    .bind(contact.id)
+    .all<{ field: string; voter_value: string }>();
+  const answered = new Map((results ?? []).map((r) => [r.field, r.voter_value]));
+  return diffs.filter((d) => answered.get(d.field) !== d.voter);
+}
+
+// POST /api/contacts/:id/voter-review { field, voter, decision } — the
+// card's Voter File Differs check. 'use' writes the voter-file value over
+// Mike's (the ONLY path that replaces a field he has with voter data);
+// 'keep' leaves his value and silences the prompt until the voter file
+// says something different. The value written is re-derived here from the
+// stored voter record, never taken from the client; `voter` must match
+// what Mike was shown, so a stale page can't apply something else.
+app.post('/api/contacts/:id/voter-review', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json<{ field: string; voter: string; decision: 'use' | 'keep' }>();
+  if (body.decision !== 'use' && body.decision !== 'keep') return c.json({ error: 'decision must be use or keep' }, 400);
+  const contact = await c.env.DB.prepare('SELECT * FROM contacts WHERE id = ?').bind(id).first<Contact>();
+  if (!contact) return c.json({ error: 'not found' }, 404);
+  const { results: voterRecords } = await c.env.DB.prepare('SELECT * FROM voter_records WHERE contact_id = ?').bind(id).all<VoterRecord>();
+  const diff = (await pendingVoterDiffs(c.env.DB, contact, voterRecords ?? [])).find((d) => d.field === body.field);
+  if (!diff) return c.json({ error: 'no pending difference for that field' }, 409);
+  if (diff.voter !== body.voter) return c.json({ error: 'voter value changed — reload' }, 409);
+
+  const ts = now();
+  const stmts: D1PreparedStatement[] = [];
+  if (body.decision === 'use') {
+    const entries = Object.entries(diff.apply);
+    stmts.push(
+      c.env.DB.prepare(`UPDATE contacts SET ${entries.map(([k]) => `${k} = ?`).join(', ')}, updated_at = ? WHERE id = ?`).bind(
+        ...entries.map(([, v]) => v),
+        ts,
+        id
+      )
+    );
+  }
+  stmts.push(
+    c.env.DB.prepare(
+      `INSERT INTO contact_voter_reviews (contact_id, field, voter_value, decision, decided_at) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(contact_id, field) DO UPDATE SET voter_value = excluded.voter_value, decision = excluded.decision, decided_at = excluded.decided_at`
+    ).bind(id, diff.field, diff.voter, body.decision, ts)
+  );
+  await c.env.DB.batch(stmts);
+  const updated = await c.env.DB.prepare('SELECT * FROM contacts WHERE id = ?').bind(id).first<Contact>();
+  return c.json(updated);
+});
+
+/** Remember which contact owns each of its voter records (by statewide
+ * voter id) so a voter-file Replace re-attaches instead of duplicating.
+ * Bare voter-roll contacts aren't linked — Replace recreates them anyway. */
+function voterLinkStmts(db: D1Database, contactId: string, voterKeys: (string | null | undefined)[], ts: string): D1PreparedStatement[] {
+  return [...new Set(voterKeys.filter((k): k is string => !!k))].map((key) =>
+    db
+      .prepare(
+        `INSERT INTO contact_voter_links (voter_key, contact_id, created_at) VALUES (?, ?, ?)
+         ON CONFLICT(voter_key) DO UPDATE SET contact_id = excluded.contact_id`
+      )
+      .bind(key, contactId, ts)
+  );
+}
 
 // POST /api/contacts/:id/connections — a manual connection to another
 // contact (by id) or just a name (relatedContactId omitted) for someone
@@ -1135,14 +1266,28 @@ app.post('/api/contacts/:id/merge', async (c) => {
   const mergeFromId = body.mergeFromId;
   if (!mergeFromId || mergeFromId === id) return c.json({ error: 'mergeFromId required and must differ from :id' }, 400);
 
-  const target = await c.env.DB.prepare('SELECT * FROM contacts WHERE id = ?').bind(id).first<Contact>();
-  const source = await c.env.DB.prepare('SELECT * FROM contacts WHERE id = ?').bind(mergeFromId).first<Contact>();
+  let target = await c.env.DB.prepare('SELECT * FROM contacts WHERE id = ?').bind(id).first<Contact>();
+  let source = await c.env.DB.prepare('SELECT * FROM contacts WHERE id = ?').bind(mergeFromId).first<Contact>();
   if (!target || !source) return c.json({ error: 'contact not found' }, 404);
+  // Mike's own card always survives a merge with a bare voter-roll contact,
+  // whichever page he started from — otherwise his contact would become a
+  // source='voter_file' row (his name/circle replaced by the roll's, and
+  // deleted by the next voter-file Replace). The response carries the
+  // surviving id; the page navigates there if it changed.
+  if (target.source === 'voter_file' && source.source !== 'voter_file') {
+    [target, source] = [source, target];
+  }
+  const survivorId = target.id;
+  const goneId = source.id;
 
   const fields: [string, unknown][] = [];
   if (!target.company && source.company) fields.push(['company', source.company]);
   if (!target.title && source.title) fields.push(['title', source.title]);
-  if (!target.address && source.address) fields.push(['address', source.address]);
+  // Voter-roll text is ALL CAPS; Mike's cards are Title Case.
+  const fromVoter = source.source === 'voter_file' && target.source !== 'voter_file';
+  const tc = (v: string | null) => (fromVoter ? titleCaseVoterText(v) : v);
+  if (!target.address && source.address) fields.push(['address', tc(source.address)]);
+  if (!target.city && source.city) fields.push(['city', tc(source.city)]);
   if (!target.birthday_month && source.birthday_month) {
     fields.push(['birthday_month', source.birthday_month], ['birthday_day', source.birthday_day], ['birthday_year', source.birthday_year]);
   }
@@ -1167,14 +1312,26 @@ app.post('/api/contacts/:id/merge', async (c) => {
   if (fields.length > 0) {
     fields.push(['updated_at', ts]);
     const setClause = fields.map(([k]) => `${k} = ?`).join(', ');
-    stmts.push(c.env.DB.prepare(`UPDATE contacts SET ${setClause} WHERE id = ?`).bind(...fields.map(([, v]) => v), id));
+    stmts.push(c.env.DB.prepare(`UPDATE contacts SET ${setClause} WHERE id = ?`).bind(...fields.map(([, v]) => v), survivorId));
   }
-  stmts.push(c.env.DB.prepare('UPDATE voter_records SET contact_id = ? WHERE contact_id = ?').bind(id, mergeFromId));
-  stmts.push(c.env.DB.prepare('UPDATE contact_notes SET contact_id = ? WHERE contact_id = ?').bind(id, mergeFromId));
-  stmts.push(c.env.DB.prepare('DELETE FROM contacts WHERE id = ?').bind(mergeFromId));
+  stmts.push(c.env.DB.prepare('UPDATE voter_records SET contact_id = ? WHERE contact_id = ?').bind(survivorId, goneId));
+  stmts.push(c.env.DB.prepare('UPDATE contact_notes SET contact_id = ? WHERE contact_id = ?').bind(survivorId, goneId));
+  // Connections on either side used to be left pointing at the deleted id.
+  stmts.push(c.env.DB.prepare('UPDATE contact_connections SET contact_id = ? WHERE contact_id = ?').bind(survivorId, goneId));
+  stmts.push(c.env.DB.prepare('UPDATE contact_connections SET related_contact_id = ? WHERE related_contact_id = ?').bind(survivorId, goneId));
+  stmts.push(c.env.DB.prepare('DELETE FROM contact_connections WHERE contact_id = ? AND related_contact_id = ?').bind(survivorId, survivorId));
+  stmts.push(c.env.DB.prepare('UPDATE contact_voter_links SET contact_id = ? WHERE contact_id = ?').bind(survivorId, goneId));
+  stmts.push(c.env.DB.prepare('DELETE FROM contact_voter_reviews WHERE contact_id = ?').bind(goneId));
+  stmts.push(c.env.DB.prepare('DELETE FROM contacts WHERE id = ?').bind(goneId));
+  if (target.source !== 'voter_file') {
+    const { results: keyRows } = await c.env.DB.prepare('SELECT voter_key FROM voter_records WHERE contact_id IN (?, ?)')
+      .bind(survivorId, goneId)
+      .all<{ voter_key: string | null }>();
+    stmts.push(...voterLinkStmts(c.env.DB, survivorId, (keyRows ?? []).map((r) => r.voter_key), ts));
+  }
   await c.env.DB.batch(stmts);
 
-  const merged = await c.env.DB.prepare('SELECT * FROM contacts WHERE id = ?').bind(id).first<Contact>();
+  const merged = await c.env.DB.prepare('SELECT * FROM contacts WHERE id = ?').bind(survivorId).first<Contact>();
   return c.json(merged);
 });
 
@@ -1653,6 +1810,12 @@ function extractVoterFields(raw: Record<string, string>): VoterFields {
   const voteHistory: { code: string; value: string }[] = [];
   keys.forEach((k, i) => {
     if (consumed.has(k) || VOTER_HISTORY_IGNORE_HEADERS.has(normalized[i])) return;
+    // Only real election columns (18NOV, 20PRE, 24JUN …). Before 2026-10-10
+    // this took every leftover column, so CELL PHONE, VOTE METHOD …, 1/3 G
+    // and CURRENT showed up as fake election chips. The Voter Insight panel
+    // reads raw_data directly (voterInsight.ts), so old rows display right
+    // without a backfill.
+    if (!ELECTION_CODE_RE.test(k.trim().toUpperCase())) return;
     const v = (raw[k] ?? '').trim();
     if (!v) return;
     voteHistory.push({ code: k, value: v });
@@ -2017,8 +2180,25 @@ app.post('/api/contacts/import/preview', async (c) => {
   // committing to it.
   if (body.kind === 'voter_file' && body.mode === 'replace') {
     const voterRecordCount = (await c.env.DB.prepare('SELECT COUNT(*) as n FROM voter_records').first<{ n: number }>())?.n ?? 0;
+    // Matches commit/start's Replace: bare voter-roll contacts go; merged
+    // and annotated ones stay and get their fresh voter record back.
     const voterOnlyContactCount =
-      (await c.env.DB.prepare("SELECT COUNT(*) as n FROM contacts WHERE source = 'voter_file'").first<{ n: number }>())?.n ?? 0;
+      (
+        await c.env.DB.prepare(
+          `SELECT COUNT(*) as n FROM contacts c WHERE c.source = 'voter_file' AND NOT (c.pinned = 1 OR c.circle != 'other'
+             OR EXISTS (SELECT 1 FROM contact_notes n WHERE n.contact_id = c.id)
+             OR EXISTS (SELECT 1 FROM contact_connections cc WHERE cc.contact_id = c.id OR cc.related_contact_id = c.id))`
+        ).first<{ n: number }>()
+      )?.n ?? 0;
+    const keptContactCount =
+      (
+        await c.env.DB.prepare(
+          `SELECT COUNT(DISTINCT vr.contact_id) as n FROM voter_records vr JOIN contacts c ON c.id = vr.contact_id
+           WHERE c.source != 'voter_file' OR c.pinned = 1 OR c.circle != 'other'
+             OR EXISTS (SELECT 1 FROM contact_notes n WHERE n.contact_id = c.id)
+             OR EXISTS (SELECT 1 FROM contact_connections cc WHERE cc.contact_id = c.id OR cc.related_contact_id = c.id)`
+        ).first<{ n: number }>()
+      )?.n ?? 0;
     return c.json({
       kind: body.kind,
       filename: body.filename,
@@ -2026,7 +2206,7 @@ app.post('/api/contacts/import/preview', async (c) => {
       auto: [],
       review: [],
       fresh: records.map((record) => ({ record, matchType: 'new' as const })),
-      replacing: { voterRecordCount, voterOnlyContactCount },
+      replacing: { voterRecordCount, voterOnlyContactCount, keptContactCount },
     });
   }
 
@@ -2124,19 +2304,42 @@ async function processDecisionChunk(
     }
   }
 
+  // Durable personal<->voter links (migration 0097): a voter whose
+  // statewide id is linked to a contact Mike already has goes onto that
+  // contact — whatever the name matcher (or a Replace, which skips it)
+  // decided — instead of becoming a fresh duplicate voter-roll contact.
+  const linkedContact = new Map<string, string>();
+  if (kind === 'voter_file') {
+    const keys = [...new Set(decisions.map((d) => voterKeyOf(d.record.raw)).filter((k): k is string => !!k))];
+    for (let i = 0; i < keys.length; i += 50) {
+      const chunk = keys.slice(i, i + 50);
+      const { results } = await db
+        .prepare(
+          `SELECT l.voter_key, l.contact_id FROM contact_voter_links l JOIN contacts c ON c.id = l.contact_id
+           WHERE l.voter_key IN (${chunk.map(() => '?').join(', ')})`
+        )
+        .bind(...chunk)
+        .all<{ voter_key: string; contact_id: string }>();
+      for (const row of results ?? []) linkedContact.set(row.voter_key, row.contact_id);
+    }
+  }
+
   for (const decision of decisions) {
     const r = decision.record;
+    const voterKey = kind === 'voter_file' ? voterKeyOf(r.raw) : null;
+    const mergeContactId = (voterKey ? linkedContact.get(voterKey) : undefined) ?? (decision.action === 'merge' ? decision.contactId : undefined);
 
-    if (decision.action === 'merge' && decision.contactId) {
-      const contactId = decision.contactId;
+    if (mergeContactId) {
+      const contactId = mergeContactId;
       if (r.relations.length > 0) queueRelationStmts(contactId, r.relations);
       const existing = await db.prepare('SELECT * FROM contacts WHERE id = ?').bind(contactId).first<Contact>();
       if (existing) {
         const fields: [string, unknown][] = [];
         if (!existing.company && r.company) fields.push(['company', r.company]);
         if (!existing.title && r.title) fields.push(['title', r.title]);
-        if (!existing.address && r.address) fields.push(['address', r.address]);
-        if (!existing.city && r.city) fields.push(['city', r.city]);
+        const tc = (v: string | null) => (kind === 'voter_file' && existing.source !== 'voter_file' ? titleCaseVoterText(v) : v);
+        if (!existing.address && r.address) fields.push(['address', tc(r.address)]);
+        if (!existing.city && r.city) fields.push(['city', tc(r.city)]);
         if (!existing.birthday_month && r.birthday_month) {
           fields.push(['birthday_month', r.birthday_month], ['birthday_day', r.birthday_day], ['birthday_year', r.birthday_year]);
         }
@@ -2161,7 +2364,10 @@ async function processDecisionChunk(
         }
       }
       if (kind === 'voter_file') {
+        // Same person re-imported → replace their voter record, don't stack.
+        if (voterKey) newStmts.push(db.prepare('DELETE FROM voter_records WHERE contact_id = ? AND voter_key = ?').bind(contactId, voterKey));
         newStmts.push(voterRecordInsertStmt(db, contactId, r, batchId, ts));
+        if (existing && existing.source !== 'voter_file') newStmts.push(...voterLinkStmts(db, contactId, [voterKey], ts));
       }
     } else {
       // A row that doesn't match anyone becomes its own new contact — for
@@ -2221,8 +2427,8 @@ function voterRecordInsertStmt(db: D1Database, contactId: string, r: ParsedConta
          (id, contact_id, party, voter_age, household_members, voting_history,
           gender, registered_date, phone, polling_place, causeway_tag,
           calculated_party, household_party, household_code, cd, sd, ad, ld, gop_matrix,
-          raw_data, import_batch_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          raw_data, import_batch_id, created_at, updated_at, voter_key)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       uid(),
@@ -2247,7 +2453,8 @@ function voterRecordInsertStmt(db: D1Database, contactId: string, r: ParsedConta
       JSON.stringify(r.raw),
       batchId,
       ts,
-      ts
+      ts,
+      voterKeyOf(r.raw)
     );
 }
 
@@ -2276,8 +2483,30 @@ app.post('/api/contacts/import/commit/start', async (c) => {
   // whatever voter matching existed before" Mike asked for; it's on him
   // (and a later feature) to re-establish durable personal<->voter links
   // that survive a future replace.
+  //
+  // 2026-10-10: merged people no longer lose their voter link. Before the
+  // wipe, every voter record on a contact Mike keeps — a personal contact,
+  // or a voter-roll contact he has annotated (notes, connections, pinned,
+  // a circle other than 'other') — is remembered in contact_voter_links by
+  // statewide voter id, and those annotated voter-roll contacts are kept.
+  // processDecisionChunk then puts each returning voter back on the same
+  // contact (fill-blanks only; differences surface on the card for Mike to
+  // decide). Only bare, untouched voter-roll contacts are deleted.
   if (body.kind === 'voter_file' && body.mode === 'replace') {
-    await c.env.DB.batch([c.env.DB.prepare('DELETE FROM voter_records'), c.env.DB.prepare("DELETE FROM contacts WHERE source = 'voter_file'")]);
+    const ts = now();
+    const KEPT_VOTER_CONTACT = `(c.pinned = 1 OR c.circle != 'other'
+      OR EXISTS (SELECT 1 FROM contact_notes n WHERE n.contact_id = c.id)
+      OR EXISTS (SELECT 1 FROM contact_connections cc WHERE cc.contact_id = c.id OR cc.related_contact_id = c.id))`;
+    await c.env.DB.batch([
+      c.env.DB.prepare(
+        `INSERT INTO contact_voter_links (voter_key, contact_id, created_at)
+         SELECT vr.voter_key, vr.contact_id, ? FROM voter_records vr JOIN contacts c ON c.id = vr.contact_id
+         WHERE vr.voter_key IS NOT NULL AND (c.source != 'voter_file' OR ${KEPT_VOTER_CONTACT})
+         ON CONFLICT(voter_key) DO UPDATE SET contact_id = excluded.contact_id`
+      ).bind(ts),
+      c.env.DB.prepare('DELETE FROM voter_records'),
+      c.env.DB.prepare(`DELETE FROM contacts AS c WHERE c.source = 'voter_file' AND NOT ${KEPT_VOTER_CONTACT}`),
+    ]);
   }
 
   // Personal Contacts 'replace': deletes exactly the contacts the preview
@@ -2477,14 +2706,14 @@ app.post('/api/contacts/voter-fields/backfill-chunk', async (c) => {
   // batches of 50, same ID_CHUNK size the import-batch delete endpoint
   // above already uses for the same reason.
   const contactIds = [...new Set(rows.map((r) => r.contact_id))];
-  const contactsById = new Map<string, { birthday_month: number | null; address: string | null; city: string | null }>();
+  const contactsById = new Map<string, { birthday_month: number | null; address: string | null; city: string | null; source: string }>();
   const CONTACT_ID_CHUNK = 50;
   for (let i = 0; i < contactIds.length; i += CONTACT_ID_CHUNK) {
     const idChunk = contactIds.slice(i, i + CONTACT_ID_CHUNK);
     const placeholders = idChunk.map(() => '?').join(', ');
-    const { results: contactRows } = await c.env.DB.prepare(`SELECT id, birthday_month, address, city FROM contacts WHERE id IN (${placeholders})`)
+    const { results: contactRows } = await c.env.DB.prepare(`SELECT id, birthday_month, address, city, source FROM contacts WHERE id IN (${placeholders})`)
       .bind(...idChunk)
-      .all<{ id: string; birthday_month: number | null; address: string | null; city: string | null }>();
+      .all<{ id: string; birthday_month: number | null; address: string | null; city: string | null; source: string }>();
     for (const cr of contactRows ?? []) contactsById.set(cr.id, cr);
   }
 
@@ -2504,12 +2733,12 @@ app.post('/api/contacts/voter-fields/backfill-chunk', async (c) => {
         `UPDATE voter_records SET
            gender = ?, registered_date = ?, phone = ?, polling_place = ?, causeway_tag = ?,
            calculated_party = ?, household_party = ?, household_code = ?, cd = ?, sd = ?, ad = ?, ld = ?,
-           gop_matrix = ?, voting_history = ?, updated_at = ?
+           gop_matrix = ?, voting_history = ?, voter_key = ?, updated_at = ?
          WHERE id = ?`
       ).bind(
         f.gender, f.registered_date, f.voter_phone, f.polling_place, f.causeway_tag,
         f.calculated_party, f.household_party, f.household_code, f.cd, f.sd, f.ad, f.ld,
-        f.gop_matrix, f.voting_history ? JSON.stringify(f.voting_history) : null, ts, r.id
+        f.gop_matrix, f.voting_history ? JSON.stringify(f.voting_history) : null, voterKeyOf(raw), ts, r.id
       )
     );
 
@@ -2527,7 +2756,11 @@ app.post('/api/contacts/voter-fields/backfill-chunk', async (c) => {
       // specifically when the stored value looks like that old bug (no
       // leading house number) and the freshly-extracted one has one.
       const hasHouseNumber = (addr: string | null) => !!addr && /^\d/.test(addr.trim());
-      if (f.address && (!contact.address || (!hasHouseNumber(contact.address) && hasHouseNumber(f.address)))) {
+      // Only on bare voter-roll contacts: a merged personal contact's
+      // address is Mike's — a disagreement goes through the card's Voter
+      // File Differs check instead (2026-10-10).
+      const repairable = contact.source === 'voter_file' && !!contact.address && !hasHouseNumber(contact.address) && hasHouseNumber(f.address);
+      if (f.address && (!contact.address || repairable)) {
         contactFields.push(['address', f.address]);
       }
       // city is new as of this same change (extractVoterFields didn't
