@@ -70,6 +70,30 @@ function zonedWallTimeToUtc(y: number, month: number, d: number, h: number, mi: 
   return new Date(guess - (asIfUtc - guess));
 }
 
+/** A real instant re-expressed as its wall-clock time in `tz`, stored in
+ * a Date's UTC fields ("floating" time). RRULE expansion has to happen in
+ * the event's own wall time: a 7pm-Eastern "2nd Monday" series is 00:00Z
+ * on a Tuesday, so expanding BYDAY in UTC lands every occurrence on the
+ * 2nd Monday at 00:00Z — Sunday 8pm locally — and none of the EXDATEs
+ * (Monday 7pm) match. That produced phantom Sunday "Planning Board
+ * Meeting"s from a series whose every occurrence was cancelled. */
+function toWallTime(d: Date, tz: string): Date {
+  if (tz === 'UTC') return new Date(d.getTime());
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: tz, hour12: false, year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+    }).formatToParts(d).map((p) => [p.type, p.value])
+  );
+  const hh = parts.hour === '24' ? 0 : Number(parts.hour);
+  return new Date(Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), hh, Number(parts.minute), Number(parts.second)));
+}
+
+function fromWallTime(w: Date, tz: string): Date {
+  if (tz === 'UTC') return new Date(w.getTime());
+  return zonedWallTimeToUtc(w.getUTCFullYear(), w.getUTCMonth() + 1, w.getUTCDate(), w.getUTCHours(), w.getUTCMinutes(), w.getUTCSeconds(), tz);
+}
+
 function dayWindowUtc(dateIso: string, tz: string): { start: Date; end: Date } {
   const [y, m, d] = dateIso.split('-').map(Number);
   return {
@@ -155,8 +179,12 @@ interface VEvent {
   start: Date;
   end: Date;
   allDay: boolean;
+  /** Zone the DTSTART wall time is in — 'UTC' for Z times and all-day
+   * dates (already floating), else its TZID (or HOME_TZ). */
+  tz: string;
   rrule?: string;
   exdates: Date[];
+  rdates: Date[];
   recurrenceId?: Date;
   status?: string;
   attendees: MeetingAttendee[];
@@ -196,7 +224,7 @@ function parseIcsEvents(ics: string): VEvent[] {
 
   for (const line of lines) {
     if (line === 'BEGIN:VEVENT') {
-      cur = { exdates: [], attendees: [] };
+      cur = { exdates: [], rdates: [], attendees: [], tz: HOME_TZ };
       continue;
     }
     if (line === 'END:VEVENT') {
@@ -218,6 +246,7 @@ function parseIcsEvents(ics: string): VEvent[] {
         const { date, allDay } = parseIcsDateTime(prop.value, prop.params);
         cur.start = date;
         cur.allDay = allDay;
+        cur.tz = allDay || prop.value.endsWith('Z') ? 'UTC' : prop.params.TZID || HOME_TZ;
         break;
       }
       case 'DTEND': {
@@ -231,6 +260,12 @@ function parseIcsEvents(ics: string): VEvent[] {
       case 'EXDATE':
         for (const part of prop.value.split(',')) {
           if (part) cur.exdates!.push(parseIcsDateTime(part, prop.params).date);
+        }
+        break;
+      case 'RDATE':
+        if (prop.params.VALUE === 'PERIOD') break;
+        for (const part of prop.value.split(',')) {
+          if (part) cur.rdates!.push(parseIcsDateTime(part, prop.params).date);
         }
         break;
       case 'RECURRENCE-ID':
@@ -333,22 +368,39 @@ export function meetingsForRange(sources: FeedSource[], startIso: string, endIso
       const overrides = overridesByUid.get(base.uid) ?? [];
 
       if (base.rrule) {
+        // Expand in the event's wall time (see toWallTime), then map each
+        // occurrence back to a real instant. UNTIL is a real UTC instant
+        // per RFC 5545, so it's shifted into wall time too.
+        const tz = base.tz;
         const opts = RRule.parseString(base.rrule);
-        opts.dtstart = base.start;
+        opts.dtstart = toWallTime(base.start, tz);
+        opts.tzid = null;
+        if (opts.until) opts.until = toWallTime(opts.until, tz);
         const rule = new RRule(opts);
         const set = new RRuleSet();
         set.rrule(rule);
-        for (const ex of base.exdates) set.exdate(ex);
+        for (const ex of base.exdates) set.exdate(toWallTime(ex, tz));
+        for (const rd of base.rdates) set.rdate(toWallTime(rd, tz));
         const duration = base.end.getTime() - base.start.getTime();
+        // Pad the window a day each side for the wall/UTC offset, then
+        // filter on real instants.
+        const pad = 86_400_000;
+        const occurrences = set
+          .between(toWallTime(new Date(rangeStart.getTime() - pad), tz), toWallTime(new Date(rangeEnd.getTime() + pad), tz), true)
+          .map((w) => fromWallTime(w, tz))
+          // All-day occurrences are date-only (UTC midnight) — match them
+          // on the calendar date, not as instants against the local window.
+          .filter((d) => (base.allDay ? isoDateOnly(d) >= startIso && isoDateOnly(d) <= endIso : d >= rangeStart && d < rangeEnd));
+        const dateOf = (d: Date) => (base.allDay ? isoDateOnly(d) : localDateOf(d, HOME_TZ));
 
-        for (const occStart of set.between(rangeStart, rangeEnd, true)) {
+        for (const occStart of occurrences) {
           const override = overrides.find((o) => o.recurrenceId!.getTime() === occStart.getTime());
           if (override) {
             if (override.status === 'CANCELLED') continue;
-            results.push({ ...toMeeting(override, occStart), date: localDateOf(occStart, HOME_TZ) });
+            results.push({ ...toMeeting(override, occStart), date: dateOf(occStart) });
           } else {
             const occMeeting = toMeeting({ ...base, start: occStart, end: new Date(occStart.getTime() + duration) }, occStart);
-            results.push({ ...occMeeting, date: localDateOf(occStart, HOME_TZ) });
+            results.push({ ...occMeeting, date: dateOf(occStart) });
           }
         }
       } else if (base.allDay) {
