@@ -8325,34 +8325,60 @@ td.month-page__upcoming-actions .today-page__meeting-actions {
   outline: none;
 }
 .contacts-search {
-  max-width: 260px;
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 6px;
+  padding: 11px 14px;
+  font-size: 15px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-card-bg);
 }
-.contacts-filter-chips {
+.contacts-search:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+.contacts-filters {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  flex: 1;
-  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 14px;
 }
-.contacts-filter-chips .chip {
-  white-space: nowrap;
+.contacts-filter-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--color-muted);
+}
+.contacts-filter-select select {
+  min-width: 200px;
+  max-width: 100%;
+  padding: 6px 10px;
+  font-size: 13px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-card-bg);
+  color: var(--color-ink);
+}
+.contacts-filters__voters {
+  margin-left: auto;
 }
 @media (max-width: 640px) {
-  .contacts-search {
-    max-width: none;
+  .contacts-filter-select {
     flex: 1 1 100%;
   }
-  .contacts-filter-chips {
-    flex: 1 1 100%;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    padding-bottom: 4px;
-    scrollbar-width: none;
+  .contacts-filter-select select {
+    flex: 1;
+    min-width: 0;
   }
-  .contacts-filter-chips::-webkit-scrollbar {
-    display: none;
+  .contacts-filters__voters {
+    margin-left: 0;
   }
 }
+
 .chip.chip--ghost {
   border-style: dashed;
   color: var(--color-muted);

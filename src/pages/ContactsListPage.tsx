@@ -18,8 +18,6 @@ const CIRCLES: { value: ContactCircle; label: string }[] = [
   { value: 'other', label: 'Other' },
 ];
 
-const LABELS_SHOWN = 10;
-
 function circleLabel(circle: ContactCircle): string {
   return CIRCLES.find((c) => c.value === circle)?.label ?? 'Other';
 }
@@ -100,7 +98,6 @@ export function ContactsListPage() {
   const [circleFilter, setCircleFilter] = useState<ContactCircle | null>(null);
   const [labelFilter, setLabelFilter] = useState<string | null>(null);
   const [allLabels, setAllLabels] = useState<{ label: string; count: number }[]>([]);
-  const [showAllLabels, setShowAllLabels] = useState(false);
   const [remindersOnly, setRemindersOnly] = useState(false);
   const [reminderCount, setReminderCount] = useState(0);
   // Standalone voter-roll entries (12k+ people Mike has never met) are
@@ -184,61 +181,43 @@ export function ContactsListPage() {
         </div>
       </div>
 
-      <div className="toolbar-row" style={{ marginTop: 4, flexWrap: 'wrap', gap: 8 }}>
-        <input
-          placeholder={includeVoters ? 'Search contacts, notes, and the voter roll…' : 'Search contacts and notes…'}
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          className="contacts-search"
-        />
-        {/* Mike's own labels replace the fixed circles once any exist
-            (most-used first; the rest behind "+N More"). Circles remain the
-            fallback for an address book with no labels yet. */}
-        <div className="contacts-filter-chips">
-          <button
-            type="button"
-            className={`chip${circleFilter === null && labelFilter === null ? ' is-active' : ''}`}
-            onClick={() => {
-              setCircleFilter(null);
-              setLabelFilter(null);
-            }}
-          >
-            All
-          </button>
-          {allLabels.length > 0 ? (
-            <>
-              {(showAllLabels ? allLabels : allLabels.slice(0, LABELS_SHOWN))
-                .concat(labelFilter && !showAllLabels && !allLabels.slice(0, LABELS_SHOWN).some((l) => l.label === labelFilter) ? allLabels.filter((l) => l.label === labelFilter) : [])
-                .map((l) => (
-                  <button
-                    key={l.label}
-                    type="button"
-                    className={`chip${labelFilter === l.label ? ' is-active' : ''}`}
-                    onClick={() => setLabelFilter(labelFilter === l.label ? null : l.label)}
-                    title={`${l.count} contact${l.count === 1 ? '' : 's'}`}
-                  >
-                    {l.label} <span className="chip__count">{l.count}</span>
-                  </button>
-                ))}
-              {allLabels.length > LABELS_SHOWN && (
-                <button type="button" className="chip chip--ghost" onClick={() => setShowAllLabels((v) => !v)}>
-                  {showAllLabels ? 'Fewer' : `+${allLabels.length - LABELS_SHOWN} More`}
-                </button>
-              )}
-            </>
-          ) : (
-            CIRCLES.map((c) => (
-              <button
-                key={c.value}
-                type="button"
-                className={`chip${circleFilter === c.value ? ' is-active' : ''}`}
-                onClick={() => setCircleFilter(circleFilter === c.value ? null : c.value)}
-              >
-                {c.label}
-              </button>
-            ))
-          )}
-        </div>
+      {/* Search spans the list's full width; filters sit on one line under
+          it — a Labels dropdown (Mike's Google labels, most-used first;
+          circles are the fallback when no labels exist yet), the check-in
+          chip and the voter-roll toggle. */}
+      <input
+        className="contacts-search"
+        type="search"
+        placeholder={includeVoters ? 'Search contacts, notes, labels, and the voter roll…' : 'Search contacts, notes, and labels…'}
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+      />
+      <div className="contacts-filters">
+        {allLabels.length > 0 ? (
+          <label className="contacts-filter-select">
+            <span className="contacts-filter-select__label">Label</span>
+            <select value={labelFilter ?? ''} onChange={(e) => setLabelFilter(e.target.value || null)}>
+              <option value="">All</option>
+              {allLabels.map((l) => (
+                <option key={l.label} value={l.label}>
+                  {l.label} ({l.count})
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <label className="contacts-filter-select">
+            <span className="contacts-filter-select__label">Circle</span>
+            <select value={circleFilter ?? ''} onChange={(e) => setCircleFilter((e.target.value || null) as ContactCircle | null)}>
+              <option value="">All</option>
+              {CIRCLES.map((c) => (
+                <option key={c.value} value={c.value}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         {reminderCount > 0 && (
           <button
             type="button"
@@ -250,11 +229,11 @@ export function ContactsListPage() {
         )}
         <button
           type="button"
-          className={`chip${includeVoters ? ' is-active' : ''}`}
+          className={`chip contacts-filters__voters${includeVoters ? ' is-active' : ''}`}
           onClick={() => setIncludeVoters((v) => !v)}
           title="Include people from the voter roll who aren't already one of your contacts"
         >
-          🗳️ Voter Roll {includeVoters ? 'shown' : 'hidden'}
+          🗳️ Voter Roll {includeVoters ? 'Shown' : 'Hidden'}
         </button>
       </div>
 
