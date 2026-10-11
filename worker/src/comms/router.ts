@@ -36,3 +36,19 @@ commsRouter.get('/folders', async (c) => {
 commsRouter.post('/scan', async (c) => c.json(await runComms(c.env)));
 
 commsRouter.get('/quiet', async (c) => c.json(await goneQuiet(c.env)));
+
+/** Start over: forget every rollup and re-read the backups from scratch
+ * (the folder choice is kept). */
+commsRouter.post('/reset', async (c) => {
+  await c.env.DB.batch([
+    c.env.DB.prepare('DELETE FROM comm_monthly'),
+    c.env.DB.prepare('DELETE FROM comm_last'),
+    c.env.DB.prepare('DELETE FROM comm_groups'),
+    c.env.DB.prepare('DELETE FROM comm_group_members'),
+    c.env.DB.prepare(
+      `UPDATE comm_settings SET calls_file_id = NULL, calls_wm = NULL, sms_file_id = NULL, sms_wm = NULL, mms_file_id = NULL, mms_wm = NULL,
+         mms_done = 0, first_at = NULL, stats_json = NULL, last_error = NULL WHERE id = 1`
+    ),
+  ]);
+  return c.json({ ok: true });
+});

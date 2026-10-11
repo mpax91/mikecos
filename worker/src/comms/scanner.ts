@@ -3,14 +3,13 @@
  * The sms file is ~2 GB because picture messages carry their photos and
  * videos inline as base64 `data="…"` attributes. This never holds a
  * message or an attachment in memory: it walks the text chunk by chunk,
- * jumps over quoted attribute values with indexOf (base64 has no `"`), and
+ * jumps from one `<` to the next with indexOf (base64 has no `<`), and
  * only buffers the small tags it needs (<call>, <sms>, <mms>, <addr>).
  * <part> tags (message text + attachments) are skipped entirely — message
  * content is never read.
  *
  * Can start at any byte offset (a Range read): until the first recognized
- * tag it simply finds nothing. Attribute values can't contain `"` (XML
- * escapes it), and `<` is escaped too, so tags are found reliably. */
+ * tag it simply finds nothing. */
 
 export interface CallEvent {
   kind: 'call';
@@ -38,8 +37,12 @@ export type BackupEvent = CallEvent | SmsEvent | MmsEvent;
 const MAX_TAG = 256 * 1024; // a long text body; anything longer is truncated (attrs we need come first)
 
 export class BackupScanner {
+  /** 'out' = between tags; 'tag' = buffering a wanted tag; 'skip' = inside
+   * a tag we don't need (a <part> with its attachment). Every tag ends where
+   * the next `<` begins — XML never allows a raw `<` inside an attribute,
+   * so this needs no quote tracking (a stray `"` in a backed-up message
+   * can't knock the reader out of step). */
   private state: 'out' | 'tag' | 'skip' = 'out';
-  private inQuote = false;
   private tagName = '';
   private buf = '';
   private carry = '';
@@ -60,68 +63,45 @@ export class BackupScanner {
     let i = 0;
     const n = s.length;
     while (i < n) {
-      if (this.state === 'out') {
+      if (this.state !== 'out') {
         const j = s.indexOf('<', i);
-        if (j < 0) return;
-        if (n - j < 8) {
-          this.carry = s.slice(j);
-          return;
-        }
-        const m = /^<(\/?)([a-zA-Z]+)/.exec(s.slice(j, j + 12));
-        i = j + 1;
-        if (!m) continue;
-        const [, close, name] = m;
-        if (close) {
-          if (name === 'mms' && this.mms) this.finishMms();
-          continue;
-        }
-        if (name === 'part') {
-          this.state = 'skip';
-          this.inQuote = false;
-          i = j + 5;
-          continue;
-        }
-        if (name === 'call' || name === 'sms' || name === 'mms' || name === 'addr') {
-          if (name === 'mms') this.sawMms = true;
-          if (name === 'sms') this.sawSms = true;
-          this.state = 'tag';
-          this.tagName = name;
-          this.inQuote = false;
-          this.buf = '';
-          i = j + 1 + name.length;
-        }
-        continue;
-      }
-      // Inside a tag: find the closing `>` that isn't inside quotes.
-      if (this.inQuote) {
-        const q = s.indexOf('"', i);
-        if (q < 0) {
+        if (j < 0) {
           if (this.state === 'tag') this.append(s.slice(i));
           return;
         }
-        if (this.state === 'tag') this.append(s.slice(i, q + 1));
-        this.inQuote = false;
-        i = q + 1;
-        continue;
-      }
-      const q = s.indexOf('"', i);
-      const g = s.indexOf('>', i);
-      if (g >= 0 && (q < 0 || g < q)) {
         if (this.state === 'tag') {
-          this.append(s.slice(i, g));
+          this.append(s.slice(i, j));
           this.endTag();
         }
         this.state = 'out';
-        i = g + 1;
+        i = j;
         continue;
       }
-      if (q < 0) {
-        if (this.state === 'tag') this.append(s.slice(i));
+      const j = s.indexOf('<', i);
+      if (j < 0) return;
+      if (n - j < 8) {
+        this.carry = s.slice(j);
         return;
       }
-      if (this.state === 'tag') this.append(s.slice(i, q + 1));
-      this.inQuote = true;
-      i = q + 1;
+      const m = /^<(\/?)([a-zA-Z]+)/.exec(s.slice(j, j + 12));
+      i = j + 1;
+      if (!m) continue;
+      const [, close, name] = m;
+      if (close) {
+        if (name === 'mms' && this.mms) this.finishMms();
+        continue;
+      }
+      if (name === 'call' || name === 'sms' || name === 'mms' || name === 'addr') {
+        if (name === 'mms') this.sawMms = true;
+        if (name === 'sms') this.sawSms = true;
+        this.state = 'tag';
+        this.tagName = name;
+        this.buf = '';
+        i = j + 1 + name.length;
+      } else if (name === 'part') {
+        this.state = 'skip';
+        i = j + 5;
+      }
     }
   }
 
@@ -150,7 +130,7 @@ export class BackupScanner {
       if (this.mms) this.finishMms();
       const date = Number(this.attr('date'));
       // A self-closing <mms …/> has no parts/addrs.
-      const selfClosing = /\/\s*$/.test(this.buf);
+      const selfClosing = /\/\s*>\s*$/.test(this.buf);
       if (date && this.firstMmsDate === null) this.firstMmsDate = date;
       if (date && this.want.mms) {
         this.mms = { kind: 'mms', date, box: Number(this.attr('msg_box') ?? 0), address: this.attr('address') ?? '', self: this.attr('self_phone_number'), addrs: [] };
