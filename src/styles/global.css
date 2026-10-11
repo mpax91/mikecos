@@ -18545,3 +18545,25 @@ td.month-page__upcoming-actions .today-page__meeting-actions {
     display: flex;
   }
 }
+
+/* Bedford Bee: source tabs + Google Search section */
+.bee-sources {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 10px 0 0;
+}
+.bee-gsc__page {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.bee-gsc__row .bee-person {
+  overflow-wrap: anywhere;
+}
+.bee-gsc__brand {
+  margin-left: 6px;
+}
+.bee-gsc__index-summary {
+  margin: 0 0 6px;
+  font-size: 13px;
+}

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../../api/client';
-import type { BeeFolderCandidate, BeeSettings } from '../../api/types';
+import type { BeeFolderCandidate, BeeGscConnection, BeeSettings } from '../../api/types';
 
 /** Settings → Bedford Bee: which Drive folder holds the Substack / Stripe
  * exports (found automatically by the name "Bedford Bee"), Scan Now, and
@@ -12,11 +12,50 @@ export function BeePanel() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
+  const [gsc, setGsc] = useState<BeeGscConnection | null>(null);
+  const [gscBusy, setGscBusy] = useState(false);
+  const [gscMsg, setGscMsg] = useState<string | null>(null);
+  const [params, setParams] = useSearchParams();
+
   const load = () => {
     api.getBeeSettings().then(setSettings).catch(() => {});
+    api.getBeeSearch().then((r) => setGsc(r.connection)).catch(() => {});
     api.getBeeFolders().then(setFolders).catch(() => setFolders([]));
   };
   useEffect(load, []);
+
+  // Back from Google consent: first connect pulls the 16 months right away.
+  useEffect(() => {
+    const err = params.get('gscError');
+    if (err) setGscMsg(err);
+    if (params.get('gscConnected')) {
+      setGscMsg('Connected — pulling 16 months of history…');
+      syncGsc();
+    }
+    if (err || params.get('gscConnected')) {
+      params.delete('gscError');
+      params.delete('gscConnected');
+      setParams(params, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function syncGsc() {
+    setGscBusy(true);
+    try {
+      const r = await api.syncBeeGsc();
+      setGscMsg(`Synced through ${r.to ?? '—'} · ${r.rows.toLocaleString()} search rows${r.indexChecked ? ` · ${r.indexChecked} pages checked for indexing` : ''}.`);
+      load();
+    } catch (e) {
+      setGscMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setGscBusy(false);
+    }
+  }
+  async function disconnectGsc() {
+    await api.disconnectBeeGsc();
+    load();
+  }
 
   async function choose(f: BeeFolderCandidate) {
     await api.setBeeFolder({ cloudAccountId: f.accountId, folderId: f.folderId, folderName: f.folderName, folderUrl: f.folderUrl });
@@ -86,6 +125,38 @@ export function BeePanel() {
         </>
       )}
       {msg && <p className="settings-page__section-hint">{msg}</p>}
+
+      <h3 className="settings-page__field-label">Google Search Console</h3>
+      {gsc?.connected ? (
+        <>
+          <p>
+            {gsc.site} · connected as {gsc.email}
+            {gsc.lastDate && <span className="settings-page__section-hint"> · data {gsc.firstDate} → {gsc.lastDate}</span>}
+          </p>
+          <div className="toolbar-row" style={{ justifyContent: 'flex-start', gap: 8 }}>
+            <button className="btn btn--sm" onClick={syncGsc} disabled={gscBusy}>
+              {gscBusy ? 'Syncing…' : 'Sync Now'}
+            </button>
+            <button className="btn btn--ghost btn--sm" onClick={() => api.connectBeeGsc()}>
+              Reconnect
+            </button>
+            <button className="btn btn--ghost btn--sm" onClick={disconnectGsc}>
+              Disconnect
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="settings-page__section-hint">
+            Read-only access to thebedfordbee.com’s Search Console. Sign in with the account that owns the property (thebedfordbee@gmail.com). Google will say the app isn’t verified — choose Advanced → Go to MikeOS.
+            {gsc?.status === 'disconnected' ? ' Disconnected — the history already pulled is kept.' : ''}
+          </p>
+          <button className="btn btn--sm" onClick={() => api.connectBeeGsc()}>
+            Connect Search Console
+          </button>
+        </>
+      )}
+      {(gscMsg || gsc?.lastError) && <p className="settings-page__section-hint">{gscMsg ?? gsc?.lastError}</p>}
 
       <h3 className="settings-page__field-label">Monthly Export Reminder</h3>
       <p className="settings-page__section-hint">

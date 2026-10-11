@@ -3257,3 +3257,66 @@ export interface BeeFolderCandidate {
   folderName: string;
   folderUrl: string | null;
 }
+
+// ---- Bedford Bee: Google Search Console (worker/src/bee/search.ts) ----
+export interface BeeGscConnection {
+  connected: boolean;
+  status: string | null;
+  email: string | null;
+  site: string | null;
+  lastSyncAt: string | null;
+  lastError: string | null;
+  firstDate: string | null;
+  lastDate: string | null;
+}
+export interface BeeGscQuery {
+  query: string;
+  clicks: number;
+  impressions: number;
+  position: number;
+  ctr: number;
+  page?: string | null;
+}
+export interface BeeGscPage {
+  page: string;
+  clicks: number;
+  impressions: number;
+  position: number;
+  ctr: number;
+  prevClicks: number;
+}
+export interface BeeGscMover {
+  page: string;
+  clicks: number;
+  prevClicks: number;
+  impressions: number;
+  prevImpressions: number;
+}
+interface BeeGscAgg {
+  clicks: number;
+  impressions: number;
+  position: number | null;
+  ctr: number;
+}
+export type BeeSearch =
+  | { connection: BeeGscConnection; empty: true }
+  | {
+      connection: BeeGscConnection;
+      empty: false;
+      range: { from: string; to: string; current: { from: string; to: string }; previous: { from: string; to: string } };
+      period: { now: BeeGscAgg; prev: BeeGscAgg; brandClicks: number; namedClicks: number };
+      monthly: { month: string; clicks: number; impressions: number; position: number | null; days: number; brandClicks: number; discoveryClicks: number }[];
+      topQueries: (BeeGscQuery & { brand: boolean; prevClicks: number })[];
+      topPages: BeeGscPage[];
+      rising: BeeGscMover[];
+      falling: BeeGscMover[];
+      strikingDistance: BeeGscQuery[];
+      lowCtr: (BeeGscQuery & { expectedCtr: number })[];
+      newQueries: { query: string; first: string; impressions: number; clicks: number; position: number | null; page: string | null }[];
+      contentGaps: BeeGscQuery[];
+      competing: { query: string; impressions: number; pages: { page: string; impressions: number; clicks: number; position: number }[] }[];
+      devices: { value: string; clicks: number; impressions: number }[];
+      countries: { value: string; clicks: number; impressions: number }[];
+      years: { year: string; clicks: number; impressions: number; first: string; last: string }[];
+      indexing: { url: string; lastmod: string | null; indexed: boolean; coverage: string | null; lastCrawl: string | null; checkedAt: string | null }[];
+    };

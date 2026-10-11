@@ -60,6 +60,7 @@ import { scanAllLiveFolders, statementsScanDue } from './statements/engine';
 import { beeForContact, beeRouter } from './bee/router';
 import { beeScanDue, scanBee } from './bee/ingest';
 import { BEE_TASK_DEF_ID, syncBeeExportTask } from './bee/reminder';
+import { gscSyncDue, syncGscAll } from './bee/gsc';
 import { contactsAssistantRouter } from './contactsAssistant';
 import { betsEnrichmentRouter } from './betsEnrichment';
 import { buildVoterInsight, ELECTION_CODE_RE, titleCaseVoterText, voterDiffs, voterKeyOf, type VoterDiff } from './voterInsight';
@@ -8394,6 +8395,11 @@ export default {
           if (await beeScanDue(env, event.scheduledTime)) await scanBee(env);
         } catch (err) {
           console.error('Bedford Bee scan failed', err);
+        }
+        try {
+          if (await gscSyncDue(env, event.scheduledTime)) await syncGscAll(env);
+        } catch (err) {
+          console.error('Search Console sync failed', err);
         }
       }
       return;

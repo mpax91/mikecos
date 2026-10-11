@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
+import { BeeSearchSection } from '../components/BeeSearchSection';
 import { api } from '../api/client';
 import type { BeePost, BeeSpotlightPerson, BeeSubstack, BeeYear } from '../api/types';
 import { useReportTabMeta } from '../contexts/TabsContext';
@@ -45,6 +46,8 @@ export function BeePage() {
   const [error, setError] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
   const [scanMsg, setScanMsg] = useState<string | null>(null);
+  const [params, setParams] = useSearchParams();
+  const tab = params.get('tab') === 'search' ? 'search' : 'substack';
 
   const load = useCallback(() => {
     api
@@ -78,9 +81,34 @@ export function BeePage() {
           ⚙️
         </Link>
       </div>
-      {error && <p className="fin-dash__muted">{error}</p>}
-      {!data && !error && <p className="fin-dash__muted">Loading…</p>}
-      {data && <Substack data={data} onScan={scan} scanning={scanning} scanMsg={scanMsg} />}
+      <div className="bee-sources" role="tablist" aria-label="Source">
+        {(
+          [
+            ['substack', 'Substack'],
+            ['search', 'Google Search'],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={tab === key}
+            className={`btn btn--sm${tab === key ? ' is-active' : ' btn--ghost'}`}
+            onClick={() => setParams(key === 'substack' ? {} : { tab: key }, { replace: true })}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {tab === 'search' ? (
+        <BeeSearchSection />
+      ) : (
+        <>
+          {error && <p className="fin-dash__muted">{error}</p>}
+          {!data && !error && <p className="fin-dash__muted">Loading…</p>}
+          {data && <Substack data={data} onScan={scan} scanning={scanning} scanMsg={scanMsg} />}
+        </>
+      )}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { Env } from './types';
 import { encryptField, decryptField, EncryptionNotConfiguredError } from './cryptoField';
+import { finishGscOAuth, GSC_STATE_PROVIDER } from './bee/gsc';
 import { ALL_PROVIDERS, PROVIDER_LABELS, getAdapter, isConfigured } from './cloudProviders/registry';
 import type { CloudProviderId } from './cloudProviders/types';
 
@@ -330,6 +331,18 @@ cloudRouter.get('/oauth/callback', async (c) => {
   if (stateRow) await c.env.DB.prepare('DELETE FROM cloud_oauth_states WHERE state = ?').bind(state).run();
 
   const [label, returnOrigin] = (stateRow?.label ?? '\u0000').split('\u0000');
+  // Bedford Bee Search Console connect rides this same callback (one
+  // registered redirect URI for the MikeOS Google app) — bee/gsc.ts.
+  if (stateRow?.provider === (GSC_STATE_PROVIDER as string)) {
+    const back = (q: string) => c.redirect(`${returnOrigin || c.env.ALLOWED_ORIGINS.split(',')[0]}/settings?cat=bee&${q}`);
+    if (providerError || !code) return back('gscError=' + encodeURIComponent('Google declined the connection — try again.'));
+    try {
+      await finishGscOAuth(c.env, code, `${new URL(c.req.url).origin}/api/cloud/oauth/callback`);
+      return back('gscConnected=1');
+    } catch (err) {
+      return back('gscError=' + encodeURIComponent(err instanceof Error ? err.message : String(err)));
+    }
+  }
   const backTo = (query: string) => c.redirect(`${returnOrigin || c.env.ALLOWED_ORIGINS.split(',')[0]}/settings?cat=cloud&${query}`);
 
   if (!stateRow) return backTo('cloudError=' + encodeURIComponent('That connection attempt expired — try again.'));

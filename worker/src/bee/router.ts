@@ -4,6 +4,8 @@ import { deriveBee, findBeeFolders, loadBeeSettings, scanBee } from './ingest';
 import { linkBeeContacts } from './contacts';
 import { loadSubscribers, spotlightFor, substackDashboard } from './summary';
 import { isPaidType } from './engagement';
+import { disconnectGsc, gscAuthUrl, syncGscAll } from './gsc';
+import { searchDashboard } from './search';
 
 /** /api/bee — Bedford Bee dashboard. Substack + Stripe come from CSV
  * exports in the Drive "Bedford Bee" folder; more sources (Search
@@ -11,6 +13,32 @@ import { isPaidType } from './engagement';
 export const beeRouter = new Hono<{ Bindings: Env }>();
 
 beeRouter.get('/substack', async (c) => c.json(await substackDashboard(c.env)));
+
+// ---- Google Search Console ----
+beeRouter.get('/search', async (c) => c.json(await searchDashboard(c.env)));
+
+// Browser navigation → Google consent (callback: /api/cloud/oauth/callback).
+beeRouter.get('/gsc/connect', async (c) => {
+  const returnOrigin = c.req.query('returnOrigin') || c.env.ALLOWED_ORIGINS.split(',')[0];
+  try {
+    return c.redirect(await gscAuthUrl(c.env, new URL(c.req.url).origin, returnOrigin));
+  } catch (err) {
+    return c.redirect(`${returnOrigin}/settings?cat=bee&gscError=${encodeURIComponent(err instanceof Error ? err.message : String(err))}`);
+  }
+});
+
+beeRouter.post('/gsc/sync', async (c) => {
+  try {
+    return c.json(await syncGscAll(c.env));
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 502);
+  }
+});
+
+beeRouter.post('/gsc/disconnect', async (c) => {
+  await disconnectGsc(c.env);
+  return c.json({ ok: true });
+});
 
 beeRouter.post('/scan', async (c) => {
   try {
