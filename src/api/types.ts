@@ -3514,3 +3514,75 @@ export type BeeSocial =
       tagPerf: { platform: 'fb' | 'ig'; posts: number; rows: { tag: string; posts: number; few: boolean; score: number | null; views: number | null; likes: number | null; comments: number | null; shares: number | null }[] }[];
       topicRules: { topic: string; keywords: string }[];
     };
+
+// ---- Bedford Bee: Stories + Year in Review (worker/src/bee/stories.ts, review.ts) ----
+export interface BeeStoryPart {
+  platform: 'fb' | 'ig' | 'substack';
+  id: string;
+  createdAt: string;
+  headline: string;
+  permalink: string | null;
+  views: number | null;
+  likes: number | null;
+  comments: number | null;
+  shares: number | null;
+  saves: number | null;
+  extra?: Record<string, number | null>;
+}
+export interface BeeStoryTotals {
+  views: number;
+  likes: number;
+  comments: number;
+  shares: number;
+  saves: number;
+}
+export interface BeeStory {
+  key: string;
+  date: string;
+  createdAt: string;
+  headline: string;
+  parts: BeeStoryPart[];
+  total: BeeStoryTotals;
+  social: BeeStoryTotals;
+  score: number | null;
+  scoreSocial: number | null;
+  mature: boolean;
+}
+export interface BeeReviewTotals {
+  range: { from: string; to: string };
+  stories: number;
+  social: { posts: number; views: number; likes: number; comments: number; shares: number; saves: number };
+  facebook: { posts: number; views: number; likes: number; comments: number; shares: number; saves: number; followersStart: number | null; followersEnd: number | null };
+  instagram: { posts: number; views: number; likes: number; comments: number; shares: number; saves: number };
+  substack: { posts: number; views: number; likes: number; comments: number; shares: number; emailsSent: number; opened: number; opens: number };
+  website: { visits: number; pageViews: number };
+  search: { googleClicks: number; googleImpressions: number; bingClicks: number; bingImpressions: number };
+  everything: { views: number; likes: number; comments: number; shares: number };
+}
+export interface BeeReviewTop {
+  date: string;
+  headline: string;
+  score: number | null;
+  total: BeeStoryTotals;
+  parts: { platform: 'fb' | 'ig' | 'substack'; views: number | null; likes: number | null; comments: number | null; shares: number | null; permalink: string | null }[];
+}
+type BeeTopSet = Record<'views' | 'likes' | 'comments' | 'shares', BeeReviewTop[]>;
+export interface BeeReview {
+  year: number;
+  partial: boolean;
+  today: string;
+  started: string | null;
+  now: BeeReviewTotals;
+  prevSame: { from: string; to: string };
+  prevSameTotals: BeeReviewTotals;
+  prevFull: BeeReviewTotals;
+  substack: {
+    now: { subsStart: number; subsEnd: number; paidStart: number; paidEnd: number; joined: number; paidGained: number; lost: number; gross: number; net: number } | null;
+    prev: { subsStart: number; subsEnd: number; paidStart: number; paidEnd: number; joined: number; paidGained: number; lost: number; gross: number; net: number } | null;
+  };
+  visitors: { thisYear: number | null; lastYear: number | null };
+  followers: { facebook: number | null; instagram: number | null };
+  tops: Record<'combined' | 'facebook' | 'instagram' | 'substack', BeeTopSet>;
+  months: { month: string; views: number; social: number; substack: number; website: number; stories: number }[];
+  sources: { meta: string | null; ga: string | null; gsc: string | null };
+}

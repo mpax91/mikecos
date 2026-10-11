@@ -5,6 +5,7 @@ import type { BeeMetric, BeeSocial, BeeSocialPost } from '../api/types';
 import { FinanceLineChart } from './FinanceLineChart';
 import type { LineSeries } from './FinanceLineChart';
 import { apiError } from './BeeMicrosoftSections';
+import { BeeStoriesView } from './BeeStoriesView';
 
 /** Bedford Bee → Social (Facebook + Instagram). Rules in
  * worker/src/bee/social.ts. Likes, views, comments and shares lead every
@@ -169,6 +170,50 @@ function SocialBody({ data, onSync, busy, msg, onReload }: { data: Loaded; onSyn
 type SortKey = 'date' | 'score' | BeeMetric;
 
 function PostScorecards({ data, plat, onReload }: { data: Loaded; plat: 'all' | 'fb' | 'ig'; onReload: () => void }) {
+  const [view, setView] = useState<'posts' | 'stories'>('posts');
+  if (view === 'stories')
+    return (
+      <section className="fin-dash__card fin-dash__card--full">
+        <div className="fin-dash__card-head bee-posts__head">
+          <h3 className="fin-dash__card-title">Stories (All Platforms Combined)</h3>
+          <ViewToggle view={view} setView={setView} />
+        </div>
+        <BeeStoriesView platform={plat} />
+      </section>
+    );
+  return <PostList data={data} plat={plat} onReload={onReload} view={view} setView={setView} />;
+}
+
+function ViewToggle({ view, setView }: { view: 'posts' | 'stories'; setView: (v: 'posts' | 'stories') => void }) {
+  return (
+    <div className="ally__range bee-tabs" role="tablist" aria-label="Posts or stories">
+      {(
+        [
+          ['posts', 'By Platform'],
+          ['stories', 'Stories (Combined)'],
+        ] as const
+      ).map(([k, label]) => (
+        <button key={k} type="button" role="tab" aria-selected={view === k} className={`btn btn--sm${view === k ? ' is-active' : ' btn--ghost'}`} onClick={() => setView(k)}>
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function PostList({
+  data,
+  plat,
+  onReload,
+  view,
+  setView,
+}: {
+  data: Loaded;
+  plat: 'all' | 'fb' | 'ig';
+  onReload: () => void;
+  view: 'posts' | 'stories';
+  setView: (v: 'posts' | 'stories') => void;
+}) {
   const [sort, setSort] = useState<SortKey>('date');
   const [tag, setTag] = useState('');
   const [q, setQ] = useState('');
@@ -182,6 +227,7 @@ function PostScorecards({ data, plat, onReload }: { data: Loaded; plat: 'all' | 
     <section className="fin-dash__card fin-dash__card--full">
       <div className="fin-dash__card-head bee-posts__head">
         <h3 className="fin-dash__card-title">Post Scorecards</h3>
+        <ViewToggle view={view} setView={setView} />
         <div className="ally__txn-tools">
           <input placeholder="Search Posts" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search posts" />
           <select value={tag} onChange={(e) => setTag(e.target.value)} aria-label="Filter by tag">

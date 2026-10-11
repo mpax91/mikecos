@@ -4,6 +4,7 @@ import { BeeSearchSection } from '../components/BeeSearchSection';
 import { BeeWebsiteSection } from '../components/BeeWebsiteSection';
 import { BeeBingSection, BeeClaritySection } from '../components/BeeMicrosoftSections';
 import { BeeSocialSection } from '../components/BeeSocialSection';
+import { BeeReviewSection } from '../components/BeeReviewSection';
 import { api } from '../api/client';
 import type { BeePost, BeeSpotlightPerson, BeeSubstack, BeeYear } from '../api/types';
 import { useReportTabMeta } from '../contexts/TabsContext';
@@ -51,7 +52,7 @@ export function BeePage() {
   const [scanMsg, setScanMsg] = useState<string | null>(null);
   const [params, setParams] = useSearchParams();
   const tabParam = params.get('tab');
-  const tab = tabParam === 'search' || tabParam === 'website' || tabParam === 'social' ? tabParam : 'substack';
+  const tab = tabParam === 'search' || tabParam === 'website' || tabParam === 'social' || tabParam === 'review' ? tabParam : 'substack';
 
   const load = useCallback(() => {
     api
@@ -92,6 +93,7 @@ export function BeePage() {
             ['substack', 'Substack'],
             ['search', 'Google Search'],
             ['website', 'Website'],
+            ['review', 'Year in Review'],
           ] as const
         ).map(([key, label]) => (
           <button
@@ -108,6 +110,8 @@ export function BeePage() {
       </div>
       {tab === 'social' ? (
         <BeeSocialSection />
+      ) : tab === 'review' ? (
+        <BeeReviewSection />
       ) : tab === 'search' ? (
         <>
           <BeeSearchSection />

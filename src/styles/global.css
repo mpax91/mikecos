@@ -18724,3 +18724,79 @@ td.month-page__upcoming-actions .today-page__meeting-actions {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+.bee-stories__tools {
+  justify-content: flex-end;
+  display: flex;
+  margin-bottom: 8px;
+}
+.bee-stories__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+.bee-stories__on {
+  white-space: nowrap;
+}
+.bee-social__dot--substack {
+  background: #6b5b3e;
+}
+
+/* Bedford Bee → Year in Review */
+.bee-review__compare {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 0 0 14px;
+}
+.bee-review__copy {
+  margin-left: auto;
+}
+.bee-review__text {
+  flex-basis: 100%;
+  margin-top: 8px;
+  font-family: inherit;
+}
+.bee-review__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 1px;
+  background: var(--color-border);
+  border: var(--border-hairline);
+  border-radius: 14px;
+  overflow: hidden;
+  margin: 0 0 16px;
+}
+.bee-review__tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  background: var(--color-card-bg);
+  min-width: 0;
+}
+.bee-review__value {
+  font-size: 26px;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.bee-review__tops {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 24px;
+}
+@media (max-width: 640px) {
+  .bee-review__copy {
+    margin-left: 0;
+  }
+  .bee-review__tops {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .bee-review__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .bee-review__value {
+    font-size: 21px;
+  }
+}

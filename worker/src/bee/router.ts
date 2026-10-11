@@ -12,6 +12,8 @@ import { bingDashboard, saveBingKey, syncBing } from './bing';
 import { clarityDashboard, saveClarityToken, syncClarity } from './clarity';
 import { disconnectMeta, metaAuthUrl, saveMetaApp, syncMeta } from './meta';
 import { socialDashboard } from './social';
+import { buildStories } from './stories';
+import { reviewDashboard } from './review';
 
 /** /api/bee — Bedford Bee dashboard. Substack + Stripe come from CSV
  * exports in the Drive "Bedford Bee" folder; more sources (Search
@@ -96,6 +98,13 @@ beeRouter.post('/clarity/sync', async (c) => {
 
 // ---- Meta (Facebook Page + Instagram) ----
 beeRouter.get('/social', async (c) => c.json(await socialDashboard(c.env)));
+// Same post across Facebook + Instagram + Substack, combined (stories.ts).
+beeRouter.get('/stories', async (c) => c.json({ stories: await buildStories(c.env) }));
+// Year in Review across every source (review.ts).
+beeRouter.get('/review', async (c) => {
+  const y = Number(c.req.query('year')) || Number(new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' }).slice(0, 4));
+  return c.json(await reviewDashboard(c.env, y));
+});
 beeRouter.put('/meta/app', async (c) => {
   const { appId, appSecret } = await c.req.json<{ appId: string; appSecret?: string | null }>();
   try {
