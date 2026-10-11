@@ -157,14 +157,14 @@ function Headline({ data, prev, compare, scale }: { data: BeeReview; prev: BeeRe
         prev={compare === 'same' ? `net ${money(sub?.net)} after fees` : undefined}
       />
       <Tile label={`Emails Sent${per}`} value={big(sv(n.substack.emailsSent))} raw={sv(n.substack.emailsSent)} prevRaw={pv(prev.substack.emailsSent)} prevLabel={pl} />
-      <Tile label="Website Visits" value={big(n.website.visits)} raw={gaMissing ? undefined : n.website.visits} prevRaw={gaMissing ? undefined : prev.website.visits} prevLabel={pl} prev={gaMissing && data.sources.ga ? `tracking began ${fmtDate(data.sources.ga)}` : undefined} />
+      <Tile label="Website Visits" value={big(n.website.visits)} raw={gaMissing ? undefined : n.website.visits} prevRaw={gaMissing ? undefined : prev.website.visits} prevLabel={gaMissing ? '' : pl} prev={gaMissing && data.sources.ga ? `tracking began ${fmtDate(data.sources.ga)}` : undefined} />
       <Tile label="Website Visitors" value={n0(data.visitors.thisYear)} prevLabel="" prev={data.visitors.lastYear ? `${data.year - 1}: ${n0(data.visitors.lastYear)}` : 'unique people'} />
       <Tile
         label="Google Search Clicks"
         value={big(n.search.googleClicks)}
         raw={gscMissing ? undefined : n.search.googleClicks}
         prevRaw={gscMissing ? undefined : prev.search.googleClicks}
-        prevLabel={pl}
+        prevLabel={gscMissing ? '' : pl}
         prev={gscMissing && data.sources.gsc ? `data since ${fmtDate(data.sources.gsc)}` : undefined}
       />
     </div>
