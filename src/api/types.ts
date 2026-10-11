@@ -3320,3 +3320,66 @@ export type BeeSearch =
       years: { year: string; clicks: number; impressions: number; first: string; last: string }[];
       indexing: { url: string; lastmod: string | null; indexed: boolean; coverage: string | null; lastCrawl: string | null; checkedAt: string | null }[];
     };
+
+// ---- Bedford Bee: Google Analytics 4 (worker/src/bee/analytics.ts) ----
+export interface BeeGaConnection {
+  connected: boolean;
+  hasScope: boolean;
+  property: string | null;
+  propertyName: string | null;
+  email: string | null;
+  lastSyncAt: string | null;
+  lastError: string | null;
+  firstDate: string | null;
+  lastDate: string | null;
+}
+export interface BeeGaTotals {
+  sessions: number;
+  views: number;
+  engaged: number;
+  engagementSec: number;
+}
+export type BeeAnalytics =
+  | { connection: BeeGaConnection; empty: true }
+  | {
+      connection: BeeGaConnection;
+      empty: false;
+      range: { from: string; to: string; current: { from: string; to: string }; previous: { from: string; to: string } };
+      period: {
+        now: BeeGaTotals;
+        prev: BeeGaTotals;
+        visitors: { users: number; newUsers: number } | null;
+        prevVisitors: { users: number; newUsers: number } | null;
+        visitorsThisYear: { users: number; newUsers: number } | null;
+        visitorsLastYear: { users: number; newUsers: number } | null;
+      };
+      monthly: { month: string; sessions: number; views: number; engaged: number; days: number; social: number }[];
+      platforms: {
+        name: string;
+        social: boolean;
+        sessions: number;
+        prevSessions: number;
+        engagedRate: number | null;
+        secPerSession: number | null;
+        viewsPerSession: number | null;
+        topLanding: { landing: string; sessions: number }[];
+      }[];
+      searchLanding: { landing: string; sessions: number; engagedRate: number; secPerSession: number }[];
+      topPages: { host: string; path: string; title: string | null; views: number; secPerView: number }[];
+      stickiest: { host: string; path: string; title: string | null; views: number; secPerView: number }[];
+      hosts: { host: string; views: number }[];
+      subscribeClicks: { path: string; clicks: number; views: number; per100: number | null }[];
+      subscribeByMonth: { month: string; c: number }[];
+      outboundDomains: { domain: string; clicks: number }[];
+      local: {
+        now: { local: number; total: number; share: number | null };
+        prev: { local: number; total: number; share: number | null };
+        towns: string[];
+        byMonth: { month: string; local: number; total: number }[];
+      };
+      cities: { city: string; region: string; sessions: number; local: boolean }[];
+      bestDays: { day: string; sessions: number }[];
+      bestHours: { hour: number; sessions: number }[];
+      devices: { device: string; sessions: number }[];
+      years: { year: string; sessions: number; views: number; first: string; last: string }[];
+    };

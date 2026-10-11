@@ -18567,3 +18567,19 @@ td.month-page__upcoming-actions .today-page__meeting-actions {
   margin: 0 0 6px;
   font-size: 13px;
 }
+.bee-big {
+  font-size: 34px;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  margin: 0 0 4px;
+}
+.bee-bars__row--static {
+  cursor: default;
+}
+.fin-dash__table td.bee-web__landing {
+  white-space: normal;
+  min-width: 220px;
+  max-width: 420px;
+  font-size: 12px;
+  color: var(--color-muted);
+}

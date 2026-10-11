@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { BeeSearchSection } from '../components/BeeSearchSection';
+import { BeeWebsiteSection } from '../components/BeeWebsiteSection';
 import { api } from '../api/client';
 import type { BeePost, BeeSpotlightPerson, BeeSubstack, BeeYear } from '../api/types';
 import { useReportTabMeta } from '../contexts/TabsContext';
@@ -47,7 +48,7 @@ export function BeePage() {
   const [scanning, setScanning] = useState(false);
   const [scanMsg, setScanMsg] = useState<string | null>(null);
   const [params, setParams] = useSearchParams();
-  const tab = params.get('tab') === 'search' ? 'search' : 'substack';
+  const tab = params.get('tab') === 'search' ? 'search' : params.get('tab') === 'website' ? 'website' : 'substack';
 
   const load = useCallback(() => {
     api
@@ -86,6 +87,7 @@ export function BeePage() {
           [
             ['substack', 'Substack'],
             ['search', 'Google Search'],
+            ['website', 'Website'],
           ] as const
         ).map(([key, label]) => (
           <button
@@ -102,6 +104,8 @@ export function BeePage() {
       </div>
       {tab === 'search' ? (
         <BeeSearchSection />
+      ) : tab === 'website' ? (
+        <BeeWebsiteSection />
       ) : (
         <>
           {error && <p className="fin-dash__muted">{error}</p>}

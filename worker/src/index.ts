@@ -61,6 +61,7 @@ import { beeForContact, beeRouter } from './bee/router';
 import { beeScanDue, scanBee } from './bee/ingest';
 import { BEE_TASK_DEF_ID, syncBeeExportTask } from './bee/reminder';
 import { gscSyncDue, syncGscAll } from './bee/gsc';
+import { gaSyncDue, syncGaAll } from './bee/ga';
 import { contactsAssistantRouter } from './contactsAssistant';
 import { betsEnrichmentRouter } from './betsEnrichment';
 import { buildVoterInsight, ELECTION_CODE_RE, titleCaseVoterText, voterDiffs, voterKeyOf, type VoterDiff } from './voterInsight';
@@ -8400,6 +8401,11 @@ export default {
           if (await gscSyncDue(env, event.scheduledTime)) await syncGscAll(env);
         } catch (err) {
           console.error('Search Console sync failed', err);
+        }
+        try {
+          if (await gaSyncDue(env, event.scheduledTime)) await syncGaAll(env);
+        } catch (err) {
+          console.error('Google Analytics sync failed', err);
         }
       }
       return;

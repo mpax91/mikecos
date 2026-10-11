@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../../api/client';
-import type { BeeFolderCandidate, BeeGscConnection, BeeSettings } from '../../api/types';
+import type { BeeFolderCandidate, BeeGaConnection, BeeGscConnection, BeeSettings } from '../../api/types';
 
 /** Settings → Bedford Bee: which Drive folder holds the Substack / Stripe
  * exports (found automatically by the name "Bedford Bee"), Scan Now, and
@@ -13,6 +13,7 @@ export function BeePanel() {
   const [msg, setMsg] = useState<string | null>(null);
 
   const [gsc, setGsc] = useState<BeeGscConnection | null>(null);
+  const [ga, setGa] = useState<BeeGaConnection | null>(null);
   const [gscBusy, setGscBusy] = useState(false);
   const [gscMsg, setGscMsg] = useState<string | null>(null);
   const [params, setParams] = useSearchParams();
@@ -20,6 +21,7 @@ export function BeePanel() {
   const load = () => {
     api.getBeeSettings().then(setSettings).catch(() => {});
     api.getBeeSearch().then((r) => setGsc(r.connection)).catch(() => {});
+    api.getBeeAnalytics().then((r) => setGa(r.connection)).catch(() => {});
     api.getBeeFolders().then(setFolders).catch(() => setFolders([]));
   };
   useEffect(load, []);
@@ -29,7 +31,7 @@ export function BeePanel() {
     const err = params.get('gscError');
     if (err) setGscMsg(err);
     if (params.get('gscConnected')) {
-      setGscMsg('Connected — pulling 16 months of history…');
+      setGscMsg('Connected — pulling Search Console and Analytics history…');
       syncGsc();
     }
     if (err || params.get('gscConnected')) {
@@ -40,17 +42,25 @@ export function BeePanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /** Syncs Search Console and Analytics (whichever the connection covers). */
   async function syncGsc() {
     setGscBusy(true);
+    const parts: string[] = [];
     try {
       const r = await api.syncBeeGsc();
-      setGscMsg(`Synced through ${r.to ?? '—'} · ${r.rows.toLocaleString()} search rows${r.indexChecked ? ` · ${r.indexChecked} pages checked for indexing` : ''}.`);
-      load();
+      parts.push(`Search Console through ${r.to ?? '—'} (${r.rows.toLocaleString()} search rows${r.indexChecked ? `, ${r.indexChecked} pages checked for indexing` : ''})`);
     } catch (e) {
-      setGscMsg(e instanceof Error ? e.message : String(e));
-    } finally {
-      setGscBusy(false);
+      parts.push(`Search Console: ${e instanceof Error ? e.message : String(e)}`);
     }
+    try {
+      const r = await api.syncBeeGa();
+      parts.push(`Analytics through ${r.to ?? '—'}`);
+    } catch (e) {
+      parts.push(`Analytics: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    setGscMsg(parts.join(' · '));
+    load();
+    setGscBusy(false);
   }
   async function disconnectGsc() {
     await api.disconnectBeeGsc();
@@ -126,12 +136,26 @@ export function BeePanel() {
       )}
       {msg && <p className="settings-page__section-hint">{msg}</p>}
 
-      <h3 className="settings-page__field-label">Google Search Console</h3>
+      <h3 className="settings-page__field-label">Google (Search Console + Analytics)</h3>
       {gsc?.connected ? (
         <>
           <p>
-            {gsc.site} · connected as {gsc.email}
+            Connected as {gsc.email}
+            <br />
+            Search Console: {gsc.site ?? 'no thebedfordbee.com property'}
             {gsc.lastDate && <span className="settings-page__section-hint"> · data {gsc.firstDate} → {gsc.lastDate}</span>}
+            <br />
+            Analytics:{' '}
+            {ga?.property ? (
+              <>
+                {ga.propertyName ?? ga.property}
+                {ga.lastDate && <span className="settings-page__section-hint"> · data {ga.firstDate} → {ga.lastDate}</span>}
+              </>
+            ) : ga && !ga.hasScope ? (
+              <strong>not granted yet — click Reconnect and allow Analytics</strong>
+            ) : (
+              'no property found for thebedfordbee.com'
+            )}
           </p>
           <div className="toolbar-row" style={{ justifyContent: 'flex-start', gap: 8 }}>
             <button className="btn btn--sm" onClick={syncGsc} disabled={gscBusy}>
@@ -148,11 +172,11 @@ export function BeePanel() {
       ) : (
         <>
           <p className="settings-page__section-hint">
-            Read-only access to thebedfordbee.com’s Search Console. Sign in with the account that owns the property (thebedfordbee@gmail.com). Google will say the app isn’t verified — choose Advanced → Go to MikeOS.
+            Read-only access to thebedfordbee.com’s Search Console and Google Analytics. Sign in with the account that owns them (thebedfordbee@gmail.com) and tick both boxes. Google will say the app isn’t verified — choose Advanced → Go to MikeOS.
             {gsc?.status === 'disconnected' ? ' Disconnected — the history already pulled is kept.' : ''}
           </p>
           <button className="btn btn--sm" onClick={() => api.connectBeeGsc()}>
-            Connect Search Console
+            Connect Google
           </button>
         </>
       )}

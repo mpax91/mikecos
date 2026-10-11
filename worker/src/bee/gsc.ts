@@ -1,5 +1,6 @@
 import type { Env } from '../types';
 import { decryptField, encryptField } from '../cryptoField';
+import { discoverGaProperty } from './ga';
 
 /** Google Search Console for the Bedford Bee (2026-10-10).
  *
@@ -19,7 +20,8 @@ const AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const WM = 'https://www.googleapis.com/webmasters/v3';
 const INSPECT_URL = 'https://searchconsole.googleapis.com/v1/urlInspection/index:inspect';
-const SCOPES = 'https://www.googleapis.com/auth/webmasters.readonly https://www.googleapis.com/auth/userinfo.email';
+// One consent covers Search Console and Analytics (both read-only).
+const SCOPES = 'https://www.googleapis.com/auth/webmasters.readonly https://www.googleapis.com/auth/analytics.readonly https://www.googleapis.com/auth/userinfo.email';
 const ENC_KEY = 'CLOUD_ACCOUNT_ENC_KEY';
 const BACKFILL_DAYS = 486; // ~16 months, Google's limit
 const REFETCH_DAYS = 5;
@@ -49,6 +51,16 @@ export interface GscAccountRow {
   first_date: string | null;
   last_date: string | null;
   connected_at: string | null;
+  scopes: string | null;
+  ga_property: string | null;
+  ga_property_name: string | null;
+  ga_properties_json: string | null;
+  ga_created: string | null;
+  ga_first_date: string | null;
+  ga_last_date: string | null;
+  ga_last_sync_at: string | null;
+  ga_last_error: string | null;
+  ga_snapshot_json: string | null;
 }
 
 export async function loadGsc(env: Env): Promise<GscAccountRow | null> {
@@ -92,7 +104,9 @@ async function tokenRequest(env: Env, params: Record<string, string>) {
 /** Called by the cloud OAuth callback for 'gsc' states. */
 export async function finishGscOAuth(env: Env, code: string, redirectUri: string): Promise<void> {
   const t = await tokenRequest(env, { grant_type: 'authorization_code', code, redirect_uri: redirectUri });
-  if (!t.scope.includes('webmasters')) throw new Error('Google didn’t grant Search Console access — tick “View Search Console data” on the consent screen.');
+  const hasGsc = t.scope.includes('webmasters');
+  const hasGa = t.scope.includes('analytics');
+  if (!hasGsc && !hasGa) throw new Error('Google didn’t grant Search Console or Analytics access — tick both boxes on the consent screen.');
   let email: string | null = null;
   try {
     const r = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', { headers: { Authorization: `Bearer ${t.accessToken}` } });
@@ -100,20 +114,24 @@ export async function finishGscOAuth(env: Env, code: string, redirectUri: string
   } catch {
     email = null;
   }
-  const sites = await listSites(t.accessToken);
+  const sites = hasGsc ? await listSites(t.accessToken) : [];
   const site = pickSite(sites);
-  if (!site) throw new Error(`${email ?? 'That account'} has no Search Console property for ${SITE_HINT}. Connect the account that owns it.`);
+  const ga = hasGa ? await discoverGaProperty(t.accessToken).catch(() => null) : null;
+  if (!site && !ga?.property) throw new Error(`${email ?? 'That account'} has no Search Console or Analytics property for ${SITE_HINT}. Connect the account that owns them.`);
   const existing = await loadGsc(env);
   const accessEnc = await encryptField(env, t.accessToken, ENC_KEY);
   const refreshEnc = t.refreshToken ? await encryptField(env, t.refreshToken, ENC_KEY) : existing?.refresh_token_enc ?? null;
   await env.DB.prepare(
-    `INSERT INTO bee_gsc_account (id, account_email, access_token_enc, refresh_token_enc, token_expires_at, site_url, sites_json, status, last_error, connected_at)
-     VALUES (1, ?, ?, ?, ?, ?, ?, 'connected', NULL, ?)
+    `INSERT INTO bee_gsc_account (id, account_email, access_token_enc, refresh_token_enc, token_expires_at, site_url, sites_json, status, last_error, connected_at,
+       scopes, ga_property, ga_property_name, ga_properties_json, ga_created)
+     VALUES (1, ?, ?, ?, ?, ?, ?, 'connected', NULL, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET account_email = excluded.account_email, access_token_enc = excluded.access_token_enc,
        refresh_token_enc = excluded.refresh_token_enc, token_expires_at = excluded.token_expires_at, site_url = excluded.site_url,
-       sites_json = excluded.sites_json, status = 'connected', last_error = NULL, connected_at = excluded.connected_at`
+       sites_json = excluded.sites_json, status = 'connected', last_error = NULL, connected_at = excluded.connected_at,
+       scopes = excluded.scopes, ga_property = excluded.ga_property, ga_property_name = excluded.ga_property_name,
+       ga_properties_json = excluded.ga_properties_json, ga_created = excluded.ga_created, ga_last_error = NULL`
   )
-    .bind(email, accessEnc, refreshEnc, t.expiresAt, site, JSON.stringify(sites), now())
+    .bind(email, accessEnc, refreshEnc, t.expiresAt, site, JSON.stringify(sites), now(), t.scope, ga?.property ?? null, ga?.name ?? null, ga ? JSON.stringify(ga.all) : null, ga?.created ?? null)
     .run();
 }
 
@@ -134,7 +152,7 @@ export function pickSite(sites: SiteEntry[]): string | null {
   return (ours.find((s) => s.siteUrl.startsWith('sc-domain:')) ?? ours.find((s) => s.siteUrl.startsWith('https://')) ?? ours[0])?.siteUrl ?? null;
 }
 
-async function accessToken(env: Env, row: GscAccountRow): Promise<string> {
+export async function accessToken(env: Env, row: GscAccountRow): Promise<string> {
   if (row.access_token_enc && row.token_expires_at && Date.now() < new Date(row.token_expires_at).getTime() - 120_000) {
     return decryptField(env, row.access_token_enc, ENC_KEY);
   }
@@ -200,7 +218,7 @@ export interface GscSyncResult {
  * few passes; `syncGscAll` loops). */
 export async function syncGsc(env: Env, maxWindows = 6): Promise<GscSyncResult> {
   const row = await loadGsc(env);
-  if (!row?.site_url || !row.refresh_token_enc) throw new Error('Search Console isn’t connected.');
+  if (!row?.site_url || !row.refresh_token_enc) throw new Error('Search Console isn’t connected (or the account has no thebedfordbee.com property).');
   const token = await accessToken(env, row);
   const today = easternToday();
   const end = addDays(today, -1);

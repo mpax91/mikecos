@@ -6,6 +6,8 @@ import { loadSubscribers, spotlightFor, substackDashboard } from './summary';
 import { isPaidType } from './engagement';
 import { disconnectGsc, gscAuthUrl, syncGscAll } from './gsc';
 import { searchDashboard } from './search';
+import { syncGaAll } from './ga';
+import { analyticsDashboard } from './analytics';
 
 /** /api/bee — Bedford Bee dashboard. Substack + Stripe come from CSV
  * exports in the Drive "Bedford Bee" folder; more sources (Search
@@ -30,6 +32,17 @@ beeRouter.get('/gsc/connect', async (c) => {
 beeRouter.post('/gsc/sync', async (c) => {
   try {
     return c.json(await syncGscAll(c.env));
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 502);
+  }
+});
+
+// ---- Google Analytics (same Google connection) ----
+beeRouter.get('/analytics', async (c) => c.json(await analyticsDashboard(c.env)));
+
+beeRouter.post('/ga/sync', async (c) => {
+  try {
+    return c.json(await syncGaAll(c.env));
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 502);
   }
