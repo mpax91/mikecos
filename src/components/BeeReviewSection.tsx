@@ -19,14 +19,21 @@ const fmtDate = (d: string) => new Date(`${d.slice(0, 10)}T12:00:00Z`).toLocaleD
 const fmtAxis = (ms: number) => new Date(ms).toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
 const PLAT: Record<string, string> = { fb: 'Facebook', ig: 'Instagram', substack: 'Substack' };
 
-type Compare = 'same' | 'full';
+type Compare = 'same' | 'full' | 'avg';
+
+/** Active months in a range (from the Bee's start when later), for monthly averages. */
+const monthsIn = (from: string, to: string, started: string | null) => {
+  const a = new Date(`${started && started > from ? started : from}T12:00:00Z`).getTime();
+  const b = new Date(`${to}T12:00:00Z`).getTime();
+  return Math.max(0.5, (b - a) / 86400000 / 30.44);
+};
 
 export function BeeReviewSection() {
   const thisYear = new Date().getFullYear();
   const [year, setYear] = useState(thisYear);
   const [data, setData] = useState<BeeReview | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [compare, setCompare] = useState<Compare>('same');
+  const [compare, setCompare] = useState<Compare>('avg');
   useEffect(() => {
     setData(null);
     api
@@ -37,6 +44,10 @@ export function BeeReviewSection() {
   if (error) return <p className="fin-dash__muted">{error}</p>;
   if (!data) return <p className="fin-dash__muted">Loading…</p>;
   const prevT = compare === 'same' ? data.prevSameTotals : data.prevFull;
+  // Monthly average: both years' totals ÷ the months the Bee was active.
+  const mNow = monthsIn(data.now.range.from, data.now.range.to, data.started);
+  const mPrev = monthsIn(data.prevFull.range.from, data.prevFull.range.to, data.started);
+  const scale = compare === 'avg' ? { now: 1 / mNow, prev: 1 / mPrev } : { now: 1, prev: 1 };
   return (
     <section className="bee-section">
       <div className="bee-section__head">
@@ -59,6 +70,7 @@ export function BeeReviewSection() {
         <span className="fin-dash__muted">Compare to:</span>
         {(
           [
+            ['avg', 'Monthly average'],
             ['same', `${data.year - 1}, same dates`],
             ['full', `${data.year - 1}, whole year`],
           ] as const
@@ -69,11 +81,16 @@ export function BeeReviewSection() {
         ))}
         <CopyStats data={data} />
       </div>
-      <Headline data={data} prev={prevT} compare={compare} />
+      {compare === 'avg' && (
+        <p className="fin-dash__muted bee-review__avgnote">
+          Per month: {data.year} so far ({mNow.toFixed(1)} months) vs {data.year - 1} ({mPrev.toFixed(1)} months{data.started && data.started > data.prevFull.range.from ? `, from launch on ${fmtDate(data.started)}` : ''}).
+        </p>
+      )}
+      <Headline data={data} prev={prevT} compare={compare} scale={scale} />
       <div className="fin-dash__grid">
         <Tops data={data} />
         <MonthsCard data={data} />
-        <PlatformTable data={data} prev={prevT} compare={compare} />
+        <PlatformTable data={data} prev={prevT} compare={compare} scale={scale} />
       </div>
     </section>
   );
@@ -95,24 +112,30 @@ function Tile({ label, value, prev, prevLabel, raw, prevRaw, fmt = big }: { labe
       <span className="bee-review__value">{value}</span>
       <span className="fin-dash__stat-sub">
         {d.text && <span className={d.tone === 'up' ? 'bee-delta--up' : d.tone === 'down' ? 'bee-delta--down' : ''}>{d.text} </span>}
-        {prev !== undefined ? `${prevLabel}: ${prev}` : prevRaw != null ? `${prevLabel}: ${fmt(prevRaw)}` : ''}
+        {prev !== undefined ? (prevLabel ? `${prevLabel}: ${prev}` : prev) : prevRaw != null ? `${prevLabel}: ${fmt(prevRaw)}` : ''}
       </span>
     </div>
   );
 }
 
-function Headline({ data, prev, compare }: { data: BeeReview; prev: BeeReviewTotals; compare: Compare }) {
+function Headline({ data, prev, compare, scale }: { data: BeeReview; prev: BeeReviewTotals; compare: Compare; scale: { now: number; prev: number } }) {
   const n = data.now;
-  const pl = compare === 'same' ? `${data.year - 1} same dates` : `${data.year - 1}`;
+  const pl = compare === 'same' ? `${data.year - 1} same dates` : compare === 'avg' ? `${data.year - 1} per month` : `${data.year - 1}`;
+  const avg = compare === 'avg';
+  const sv = (x: number) => x * scale.now;
+  const pv = (x: number) => x * scale.prev;
+  const per = avg ? ' / Month' : '';
+  const gaMissing = !!data.sources.ga && data.sources.ga > prev.range.to;
+  const gscMissing = !!data.sources.gsc && data.sources.gsc > prev.range.to;
   const sub = data.substack.now;
   const subPrev = data.substack.prev;
   return (
     <div className="bee-review__grid">
-      <Tile label="Total Views" value={big(n.everything.views)} raw={n.everything.views} prevRaw={prev.everything.views} prevLabel={pl} />
-      <Tile label="Stories Published" value={n0(n.stories)} raw={n.stories} prevRaw={prev.stories} prevLabel={pl} fmt={n0} />
-      <Tile label="Likes" value={big(n.everything.likes)} raw={n.everything.likes} prevRaw={prev.everything.likes} prevLabel={pl} />
-      <Tile label="Comments" value={big(n.everything.comments)} raw={n.everything.comments} prevRaw={prev.everything.comments} prevLabel={pl} />
-      <Tile label="Shares" value={big(n.everything.shares)} raw={n.everything.shares} prevRaw={prev.everything.shares} prevLabel={pl} />
+      <Tile label={`Total Views${per}`} value={big(sv(n.everything.views))} raw={sv(n.everything.views)} prevRaw={pv(prev.everything.views)} prevLabel={pl} />
+      <Tile label={`Stories Published${per}`} value={avg ? sv(n.stories).toFixed(1) : n0(n.stories)} raw={sv(n.stories)} prevRaw={pv(prev.stories)} prevLabel={pl} fmt={(x) => (avg ? (x ?? 0).toFixed(1) : n0(x))} />
+      <Tile label={`Likes${per}`} value={big(sv(n.everything.likes))} raw={sv(n.everything.likes)} prevRaw={pv(prev.everything.likes)} prevLabel={pl} />
+      <Tile label={`Comments${per}`} value={big(sv(n.everything.comments))} raw={sv(n.everything.comments)} prevRaw={pv(prev.everything.comments)} prevLabel={pl} />
+      <Tile label={`Shares${per}`} value={big(sv(n.everything.shares))} raw={sv(n.everything.shares)} prevRaw={pv(prev.everything.shares)} prevLabel={pl} />
       <Tile
         label="Facebook Followers"
         value={n0(data.followers.facebook)}
@@ -121,20 +144,28 @@ function Headline({ data, prev, compare }: { data: BeeReview; prev: BeeReviewTot
         prevLabel={`Jan 1`}
         fmt={n0}
       />
-      <Tile label="Instagram Followers" value={n0(data.followers.instagram)} prevLabel="" prev="history starts now" />
+      <Tile label="Instagram Followers" value={n0(data.followers.instagram)} prevLabel="" prev="history starts now (Instagram keeps 30 days)" />
       <Tile label="Substack Subscribers" value={n0(sub?.subsEnd)} raw={sub?.subsEnd} prevRaw={sub?.subsStart} prevLabel="Jan 1" fmt={n0} />
       <Tile label="Paid Subscribers" value={n0(sub?.paidEnd)} raw={sub?.paidEnd} prevRaw={sub?.paidStart} prevLabel="Jan 1" fmt={n0} />
-      <Tile label="Gross Revenue" value={money(sub?.gross)} raw={sub?.gross} prevRaw={compare === 'full' ? subPrev?.gross : undefined} prevLabel={`${data.year - 1}`} fmt={money} prev={compare === 'same' ? `net ${money(sub?.net)}` : undefined} />
-      <Tile label="Emails Sent" value={big(n.substack.emailsSent)} raw={n.substack.emailsSent} prevRaw={prev.substack.emailsSent} prevLabel={pl} />
-      <Tile label="Website Visits" value={big(n.website.visits)} raw={n.website.visits} prevRaw={data.sources.ga && data.sources.ga > prev.range.to ? undefined : prev.website.visits} prevLabel={pl} prev={data.sources.ga && data.sources.ga > prev.range.to ? `tracking began ${fmtDate(data.sources.ga)}` : undefined} />
-      <Tile label="Website Visitors" value={n0(data.visitors.thisYear)} prevLabel="" prev={data.visitors.lastYear != null ? `${data.year - 1}: ${n0(data.visitors.lastYear)}` : 'unique people'} />
+      <Tile
+        label="Gross Revenue"
+        value={money(sub?.gross)}
+        raw={compare !== 'same' ? sub?.gross : undefined}
+        prevRaw={compare !== 'same' ? subPrev?.gross : undefined}
+        prevLabel={`${data.year - 1}`}
+        fmt={money}
+        prev={compare === 'same' ? `net ${money(sub?.net)} after fees` : undefined}
+      />
+      <Tile label={`Emails Sent${per}`} value={big(sv(n.substack.emailsSent))} raw={sv(n.substack.emailsSent)} prevRaw={pv(prev.substack.emailsSent)} prevLabel={pl} />
+      <Tile label="Website Visits" value={big(n.website.visits)} raw={gaMissing ? undefined : n.website.visits} prevRaw={gaMissing ? undefined : prev.website.visits} prevLabel={pl} prev={gaMissing && data.sources.ga ? `tracking began ${fmtDate(data.sources.ga)}` : undefined} />
+      <Tile label="Website Visitors" value={n0(data.visitors.thisYear)} prevLabel="" prev={data.visitors.lastYear ? `${data.year - 1}: ${n0(data.visitors.lastYear)}` : 'unique people'} />
       <Tile
         label="Google Search Clicks"
         value={big(n.search.googleClicks)}
-        raw={n.search.googleClicks}
-        prevRaw={data.sources.gsc && data.sources.gsc > prev.range.to ? undefined : prev.search.googleClicks}
+        raw={gscMissing ? undefined : n.search.googleClicks}
+        prevRaw={gscMissing ? undefined : prev.search.googleClicks}
         prevLabel={pl}
-        prev={data.sources.gsc && data.sources.gsc > prev.range.to ? `data since ${fmtDate(data.sources.gsc)}` : undefined}
+        prev={gscMissing && data.sources.gsc ? `data since ${fmtDate(data.sources.gsc)}` : undefined}
       />
     </div>
   );
@@ -201,9 +232,12 @@ function MonthsCard({ data }: { data: BeeReview }) {
   );
 }
 
-function PlatformTable({ data, prev, compare }: { data: BeeReview; prev: BeeReviewTotals; compare: Compare }) {
+function PlatformTable({ data, prev, compare, scale }: { data: BeeReview; prev: BeeReviewTotals; compare: Compare; scale: { now: number; prev: number } }) {
   const n = data.now;
-  const rows: { label: string; now: number | null; prev: number | null; fmt?: (x: number | null | undefined) => string }[] = [
+  const gaMissing = !!data.sources.ga && data.sources.ga > prev.range.to;
+  const gscMissing = !!data.sources.gsc && data.sources.gsc > prev.range.to;
+  const bingMissing = !n.search.bingClicks && !prev.search.bingClicks;
+  const rawRows: { label: string; now: number | null; prev: number | null; fmt?: (x: number | null | undefined) => string; flat?: boolean }[] = [
     { label: 'Facebook posts', now: n.facebook.posts, prev: prev.facebook.posts },
     { label: 'Facebook views', now: n.facebook.views, prev: prev.facebook.views },
     { label: 'Facebook likes / reactions', now: n.facebook.likes, prev: prev.facebook.likes },
@@ -219,15 +253,23 @@ function PlatformTable({ data, prev, compare }: { data: BeeReview; prev: BeeRevi
     { label: 'Substack emails sent', now: n.substack.emailsSent, prev: prev.substack.emailsSent },
     { label: 'Substack emails opened', now: n.substack.opened, prev: prev.substack.opened },
     { label: 'Substack views', now: n.substack.views, prev: prev.substack.views },
-    { label: 'New Substack subscribers', now: data.substack.now?.joined ?? null, prev: compare === 'full' ? (data.substack.prev?.joined ?? null) : null },
-    { label: 'New paid subscribers', now: data.substack.now?.paidGained ?? null, prev: compare === 'full' ? (data.substack.prev?.paidGained ?? null) : null },
-    { label: 'Net revenue', now: data.substack.now?.net ?? null, prev: compare === 'full' ? (data.substack.prev?.net ?? null) : null, fmt: money },
-    { label: 'Website visits', now: n.website.visits, prev: prev.website.visits },
-    { label: 'Website page views', now: n.website.pageViews, prev: prev.website.pageViews },
-    { label: 'Google search clicks', now: n.search.googleClicks, prev: prev.search.googleClicks },
-    { label: 'Google search impressions', now: n.search.googleImpressions, prev: prev.search.googleImpressions },
-    { label: 'Bing search clicks', now: n.search.bingClicks, prev: prev.search.bingClicks },
+    { label: 'New Substack subscribers', now: data.substack.now?.joined ?? null, prev: compare !== 'same' ? (data.substack.prev?.joined ?? null) : null },
+    { label: 'New paid subscribers', now: data.substack.now?.paidGained ?? null, prev: compare !== 'same' ? (data.substack.prev?.paidGained ?? null) : null },
+    { label: 'Net revenue', now: data.substack.now?.net ?? null, prev: compare !== 'same' ? (data.substack.prev?.net ?? null) : null, fmt: money },
+    { label: 'Website visits', now: n.website.visits, prev: gaMissing ? null : prev.website.visits },
+    { label: 'Website page views', now: n.website.pageViews, prev: gaMissing ? null : prev.website.pageViews },
+    { label: 'Google search clicks', now: n.search.googleClicks, prev: gscMissing ? null : prev.search.googleClicks },
+    { label: 'Google search impressions', now: n.search.googleImpressions, prev: gscMissing ? null : prev.search.googleImpressions },
+    ...(bingMissing ? [] : [{ label: 'Bing search clicks', now: n.search.bingClicks, prev: prev.search.bingClicks }]),
   ];
+  // Monthly average: per-month values; sources that started mid-year are averaged over their own months.
+  const gaMonths = data.sources.ga ? monthsIn(data.now.range.from, data.now.range.to, data.sources.ga) : 1;
+  const gscMonths = data.sources.gsc ? monthsIn(data.now.range.from, data.now.range.to, data.sources.gsc) : 1;
+  const rows = rawRows.map((r) => {
+    if (compare !== 'avg') return r;
+    const nowScale = /^Website/.test(r.label) ? 1 / gaMonths : /^Google/.test(r.label) ? 1 / gscMonths : scale.now;
+    return { ...r, now: r.now == null ? null : r.now * nowScale, prev: r.prev == null ? null : r.prev * scale.prev };
+  });
   return (
     <section className="fin-dash__card fin-dash__card--full">
       <h3 className="fin-dash__card-title">Every Number</h3>
@@ -238,16 +280,16 @@ function PlatformTable({ data, prev, compare }: { data: BeeReview; prev: BeeRevi
               <th />
               <th className="num">
                 {data.year}
-                {data.partial ? ' (so far)' : ''}
+                {compare === 'avg' ? ' per month' : data.partial ? ' (so far)' : ''}
               </th>
-              <th className="num">{compare === 'same' ? `${data.year - 1} same dates` : data.year - 1}</th>
+              <th className="num">{compare === 'same' ? `${data.year - 1} same dates` : compare === 'avg' ? `${data.year - 1} per month` : data.year - 1}</th>
               <th className="num">Change</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((r) => {
               const d = delta(r.now, r.prev);
-              const f = r.fmt ?? n0;
+              const f = r.fmt ?? (compare === 'avg' ? (x: number | null | undefined) => (x == null ? '—' : x < 20 ? x.toFixed(1) : n0(x)) : n0);
               return (
                 <tr key={r.label}>
                   <td>{r.label}</td>

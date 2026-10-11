@@ -18800,3 +18800,6 @@ td.month-page__upcoming-actions .today-page__meeting-actions {
     font-size: 21px;
   }
 }
+.bee-review__avgnote {
+  margin: -6px 0 12px;
+}
