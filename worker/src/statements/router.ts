@@ -8,6 +8,8 @@ import { loadNy529Data, ny529Settings } from './ny529Derive';
 import { summarizeNy529 } from './ny529Summary';
 import { loadAdtData } from './adtDerive';
 import { summarizeAdt } from './adtSummary';
+import { loadTmobileData } from './tmobileDerive';
+import { summarizeTmobile } from './tmobileSummary';
 import { loadAllyData } from './allyDerive';
 import { accountLabel, summarizeAlly } from './allySummary';
 import { loadAmexBankData } from './amexBankDerive';
@@ -217,6 +219,10 @@ statementsRouter.get('/accounts', async (c) => {
       const { stmts, txns } = await loadAdtData(c.env, row.id);
       const s = summarizeAdt(stmts, txns, easternToday());
       if (s.latest) headline = { kind: 'bill', value: s.latest.totalDue, asOf: s.asOf, monthly: s.monthlyWithTax ?? s.monthlyRate, status: s.status };
+    } else if (row.template_id === 'tmobile') {
+      const { stmts, txns } = await loadTmobileData(c.env, row.id);
+      const s = summarizeTmobile(stmts, txns, easternToday());
+      if (s.latest) headline = { kind: 'bill', value: s.latest.totalDue, asOf: s.asOf, monthly: s.usualMonthly ?? s.monthly, status: s.status };
     } else if (row.template_id === 'ally') {
       const { stmts, txns } = await loadAllyData(c.env, row.id);
       const s = summarizeAlly(stmts, txns, easternToday());
@@ -297,6 +303,7 @@ statementsRouter.get('/folders/:id/dashboard', async (c) => {
   const row = await loadFolder(c.env, c.req.param('id'));
   if (!row) return c.json({ error: 'not found' }, 404);
   if (row.template_id === 'adt') return c.json(await adtDashboard(c.env, row));
+  if (row.template_id === 'tmobile') return c.json(await tmobileDashboard(c.env, row));
   if (row.template_id === 'ally') return c.json(await allyDashboard(c.env, row));
   if (row.template_id === 'amazon') return c.json(await amazonDashboard(c.env, row));
   if (row.template_id === 'amexBank') return c.json(await amexBankDashboard(c.env, row));
@@ -388,6 +395,27 @@ async function adtDashboard(env: Env, row: FolderRow) {
     files: files.map((f) => ({ fileId: f.file_id, name: f.file_name, url: f.web_url, status: f.status, error: f.error })),
     flags: await openFlags(env, row.id),
     payTask,
+  };
+}
+
+/** T-Mobile (monthly wireless bill) dashboard payload. */
+async function tmobileDashboard(env: Env, row: FolderRow) {
+  const stats = await folderStats(env);
+  const { stmts, txns, files } = await loadTmobileData(env, row.id);
+  const summary = summarizeTmobile(stmts, txns, easternToday());
+  const last = stmts[stmts.length - 1];
+  return {
+    kind: 'tmobile' as const,
+    folder: folderJson(row, stats.get(row.id)),
+    template: templateById(row.template_id)?.account ?? null,
+    account: last ? { account: last.values.account } : null,
+    summary,
+    // Per-line data by bill for the usage chart.
+    usage: stmts.map((s) => ({ date: s.periodEnd, total: s.values.dataGb, lines: s.values.lines.map((l) => ({ number: l.number, gb: l.dataGb })) })),
+    statements: stmts.map((s) => ({ id: s.id, periodEnd: s.periodEnd, fileId: s.fileId, checks: s.checks })),
+    transactions: txns,
+    files: files.map((f) => ({ fileId: f.file_id, name: f.file_name, url: f.web_url, status: f.status, error: f.error })),
+    flags: await openFlags(env, row.id),
   };
 }
 

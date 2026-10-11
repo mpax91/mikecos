@@ -17604,6 +17604,33 @@ td.month-page__upcoming-actions .today-page__meeting-actions {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+/* T-Mobile wireless bill dashboard — TmobileDashboard.tsx; fin-dash card system */
+.tmobile__device {
+  display: grid;
+  gap: 6px;
+  padding: 10px 0;
+  border-bottom: var(--border-hairline);
+}
+.tmobile__device:last-of-type {
+  border-bottom: 0;
+}
+.tmobile__device-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13.5px;
+}
+.tmobile__device-head span {
+  color: var(--color-muted);
+}
+.tmobile__device-meta {
+  font-size: 12.5px;
+  color: var(--color-muted);
+  font-variant-numeric: tabular-nums;
+}
+.fin-dash__table tr.tmobile__past td {
+  color: var(--color-muted);
+}
 /* Ally Bank (checking + savings) dashboard — AllyDashboard.tsx; fin-dash card system */
 .ally__range {
   display: flex;

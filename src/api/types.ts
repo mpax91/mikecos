@@ -2521,6 +2521,110 @@ export interface AdtDashboard {
   payTask: { id: string; title: string; due: string | null; status: string | null } | null;
 }
 
+/** T-Mobile wireless bill (worker/src/statements/tmobileSummary.ts). */
+export interface TmobileBill {
+  billDate: string;
+  servicePeriodStart: string | null;
+  servicePeriodEnd: string | null;
+  plans: number;
+  equipment: number;
+  services: number;
+  oneTime: number;
+  billed: number;
+  balance: number;
+  previousBalance: number | null;
+  totalDue: number;
+  dueDate: string | null;
+  dueNote: string | null;
+  autopay: boolean;
+  autopayCard: string | null;
+  plan: string | null;
+  lines: number;
+  dataGb: number | null;
+  minutes: number | null;
+  messages: number | null;
+  savings: number | null;
+  lateFee: number | null;
+  fileId: string;
+  checksOk: boolean;
+  checks: StatementCheckRow[];
+}
+
+export interface TmobileLineSummary {
+  number: string;
+  name: string;
+  type: string | null;
+  firstBill: string;
+  lastBill: string;
+  active: boolean;
+  status: string | null;
+  planShare: number;
+  ownCharges: number;
+  monthly: number;
+  latestDataGb: number | null;
+  avgDataGb12: number | null;
+  ownLifetime: number;
+  device: string | null;
+}
+
+export interface TmobileDeviceSummary {
+  id: string;
+  line: string | null;
+  lineName: string | null;
+  device: string;
+  firstBill: string;
+  lastBill: string;
+  installment: number | null;
+  of: number | null;
+  balance: number | null;
+  monthlyCharge: number;
+  monthlyCredit: number;
+  paidOff: boolean;
+  payoffExpected: string | null;
+  active: boolean;
+}
+
+export interface TmobileSummary {
+  asOf: string | null;
+  latest: TmobileBill | null;
+  monthly: number | null;
+  usualMonthly: number | null;
+  plan: string | null;
+  planCharge: number | null;
+  planSince: string | null;
+  planHistory: { from: string; to: string; plan: string | null; plans: number; lines: number; bills: number }[];
+  lines: TmobileLineSummary[];
+  devices: TmobileDeviceSummary[];
+  devicePayments: number;
+  years: { year: number; bills: number; billed: number; paid: number; plans: number; equipment: number; services: number; oneTime: number; dataGb: number }[];
+  ytdBilled: number;
+  ytdBills: number;
+  lifetimeBilled: number;
+  lifetimePaid: number;
+  lifetimeSavings: number;
+  lifetimeEquipment: number;
+  firstBill: string | null;
+  bills: TmobileBill[];
+  gaps: { after: string; before: string; days: number }[];
+  pastDueBills: string[];
+  lateFees: { date: string; amount: number }[];
+  nextBillExpected: string | null;
+  status: AdtBillStatus;
+}
+
+export interface TmobileDashboard {
+  kind: 'tmobile';
+  folder: StatementFolder;
+  template: { nickname: string; institution: string; type: string; site?: string; phone?: string } | null;
+  account: { account: string } | null;
+  summary: TmobileSummary;
+  usage: { date: string; total: number | null; lines: { number: string; gb: number | null }[] }[];
+  statements: { id: string; periodEnd: string; fileId: string; checks: StatementCheckRow[] }[];
+  transactions: { date: string; description: string; kind: string; amount: number }[];
+  files: { fileId: string; name: string; url: string | null; status: string; error: string | null }[];
+  flags: { id: string; severity: 'warn' | 'info'; message: string; created_at: string }[];
+}
+
 export type Ny529MonthState = 'deposited' | 'missed' | 'upcoming' | 'before_start' | 'unknown';
 
 export interface Ny529Summary {
@@ -2979,7 +3083,7 @@ export interface RewardsOverview {
   cards: { folderId: string; name: string; owner: AccountOwner; rewards: CardRewards; redeemAt: number }[];
 }
 
-export type FinanceDashboard = Ny529Dashboard | AdtDashboard | AllyDashboard | AmazonDashboard | AmexBankDashboard | AmexCardDashboard | BofaCardDashboard;
+export type FinanceDashboard = Ny529Dashboard | AdtDashboard | TmobileDashboard | AllyDashboard | AmazonDashboard | AmexBankDashboard | AmexCardDashboard | BofaCardDashboard;
 
 // ---- Account payers (0092_account_payers.sql) — which card pays which
 // account. 'autopay' = charges the card by itself; 'on_file' = the card is

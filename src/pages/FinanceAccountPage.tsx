@@ -5,6 +5,7 @@ import type { FinanceDashboard as Data } from '../api/types';
 import { useReportTabMeta } from '../contexts/TabsContext';
 import { Ny529Dashboard } from '../components/Ny529Dashboard';
 import { AdtDashboard } from '../components/AdtDashboard';
+import { TmobileDashboard } from '../components/TmobileDashboard';
 import { AllyDashboard } from '../components/AllyDashboard';
 import { AmazonDashboard } from '../components/AmazonDashboard';
 import { AmexBankDashboard } from '../components/AmexBankDashboard';
@@ -33,6 +34,8 @@ export function FinanceAccountPage() {
       ? null
       : data.kind === 'adt'
         ? [t.institution, t.type, data.account?.accountLast ? `••${data.account.accountLast}` : null, data.summary.latest?.services].filter(Boolean).join(' · ')
+        : data.kind === 'tmobile'
+          ? [t.institution, data.summary.plan, `${data.summary.lines.filter((l) => l.active).length} lines`, data.account?.account ? `Account ${data.account.account}` : null].filter(Boolean).join(' · ')
         : data.kind === 'ally'
           ? [t.institution, ...data.summary.accounts.filter((a) => a.open).map((a) => `${a.label} ••${a.last4}`)].join(' · ')
           : data.kind === 'amazon'
@@ -89,6 +92,8 @@ export function FinanceAccountPage() {
       )}
       {data && data.statements.length > 0 && (data.kind === 'adt' ? (
           <AdtDashboard data={data} onDismissFlag={dismiss} />
+        ) : data.kind === 'tmobile' ? (
+          <TmobileDashboard data={data} onDismissFlag={dismiss} />
         ) : data.kind === 'ally' ? (
           <AllyDashboard data={data} onDismissFlag={dismiss} />
         ) : data.kind === 'amazon' ? (

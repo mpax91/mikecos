@@ -6,11 +6,12 @@ import { parseAmazon } from './amazon';
 import { parseAmexBank } from './amexBank';
 import { parseAmexCard } from './amexCard';
 import { parseBofaCard } from './bofaCard';
+import { parseTmobile } from './tmobile';
 
 /** Per-folder templates (one per Drive folder, all on the shared base
  * engine). Build order per progress.md: 529 is live; ADT, Ally Bank, Amazon Prime Visa,
  * American Express Bank, the Amex Blue Cash Everyday card and the Bank of America
- * Customized Cash Rewards card built; the rest are added one folder at a time. */
+ * Customized Cash Rewards card and T-Mobile built; the rest are added one folder at a time. */
 export interface StatementTemplate {
   id: string;
   name: string;
@@ -169,6 +170,24 @@ export const TEMPLATES: StatementTemplate[] = [
     // Monthly statements are "BOA CC - YYYY.MM.DD.pdf"; the year-end
     // summaries ("BOA CC - 2024.pdf") and the "BOA Cash Rewards Scorecard"
     // sheet are skipped.
+    isStatementFile: (name) => /\d{4}\.\d{2}\.\d{2}/.test(name),
+  },
+  {
+    id: 'tmobile',
+    name: 'T-Mobile Wireless (Monthly Bill)',
+    folderNames: ['T-Mobile', 'TMobile', 'T Mobile'],
+    account: {
+      nickname: 'T-Mobile',
+      institution: 'T-Mobile',
+      type: 'Wireless Service',
+      owner: 'household',
+      cadence: 'monthly',
+      kind: 'bill',
+      site: 'https://www.t-mobile.com',
+      phone: '1-800-937-8997',
+    },
+    parse: parseTmobile,
+    // Monthly bills are "T-Mobile - YYYY.MM.DD.pdf".
     isStatementFile: (name) => /\d{4}\.\d{2}\.\d{2}/.test(name),
   },
 ];
