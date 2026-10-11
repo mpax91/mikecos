@@ -41,6 +41,7 @@ export interface CommSettingsRow {
   last_scan_at: string | null;
   last_error: string | null;
   stats_json: string | null;
+  latest_backup_at: string | null;
 }
 
 export interface BackupFile {
@@ -280,6 +281,21 @@ export async function driveSource(env: Env, accountId: string, folderId: string)
   };
 }
 
+/** When the newest backup landed in Drive (upload time of the newer of the
+ * two files). */
+export function latestBackupAt(calls: BackupFile | null, sms: BackupFile | null): string | null {
+  const times = [calls?.modifiedAt, sms?.modifiedAt].filter((x): x is string => !!x).sort();
+  return times.length ? times[times.length - 1] : null;
+}
+
+/** No new phone backup for this long → warn (Settings + Contacts). */
+export const BACKUP_STALE_HOURS = 48;
+
+export function backupStale(s: Pick<CommSettingsRow, 'folder_id' | 'latest_backup_at' | 'last_scan_at'>, nowMs = Date.now()): boolean {
+  if (!s.folder_id || !s.last_scan_at || !s.latest_backup_at) return false;
+  return nowMs - Date.parse(s.latest_backup_at) > BACKUP_STALE_HOURS * 3600 * 1000;
+}
+
 /** Newest calls-*.xml and sms-*.xml (names carry the backup timestamp). */
 export function newestBackups(files: BackupFile[]) {
   const pick = (re: RegExp) => files.filter((f) => re.test(f.name)).sort((a, b) => b.name.localeCompare(a.name))[0] ?? null;
@@ -374,6 +390,8 @@ export async function runComms(env: Env, sourceOverride?: BackupSource, opts: { 
     }
     const hash = await makeHasher(env);
     const { calls, sms } = newestBackups(await source.list());
+    const landed = latestBackupAt(calls, sms);
+    if (landed) await update({ latest_backup_at: landed });
     let firstAt = s.first_at;
     const noteFirst = (r: Rollup) => {
       if (r.firstAt !== null && (firstAt === null || r.firstAt < firstAt)) firstAt = r.firstAt;
@@ -501,6 +519,8 @@ export async function commsScanDue(env: Env): Promise<boolean> {
   try {
     const source = await driveSource(env, s.cloud_account_id!, s.folder_id);
     const { calls, sms } = newestBackups(await source.list());
+    const landed = latestBackupAt(calls, sms);
+    if (landed && landed !== s.latest_backup_at) await env.DB.prepare('UPDATE comm_settings SET latest_backup_at = ? WHERE id = 1').bind(landed).run();
     return (!!calls && calls.id !== s.calls_file_id) || (!!sms && sms.id !== s.sms_file_id);
   } catch {
     return false;

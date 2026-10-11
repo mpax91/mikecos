@@ -741,6 +741,7 @@ export const api = {
   getCommsSettings: () => request<CommsSettings>('/api/comms/settings'),
   scanComms: () => request<CommsRunResult>('/api/comms/scan', { method: 'POST' }),
   getCommsQuiet: () => request<QuietContact[]>('/api/comms/quiet'),
+  getCommsStatus: () => request<{ latestBackupAt: string | null; backupStale: boolean }>('/api/comms/status'),
   getBeeFolders: () => request<BeeFolderCandidate[]>('/api/bee/folders'),
   setBeeFolder: (f: { cloudAccountId: string; folderId: string; folderName: string; folderUrl: string | null }) =>
     request<{ ok: true }>('/api/bee/settings', { method: 'PATCH', body: JSON.stringify(f) }),

@@ -103,6 +103,7 @@ export function ContactsListPage() {
   // (worker/src/comms/read.ts goneQuiet). Filtered client-side by id.
   const [quiet, setQuiet] = useState<QuietContact[]>([]);
   const [quietOnly, setQuietOnly] = useState(false);
+  const [backupStaleSince, setBackupStaleSince] = useState<string | null>(null);
   const [reminderCount, setReminderCount] = useState(0);
   // Standalone voter-roll entries (12k+ people Mike has never met) are
   // excluded by default — see api.listContacts' `voters` param — so the
@@ -134,6 +135,10 @@ export function ContactsListPage() {
 
   useEffect(() => {
     api.getCommsQuiet().then(setQuiet).catch(() => {});
+    api
+      .getCommsStatus()
+      .then((r) => setBackupStaleSince(r.backupStale ? r.latestBackupAt ?? '' : null))
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -266,6 +271,19 @@ export function ContactsListPage() {
         </button>
       </div>
 
+      {backupStaleSince !== null && (
+        <div className="fin-dash__flag fin-dash__flag--warn comms-stale">
+          <span className="fin-dash__flag-icon">⚠</span>
+          <span className="fin-dash__flag-msg">
+            No new phone backup since{' '}
+            {backupStaleSince ? new Date(backupStaleSince).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'a while'} — Calls &amp; Texts on
+            contact cards aren’t updating. Check SMS Backup &amp; Restore on your phone.{' '}
+            <a href="/settings?cat=comms" onClick={(e) => { e.preventDefault(); navigate('/settings?cat=comms'); }}>
+              Details
+            </a>
+          </span>
+        </div>
+      )}
       {quietOnly && contacts && (
         <p className="contacts-quiet-note">
           Called or texted in at least 4 months of the year before, nothing in the last 60 days — busiest first. Last in touch:{' '}

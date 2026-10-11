@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import type { Env } from '../types';
-import { findCommsFolder, loadCommSettings, runComms } from './ingest';
+import { BACKUP_STALE_HOURS, backupStale, findCommsFolder, loadCommSettings, runComms } from './ingest';
 import { goneQuiet } from './read';
 
 /** /api/comms — Calls & Texts (phone backup rollups). */
@@ -24,8 +24,17 @@ commsRouter.get('/settings', async (c) => {
     chatsThrough: ms(s.mms_wm),
     chatsCaughtUp: !!s.mms_done,
     firstAt: ms(s.first_at),
+    latestBackupAt: s.latest_backup_at,
+    backupStale: backupStale(s),
+    staleAfterHours: BACKUP_STALE_HOURS,
     counts,
   });
+});
+
+/** Small status for the Contacts page warning. */
+commsRouter.get('/status', async (c) => {
+  const s = await loadCommSettings(c.env);
+  return c.json({ latestBackupAt: s.latest_backup_at, backupStale: backupStale(s) });
 });
 
 commsRouter.get('/folders', async (c) => {

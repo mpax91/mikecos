@@ -3716,6 +3716,9 @@ export interface CommsSettings {
   chatsThrough: string | null;
   chatsCaughtUp: boolean;
   firstAt: string | null;
+  latestBackupAt: string | null;
+  backupStale: boolean;
+  staleAfterHours: number;
   counts: { numbers: number; groups: number; calls: number; texts: number; group_msgs: number } | null;
 }
 

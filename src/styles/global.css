@@ -17631,6 +17631,9 @@ td.month-page__upcoming-actions .today-page__meeting-actions {
 .fin-dash__table tr.tmobile__past td {
   color: var(--color-muted);
 }
+.comms-stale {
+  margin: 0 0 12px;
+}
 .comms-settings__kv {
   max-width: 640px;
   margin: 12px 0 0;
