@@ -129,7 +129,7 @@ export function MetaSettings() {
       {rules.length > 0 && (
         <>
           <h3 className="settings-page__field-label">Post Topics</h3>
-          <p className="settings-page__section-hint">One topic per line — “Topic: keyword, keyword”. A post gets every topic whose keywords appear in its text as whole words (plurals count: “road” matches “roads” but not “broad”). Used by Social → What Works and the post scorecards.</p>
+          <p className="settings-page__section-hint">One topic per line — “Topic: keyword, keyword”. A post gets every topic whose keywords appear in its headline (first line) as whole words (plurals count: “road” matches “roads” but not “broad”). Used by Social → What Works and the post scorecards.</p>
           <textarea className="bee-rules" rows={Math.min(14, rules.length + 3)} value={rulesText} onChange={(e) => setRulesText(e.target.value)} />
           <div>
             <button className="btn btn--sm" onClick={saveRules}>

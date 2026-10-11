@@ -143,7 +143,8 @@ export async function socialDashboard(env: Env) {
     .all<{ date: string; landing: string; s: number }>();
 
   const tagsFor = (p: Post): string[] => {
-    const t = (p.text ?? '').toLowerCase();
+    // Topics come from the headline (first line): long posts mention everything.
+    const t = (p.text ?? '').trim().split('\n')[0].toLowerCase();
     const topics = topicRules.filter((r) => r.res.some((re) => re.test(t))).map((r) => r.topic);
     let manual: string[] = [];
     try {
