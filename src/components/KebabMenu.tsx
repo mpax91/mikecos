@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { fitMenu, type MenuPlacement } from '../utils/fitMenu';
 
 export interface KebabMenuItem {
   label: string;
@@ -16,9 +17,9 @@ export interface KebabMenuItem {
 
 export function KebabMenu({ items, className }: { items: KebabMenuItem[]; className?: string }) {
   const [open, setOpen] = useState(false);
-  // Viewport coordinates for the portaled dropdown — null until computed,
-  // which is also how the dropdown decides whether it's ready to render.
-  const [pos, setPos] = useState<{ top: number; right: number } | null>(null);
+  // Viewport placement for the portaled dropdown — null while the menu is
+  // being measured (rendered invisibly), then set before the first paint.
+  const [pos, setPos] = useState<MenuPlacement | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -36,29 +37,57 @@ export function KebabMenu({ items, className }: { items: KebabMenuItem[]; classN
     return () => document.removeEventListener('mousedown', onDocClick);
   }, []);
 
+  // A card that clips its contents (rounded-corner overflow: hidden) or sits
+  // in a horizontally-scrolling row (the Shelf) would otherwise slice the
+  // dropdown off — portaling to <body> escapes both, but means we place it
+  // ourselves. fitMenu flips it above the trigger when there isn't room
+  // below (the last row of a list) and clamps it on-screen sideways.
+  function place() {
+    const rect = ref.current?.getBoundingClientRect();
+    const menu = dropdownRef.current;
+    if (!rect || !menu) return;
+    setPos(
+      fitMenu({
+        width: menu.offsetWidth,
+        height: menu.scrollHeight,
+        below: rect.bottom,
+        above: rect.top,
+        anchorRight: rect.right,
+      })
+    );
+  }
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setPos(null);
+      return;
+    }
+    place();
+  }, [open, items.length]);
+
   useEffect(() => {
     if (!open) return;
-    // A card that clips its contents (rounded-corner overflow: hidden) or
-    // sits in a horizontally-scrolling row (the Shelf) would otherwise slice
-    // the dropdown off — portaling to <body> escapes both, but means we lose
-    // free CSS-relative positioning and have to track the trigger ourselves.
-    function updatePosition() {
-      const rect = ref.current?.getBoundingClientRect();
-      if (!rect) return;
-      setPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    function onResize() {
+      setPos(null); // re-measure without the old max-height
+      requestAnimationFrame(place);
     }
-    updatePosition();
     // The trigger's on-screen position goes stale the moment its scroll
-    // container moves (e.g. dragging the Shelf's row) — closing instead of
-    // re-tracking keeps this simple and matches how a native menu behaves.
-    function onScroll() {
+    // container moves — closing instead of re-tracking matches how a native
+    // menu behaves. Scrolling INSIDE a height-capped menu must not close it.
+    function onScroll(e: Event) {
+      if (dropdownRef.current?.contains(e.target as Node)) return;
       setOpen(false);
     }
-    window.addEventListener('resize', updatePosition);
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setOpen(false);
+    }
+    window.addEventListener('resize', onResize);
     window.addEventListener('scroll', onScroll, true);
+    document.addEventListener('keydown', onKey);
     return () => {
-      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('resize', onResize);
       window.removeEventListener('scroll', onScroll, true);
+      document.removeEventListener('keydown', onKey);
     };
   }, [open]);
 
@@ -86,12 +115,20 @@ export function KebabMenu({ items, className }: { items: KebabMenuItem[]; classN
         ⋯
       </button>
       {open &&
-        pos &&
         createPortal(
           <div
             ref={dropdownRef}
             className="kebab-menu__dropdown card"
-            style={{ position: 'fixed', top: pos.top, right: pos.right }}
+            style={{
+              position: 'fixed',
+              top: pos?.top ?? 0,
+              left: pos?.left ?? 0,
+              right: 'auto',
+              maxHeight: pos?.maxHeight,
+              overflowY: pos?.maxHeight ? 'auto' : undefined,
+              visibility: pos ? 'visible' : 'hidden',
+              zIndex: 1000,
+            }}
             onClick={(e) => e.stopPropagation()}
           >
             {items.map((item) => (

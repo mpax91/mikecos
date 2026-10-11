@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { fitMenu, type MenuPlacement } from '../utils/fitMenu';
 
 export interface ContextMenuItem {
   label: string;
@@ -20,6 +21,27 @@ export interface ContextMenuState {
  * handler instead of managing their own open/closed state. */
 export function ContextMenu({ state, onClose }: { state: ContextMenuState | null; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<MenuPlacement | null>(null);
+
+  // Measure the real menu (invisible on the first render), then place it at
+  // the cursor — flipped up/left when it would run off the bottom/right.
+  useLayoutEffect(() => {
+    if (!state) {
+      setPos(null);
+      return;
+    }
+    const menu = ref.current;
+    if (!menu) return;
+    setPos(
+      fitMenu({
+        width: menu.offsetWidth,
+        height: menu.scrollHeight,
+        below: state.y - 4,
+        above: state.y + 4,
+        anchorLeft: state.x,
+      })
+    );
+  }, [state]);
 
   useEffect(() => {
     if (!state) return;
@@ -38,22 +60,28 @@ export function ContextMenu({ state, onClose }: { state: ContextMenuState | null
     // trying to track it.
     document.addEventListener('mousedown', onDocMouseDown);
     document.addEventListener('keydown', onKeyDown);
-    document.addEventListener('scroll', onClose, true);
+    function onScroll(e: Event) {
+      if (ref.current?.contains(e.target as Node)) return;
+      onClose();
+    }
+    document.addEventListener('scroll', onScroll, true);
     return () => {
       document.removeEventListener('mousedown', onDocMouseDown);
       document.removeEventListener('keydown', onKeyDown);
-      document.removeEventListener('scroll', onClose, true);
+      document.removeEventListener('scroll', onScroll, true);
     };
   }, [state, onClose]);
 
   if (!state) return null;
 
-  // Keep the menu on-screen even when the click lands near the right/bottom
-  // edge of the viewport.
   const style: React.CSSProperties = {
     position: 'fixed',
-    top: Math.min(state.y, window.innerHeight - 12 - state.items.length * 34),
-    left: Math.min(state.x, window.innerWidth - 180),
+    top: pos?.top ?? 0,
+    left: pos?.left ?? 0,
+    maxHeight: pos?.maxHeight,
+    overflowY: pos?.maxHeight ? 'auto' : undefined,
+    visibility: pos ? 'visible' : 'hidden',
+    zIndex: 1000,
   };
 
   return (
