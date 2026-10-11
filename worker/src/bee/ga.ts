@@ -73,13 +73,13 @@ interface ReportRow {
 async function report(token: string, property: string, body: Record<string, unknown>): Promise<ReportRow[]> {
   const out: ReportRow[] = [];
   for (let offset = 0; ; offset += 100000) {
-    const j = await getJson<{ rows?: { dimensionValues: { value: string }[]; metricValues: { value: string }[] }[]; rowCount?: number }>(token, `${DATA}/${property}:runReport`, {
+    const j = await getJson<{ rows?: { dimensionValues?: { value: string }[]; metricValues?: { value: string }[] }[]; rowCount?: number }>(token, `${DATA}/${property}:runReport`, {
       ...body,
       limit: 100000,
       offset,
       keepEmptyRows: false,
     });
-    for (const r of j.rows ?? []) out.push({ d: r.dimensionValues.map((v) => v.value), m: r.metricValues.map((v) => Number(v.value) || 0) });
+    for (const r of j.rows ?? []) out.push({ d: (r.dimensionValues ?? []).map((v) => v.value), m: (r.metricValues ?? []).map((v) => Number(v.value) || 0) });
     if (!j.rowCount || offset + 100000 >= j.rowCount) break;
   }
   return out;
