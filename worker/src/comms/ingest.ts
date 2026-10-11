@@ -21,7 +21,6 @@ import type { BackupEvent, CallEvent, MmsEvent, SmsEvent } from './scanner';
 
 export const COMMS_FOLDER_NAME = 'SMS';
 const CHAT_BUDGET_BYTES = 400 * 1024 * 1024;
-const PROBE_BYTES = 2 * 1024 * 1024;
 const now = () => new Date().toISOString();
 
 export interface CommSettingsRow {
@@ -63,7 +62,7 @@ export interface CommsRunResult {
   folder: string | null;
   calls: { file: string | null; added: number };
   texts: { file: string | null; added: number };
-  chats: { file: string | null; added: number; bytes: number; done: boolean; through: number | null };
+  chats: { file: string | null; added: number; bytes: number; done: boolean; through: number | null; offset?: number };
   errors: string[];
 }
 
@@ -311,19 +310,19 @@ async function pump(
 }
 
 /** Date of the first chat/picture message at or after `offset`
- * (-Infinity while still in the plain-text block; null if none found). */
+ * (-Infinity while still in the plain-text block; null only at end of
+ * file). Reads forward until the first <mms> tag — through a large video
+ * attachment if it has to (capped at PROBE_MAX_BYTES). */
+const PROBE_MAX_BYTES = 512 * 1024 * 1024;
 async function probeMmsDate(source: BackupSource, file: BackupFile, offset: number): Promise<number | null> {
   const size = file.size ?? 0;
-  let len = PROBE_BYTES;
-  while (offset < size) {
-    const scanner = new BackupScanner({ mms: true });
-    await pump(await source.read(file, offset, Math.min(size, offset + len)), scanner, async (ev) => void ev, { stop: () => scanner.firstMmsDate !== null });
-    if (scanner.firstMmsDate !== null) return scanner.firstMmsDate;
-    if (scanner.sawSms && !scanner.sawMms) return -Infinity;
-    if (offset + len >= size) return null;
-    len *= 4; // inside a big attachment — look further
-    if (len > 64 * 1024 * 1024) return null;
-  }
+  if (offset >= size) return null;
+  const scanner = new BackupScanner({ mms: true });
+  await pump(await source.read(file, offset, Math.min(size, offset + PROBE_MAX_BYTES)), scanner, async (ev) => void ev, {
+    stop: () => scanner.firstMmsDate !== null || (scanner.sawSms && !scanner.sawMms),
+  });
+  if (scanner.firstMmsDate !== null) return scanner.firstMmsDate;
+  if (scanner.sawSms) return -Infinity;
   return null;
 }
 
@@ -438,6 +437,7 @@ export async function runComms(env: Env, sourceOverride?: BackupSource, opts: { 
         noteFirst(r);
         result.chats.added = r.added;
         result.chats.bytes = out.bytes;
+        result.chats.offset = offset;
         result.chats.done = out.ended;
         result.chats.through = wm || null;
         await update({ mms_wm: wm || null, mms_done: out.ended ? 1 : 0, mms_file_id: out.ended ? sms.id : s.mms_file_id, first_at: firstAt, stats_json: JSON.stringify(stats) });
