@@ -205,9 +205,18 @@ async function addSms(r: Rollup, hash: (v: string) => Promise<string>, e: SmsEve
   r.add(await hash(num), e.date, e.type === 1 ? 'text_in' : 'text_out');
 }
 
-async function addMms(r: Rollup, hash: (v: string) => Promise<string>, e: MmsEvent) {
+/** Your own number: the backup's self_phone_number is often blank, so it's
+ * the number found on (nearly) every chat/picture message. */
+export function detectSelf(events: MmsEvent[]): string | null {
+  const counts = new Map<string, number>();
+  for (const e of events) for (const n of new Set(e.addrs.map((a) => normalizeNumber(a.address)).filter((x): x is string => !!x))) counts.set(n, (counts.get(n) ?? 0) + 1);
+  const best = [...counts].sort((a, b) => b[1] - a[1])[0];
+  return best && events.length >= 20 && best[1] >= events.length * 0.8 ? best[0] : null;
+}
+
+async function addMms(r: Rollup, hash: (v: string) => Promise<string>, e: MmsEvent, selfNum: string | null) {
   if (e.box !== 1 && e.box !== 2) return;
-  const self = normalizeNumber(e.self);
+  const self = selfNum ?? normalizeNumber(e.self);
   const parts = e.addrs.map((a) => ({ num: normalizeNumber(a.address), type: a.type })).filter((a) => a.num && a.num !== self);
   const others = [...new Set(parts.map((p) => p.num!))];
   const isGroup = others.length >= 2 || /[~@]/.test(e.address);
@@ -418,7 +427,7 @@ export async function runComms(env: Env, sourceOverride?: BackupSource, opts: { 
         const r = new Rollup();
         let wm = s.mms_wm ?? 0;
         const start = wm;
-        let stats: { chatsFirstAt?: number } = {};
+        let stats: { chatsFirstAt?: number; selfHash?: string } = {};
         try {
           stats = s.stats_json ? JSON.parse(s.stats_json) : {};
         } catch {
@@ -427,15 +436,42 @@ export async function runComms(env: Env, sourceOverride?: BackupSource, opts: { 
         const probes: [number, number | null][] = [];
         const offset = await findChatStart(source, sms, start, probes);
         result.chats.probes = probes;
+        // Your own number (kept only as its hash): found from the first
+        // messages read, then matched against each message's numbers.
+        let selfNum: string | null = null;
+        const pending: MmsEvent[] = [];
+        const handle = async (e: MmsEvent) => {
+          if (!stats.chatsFirstAt || e.date < stats.chatsFirstAt) stats.chatsFirstAt = e.date;
+          await addMms(r, hash, e, selfNum);
+          wm = Math.max(wm, e.date);
+        };
+        const resolveSelf = async (final: boolean) => {
+          if (selfNum || (!final && (pending.length < 300 || pending.length % 300 !== 0))) return;
+          if (stats.selfHash) {
+            for (const e of pending) for (const a of e.addrs) {
+              const n = normalizeNumber(a.address);
+              if (n && !selfNum && (await hash(n)) === stats.selfHash) selfNum = n;
+            }
+          }
+          if (!selfNum) {
+            selfNum = detectSelf(pending);
+            if (selfNum) stats.selfHash = await hash(selfNum);
+          }
+          if (!selfNum && !final) return;
+          for (const e of pending.splice(0)) await handle(e);
+        };
         const out = await pump(await source.read(sms, offset), new BackupScanner({ mms: true }), async (ev) => {
           for (const e of ev) {
             if (e.kind !== 'mms' || e.date <= start) continue;
-            if (!stats.chatsFirstAt || e.date < stats.chatsFirstAt) stats.chatsFirstAt = e.date;
-            await addMms(r, hash, e);
-            wm = Math.max(wm, e.date);
+            if (selfNum) await handle(e);
+            else {
+              pending.push(e);
+              await resolveSelf(false);
+            }
           }
           if (r.monthly.size + r.last.size > 2000) await r.flush(env);
         }, { budget: opts.chatBudget ?? CHAT_BUDGET_BYTES });
+        await resolveSelf(true);
         await r.flush(env);
         noteFirst(r);
         result.chats.added = r.added;
