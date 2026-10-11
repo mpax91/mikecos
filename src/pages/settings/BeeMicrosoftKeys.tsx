@@ -23,7 +23,14 @@ export function MicrosoftKeys() {
     setBusy('bing');
     try {
       const r = await api.setBeeBingKey(key);
-      setMsg((m) => ({ ...m, bing: key ? `Connected to ${r.site} and synced.` : 'Disconnected — history is kept.' }));
+      setMsg((m) => ({
+        ...m,
+        bing: !key
+          ? 'Disconnected — history is kept.'
+          : r.pending
+            ? 'Key saved. Bing is rate-limiting the shared network MikeOS runs on right now, so MikeOS will finish connecting on its own (it retries every couple of hours).'
+            : `Connected to ${r.site} — pulling Bing history in the background (refresh the Google Search tab in a minute).`,
+      }));
       setBingKey('');
       load();
     } catch (e) {
@@ -51,7 +58,7 @@ export function MicrosoftKeys() {
       <h3 className="settings-page__field-label">Bing Webmaster Tools</h3>
       {bing?.connected ? (
         <p>
-          {bing.site}
+          {bing.site ?? 'Key saved — waiting for Bing to stop throttling'}
           {bing.lastSyncAt && <span className="settings-page__section-hint"> · last synced {new Date(bing.lastSyncAt).toLocaleString()}</span>}{' '}
           <button className="btn btn--ghost btn--sm" onClick={() => saveBing(null)} disabled={busy === 'bing'}>
             Disconnect

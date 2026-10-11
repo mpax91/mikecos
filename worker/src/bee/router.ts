@@ -59,7 +59,9 @@ beeRouter.put('/bing/key', async (c) => {
   const { key } = await c.req.json<{ key: string | null }>();
   try {
     const r = await saveBingKey(c.env, key?.trim() || null);
-    if (r.site) await syncBing(c.env).catch(() => null);
+    // Only the key check runs here — the full pull (4 more Bing calls with
+    // backoff) happens on Sync Now / the scheduled run.
+    if (r.site) c.executionCtx.waitUntil(syncBing(c.env).catch(() => null));
     return c.json(r);
   } catch (err) {
     return c.json(fail(err), 400);

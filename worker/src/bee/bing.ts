@@ -40,25 +40,56 @@ const pos = (v: unknown) => {
   return Number.isFinite(n) && n > 0 ? n : null;
 };
 
+/** Bing throttles by IP ("ThrottleIP", error 17), and Workers share
+ * Cloudflare's egress IPs with everyone else — so calls are made one at a
+ * time, with a real User-Agent, and retried with backoff (later attempts
+ * often leave from a different IP). */
+export class BingThrottled extends Error {}
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const BACKOFF_MS = [2000, 5000, 10000];
+
 async function call<T>(key: string, method: string, params: Record<string, string> = {}): Promise<T> {
   const qs = new URLSearchParams({ ...params, apikey: key });
-  const r = await fetch(`${BASE}/${method}?${qs}`, { headers: { Accept: 'application/json' } });
-  if (!r.ok) {
+  for (let attempt = 0; ; attempt++) {
+    const r = await fetch(`${BASE}/${method}?${qs}`, { headers: { Accept: 'application/json', 'User-Agent': 'MikeOS/1.0 (+https://mikeos.pages.dev; Bedford Bee dashboard)' } });
+    if (r.ok) return ((await r.json()) as { d: T }).d;
     const body = (await r.text()).slice(0, 300);
+    if (/Throttle/i.test(body) || r.status === 429) {
+      if (attempt < BACKOFF_MS.length) {
+        await sleep(BACKOFF_MS[attempt]);
+        continue;
+      }
+      throw new BingThrottled('Bing is rate-limiting the shared Cloudflare network MikeOS runs on (ThrottleIP). Your key is saved — MikeOS retries every couple of hours until it gets through.');
+    }
     throw new Error(r.status === 401 || /InvalidApiKey|NotAuthorized/i.test(body) ? 'Bing rejected the API key — generate a new one in Bing Webmaster → Settings → API access.' : `Bing ${method} ${r.status}: ${body}`);
   }
-  return ((await r.json()) as { d: T }).d;
+}
+
+async function findSite(key: string): Promise<{ site: string | null; sites: unknown }> {
+  const sites = await call<{ Url: string; IsVerified?: boolean }[]>(key, 'GetUserSites');
+  const ours = (sites ?? []).filter((s) => s.Url.toLowerCase().includes(SITE_HINT));
+  return { site: (ours.find((s) => s.IsVerified !== false) ?? ours[0])?.Url ?? null, sites };
 }
 
 /** Saves the key after checking it works and finding the site. */
-export async function saveBingKey(env: Env, key: string | null): Promise<{ site: string | null }> {
+export async function saveBingKey(env: Env, key: string | null): Promise<{ site: string | null; pending?: boolean }> {
   if (!key) {
     await env.DB.prepare('UPDATE bee_keys SET bing_key_enc = NULL, bing_site = NULL, bing_last_error = NULL, updated_at = ? WHERE id = 1').bind(now()).run();
     return { site: null };
   }
-  const sites = await call<{ Url: string; IsVerified?: boolean }[]>(key, 'GetUserSites');
-  const ours = (sites ?? []).filter((s) => s.Url.toLowerCase().includes(SITE_HINT));
-  const site = (ours.find((s) => s.IsVerified !== false) ?? ours[0])?.Url ?? null;
+  let found: { site: string | null; sites: unknown };
+  try {
+    found = await findSite(key);
+  } catch (err) {
+    if (!(err instanceof BingThrottled)) throw err;
+    // Can't check the key right now — keep it and finish connecting on the next sync.
+    await loadKeys(env);
+    await env.DB.prepare('UPDATE bee_keys SET bing_key_enc = ?, bing_site = NULL, bing_last_error = ?, updated_at = ? WHERE id = 1')
+      .bind(await encryptField(env, key, ENC), err.message, now())
+      .run();
+    return { site: null, pending: true };
+  }
+  const { site, sites } = found;
   if (!site) throw new Error(`That key works, but its Bing account has no verified ${SITE_HINT} site. Add the site in Bing Webmaster (Import from Google Search Console), then try again.`);
   await loadKeys(env);
   await env.DB.prepare('UPDATE bee_keys SET bing_key_enc = ?, bing_site = ?, bing_sites_json = ?, bing_last_error = NULL, updated_at = ? WHERE id = 1')
@@ -77,17 +108,23 @@ export interface BingSyncResult {
 
 export async function syncBing(env: Env): Promise<BingSyncResult> {
   const row = await loadKeys(env);
-  if (!row.bing_key_enc || !row.bing_site) throw new Error('Bing isn’t connected.');
+  if (!row.bing_key_enc) throw new Error('Bing isn’t connected.');
   const key = await decryptField(env, row.bing_key_enc, ENC);
-  const siteUrl = row.bing_site;
+  let siteUrl = row.bing_site;
   try {
+    if (!siteUrl) {
+      // Key saved while Bing was throttling — finish connecting now.
+      const found = await findSite(key);
+      if (!found.site) throw new Error(`The Bing key works, but its account has no verified ${SITE_HINT} site.`);
+      siteUrl = found.site;
+      await env.DB.prepare('UPDATE bee_keys SET bing_site = ?, bing_sites_json = ? WHERE id = 1').bind(siteUrl, JSON.stringify(found.sites)).run();
+    }
     type Stat = { Query: string; Clicks: number; Impressions: number; AvgClickPosition: number; AvgImpressionPosition: number; Date: string };
-    const [queries, pages, traffic, issues] = await Promise.all([
-      call<Stat[]>(key, 'GetQueryStats', { siteUrl }),
-      call<Stat[]>(key, 'GetPageStats', { siteUrl }),
-      call<{ Clicks: number; Impressions: number; Date: string }[]>(key, 'GetRankAndTrafficStats', { siteUrl }),
-      call<{ Url: string; Issues?: number | string; HttpCode?: number }[]>(key, 'GetCrawlIssues', { siteUrl }).catch(() => []),
-    ]);
+    // One at a time — parallel calls make Bing's IP throttling worse.
+    const queries = await call<Stat[]>(key, 'GetQueryStats', { siteUrl });
+    const pages = await call<Stat[]>(key, 'GetPageStats', { siteUrl });
+    const traffic = await call<{ Clicks: number; Impressions: number; Date: string }[]>(key, 'GetRankAndTrafficStats', { siteUrl });
+    const issues = await call<{ Url: string; Issues?: number | string; HttpCode?: number }[]>(key, 'GetCrawlIssues', { siteUrl }).catch(() => []);
     const stmts: D1PreparedStatement[] = [];
     const weeks = new Set<string>();
     for (const [table, col, list] of [
@@ -151,8 +188,10 @@ function issueText(v: unknown): string {
 
 export async function bingSyncDue(env: Env, scheduledTime: number): Promise<boolean> {
   const row = await loadKeys(env);
-  if (!row.bing_key_enc || !row.bing_site) return false;
+  if (!row.bing_key_enc) return false;
   if (new Date(scheduledTime).getUTCHours() === 7) return true;
+  // Still throttled / not finished connecting: try again every couple of hours.
+  if (!row.bing_site || row.bing_last_error) return !row.bing_last_sync_at || row.bing_last_sync_at < new Date(scheduledTime - 2 * 60 * 60 * 1000).toISOString();
   return !row.bing_last_sync_at || row.bing_last_sync_at < new Date(scheduledTime - 20 * 60 * 60 * 1000).toISOString();
 }
 

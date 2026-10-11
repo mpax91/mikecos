@@ -68,7 +68,11 @@ export function BeeBingSection() {
         <div className="fin-dash__card">
           {data.connection.connected ? (
             <>
-              <p>Bing is connected ({data.connection.site}) but has no search data yet — new sites can take a few days.</p>
+              <p>
+                {data.connection.site
+                  ? `Bing is connected (${data.connection.site}) but has no search data yet — new sites can take a few days.`
+                  : 'Your Bing key is saved. Bing is rate-limiting the shared network MikeOS runs on, so MikeOS retries every couple of hours until it gets through.'}
+              </p>
               <button type="button" className="btn btn--sm" onClick={sync} disabled={busy}>
                 {busy ? 'Syncing…' : 'Sync Now'}
               </button>
