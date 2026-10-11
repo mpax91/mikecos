@@ -3304,6 +3304,23 @@ export interface BeeSource {
   paid: number;
   raw: { source: string; count: number }[];
 }
+export interface BeeSubPerson {
+  email: string;
+  name: string | null;
+  contactId: string | null;
+  type: string | null;
+  active: boolean;
+  paidNow: boolean;
+  start: string | null;
+  firstPaid: string | null;
+  upgraded: boolean;
+  left: string | null;
+  cancelled: string | null;
+  expires: string | null;
+  source: string;
+  sourceRaw: string | null;
+  paidSource: string | null;
+}
 export interface BeeSubstack {
   today: string;
   settings: { folderName: string | null; folderUrl: string | null; lastScanAt: string | null; lastError: string | null };
@@ -3326,6 +3343,7 @@ export interface BeeSubstack {
     dormant: { neverOpened: number; quiet30d: number };
   };
   renewals: { email: string; name: string | null; contactId: string | null; type: string | null; plan: string | null; expires: string; cancelled: boolean }[];
+  people: BeeSubPerson[];
   money: {
     years: BeeMoneyYear[];
     balance: number;

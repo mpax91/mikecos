@@ -391,6 +391,29 @@ export async function substackDashboard(env: Env) {
     postMedians,
     spotlight: { medianRatio: medRatio, forwarders, superfans, upgradeCandidates, dormant },
     renewals,
+    // Every subscriber ever (incl. people who left) with the dates the
+    // dashboard filters by — the page computes any date range from these.
+    people: subs.map((s) => {
+      const start = day(s.start_date);
+      const fp = day(s.first_paid_date);
+      return {
+        email: s.email,
+        name: s.name,
+        contactId: s.contact_id,
+        type: s.type,
+        active: !!s.active,
+        paidNow: !!s.active && isPaidType(s.type),
+        start,
+        firstPaid: fp,
+        upgraded: !!(fp && start && fp > addDays(start, 1)),
+        left: !s.active ? s.left_date : null,
+        cancelled: day(s.cancel_date),
+        expires: day(s.expiration_date),
+        source: sourceChannel(s.source_free),
+        sourceRaw: s.source_free,
+        paidSource: fp ? sourceChannel(s.source_paid) : null,
+      };
+    }),
     money: { years: moneyYears, balance: stripeBalance(txns), charges, payouts },
     years: yearReview,
   };

@@ -7,10 +7,11 @@ import type { LineSeries } from './FinanceLineChart';
 import { apiError } from './BeeMicrosoftSections';
 import { BeeStoriesView } from './BeeStoriesView';
 import { SectionPicker } from './dash/SectionPicker';
+import { clampRange } from './dash/useUrlRange';
 import { RangePicker } from './dash/RangePicker';
 import { InfoTip, DashTitle } from './dash/InfoTip';
 import { DetailSheet } from './dash/DetailSheet';
-import { type DateRange, resolveRange, previousRange, inRange, rangeText, nyToday, nyDay, daysBetween, bucketFor, bucketsIn, bucketStart, dayMs, addDays } from '../utils/dateRange';
+import { type DateRange, previousRange, inRange, rangeText, nyToday, nyDay, daysBetween, bucketFor, bucketsIn, bucketStart, dayMs, addDays } from '../utils/dateRange';
 
 /** Bedford Bee → Social (Facebook + Instagram). Rules in
  * worker/src/bee/social.ts. Likes, views, comments and shares lead every
@@ -54,7 +55,7 @@ const LABEL: Record<BeeMetric, string> = {
 const headline = (t: string | null) => (t ?? '').split('\n')[0].trim() || '(no text)';
 const tone = (r: number | null | undefined) => (r == null ? '' : r >= 1.5 ? ' bee-delta--up' : r <= 0.6 ? ' bee-delta--down' : '');
 
-export function BeeSocialSection() {
+export function BeeSocialSection({ range, setRange }: { range: DateRange; setRange: (r: DateRange) => void }) {
   const [data, setData] = useState<BeeSocial | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -109,7 +110,7 @@ export function BeeSocialSection() {
       </section>
     );
   }
-  return <SocialBody data={data} onSync={sync} busy={busy} msg={msg} onReload={load} />;
+  return <SocialBody data={data} onSync={sync} busy={busy} msg={msg} onReload={load} rangeIn={range} setRange={setRange} />;
 }
 
 type Loaded = Extract<BeeSocial, { empty: false }>;
@@ -156,10 +157,10 @@ const postDay = (p: BeeSocialPost) => nyDay(p.createdAt);
 /** What the open drill-down sheet shows. */
 type Sheet = { kind: 'metric'; metric: TileKey } | { kind: 'post'; post: BeeSocialPost } | { kind: 'posts'; title: string; sub?: string; posts: BeeSocialPost[] };
 
-function SocialBody({ data, onSync, busy, msg, onReload }: { data: Loaded; onSync: () => void; busy: boolean; msg: string | null; onReload: () => void }) {
+function SocialBody({ data, onSync, busy, msg, onReload, rangeIn, setRange }: { data: Loaded; onSync: () => void; busy: boolean; msg: string | null; onReload: () => void; rangeIn: DateRange; setRange: (r: DateRange) => void }) {
   const today = nyToday();
   const earliest = nyDay(data.range.from);
-  const [range, setRange] = useState<DateRange>(() => resolveRange('28d', today, earliest));
+  const range = clampRange(rangeIn, earliest);
   const [plat, setPlat] = useState<Plat>('all');
   const [sheet, setSheet] = useState<Sheet | null>(null);
   const prevR = previousRange(range);

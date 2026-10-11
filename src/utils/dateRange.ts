@@ -1,5 +1,8 @@
 /** Date ranges for dashboards. Dates are YYYY-MM-DD (inclusive), local to
  * America/New_York — compare with each item's own local day. */
+/** The Bedford Bee launched Jul 7 2025 — "All" on its dashboard starts here. */
+export const BEE_START = '2025-07-07';
+
 export type RangeKey = '7d' | '28d' | '90d' | 'ytd' | '1y' | 'all' | 'custom';
 export interface DateRange {
   key: RangeKey;

@@ -19334,3 +19334,8 @@ button.fin-dash__stat::after {
 .bee-list__row--click:hover {
   background: rgba(46, 42, 34, 0.04);
 }
+@media (max-width: 640px) {
+  .dash-controls--solo {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
