@@ -27,8 +27,8 @@ function inferTabMeta(path: string): { kind: TabKind; title: string } {
   if (path === '/settings') return { kind: 'settings', title: 'Settings' };
   if (path === '/stats') return { kind: 'stats', title: 'Stats' };
   if (path === '/boards') return { kind: 'boards-list', title: 'Boards' };
-  if (path === '/waiting') return { kind: 'waiting', title: 'Waiting For' };
-  if (path === '/bee') return { kind: 'bee', title: 'Bedford Bee' };
+  if (path === '/waiting') return { kind: 'waiting', title: 'Waiting' };
+  if (path === '/bee') return { kind: 'bee', title: 'Bee' };
   if (path === '/contacts') return { kind: 'contacts-list', title: 'Contacts' };
   if (path === '/journal' || path.startsWith('/journal/')) return { kind: 'journal', title: 'Journal' };
   if (path === '/dashboard') return { kind: 'dashboard', title: 'Dashboard' };
@@ -308,6 +308,7 @@ export function tabIcon(kind: TabKind): string {
   if (kind === 'cloud') return '☁️';
   if (kind === 'finance') return '💵';
   if (kind === 'waiting') return '⏳';
+  if (kind === 'bee') return '🐝';
   if (kind === 'lists-list' || kind === 'list') return '☑️';
   if (kind === 'vault-list' || kind === 'vault') return '🗄️';
   if (kind === 'wallet-list') return '🎫';

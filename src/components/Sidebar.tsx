@@ -62,7 +62,7 @@ const SIDEBAR_SECTIONS: NavSectionDef[] = [
     items: [
       { path: '/projects', label: 'Projects', kind: 'projects-list' },
       { path: '/boards', label: 'Boards', kind: 'boards-list' },
-      { path: '/waiting', label: 'Waiting For', kind: 'waiting' },
+      { path: '/waiting', label: 'Waiting', kind: 'waiting' },
     ],
   },
   {
@@ -83,7 +83,7 @@ const SIDEBAR_SECTIONS: NavSectionDef[] = [
     label: 'Insights',
     items: [
       { path: '/dashboard', label: 'Dashboard', kind: 'dashboard' },
-      { path: '/bee', label: 'Bedford Bee', kind: 'bee' },
+      { path: '/bee', label: 'Bee', kind: 'bee' },
       { path: '/stats', label: 'Stats', kind: 'stats' },
       { path: '/journal', label: 'Journal', kind: 'journal' },
     ],

@@ -25,7 +25,7 @@ const shift = (iso: string, n: number) => {
 const label = (w: WaitingItem) => (w.title.startsWith(PREFIX) ? w.title.slice(PREFIX.length) : w.title);
 
 export function WaitingPage() {
-  useReportTabMeta('Waiting For', 'waiting');
+  useReportTabMeta('Waiting', 'waiting');
   const [data, setData] = useState<WaitingList | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showReceived, setShowReceived] = useState(false);

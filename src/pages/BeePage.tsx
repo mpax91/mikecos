@@ -45,7 +45,7 @@ const SORTS: { key: SortKey; label: string }[] = [
 ];
 
 export function BeePage() {
-  useReportTabMeta('Bedford Bee', 'bee');
+  useReportTabMeta('Bee', 'bee');
   const [data, setData] = useState<BeeSubstack | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
