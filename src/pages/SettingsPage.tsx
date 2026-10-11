@@ -11,6 +11,7 @@ import { CloudStoragePanel } from './settings/CloudStoragePanel';
 import { StatementsPanel } from './settings/StatementsPanel';
 import { BillsPanel } from './settings/BillsPanel';
 import { BeePanel } from './settings/BeePanel';
+import { CommsPanel } from './settings/CommsPanel';
 import { WalletCategoriesPanel } from './settings/WalletCategoriesPanel';
 import { MediaCatalogPanel } from './settings/MediaCatalogPanel';
 import { SecurityPanel } from './settings/SecurityPanel';
@@ -45,6 +46,7 @@ const CATEGORIES: Category[] = [
   { id: 'statements', label: 'Statements', icon: '🧾' },
   { id: 'bills', label: 'Bills & Due Dates', icon: '💵' },
   { id: 'bee', label: 'Bedford Bee', icon: '🐝' },
+  { id: 'comms', label: 'Calls & Texts', icon: '📞' },
   { id: 'wallet', label: 'Wallet Categories', icon: '🎫' },
   { id: 'media-catalog', label: 'Media Catalog', icon: '📚' },
   { id: 'email-accounts', label: 'Email Accounts', icon: '📥' },
@@ -107,6 +109,7 @@ export function SettingsPage() {
           {active === 'statements' && <StatementsPanel />}
           {active === 'bills' && <BillsPanel />}
           {active === 'bee' && <BeePanel />}
+          {active === 'comms' && <CommsPanel />}
           {active === 'wallet' && <WalletCategoriesPanel />}
           {active === 'media-catalog' && <MediaCatalogPanel />}
           {active === 'email-accounts' && <EmailAccountsPanel />}

@@ -1295,6 +1295,7 @@ export interface ContactDetail extends Contact {
   householdMembers: HouseholdMember[];
   voterDiffs?: VoterDiff[];
   bee?: BeeContactInfo | null;
+  comms?: ContactComms | null;
 }
 
 /** Manual dedup — for the pairs the import matcher's automatic name/
@@ -3689,4 +3690,47 @@ export interface BeeReview {
   tops: Record<'combined' | 'facebook' | 'instagram' | 'substack', BeeTopSet>;
   months: { month: string; views: number; social: number; substack: number; website: number; stories: number }[];
   sources: { meta: string | null; ga: string | null; gsc: string | null };
+}
+
+/** Calls & Texts on a contact card (worker/src/comms/read.ts). */
+export interface ContactComms {
+  lastCall: { at: string; kind: string } | null;
+  lastText: { at: string; kind: string } | null;
+  lastGroupAt: string | null;
+  lastTouch: string | null;
+  months: { month: string; calls: number; texts: number; minutes: number }[];
+  year: { callsIn: number; callsOut: number; callsMissed: number; minutes: number; textsIn: number; textsOut: number; groupIn: number };
+  activeMonths: number;
+  theyStartPct: number | null;
+  cadence: 'Weekly' | 'Monthly' | 'Every Few Months' | 'Occasional' | 'None This Year';
+  groups: { count: number; lastAt: string | null };
+  coverage: { textsSince: string | null; chatsSince: string | null };
+}
+
+export interface CommsSettings {
+  folder: { name: string | null; url: string | null } | null;
+  lastScanAt: string | null;
+  lastError: string | null;
+  callsThrough: string | null;
+  textsThrough: string | null;
+  chatsThrough: string | null;
+  chatsCaughtUp: boolean;
+  firstAt: string | null;
+  counts: { numbers: number; groups: number; calls: number; texts: number; group_msgs: number } | null;
+}
+
+export interface CommsRunResult {
+  folder: string | null;
+  calls: { file: string | null; added: number };
+  texts: { file: string | null; added: number };
+  chats: { file: string | null; added: number; bytes: number; done: boolean; through: number | null };
+  errors: string[];
+}
+
+export interface QuietContact {
+  id: string;
+  name: string;
+  lastTouch: string | null;
+  activeMonths: number;
+  perMonth: number;
 }

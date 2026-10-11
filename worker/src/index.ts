@@ -58,6 +58,9 @@ import { accountPayersRouter } from './accountPayersRouter';
 import { afterBillTaskSpawned, billsOnCalendar, billsRouter } from './bills';
 import { scanAllLiveFolders, statementsScanDue } from './statements/engine';
 import { beeForContact, beeRouter } from './bee/router';
+import { commsRouter } from './comms/router';
+import { commsForContact } from './comms/read';
+import { commsScanDue, runComms } from './comms/ingest';
 import { beeScanDue, scanBee } from './bee/ingest';
 import { BEE_TASK_DEF_ID, syncBeeExportTask } from './bee/reminder';
 import { gscSyncDue, syncGscAll } from './bee/gsc';
@@ -103,6 +106,7 @@ app.route('/api/statements', statementsRouter);
 app.route('/api/account-payers', accountPayersRouter);
 app.route('/api/bills', billsRouter);
 app.route('/api/bee', beeRouter);
+app.route('/api/comms', commsRouter);
 app.route('/api/contacts/ask', contactsAssistantRouter);
 app.route('/api/bets/enrichment', betsEnrichmentRouter);
 
@@ -1190,6 +1194,7 @@ app.get('/api/contacts/:id', async (c) => {
     householdMembers,
     voterDiffs: voterDiffList.map(({ apply: _apply, ...d }) => d),
     bee: await beeForContact(c.env, id),
+    comms: contact.source === 'voter_file' ? null : await commsForContact(c.env, contact).catch(() => null),
   });
 });
 
@@ -8281,6 +8286,7 @@ const AIRING_RETRY_MINUTE = 50; // even, so the */2 tick actually lands on it
 const BET_PROMO_PURGE_MINUTE = 10; // even, same reason
 const CLOUD_KEEPALIVE_MINUTE = 30; // even, same reason
 const STATEMENTS_SCAN_MINUTE = 20; // even, same reason
+const COMMS_SCAN_MINUTE = 40; // even, same reason — Calls & Texts (phone backup)
 
 /** Retries the Airing check if nothing has succeeded since today's
  * scheduled 09:30 UTC run. Waits until 10:30 UTC before treating "no row
@@ -8383,6 +8389,15 @@ export default {
           await keepCloudTokensAlive(env);
         } catch (err) {
           console.error('Cloud token keep-alive failed', err);
+        }
+      }
+      // Calls & Texts: hourly when a newer phone backup landed in Drive, or
+      // while the first chat backfill is still working through the file.
+      if (new Date(event.scheduledTime).getUTCMinutes() === COMMS_SCAN_MINUTE) {
+        try {
+          if (await commsScanDue(env)) await runComms(env);
+        } catch (err) {
+          console.error('Calls & Texts scan failed', err);
         }
       }
       // Statements: nightly scan of every live Drive statement folder at

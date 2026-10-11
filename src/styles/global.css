@@ -17631,6 +17631,70 @@ td.month-page__upcoming-actions .today-page__meeting-actions {
 .fin-dash__table tr.tmobile__past td {
   color: var(--color-muted);
 }
+.comms-settings__kv {
+  max-width: 640px;
+  margin: 12px 0 0;
+}
+.contacts-quiet-note {
+  margin: 0 0 12px;
+  font-size: 12.5px;
+  color: var(--color-muted);
+}
+/* Calls & Texts bar on a contact card — ContactCommsSection.tsx (voter-insight look) */
+.comms-contact__last {
+  font-size: 13px;
+  color: var(--color-ink);
+}
+.comms-contact__months {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 4px;
+  align-items: end;
+  height: 84px;
+  margin: 14px 0 4px;
+}
+.comms-contact__month {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  height: 100%;
+}
+.comms-contact__bar {
+  flex: 1;
+  width: 100%;
+  max-width: 22px;
+  display: flex;
+  flex-direction: column-reverse;
+  border-radius: 3px;
+  overflow: hidden;
+  background: #efeae0;
+}
+.comms-contact__bar-calls {
+  background: #2a6fb0;
+}
+.comms-contact__bar-texts {
+  background: #c0662e;
+}
+.comms-contact__month-label {
+  font-size: 10.5px;
+  color: var(--color-muted);
+}
+.comms-contact__key {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  vertical-align: 0;
+  margin: 0 3px 0 0;
+}
+.comms-contact__key--calls {
+  background: #2a6fb0;
+}
+.comms-contact__key--texts {
+  background: #c0662e;
+  margin-left: 6px;
+}
 /* Ally Bank (checking + savings) dashboard — AllyDashboard.tsx; fin-dash card system */
 .ally__range {
   display: flex;

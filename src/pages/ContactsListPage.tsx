@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
-import type { Contact, ContactCircle } from '../api/types';
+import type { Contact, ContactCircle, QuietContact } from '../api/types';
 import { Modal } from '../components/Modal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { KebabMenu } from '../components/KebabMenu';
@@ -99,6 +99,10 @@ export function ContactsListPage() {
   const [labelFilter, setLabelFilter] = useState<string | null>(null);
   const [allLabels, setAllLabels] = useState<{ label: string; count: number }[]>([]);
   const [remindersOnly, setRemindersOnly] = useState(false);
+  // Calls & Texts: people you used to talk to regularly who've gone quiet
+  // (worker/src/comms/read.ts goneQuiet). Filtered client-side by id.
+  const [quiet, setQuiet] = useState<QuietContact[]>([]);
+  const [quietOnly, setQuietOnly] = useState(false);
   const [reminderCount, setReminderCount] = useState(0);
   // Standalone voter-roll entries (12k+ people Mike has never met) are
   // excluded by default — see api.listContacts' `voters` param — so the
@@ -129,6 +133,10 @@ export function ContactsListPage() {
   }, [load]);
 
   useEffect(() => {
+    api.getCommsQuiet().then(setQuiet).catch(() => {});
+  }, []);
+
+  useEffect(() => {
     api.listContactLabels().then((r) => setAllLabels(r.labels)).catch(() => {});
   }, []);
 
@@ -138,6 +146,9 @@ export function ContactsListPage() {
   useEffect(() => {
     api.listContacts({ remindersOnly: true }).then((r) => setReminderCount(r.length)).catch(() => {});
   }, [contacts]);
+
+  const quietRank = new Map(quiet.map((q, i) => [q.id, i]));
+  const shown = !contacts ? [] : quietOnly ? contacts.filter((c) => quietRank.has(c.id)).sort((a, b) => quietRank.get(a.id)! - quietRank.get(b.id)!) : contacts;
 
   async function handleCreate() {
     const name = newName.trim();
@@ -235,6 +246,16 @@ export function ContactsListPage() {
             🔔 {reminderCount} need{reminderCount === 1 ? 's' : ''} a check-in
           </button>
         )}
+        {quiet.length > 0 && (
+          <button
+            type="button"
+            className={`chip${quietOnly ? ' is-active' : ''}`}
+            onClick={() => setQuietOnly((v) => !v)}
+            title="People you called or texted most months last year, but not in the last 60 days"
+          >
+            📞 {quiet.length} gone quiet
+          </button>
+        )}
         <button
           type="button"
           className={`chip contacts-filters__voters${includeVoters ? ' is-active' : ''}`}
@@ -245,17 +266,27 @@ export function ContactsListPage() {
         </button>
       </div>
 
+      {quietOnly && contacts && (
+        <p className="contacts-quiet-note">
+          Called or texted in at least 4 months of the year before, nothing in the last 60 days — busiest first. Last in touch:{' '}
+          {quiet
+            .slice(0, 3)
+            .map((q) => `${q.name} ${q.lastTouch ? new Date(q.lastTouch).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''}`)
+            .join(' · ')}
+          {quiet.length > 3 ? ' …' : ''}
+        </p>
+      )}
       {!contacts ? (
         <div className="empty-state">Loading…</div>
-      ) : contacts.length === 0 ? (
+      ) : shown.length === 0 ? (
         <div className="empty-state">
-          {query || circleFilter || labelFilter || remindersOnly
+          {query || circleFilter || labelFilter || remindersOnly || quietOnly
             ? 'No contacts match.'
             : 'No contacts yet — add someone to start keeping notes and staying in touch.'}
         </div>
       ) : (
         <div className="project-card-list">
-          {contacts.map((c) => (
+          {shown.map((c) => (
             <ContactCard
               key={c.id}
               contact={c}

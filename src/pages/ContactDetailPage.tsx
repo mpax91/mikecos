@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import type { Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, VoterDiff } from '../api/types';
 import { partyTone, VoterDiffBox, VoterInsightSection } from '../components/VoterInsight';
 import { BeeContactSection } from '../components/BeeContactSection';
+import { ContactCommsSection } from '../components/ContactCommsSection';
 import { autoLabelClass, contactLabels, displayLabels, isAutoLabel } from '../utils/contactLabels';
 import { Modal } from '../components/Modal';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -706,6 +707,8 @@ export function ContactDetailPage() {
       <VoterDiffBox diffs={contact.voterDiffs ?? []} onDecide={handleVoterDiff} />
 
       <VoterInsightSection records={contact.voterRecords} household={contact.householdMembers} />
+
+      <ContactCommsSection comms={contact.comms} />
 
       <BeeContactSection bee={contact.bee} />
 
