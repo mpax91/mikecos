@@ -452,3 +452,32 @@ export async function metaSyncDue(env: Env, scheduledTime: number): Promise<'ful
   if (h === 7 || !row.last_sync_at || row.last_sync_at < new Date(scheduledTime - 26 * 3600000).toISOString()) return 'full';
   return 'recent';
 }
+
+/** Raw Meta responses for one recent FB post and one IG media — for
+ * diagnosing insights metric names (no tokens in the output). */
+export async function metaDebug(env: Env) {
+  const row = await loadMeta(env);
+  if (!row.page_token_enc || !row.page_id) return { error: 'not connected' };
+  const token = await decryptField(env, row.page_token_enc, ENC);
+  const raw = async (path: string, params: Record<string, string>) => {
+    const u = new URL(`${GRAPH}/${path}`);
+    for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
+    u.searchParams.set('access_token', token);
+    const r = await fetch(u.toString());
+    return { status: r.status, body: (await r.text()).slice(0, 700) };
+  };
+  const fbPost = await env.DB.prepare("SELECT id FROM bee_meta_posts WHERE platform = 'fb' ORDER BY created_at DESC LIMIT 1 OFFSET 3").first<{ id: string }>();
+  const igPost = await env.DB.prepare("SELECT id FROM bee_meta_posts WHERE platform = 'ig' ORDER BY created_at DESC LIMIT 1 OFFSET 3").first<{ id: string }>();
+  const out: Record<string, unknown> = { lastSync: row.last_sync_at, lastError: row.last_error };
+  if (fbPost) {
+    out.fbDirect = await raw(`${fbPost.id}/insights`, { metric: 'post_media_view' });
+    out.fbDirectImpr = await raw(`${fbPost.id}/insights`, { metric: 'post_impressions' });
+    out.fbIds = await raw('', { ids: fbPost.id, fields: 'insights.metric(post_media_view)' });
+  }
+  if (igPost) {
+    out.igDirect = await raw(`${igPost.id}/insights`, { metric: 'views,reach,saved,shares' });
+    out.igIds = await raw('', { ids: igPost.id, fields: 'insights.metric(views,reach,saved,shares)' });
+  }
+  if (row.ig_id) out.igAccount = await raw(row.ig_id, { fields: 'followers_count,media_count' });
+  return out;
+}
