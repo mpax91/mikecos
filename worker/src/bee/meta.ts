@@ -18,7 +18,8 @@ import { decryptField, encryptField } from '../cryptoField';
  *    snapshots land within an hour of those ages. */
 
 export const META_STATE_PROVIDER = 'meta';
-const V = 'v24.0';
+// Apps created in late 2026 are pinned to v26+, where ?ids= batching is gone (Graph batch API instead).
+const V = 'v26.0';
 const GRAPH = `https://graph.facebook.com/${V}`;
 const ENC = 'CLOUD_ACCOUNT_ENC_KEY';
 // pages_read_user_content: comment counts on the Page's own posts (Meta treats comments as user content).
@@ -187,24 +188,46 @@ const insightValue = (ins: { data?: { name: string; values?: { value: unknown }[
   return typeof v === 'number' ? v : v && typeof v === 'object' ? Object.values(v as Record<string, number>).reduce((a, b) => a + (Number(b) || 0), 0) : null;
 };
 
-/** Insights for many objects via ?ids=, trying metric sets until Meta accepts one. */
+/** Insights for many objects through the Graph batch API (50 per call;
+ * `?ids=` was removed in v26). Each object tries the metric sets in order
+ * until Meta accepts one — a renamed/retired metric is skipped, never fatal. */
 async function batchInsights(ids: string[], metricSets: string[][], token: string): Promise<Map<string, Record<string, number | null>>> {
   const out = new Map<string, Record<string, number | null>>();
-  for (let i = 0; i < ids.length; i += 40) {
-    const chunk = ids.slice(i, i + 40);
-    for (const metrics of metricSets) {
+  let pending = ids;
+  for (const metrics of metricSets) {
+    const failed: string[] = [];
+    for (let i = 0; i < pending.length; i += 50) {
+      const chunk = pending.slice(i, i + 50);
+      const batch = chunk.map((id) => ({ method: 'GET', relative_url: `${id}/insights?metric=${metrics.join(',')}` }));
+      let res: ({ code: number; body: string } | null)[] = [];
       try {
-        const j = await graph<Record<string, { insights?: Parameters<typeof insightValue>[0] }>>('', { ids: chunk.join(','), fields: `insights.metric(${metrics.join(',')})` }, token);
-        for (const id of chunk) {
-          const rec: Record<string, number | null> = {};
-          for (const m of metrics) rec[m] = insightValue(j[id]?.insights, m);
-          out.set(id, { ...(out.get(id) ?? {}), ...rec });
-        }
-        break;
+        const r = await fetch(`https://graph.facebook.com/${V}/`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ access_token: token, batch: JSON.stringify(batch), include_headers: 'false' }),
+        });
+        res = r.ok ? ((await r.json()) as typeof res) : [];
       } catch {
-        continue; // a metric Meta no longer accepts — try the next, smaller set
+        res = [];
       }
+      chunk.forEach((id, k) => {
+        const item = res[k];
+        if (item && item.code === 200) {
+          try {
+            const body = JSON.parse(item.body) as Parameters<typeof insightValue>[0];
+            const rec: Record<string, number | null> = {};
+            for (const m of metrics) rec[m] = insightValue(body, m);
+            out.set(id, { ...(out.get(id) ?? {}), ...rec });
+            return;
+          } catch {
+            /* fall through */
+          }
+        }
+        failed.push(id);
+      });
     }
+    pending = failed;
+    if (!pending.length) break;
   }
   return out;
 }
@@ -247,7 +270,7 @@ async function fetchFbPosts(pageId: string, token: string, sinceDays: number): P
   }
   const ins = await batchInsights(
     posts.map((p) => p.id),
-    [['post_media_view'], ['post_impressions'], []].filter((s) => s.length),
+    [['post_media_view']],
     token
   );
   return posts.map((p) => {
@@ -265,7 +288,7 @@ async function fetchFbPosts(pageId: string, token: string, sinceDays: number): P
       comments: withComments ? (p.comments?.summary?.total_count ?? 0) : null,
       shares: p.shares?.count ?? 0,
       saves: null,
-      views: i.post_media_view ?? i.post_impressions ?? null,
+      views: i.post_media_view ?? null,
       reach: null,
       raw: { status_type: p.status_type, attachment: a?.type ?? null },
     };
@@ -453,31 +476,3 @@ export async function metaSyncDue(env: Env, scheduledTime: number): Promise<'ful
   return 'recent';
 }
 
-/** Raw Meta responses for one recent FB post and one IG media — for
- * diagnosing insights metric names (no tokens in the output). */
-export async function metaDebug(env: Env) {
-  const row = await loadMeta(env);
-  if (!row.page_token_enc || !row.page_id) return { error: 'not connected' };
-  const token = await decryptField(env, row.page_token_enc, ENC);
-  const raw = async (path: string, params: Record<string, string>) => {
-    const u = new URL(`${GRAPH}/${path}`);
-    for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
-    u.searchParams.set('access_token', token);
-    const r = await fetch(u.toString());
-    return { status: r.status, body: (await r.text()).slice(0, 700) };
-  };
-  const fbPost = await env.DB.prepare("SELECT id FROM bee_meta_posts WHERE platform = 'fb' ORDER BY created_at DESC LIMIT 1 OFFSET 3").first<{ id: string }>();
-  const igPost = await env.DB.prepare("SELECT id FROM bee_meta_posts WHERE platform = 'ig' ORDER BY created_at DESC LIMIT 1 OFFSET 3").first<{ id: string }>();
-  const out: Record<string, unknown> = { lastSync: row.last_sync_at, lastError: row.last_error };
-  if (fbPost) {
-    out.fbDirect = await raw(`${fbPost.id}/insights`, { metric: 'post_media_view' });
-    out.fbDirectImpr = await raw(`${fbPost.id}/insights`, { metric: 'post_impressions' });
-    out.fbIds = await raw('', { ids: fbPost.id, fields: 'insights.metric(post_media_view)' });
-  }
-  if (igPost) {
-    out.igDirect = await raw(`${igPost.id}/insights`, { metric: 'views,reach,saved,shares' });
-    out.igIds = await raw('', { ids: igPost.id, fields: 'insights.metric(views,reach,saved,shares)' });
-  }
-  if (row.ig_id) out.igAccount = await raw(row.ig_id, { fields: 'followers_count,media_count' });
-  return out;
-}

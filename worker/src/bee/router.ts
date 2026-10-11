@@ -10,7 +10,7 @@ import { syncGaAll } from './ga';
 import { analyticsDashboard } from './analytics';
 import { bingDashboard, saveBingKey, syncBing } from './bing';
 import { clarityDashboard, saveClarityToken, syncClarity } from './clarity';
-import { disconnectMeta, metaAuthUrl, metaDebug, saveMetaApp, syncMeta } from './meta';
+import { disconnectMeta, metaAuthUrl, saveMetaApp, syncMeta } from './meta';
 import { socialDashboard } from './social';
 
 /** /api/bee — Bedford Bee dashboard. Substack + Stripe come from CSV
@@ -120,8 +120,6 @@ beeRouter.post('/meta/sync', async (c) => {
     return c.json(fail(err), 502);
   }
 });
-// Diagnostic: raw Meta answers for one FB post + one IG media insights call.
-beeRouter.get('/meta/debug', async (c) => c.json(await metaDebug(c.env)));
 beeRouter.post('/meta/disconnect', async (c) => {
   await disconnectMeta(c.env);
   return c.json({ ok: true });
