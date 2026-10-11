@@ -74,7 +74,7 @@ export function BeeContactSection({ bee }: { bee: BeeContactInfo | null | undefi
               </>
             )}
             <p className="fin-dash__note">
-              From the Substack exports · <Link to="/bee">Bedford Bee dashboard</Link>
+              From the Substack exports · <Link to="/bee?tab=substack">Bedford Bee dashboard</Link>
             </p>
           </div>
         </div>

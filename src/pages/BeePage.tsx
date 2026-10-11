@@ -52,7 +52,7 @@ export function BeePage() {
   const [scanMsg, setScanMsg] = useState<string | null>(null);
   const [params, setParams] = useSearchParams();
   const tabParam = params.get('tab');
-  const tab = tabParam === 'search' || tabParam === 'website' || tabParam === 'social' || tabParam === 'review' ? tabParam : 'substack';
+  const tab = tabParam === 'search' || tabParam === 'website' || tabParam === 'substack' || tabParam === 'review' ? tabParam : 'social';
 
   const load = useCallback(() => {
     api
@@ -91,7 +91,7 @@ export function BeePage() {
           [
             ['social', 'Social'],
             ['substack', 'Substack'],
-            ['search', 'Google Search'],
+            ['search', 'SEO'],
             ['website', 'Website'],
             ['review', 'Year in Review'],
           ] as const
@@ -102,7 +102,7 @@ export function BeePage() {
             role="tab"
             aria-selected={tab === key}
             className={`btn btn--sm${tab === key ? ' is-active' : ' btn--ghost'}`}
-            onClick={() => setParams(key === 'substack' ? {} : { tab: key }, { replace: true })}
+            onClick={() => setParams(key === 'social' ? {} : { tab: key }, { replace: true })}
           >
             {label}
           </button>

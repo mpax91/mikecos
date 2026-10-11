@@ -96,7 +96,7 @@ export function BeePanel() {
         </button>
       </div>
       <p className="settings-page__section-hint">
-        Substack has no API, so the <Link to="/bee">Bedford Bee dashboard</Link> reads exports you drop in a Google Drive folder named “Bedford Bee”: Substack’s posts export, its subscriber export and Stripe’s
+        Substack has no API, so the <Link to="/bee?tab=substack">Bedford Bee dashboard</Link> reads exports you drop in a Google Drive folder named “Bedford Bee”: Substack’s posts export, its subscriber export and Stripe’s
         balance history (CSV, all time). It checks nightly. Each month add fresh copies named “YYYY.MM.DD - Bedford Bee - Posts / Subscribers / Stripe.csv” and keep the old subscriber files — comparing them shows
         who left. Subscribers are linked to Contacts automatically (the “Bee” label).
       </p>
