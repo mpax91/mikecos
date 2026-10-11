@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { DashTitle } from './dash/InfoTip';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import type { BeeBing, BeeClarity, BeeClarityRow } from '../api/types';
@@ -14,7 +15,14 @@ const toMs = (iso: string) => {
   const [y, m, d] = iso.slice(0, 10).split('-').map(Number);
   return new Date(y, m - 1, d).getTime();
 };
-const fmtDate = (iso: string | null) => (iso ? new Date(toMs(iso)).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—');
+const fmtDate = (iso: string | null) =>
+  iso
+    ? new Date(toMs(iso)).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      })
+    : '—';
 const path = (url: string) => {
   try {
     const u = new URL(url);
@@ -32,7 +40,7 @@ export const apiError = (e: unknown) => {
   const m = e instanceof Error ? e.message : String(e);
   const j = m.match(/\{.*\}$/);
   try {
-    return j ? (JSON.parse(j[0]).error as string) ?? m : m;
+    return j ? ((JSON.parse(j[0]).error as string) ?? m) : m;
   } catch {
     return m;
   }
@@ -42,7 +50,11 @@ export function BeeBingSection() {
   const [data, setData] = useState<BeeBing | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
-  const load = () => api.getBeeBing().then(setData).catch(() => setData(null));
+  const load = () =>
+    api
+      .getBeeBing()
+      .then(setData)
+      .catch(() => setData(null));
   useEffect(() => {
     load();
   }, []);
@@ -93,9 +105,7 @@ export function BeeBingSection() {
     <section className="bee-section">
       <div className="bee-section__head">
         <h2 className="bee-section__title">Bing</h2>
-        <span className="fin-dash__muted">
-          Last 4 weeks Bing reports · history since {fmtDate(data.range.from)} · Bing also powers DuckDuckGo, Yahoo and Copilot
-        </span>
+        <span className="fin-dash__muted">Last 4 weeks Bing reports · history since {fmtDate(data.range.from)} · Bing also powers DuckDuckGo, Yahoo and Copilot</span>
       </div>
       <div className="fin-dash__stats">
         <Stat label="Clicks" value={n0(p.now.clicks)} sub={ch === null ? undefined : `${ch >= 0 ? '+' : '−'}${Math.abs(ch * 100).toFixed(0)}% vs prior 4 weeks`} />
@@ -106,20 +116,41 @@ export function BeeBingSection() {
       <div className="fin-dash__grid">
         <section className="fin-dash__card">
           <h3 className="fin-dash__card-title">Top Searches on Bing</h3>
-          <Rows rows={data.topQueries.map((q) => ({ key: q.query!, main: q.query!, stats: `${n0(q.clicks)} clicks · ${n0(q.impressions)} impr · pos ${pos(q.position)}` }))} empty="No searches yet." />
+          <Rows
+            rows={data.topQueries.map((q) => ({
+              key: q.query!,
+              main: q.query!,
+              stats: `${n0(q.clicks)} clicks · ${n0(q.impressions)} impr · pos ${pos(q.position)}`,
+            }))}
+            empty="No searches yet."
+          />
         </section>
         <section className="fin-dash__card">
           <h3 className="fin-dash__card-title">Top Pages on Bing</h3>
-          <Rows rows={data.topPages.map((q) => ({ key: q.page!, main: path(q.page!), stats: `${n0(q.clicks)} clicks · ${n0(q.impressions)} impr` }))} empty="No pages yet." />
+          <Rows
+            rows={data.topPages.map((q) => ({
+              key: q.page!,
+              main: path(q.page!),
+              stats: `${n0(q.clicks)} clicks · ${n0(q.impressions)} impr`,
+            }))}
+            empty="No pages yet."
+          />
         </section>
         <section className="fin-dash__card">
-          <h3 className="fin-dash__card-title">Almost on Page One (Bing)</h3>
-          <p className="fin-dash__muted bee-spot__explain">Average position 8–20 over the last ~3 months, 10+ impressions.</p>
-          <Rows rows={data.strikingDistance.map((q) => ({ key: q.query!, main: q.query!, stats: `pos ${pos(q.position)} · ${n0(q.impressions)} impr` }))} empty="Nothing in striking distance yet." />
+          <DashTitle info={<p>Average position 8–20 over the last ~3 months, 10+ impressions.</p>}>Almost on Page One (Bing)</DashTitle>
+          <Rows
+            rows={data.strikingDistance.map((q) => ({
+              key: q.query!,
+              main: q.query!,
+              stats: `pos ${pos(q.position)} · ${n0(q.impressions)} impr`,
+            }))}
+            empty="Nothing in striking distance yet."
+          />
         </section>
         <section className="fin-dash__card">
-          <h3 className="fin-dash__card-title">Bing vs Google</h3>
-          <p className="fin-dash__muted bee-spot__explain">Same search, 5+ positions apart. Ranking well on one engine but not the other usually means a title or page that one engine reads differently.</p>
+          <DashTitle info={<p>Same search, 5+ positions apart. Ranking well on one engine but not the other usually means a title or page that one engine reads differently.</p>}>
+            Bing vs Google
+          </DashTitle>
           <Rows
             rows={data.compare.map((c) => ({
               key: c.query,
@@ -133,7 +164,14 @@ export function BeeBingSection() {
         {data.issues.length > 0 && (
           <section className="fin-dash__card fin-dash__card--full">
             <h3 className="fin-dash__card-title">Crawl Issues Bing Reports</h3>
-            <Rows rows={data.issues.map((i) => ({ key: i.url, main: path(i.url), stats: `${i.issue}${i.http_code ? ` · HTTP ${i.http_code}` : ''}` }))} empty="" />
+            <Rows
+              rows={data.issues.map((i) => ({
+                key: i.url,
+                main: path(i.url),
+                stats: `${i.issue}${i.http_code ? ` · HTTP ${i.http_code}` : ''}`,
+              }))}
+              empty=""
+            />
           </section>
         )}
         <section className="fin-dash__card fin-dash__card--full">
@@ -199,22 +237,30 @@ export function BeeClaritySection() {
       </div>
       <div className="fin-dash__grid">
         <section className="fin-dash__card fin-dash__card--full">
-          <h3 className="fin-dash__card-title">How Far People Read</h3>
-          <p className="fin-dash__muted bee-spot__explain">Average scroll depth per page (5+ sessions). Low depth on a long post means readers stop early — look at its heatmap in Clarity to see where.</p>
+          <DashTitle info={<p>Average scroll depth per page (5+ sessions). Low depth on a long post means readers stop early — look at its heatmap in Clarity to see where.</p>}>
+            How Far People Read
+          </DashTitle>
           <ClarityTable rows={data.readDepth} />
         </section>
         <section className="fin-dash__card">
-          <h3 className="fin-dash__card-title">Pages Frustrating Readers</h3>
-          <p className="fin-dash__muted bee-spot__explain">Rage clicks (repeated clicking) + dead clicks (clicking something that isn’t a link) in 5%+ of sessions.</p>
+          <DashTitle info={<p>Rage clicks (repeated clicking) + dead clicks (clicking something that isn’t a link) in 5%+ of sessions.</p>}>Pages Frustrating Readers</DashTitle>
           <Rows
-            rows={data.frustrated.map((p) => ({ key: p.key, main: path(p.key), stats: `rage ${pctRaw(p.rageClicks)} · dead ${pctRaw(p.deadClicks)} · ${n0(p.sessions)} sessions` }))}
+            rows={data.frustrated.map((p) => ({
+              key: p.key,
+              main: path(p.key),
+              stats: `rage ${pctRaw(p.rageClicks)} · dead ${pctRaw(p.deadClicks)} · ${n0(p.sessions)} sessions`,
+            }))}
             empty="Nothing frustrating readers."
           />
         </section>
         <section className="fin-dash__card">
           <h3 className="fin-dash__card-title">By Source &amp; Device</h3>
           <Rows
-            rows={[...data.sources, ...data.devices].map((p, i) => ({ key: `${i}-${p.key}`, main: p.key, stats: `${n0(p.sessions)} sessions · scroll ${pctRaw(p.scrollDepth)} · ${secs(p.activeTime)}` }))}
+            rows={[...data.sources, ...data.devices].map((p, i) => ({
+              key: `${i}-${p.key}`,
+              main: p.key,
+              stats: `${n0(p.sessions)} sessions · scroll ${pctRaw(p.scrollDepth)} · ${secs(p.activeTime)}`,
+            }))}
             empty="No data yet."
           />
         </section>

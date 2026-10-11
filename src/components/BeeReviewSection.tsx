@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
+import { SectionPicker } from './dash/SectionPicker';
+import { DashTitle } from './dash/InfoTip';
 import { api } from '../api/client';
 import type { BeeReview, BeeReviewTop, BeeReviewTotals } from '../api/types';
 import { FinanceLineChart } from './FinanceLineChart';
@@ -15,9 +17,18 @@ const big = (n: number | null | undefined) => {
   return n0(n);
 };
 const money = (n: number | null | undefined) => (n == null ? '—' : `$${n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`);
-const fmtDate = (d: string) => new Date(`${d.slice(0, 10)}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+const fmtDate = (d: string) =>
+  new Date(`${d.slice(0, 10)}T12:00:00Z`).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
 const fmtAxis = (ms: number) => new Date(ms).toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
-const PLAT: Record<string, string> = { fb: 'Facebook', ig: 'Instagram', substack: 'Substack' };
+const PLAT: Record<string, string> = {
+  fb: 'Facebook',
+  ig: 'Instagram',
+  substack: 'Substack',
+};
 
 type Compare = 'same' | 'full' | 'avg';
 
@@ -83,7 +94,9 @@ export function BeeReviewSection() {
       </div>
       {compare === 'avg' && (
         <p className="fin-dash__muted bee-review__avgnote">
-          Per month: {data.year} so far ({mNow.toFixed(1)} months) vs {data.year - 1} ({mPrev.toFixed(1)} months{data.started && data.started > data.prevFull.range.from ? `, from launch on ${fmtDate(data.started)}` : ''}).
+          Per month: {data.year} so far ({mNow.toFixed(1)} months) vs {data.year - 1} ({mPrev.toFixed(1)} months
+          {data.started && data.started > data.prevFull.range.from ? `, from launch on ${fmtDate(data.started)}` : ''}
+          ).
         </p>
       )}
       <Headline data={data} prev={prevT} compare={compare} scale={scale} />
@@ -101,10 +114,29 @@ function delta(now: number | null | undefined, prev: number | null | undefined):
   if (!prev) return now ? { text: 'new this year', tone: 'up' } : { text: '', tone: '' };
   const d = (now - prev) / prev;
   if (Math.abs(d) < 0.03) return { text: 'about the same', tone: '' };
-  return { text: `${d > 0 ? '+' : '−'}${Math.abs(d * 100) >= 1000 ? `${Math.round(d)}×` : `${Math.abs(d * 100).toFixed(0)}%`}`, tone: d > 0 ? 'up' : 'down' };
+  return {
+    text: `${d > 0 ? '+' : '−'}${Math.abs(d * 100) >= 1000 ? `${Math.round(d)}×` : `${Math.abs(d * 100).toFixed(0)}%`}`,
+    tone: d > 0 ? 'up' : 'down',
+  };
 }
 
-function Tile({ label, value, prev, prevLabel, raw, prevRaw, fmt = big }: { label: string; value: string; prev?: string; prevLabel: string; raw?: number | null; prevRaw?: number | null; fmt?: (n: number | null | undefined) => string }) {
+function Tile({
+  label,
+  value,
+  prev,
+  prevLabel,
+  raw,
+  prevRaw,
+  fmt = big,
+}: {
+  label: string;
+  value: string;
+  prev?: string;
+  prevLabel: string;
+  raw?: number | null;
+  prevRaw?: number | null;
+  fmt?: (n: number | null | undefined) => string;
+}) {
   const d = delta(raw, prevRaw);
   return (
     <div className="bee-review__tile">
@@ -132,18 +164,18 @@ function Headline({ data, prev, compare, scale }: { data: BeeReview; prev: BeeRe
   return (
     <div className="bee-review__grid">
       <Tile label={`Total Views${per}`} value={big(sv(n.everything.views))} raw={sv(n.everything.views)} prevRaw={pv(prev.everything.views)} prevLabel={pl} />
-      <Tile label={`Stories Published${per}`} value={avg ? sv(n.stories).toFixed(1) : n0(n.stories)} raw={sv(n.stories)} prevRaw={pv(prev.stories)} prevLabel={pl} fmt={(x) => (avg ? (x ?? 0).toFixed(1) : n0(x))} />
+      <Tile
+        label={`Stories Published${per}`}
+        value={avg ? sv(n.stories).toFixed(1) : n0(n.stories)}
+        raw={sv(n.stories)}
+        prevRaw={pv(prev.stories)}
+        prevLabel={pl}
+        fmt={(x) => (avg ? (x ?? 0).toFixed(1) : n0(x))}
+      />
       <Tile label={`Likes${per}`} value={big(sv(n.everything.likes))} raw={sv(n.everything.likes)} prevRaw={pv(prev.everything.likes)} prevLabel={pl} />
       <Tile label={`Comments${per}`} value={big(sv(n.everything.comments))} raw={sv(n.everything.comments)} prevRaw={pv(prev.everything.comments)} prevLabel={pl} />
       <Tile label={`Shares${per}`} value={big(sv(n.everything.shares))} raw={sv(n.everything.shares)} prevRaw={pv(prev.everything.shares)} prevLabel={pl} />
-      <Tile
-        label="Facebook Followers"
-        value={n0(data.followers.facebook)}
-        raw={n.facebook.followersEnd}
-        prevRaw={n.facebook.followersStart}
-        prevLabel={`Jan 1`}
-        fmt={n0}
-      />
+      <Tile label="Facebook Followers" value={n0(data.followers.facebook)} raw={n.facebook.followersEnd} prevRaw={n.facebook.followersStart} prevLabel={`Jan 1`} fmt={n0} />
       <Tile label="Instagram Followers" value={n0(data.followers.instagram)} prevLabel="" prev="history starts now (Instagram keeps 30 days)" />
       <Tile label="Substack Subscribers" value={n0(sub?.subsEnd)} raw={sub?.subsEnd} prevRaw={sub?.subsStart} prevLabel="Jan 1" fmt={n0} />
       <Tile label="Paid Subscribers" value={n0(sub?.paidEnd)} raw={sub?.paidEnd} prevRaw={sub?.paidStart} prevLabel="Jan 1" fmt={n0} />
@@ -157,7 +189,14 @@ function Headline({ data, prev, compare, scale }: { data: BeeReview; prev: BeeRe
         prev={compare === 'same' ? `net ${money(sub?.net)} after fees` : undefined}
       />
       <Tile label={`Emails Sent${per}`} value={big(sv(n.substack.emailsSent))} raw={sv(n.substack.emailsSent)} prevRaw={pv(prev.substack.emailsSent)} prevLabel={pl} />
-      <Tile label="Website Visits" value={big(n.website.visits)} raw={gaMissing ? undefined : n.website.visits} prevRaw={gaMissing ? undefined : prev.website.visits} prevLabel={gaMissing ? '' : pl} prev={gaMissing && data.sources.ga ? `tracking began ${fmtDate(data.sources.ga)}` : undefined} />
+      <Tile
+        label="Website Visits"
+        value={big(n.website.visits)}
+        raw={gaMissing ? undefined : n.website.visits}
+        prevRaw={gaMissing ? undefined : prev.website.visits}
+        prevLabel={gaMissing ? '' : pl}
+        prev={gaMissing && data.sources.ga ? `tracking began ${fmtDate(data.sources.ga)}` : undefined}
+      />
       <Tile label="Website Visitors" value={n0(data.visitors.thisYear)} prevLabel="" prev={data.visitors.lastYear ? `${data.year - 1}: ${n0(data.visitors.lastYear)}` : 'unique people'} />
       <Tile
         label="Google Search Clicks"
@@ -171,13 +210,16 @@ function Headline({ data, prev, compare, scale }: { data: BeeReview; prev: BeeRe
   );
 }
 
-const pickTop = (t: BeeReviewTop, k: 'views' | 'likes' | 'comments' | 'shares', plat: string) => (plat === 'combined' ? t.total[k] : t.parts.find((p) => p.platform === plat)?.[k] ?? 0);
+const pickTop = (t: BeeReviewTop, k: 'views' | 'likes' | 'comments' | 'shares', plat: string) => (plat === 'combined' ? t.total[k] : (t.parts.find((p) => p.platform === plat)?.[k] ?? 0));
 
 function Tops({ data }: { data: BeeReview }) {
   const [plat, setPlat] = useState<'combined' | 'facebook' | 'instagram' | 'substack'>('combined');
   const set = data.tops[plat];
   const code = plat === 'facebook' ? 'fb' : plat === 'instagram' ? 'ig' : plat;
-  const blocks: { k: 'views' | 'likes' | 'comments' | 'shares'; title: string }[] = [
+  const blocks: {
+    k: 'views' | 'likes' | 'comments' | 'shares';
+    title: string;
+  }[] = [
     { k: 'views', title: 'Most Viewed' },
     { k: 'likes', title: 'Most Liked' },
     { k: 'shares', title: 'Most Shared' },
@@ -186,14 +228,18 @@ function Tops({ data }: { data: BeeReview }) {
   return (
     <section className="fin-dash__card fin-dash__card--full">
       <div className="fin-dash__card-head">
-        <h3 className="fin-dash__card-title">Top Stories of {data.year}</h3>
-        <div className="ally__range bee-tabs" role="tablist" aria-label="Platform">
-          {(['combined', 'facebook', 'instagram', 'substack'] as const).map((p) => (
-            <button key={p} type="button" role="tab" aria-selected={plat === p} className={`btn btn--sm${plat === p ? ' is-active' : ' btn--ghost'}`} onClick={() => setPlat(p)}>
-              {p === 'combined' ? 'All Platforms' : p.charAt(0).toUpperCase() + p.slice(1)}
-            </button>
-          ))}
-        </div>
+        <DashTitle info={<p>Hover a story to see each platform’s number. “All Platforms” adds Facebook, Instagram and Substack for the same story.</p>}>Top Stories of {data.year}</DashTitle>
+        <SectionPicker
+          label="Platform"
+          value={plat}
+          onChange={setPlat}
+          options={[
+            ['combined', 'All Platforms'],
+            ['facebook', 'Facebook'],
+            ['instagram', 'Instagram'],
+            ['substack', 'Substack'],
+          ]}
+        />
       </div>
       <div className="bee-review__tops">
         {blocks.map((b) => (
@@ -210,7 +256,6 @@ function Tops({ data }: { data: BeeReview }) {
           </div>
         ))}
       </div>
-      <p className="fin-dash__note">Hover a story to see each platform’s number. “All Platforms” adds Facebook, Instagram and Substack for the same story.</p>
     </section>
   );
 }
@@ -219,15 +264,27 @@ function MonthsCard({ data }: { data: BeeReview }) {
   const series = useMemo<LineSeries[]>(() => {
     const toMs = (m: string) => new Date(Number(m.slice(0, 4)), Number(m.slice(5, 7)) - 1, 15).getTime();
     return [
-      { name: 'Social (FB + IG)', color: '#2A6FB0', points: data.months.map((m) => ({ x: toMs(m.month), y: m.social })) },
-      { name: 'Substack + Website', color: '#C0662E', points: data.months.map((m) => ({ x: toMs(m.month), y: m.substack + m.website })) },
+      {
+        name: 'Social (FB + IG)',
+        color: '#2A6FB0',
+        points: data.months.map((m) => ({ x: toMs(m.month), y: m.social })),
+      },
+      {
+        name: 'Substack + Website',
+        color: '#C0662E',
+        points: data.months.map((m) => ({
+          x: toMs(m.month),
+          y: m.substack + m.website,
+        })),
+      },
     ];
   }, [data.months]);
   return (
     <section className="fin-dash__card fin-dash__card--full">
-      <h3 className="fin-dash__card-title">Views by Month</h3>
+      <DashTitle info={<p>Social = Facebook + Instagram views of posts published that month. Substack = views of that month’s posts (email opens + web); website = Google Analytics page views.</p>}>
+        Views by Month
+      </DashTitle>
       <FinanceLineChart series={series} formatY={big} formatX={fmtAxis} ariaLabel="Bedford Bee views per month, social vs Substack and website" />
-      <p className="fin-dash__note">Social = Facebook + Instagram views of posts published that month. Substack = views of that month’s posts (email opens + web); website = Google Analytics page views.</p>
     </section>
   );
 }
@@ -237,30 +294,133 @@ function PlatformTable({ data, prev, compare, scale }: { data: BeeReview; prev: 
   const gaMissing = !!data.sources.ga && data.sources.ga > prev.range.to;
   const gscMissing = !!data.sources.gsc && data.sources.gsc > prev.range.to;
   const bingMissing = !n.search.bingClicks && !prev.search.bingClicks;
-  const rawRows: { label: string; now: number | null; prev: number | null; fmt?: (x: number | null | undefined) => string; flat?: boolean }[] = [
-    { label: 'Facebook posts', now: n.facebook.posts, prev: prev.facebook.posts },
-    { label: 'Facebook views', now: n.facebook.views, prev: prev.facebook.views },
-    { label: 'Facebook likes / reactions', now: n.facebook.likes, prev: prev.facebook.likes },
-    { label: 'Facebook comments', now: n.facebook.comments, prev: prev.facebook.comments },
-    { label: 'Facebook shares', now: n.facebook.shares, prev: prev.facebook.shares },
-    { label: 'Instagram posts', now: n.instagram.posts, prev: prev.instagram.posts },
-    { label: 'Instagram views', now: n.instagram.views, prev: prev.instagram.views },
-    { label: 'Instagram likes', now: n.instagram.likes, prev: prev.instagram.likes },
-    { label: 'Instagram comments', now: n.instagram.comments, prev: prev.instagram.comments },
-    { label: 'Instagram shares', now: n.instagram.shares, prev: prev.instagram.shares },
-    { label: 'Instagram saves', now: n.instagram.saves, prev: prev.instagram.saves },
-    { label: 'Substack posts', now: n.substack.posts, prev: prev.substack.posts },
-    { label: 'Substack emails sent', now: n.substack.emailsSent, prev: prev.substack.emailsSent },
-    { label: 'Substack emails opened', now: n.substack.opened, prev: prev.substack.opened },
-    { label: 'Substack views', now: n.substack.views, prev: prev.substack.views },
-    { label: 'New Substack subscribers', now: data.substack.now?.joined ?? null, prev: compare !== 'same' ? (data.substack.prev?.joined ?? null) : null },
-    { label: 'New paid subscribers', now: data.substack.now?.paidGained ?? null, prev: compare !== 'same' ? (data.substack.prev?.paidGained ?? null) : null },
-    { label: 'Net revenue', now: data.substack.now?.net ?? null, prev: compare !== 'same' ? (data.substack.prev?.net ?? null) : null, fmt: money },
-    { label: 'Website visits', now: n.website.visits, prev: gaMissing ? null : prev.website.visits },
-    { label: 'Website page views', now: n.website.pageViews, prev: gaMissing ? null : prev.website.pageViews },
-    { label: 'Google search clicks', now: n.search.googleClicks, prev: gscMissing ? null : prev.search.googleClicks },
-    { label: 'Google search impressions', now: n.search.googleImpressions, prev: gscMissing ? null : prev.search.googleImpressions },
-    ...(bingMissing ? [] : [{ label: 'Bing search clicks', now: n.search.bingClicks, prev: prev.search.bingClicks }]),
+  const rawRows: {
+    label: string;
+    now: number | null;
+    prev: number | null;
+    fmt?: (x: number | null | undefined) => string;
+    flat?: boolean;
+  }[] = [
+    {
+      label: 'Facebook posts',
+      now: n.facebook.posts,
+      prev: prev.facebook.posts,
+    },
+    {
+      label: 'Facebook views',
+      now: n.facebook.views,
+      prev: prev.facebook.views,
+    },
+    {
+      label: 'Facebook likes / reactions',
+      now: n.facebook.likes,
+      prev: prev.facebook.likes,
+    },
+    {
+      label: 'Facebook comments',
+      now: n.facebook.comments,
+      prev: prev.facebook.comments,
+    },
+    {
+      label: 'Facebook shares',
+      now: n.facebook.shares,
+      prev: prev.facebook.shares,
+    },
+    {
+      label: 'Instagram posts',
+      now: n.instagram.posts,
+      prev: prev.instagram.posts,
+    },
+    {
+      label: 'Instagram views',
+      now: n.instagram.views,
+      prev: prev.instagram.views,
+    },
+    {
+      label: 'Instagram likes',
+      now: n.instagram.likes,
+      prev: prev.instagram.likes,
+    },
+    {
+      label: 'Instagram comments',
+      now: n.instagram.comments,
+      prev: prev.instagram.comments,
+    },
+    {
+      label: 'Instagram shares',
+      now: n.instagram.shares,
+      prev: prev.instagram.shares,
+    },
+    {
+      label: 'Instagram saves',
+      now: n.instagram.saves,
+      prev: prev.instagram.saves,
+    },
+    {
+      label: 'Substack posts',
+      now: n.substack.posts,
+      prev: prev.substack.posts,
+    },
+    {
+      label: 'Substack emails sent',
+      now: n.substack.emailsSent,
+      prev: prev.substack.emailsSent,
+    },
+    {
+      label: 'Substack emails opened',
+      now: n.substack.opened,
+      prev: prev.substack.opened,
+    },
+    {
+      label: 'Substack views',
+      now: n.substack.views,
+      prev: prev.substack.views,
+    },
+    {
+      label: 'New Substack subscribers',
+      now: data.substack.now?.joined ?? null,
+      prev: compare !== 'same' ? (data.substack.prev?.joined ?? null) : null,
+    },
+    {
+      label: 'New paid subscribers',
+      now: data.substack.now?.paidGained ?? null,
+      prev: compare !== 'same' ? (data.substack.prev?.paidGained ?? null) : null,
+    },
+    {
+      label: 'Net revenue',
+      now: data.substack.now?.net ?? null,
+      prev: compare !== 'same' ? (data.substack.prev?.net ?? null) : null,
+      fmt: money,
+    },
+    {
+      label: 'Website visits',
+      now: n.website.visits,
+      prev: gaMissing ? null : prev.website.visits,
+    },
+    {
+      label: 'Website page views',
+      now: n.website.pageViews,
+      prev: gaMissing ? null : prev.website.pageViews,
+    },
+    {
+      label: 'Google search clicks',
+      now: n.search.googleClicks,
+      prev: gscMissing ? null : prev.search.googleClicks,
+    },
+    {
+      label: 'Google search impressions',
+      now: n.search.googleImpressions,
+      prev: gscMissing ? null : prev.search.googleImpressions,
+    },
+    ...(bingMissing
+      ? []
+      : [
+          {
+            label: 'Bing search clicks',
+            now: n.search.bingClicks,
+            prev: prev.search.bingClicks,
+          },
+        ]),
   ];
   // Monthly average: per-month values; sources that started mid-year are averaged over their own months.
   const gaMonths = data.sources.ga ? monthsIn(data.now.range.from, data.now.range.to, data.sources.ga) : 1;
@@ -268,11 +428,24 @@ function PlatformTable({ data, prev, compare, scale }: { data: BeeReview; prev: 
   const rows = rawRows.map((r) => {
     if (compare !== 'avg') return r;
     const nowScale = /^Website/.test(r.label) ? 1 / gaMonths : /^Google/.test(r.label) ? 1 / gscMonths : scale.now;
-    return { ...r, now: r.now == null ? null : r.now * nowScale, prev: r.prev == null ? null : r.prev * scale.prev };
+    return {
+      ...r,
+      now: r.now == null ? null : r.now * nowScale,
+      prev: r.prev == null ? null : r.prev * scale.prev,
+    };
   });
   return (
     <section className="fin-dash__card fin-dash__card--full">
-      <h3 className="fin-dash__card-title">Every Number</h3>
+      <DashTitle
+        info={
+          <p>
+            Numbers count posts published in each period. Some sources start later than the Bee: Google Analytics from {data.sources.ga ? fmtDate(data.sources.ga) : '—'}, Search Console from{' '}
+            {data.sources.gsc ? fmtDate(data.sources.gsc) : '—'}, so earlier periods show less for them. Subscriber and revenue changes compare against {data.year - 1} only for the whole year.
+          </p>
+        }
+      >
+        Every Number
+      </DashTitle>
       <div className="fin-dash__table-wrap">
         <table className="fin-dash__table bee-table--compact">
           <thead>
@@ -302,10 +475,6 @@ function PlatformTable({ data, prev, compare, scale }: { data: BeeReview; prev: 
           </tbody>
         </table>
       </div>
-      <p className="fin-dash__note">
-        Numbers count posts published in each period. Some sources start later than the Bee: Google Analytics from {data.sources.ga ? fmtDate(data.sources.ga) : '—'}, Search Console from{' '}
-        {data.sources.gsc ? fmtDate(data.sources.gsc) : '—'}, so earlier periods show less for them. Subscriber and revenue changes compare against {data.year - 1} only for the whole year.
-      </p>
     </section>
   );
 }

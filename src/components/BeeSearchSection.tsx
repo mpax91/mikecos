@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { DashTitle } from './dash/InfoTip';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import type { BeeSearch } from '../api/types';
@@ -15,8 +16,19 @@ const toMs = (iso: string) => {
   const [y, m, d] = iso.slice(0, 10).split('-').map(Number);
   return new Date(y, (m || 1) - 1, d || 15).getTime();
 };
-const fmtDate = (iso: string | null) => (iso ? new Date(toMs(iso)).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—');
-const fmtShort = (iso: string) => new Date(toMs(iso)).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+const fmtDate = (iso: string | null) =>
+  iso
+    ? new Date(toMs(iso)).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      })
+    : '—';
+const fmtShort = (iso: string) =>
+  new Date(toMs(iso)).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+  });
 const fmtAxis = (ms: number) => new Date(ms).toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
 const n0 = (n: number) => Math.round(n).toLocaleString('en-US');
 const pct = (n: number | null | undefined, d = 1) => (n == null ? '—' : `${(n * 100).toFixed(d)}%`);
@@ -36,7 +48,10 @@ function change(now: number, prev: number, invert = false): { text: string; tone
   const d = (now - prev) / prev;
   if (Math.abs(d) < 0.05) return { text: 'about the same', tone: '' };
   const better = invert ? d < 0 : d > 0;
-  return { text: `${d > 0 ? '+' : '−'}${Math.abs(d * 100).toFixed(0)}% vs prior 28 days`, tone: better ? 'up' : 'down' };
+  return {
+    text: `${d > 0 ? '+' : '−'}${Math.abs(d * 100).toFixed(0)}% vs prior 28 days`,
+    tone: better ? 'up' : 'down',
+  };
 }
 
 export function BeeSearchSection() {
@@ -44,7 +59,11 @@ export function BeeSearchSection() {
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
-  const load = () => api.getBeeSearch().then(setData).catch((e: Error) => setError(e.message));
+  const load = () =>
+    api
+      .getBeeSearch()
+      .then(setData)
+      .catch((e: Error) => setError(e.message));
   useEffect(() => {
     load();
   }, []);
@@ -83,8 +102,8 @@ export function BeeSearchSection() {
             </>
           ) : (
             <p>
-              Connect Search Console in <Link to="/settings?cat=bee">Settings → Bedford Bee</Link> with the Bee’s Google account (thebedfordbee@gmail.com). MikeOS then pulls the 16 months Google keeps and every day
-              after.
+              Connect Search Console in <Link to="/settings?cat=bee">Settings → Bedford Bee</Link> with the Bee’s Google account (thebedfordbee@gmail.com). MikeOS then pulls the 16 months Google keeps
+              and every day after.
             </p>
           )}
           {(msg || c.lastError) && <p className="fin-dash__note">{msg ?? c.lastError}</p>}
@@ -105,12 +124,38 @@ function SearchBody({ data, onSync, syncing, msg }: { data: Loaded; onSync: () =
   const discovery = p.namedClicks - p.brandClicks;
   const series = useMemo<LineSeries[]>(
     () => [
-      { name: 'All Clicks', color: TOTAL_COLOR, points: fullMonths.map((m) => ({ x: toMs(`${m.month}-15`), y: m.clicks })) },
-      { name: 'Discovery (Non-Brand)', color: DISCOVERY_COLOR, points: fullMonths.map((m) => ({ x: toMs(`${m.month}-15`), y: m.discoveryClicks })) },
+      {
+        name: 'All Clicks',
+        color: TOTAL_COLOR,
+        points: fullMonths.map((m) => ({
+          x: toMs(`${m.month}-15`),
+          y: m.clicks,
+        })),
+      },
+      {
+        name: 'Discovery (Non-Brand)',
+        color: DISCOVERY_COLOR,
+        points: fullMonths.map((m) => ({
+          x: toMs(`${m.month}-15`),
+          y: m.discoveryClicks,
+        })),
+      },
     ],
-    [fullMonths]
+    [fullMonths],
   );
-  const impr = useMemo<LineSeries[]>(() => [{ name: 'Impressions', color: TOTAL_COLOR, points: fullMonths.map((m) => ({ x: toMs(`${m.month}-15`), y: m.impressions })) }], [fullMonths]);
+  const impr = useMemo<LineSeries[]>(
+    () => [
+      {
+        name: 'Impressions',
+        color: TOTAL_COLOR,
+        points: fullMonths.map((m) => ({
+          x: toMs(`${m.month}-15`),
+          y: m.impressions,
+        })),
+      },
+    ],
+    [fullMonths],
+  );
   const clicksCh = change(p.now.clicks, p.prev.clicks);
   const imprCh = change(p.now.impressions, p.prev.impressions);
   const posCh = p.now.position && p.prev.position ? change(p.now.position, p.prev.position, true) : { text: '', tone: '' as const };
@@ -139,49 +184,80 @@ function SearchBody({ data, onSync, syncing, msg }: { data: Loaded; onSync: () =
 
       <div className="fin-dash__grid">
         <section className="fin-dash__card">
-          <h3 className="fin-dash__card-title">Clicks by Month</h3>
+          <DashTitle
+            info={
+              <p>
+                Discovery = searches that don’t name the Bee — the SEO growth number. Brand searches (“bedford bee”) are people who already know you. The current month joins the chart once it has 20
+                days of data.
+              </p>
+            }
+          >
+            Clicks by Month
+          </DashTitle>
           <FinanceLineChart series={series} formatY={n0} formatX={fmtAxis} ariaLabel="Google search clicks per month, all and non-brand" />
-          <p className="fin-dash__note">Discovery = searches that don’t name the Bee — the SEO growth number. Brand searches (“bedford bee”) are people who already know you. The current month joins the chart once it has 20 days of data.</p>
         </section>
         <section className="fin-dash__card">
-          <h3 className="fin-dash__card-title">Impressions by Month</h3>
+          <DashTitle info={<p>How often a Bee page showed up in Google results at all.</p>}>Impressions by Month</DashTitle>
           <FinanceLineChart series={impr} formatY={(v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : n0(v))} formatX={fmtAxis} ariaLabel="Google search impressions per month" />
-          <p className="fin-dash__note">How often a Bee page showed up in Google results at all.</p>
         </section>
 
         <ActionCard
           title="Almost on Page One"
           hint="Searches where you average position 8–20 (last 90 days). A sharper title, more depth, or a link from a related post can move these onto page one."
           empty="Nothing in striking distance yet (needs 20+ impressions)."
-          rows={data.strikingDistance.map((q) => ({ key: q.query, main: q.query, sub: path(q.page), stats: `pos ${pos(q.position)} · ${n0(q.impressions)} impr · ${n0(q.clicks)} clicks` }))}
+          rows={data.strikingDistance.map((q) => ({
+            key: q.query,
+            main: q.query,
+            sub: path(q.page),
+            stats: `pos ${pos(q.position)} · ${n0(q.impressions)} impr · ${n0(q.clicks)} clicks`,
+          }))}
         />
         <ActionCard
           title="Titles Not Earning Clicks"
           hint="On page one but clicked less than half as often as that position usually gets — rewrite the title or meta description."
           empty="No under-performing titles (needs 30+ impressions)."
-          rows={data.lowCtr.map((q) => ({ key: q.query, main: q.query, sub: path(q.page), stats: `pos ${pos(q.position)} · ${pct(q.ctr)} vs ~${pct(q.expectedCtr, 0)} typical` }))}
+          rows={data.lowCtr.map((q) => ({
+            key: q.query,
+            main: q.query,
+            sub: path(q.page),
+            stats: `pos ${pos(q.position)} · ${pct(q.ctr)} vs ~${pct(q.expectedCtr, 0)} typical`,
+          }))}
         />
         <ActionCard
           title="New Searches"
           hint="Seen for the first time in the last 14 days — early signs of what Bedford is looking for. Post into it while it’s live."
           empty="No brand-new searches in the last 14 days."
-          rows={data.newQueries.map((q) => ({ key: q.query, main: q.query, sub: q.page ? path(q.page) : undefined, stats: `first ${fmtShort(q.first)} · ${n0(q.impressions)} impr · pos ${pos(q.position)}` }))}
+          rows={data.newQueries.map((q) => ({
+            key: q.query,
+            main: q.query,
+            sub: q.page ? path(q.page) : undefined,
+            stats: `first ${fmtShort(q.first)} · ${n0(q.impressions)} impr · pos ${pos(q.position)}`,
+          }))}
         />
         <ActionCard
           title="Content Gaps"
           hint="Searches you appear for but rank past page two (last 90 days) — nothing answers them well yet. Candidates for a dedicated post or evergreen page."
           empty="No gaps with 20+ impressions."
-          rows={data.contentGaps.map((q) => ({ key: q.query, main: q.query, sub: path(q.page), stats: `pos ${pos(q.position)} · ${n0(q.impressions)} impr` }))}
+          rows={data.contentGaps.map((q) => ({
+            key: q.query,
+            main: q.query,
+            sub: path(q.page),
+            stats: `pos ${pos(q.position)} · ${n0(q.impressions)} impr`,
+          }))}
         />
         <ActionCard
           title="Pages Competing With Each Other"
           hint="Two or more of your pages splitting the same search. Link them, or fold one into the other, so Google has one clear answer."
           empty="No competing pages."
-          rows={data.competing.map((q) => ({ key: q.query, main: q.query, sub: q.pages.map((pg) => `${path(pg.page)} (${n0(pg.impressions)})`).join(' · '), stats: `${n0(q.impressions)} impr` }))}
+          rows={data.competing.map((q) => ({
+            key: q.query,
+            main: q.query,
+            sub: q.pages.map((pg) => `${path(pg.page)} (${n0(pg.impressions)})`).join(' · '),
+            stats: `${n0(q.impressions)} impr`,
+          }))}
         />
         <section className="fin-dash__card">
-          <h3 className="fin-dash__card-title">Rising &amp; Falling Pages</h3>
-          <p className="fin-dash__muted bee-spot__explain">Clicks (or impressions, when clicks didn’t move), last 28 days vs the 28 before.</p>
+          <DashTitle info={<p>Clicks (or impressions, when clicks didn’t move), last 28 days vs the 28 before.</p>}>Rising &amp; Falling Pages</DashTitle>
           {data.rising.length || data.falling.length ? (
             <ul className="bee-list">
               {[...data.rising.map((m) => ({ ...m, up: true })), ...data.falling.map((m) => ({ ...m, up: false }))].map((m) => (
@@ -199,10 +275,7 @@ function SearchBody({ data, onSync, syncing, msg }: { data: Loaded; onSync: () =
         </section>
 
         <section className="fin-dash__card fin-dash__card--full">
-          <h3 className="fin-dash__card-title">Indexing Watch</h3>
-          <p className="fin-dash__muted bee-spot__explain">
-            Pages in your sitemap changed in the last 30 days, checked with Google’s URL Inspection. Re-checked every couple of days until indexed.
-          </p>
+          <DashTitle info={<p>Pages in your sitemap changed in the last 30 days, checked with Google’s URL Inspection. Re-checked every couple of days until indexed.</p>}>Indexing Watch</DashTitle>
           {data.indexing.length ? (
             <>
               <p className="bee-gsc__index-summary">
@@ -229,7 +302,7 @@ function SearchBody({ data, onSync, syncing, msg }: { data: Loaded; onSync: () =
         </section>
 
         <section className="fin-dash__card fin-dash__card--full">
-          <h3 className="fin-dash__card-title">Top Searches (Last 28 Days)</h3>
+          <DashTitle info={<p>Google hides rare searches for privacy, so these add up to less than the total clicks.</p>}>Top Searches (Last 28 Days)</DashTitle>
           <div className="fin-dash__table-wrap">
             <table className="fin-dash__table bee-posts">
               <thead>
@@ -259,7 +332,6 @@ function SearchBody({ data, onSync, syncing, msg }: { data: Loaded; onSync: () =
               </tbody>
             </table>
           </div>
-          <p className="fin-dash__note">Google hides rare searches for privacy, so these add up to less than the total clicks.</p>
         </section>
 
         <section className="fin-dash__card fin-dash__card--full">
@@ -297,7 +369,7 @@ function SearchBody({ data, onSync, syncing, msg }: { data: Loaded; onSync: () =
         </section>
 
         <section className="fin-dash__card">
-          <h3 className="fin-dash__card-title">By Year</h3>
+          <DashTitle info={<p>Google keeps 16 months; MikeOS keeps every day it has pulled, so this grows from here.</p>}>By Year</DashTitle>
           <ul className="bee-list">
             {data.years.map((y) => (
               <li key={y.year} className="bee-list__row">
@@ -311,7 +383,6 @@ function SearchBody({ data, onSync, syncing, msg }: { data: Loaded; onSync: () =
               </li>
             ))}
           </ul>
-          <p className="fin-dash__note">Google keeps 16 months; MikeOS keeps every day it has pulled, so this grows from here.</p>
         </section>
         <section className="fin-dash__card">
           <h3 className="fin-dash__card-title">Devices &amp; Countries (28 Days)</h3>
@@ -335,7 +406,8 @@ function SearchBody({ data, onSync, syncing, msg }: { data: Loaded; onSync: () =
             </button>
           </div>
           <p className="fin-dash__muted">
-            {data.connection.connected ? `${data.connection.site} via ${data.connection.email}` : 'Disconnected — history is kept.'} · data through {fmtDate(data.connection.lastDate)} (Google runs ~2–3 days behind) · syncs nightly
+            {data.connection.connected ? `${data.connection.site} via ${data.connection.email}` : 'Disconnected — history is kept.'} · data through {fmtDate(data.connection.lastDate)} (Google runs
+            ~2–3 days behind) · syncs nightly
             {data.connection.lastSyncAt ? `, last ${new Date(data.connection.lastSyncAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}` : ''}.
           </p>
           {(msg || data.connection.lastError) && <p className="fin-dash__note">{msg ?? data.connection.lastError}</p>}
@@ -363,11 +435,10 @@ function ActionCard({ title, hint, empty, rows }: { title: string; hint: string;
   const shown = all ? rows : rows.slice(0, 6);
   return (
     <section className="fin-dash__card">
-      <h3 className="fin-dash__card-title">
+      <DashTitle info={<p>{hint}</p>}>
         {title}
         {rows.length ? <span className="fin-dash__muted"> · {rows.length}</span> : null}
-      </h3>
-      <p className="fin-dash__muted bee-spot__explain">{hint}</p>
+      </DashTitle>
       {rows.length ? (
         <ul className="bee-list">
           {shown.map((r) => (

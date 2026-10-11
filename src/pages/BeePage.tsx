@@ -1,3 +1,5 @@
+import { SectionPicker } from '../components/dash/SectionPicker';
+import { DashTitle } from '../components/dash/InfoTip';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { BeeSearchSection } from '../components/BeeSearchSection';
@@ -86,28 +88,19 @@ export function BeePage() {
           ⚙️
         </Link>
       </div>
-      <div className="bee-sources" role="tablist" aria-label="Source">
-        {(
-          [
-            ['social', 'Social'],
-            ['substack', 'Substack'],
-            ['search', 'SEO'],
-            ['website', 'Website'],
-            ['review', 'Year in Review'],
-          ] as const
-        ).map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            role="tab"
-            aria-selected={tab === key}
-            className={`btn btn--sm${tab === key ? ' is-active' : ' btn--ghost'}`}
-            onClick={() => setParams(key === 'social' ? {} : { tab: key }, { replace: true })}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <SectionPicker
+        className="bee-sources"
+        label="Source"
+        value={tab}
+        onChange={(key) => setParams(key === 'social' ? {} : { tab: key }, { replace: true })}
+        options={[
+          ['social', 'Social'],
+          ['substack', 'Substack'],
+          ['search', 'SEO'],
+          ['website', 'Website'],
+          ['review', 'Year in Review'],
+        ]}
+      />
       {tab === 'social' ? (
         <BeeSocialSection />
       ) : tab === 'review' ? (
@@ -185,7 +178,11 @@ function Substack({ data, onScan, scanning, scanMsg }: { data: BeeSubstack; onSc
             <Stat label="Subscribers" value={n0(data.list.total)} sub={`+${data.list.joined30d} in the last 30 days${data.list.left ? ` · ${data.list.left} left` : ''}`} swatch={TOTAL_COLOR} />
             <Stat label="Paid" value={n0(data.list.paid)} sub={moneyThisYear ? `${money(moneyThisYear.net)} net in ${thisYear}` : `${n0(data.list.free)} free`} swatch={PAID_COLOR} />
             <Stat label="Open Rate" value={pct(m.recentOpenRate)} sub={`Last 10 emails · typical ${pct(m.openRate)}`} />
-            <Stat label="Forwarders" value={n0(data.spotlight.forwarders.length)} sub={`${data.spotlight.superfans.length} superfans · ${data.spotlight.upgradeCandidates.length} upgrade candidates`} />
+            <Stat
+              label="Forwarders"
+              value={n0(data.spotlight.forwarders.length)}
+              sub={`${data.spotlight.superfans.length} superfans · ${data.spotlight.upgradeCandidates.length} upgrade candidates`}
+            />
           </div>
 
           <div className="fin-dash__grid">
@@ -224,16 +221,21 @@ function GrowthCard({ data }: { data: BeeSubstack }) {
       { name: 'All Subscribers', color: TOTAL_COLOR, step: true, points: data.growth.map((g) => ({ x: toMs(g.date), y: g.total })) },
       { name: 'Paid', color: PAID_COLOR, step: true, points: data.growth.map((g) => ({ x: toMs(g.date), y: g.paid })) },
     ],
-    [data.growth]
+    [data.growth],
   );
   return (
     <section className="fin-dash__card fin-dash__card--wide">
-      <h3 className="fin-dash__card-title">Subscribers Over Time</h3>
+      <DashTitle
+        info={
+          <p>
+            From each subscriber’s start and first paid dates. People who left only count from {data.firstSubscriberExport ? fmtDate(data.firstSubscriberExport) : 'the first export'} on — each monthly
+            subscriber export is compared with the one before.
+          </p>
+        }
+      >
+        Subscribers Over Time
+      </DashTitle>
       <FinanceLineChart series={series} formatY={(v) => n0(Math.round(v))} formatX={fmtAxis} ariaLabel="Bedford Bee subscribers and paid subscribers over time" />
-      <p className="fin-dash__note">
-        From each subscriber’s start and first paid dates. People who left only count from{' '}
-        {data.firstSubscriberExport ? fmtDate(data.firstSubscriberExport) : 'the first export'} on — each monthly subscriber export is compared with the one before.
-      </p>
     </section>
   );
 }
@@ -251,7 +253,9 @@ function GainedLostCard({ data }: { data: BeeSubstack }) {
               <th>Month</th>
               <th className="num">Free</th>
               <th className="num">Paid</th>
-              <th className="num" title="Free subscribers who started paying">Upgrades</th>
+              <th className="num" title="Free subscribers who started paying">
+                Upgrades
+              </th>
               <th className="num">Left</th>
             </tr>
           </thead>
@@ -352,7 +356,17 @@ function PostsCard({ data }: { data: BeeSubstack }) {
   const med = data.postMedians;
   const years = [...new Set(data.posts.map((p) => p.date.slice(0, 4)))].sort().reverse();
   const score = (p: BeePost): number =>
-    sort === 'openRate' ? p.openRate ?? -1 : sort === 'ratio' ? p.ratio ?? -1 : sort === 'views' ? p.views : sort === 'engagement' ? p.likes + p.comments + p.shares + p.restacks : sort === 'paid' ? p.signups + p.paid * 10 : toMs(p.date);
+    sort === 'openRate'
+      ? (p.openRate ?? -1)
+      : sort === 'ratio'
+        ? (p.ratio ?? -1)
+        : sort === 'views'
+          ? p.views
+          : sort === 'engagement'
+            ? p.likes + p.comments + p.shares + p.restacks
+            : sort === 'paid'
+              ? p.signups + p.paid * 10
+              : toMs(p.date);
   const list = data.posts
     .filter((p) => (year === 'all' || p.date.startsWith(year)) && (!q.trim() || p.title.toLowerCase().includes(q.trim().toLowerCase())))
     .filter((p) => sort === 'date' || sort === 'views' || sort === 'engagement' || (p.emailed && p.delivered >= 20))
@@ -362,7 +376,16 @@ function PostsCard({ data }: { data: BeeSubstack }) {
   return (
     <section className="fin-dash__card fin-dash__card--full">
       <div className="fin-dash__card-head bee-posts__head">
-        <h3 className="fin-dash__card-title">Posts</h3>
+        <DashTitle
+          info={
+            <p>
+              Typical post: {pct(med.openRate)} open rate, {x1(med.ratio)} opens per reader. ▲ / ▼ mark posts well above or below that. Apple Mail’s automatic opens inflate every open rate, so compare
+              posts with each other rather than reading it as an exact count. Sorting by a rate leaves out web-only posts and sends to fewer than 20 people.
+            </p>
+          }
+        >
+          Posts
+        </DashTitle>
         <div className="ally__txn-tools bee-posts__controls">
           <input placeholder="Search Titles" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search post titles" />
           <select value={year} onChange={(e) => setYear(e.target.value)} aria-label="Year">
@@ -441,10 +464,6 @@ function PostsCard({ data }: { data: BeeSubstack }) {
           Show More ({list.length - limit} left)
         </button>
       )}
-      <p className="fin-dash__note">
-        Typical post: {pct(med.openRate)} open rate, {x1(med.ratio)} opens per reader. ▲ / ▼ mark posts well above or below that. Apple Mail’s automatic opens inflate every open rate, so compare posts with each
-        other rather than reading it as an exact count. Sorting by a rate leaves out web-only posts and sends to fewer than 20 people.
-      </p>
     </section>
   );
 }
@@ -476,22 +495,21 @@ function SpotlightCard({ data }: { data: BeeSubstack }) {
   return (
     <section className="fin-dash__card fin-dash__card--full">
       <div className="fin-dash__card-head">
-        <h3 className="fin-dash__card-title">Subscriber Spotlight</h3>
-        <div className="ally__range bee-tabs" role="tablist" aria-label="Spotlight list">
-          {tabs.map((t) => (
-            <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} className={`btn btn--sm${tab === t.key ? ' is-active' : ' btn--ghost'}`} onClick={() => setTab(t.key)}>
-              {t.label} ({t.n})
-            </button>
-          ))}
-        </div>
+        <DashTitle
+          info={
+            <p>
+              {tab === 'forwarders'
+                ? `Opens per email well above the list’s typical ${x1(s.medianRatio)} (last 6 months). A forwarded email re-opens the tracking pixel for every reader it reaches. Burst = opens only some emails, many times each — likely passing favorites to a group.`
+                : tab === 'superfans'
+                  ? 'Highest engagement: share of emails read, days active, clicks, shares, comments and post views.'
+                  : 'Free subscribers among your superfans — the likeliest next paid members.'}
+            </p>
+          }
+        >
+          Subscriber Spotlight
+        </DashTitle>
+        <SectionPicker label="Spotlight list" value={tab} onChange={setTab} options={tabs.map((t) => [t.key, `${t.label} (${t.n})`] as const)} />
       </div>
-      <p className="fin-dash__muted bee-spot__explain">
-        {tab === 'forwarders'
-          ? `Opens per email well above the list’s typical ${x1(s.medianRatio)} (last 6 months). A forwarded email re-opens the tracking pixel for every reader it reaches. Burst = opens only some emails, many times each — likely passing favorites to a group.`
-          : tab === 'superfans'
-            ? 'Highest engagement: share of emails read, days active, clicks, shares, comments and post views.'
-            : 'Free subscribers among your superfans — the likeliest next paid members.'}
-      </p>
       {list.length ? (
         <div className="fin-dash__table-wrap">
           <table className="fin-dash__table bee-spot">
@@ -517,7 +535,8 @@ function SpotlightCard({ data }: { data: BeeSubstack }) {
         <p className="fin-dash__muted">Nobody here yet.</p>
       )}
       <p className="fin-dash__note">
-        {s.dormant.neverOpened} subscriber{s.dormant.neverOpened === 1 ? ' hasn’t' : 's haven’t'} opened an email in 6 months; {s.dormant.quiet30d} opened nothing in the last 30 days. Each name opens their contact card.
+        {s.dormant.neverOpened} subscriber{s.dormant.neverOpened === 1 ? ' hasn’t' : 's haven’t'} opened an email in 6 months; {s.dormant.quiet30d} opened nothing in the last 30 days. Each name opens
+        their contact card.
       </p>
     </section>
   );
@@ -533,7 +552,10 @@ function SpotRow({ p }: { p: BeeSpotlightPerson }) {
           {p.forwarder && <span className="bee-badge bee-badge--fwd">{p.forwarder === 'burst' ? 'Burst Forwarder' : 'Steady Forwarder'}</span>}
           {p.superfan && <span className="bee-badge">Superfan</span>}
           {p.inflated && p.forwarder && (
-            <span className="bee-badge bee-badge--muted" title={p.inflated === 'work' ? 'Work email — a security scanner can add opens' : 'Apple Mail — automatic opens and several devices can add opens'}>
+            <span
+              className="bee-badge bee-badge--muted"
+              title={p.inflated === 'work' ? 'Work email — a security scanner can add opens' : 'Apple Mail — automatic opens and several devices can add opens'}
+            >
               {p.inflated === 'work' ? 'Work Email' : 'Apple Mail'} · May Be Inflated
             </span>
           )}
@@ -586,7 +608,16 @@ function MoneyCard({ data }: { data: BeeSubstack }) {
   ];
   return (
     <section className="fin-dash__card fin-dash__card--full">
-      <h3 className="fin-dash__card-title">Paid Subscriptions &amp; Taxes</h3>
+      <DashTitle
+        info={
+          <p>
+            Stripe combines Substack’s 10% and card processing in one fee — split here. Stripe Billing’s 0.7% usage fee (plus tax) posts the day after each charge. Each year’s numbers also go to that
+            year’s Tax Packet in Vault. I’m not a tax advisor — your accountant decides how to report it.
+          </p>
+        }
+      >
+        Paid Subscriptions &amp; Taxes
+      </DashTitle>
       <div className="fin-dash__table-wrap">
         <table className="fin-dash__table bee-money">
           <thead>
@@ -614,10 +645,7 @@ function MoneyCard({ data }: { data: BeeSubstack }) {
           </tbody>
         </table>
       </div>
-      <p className="fin-dash__note">
-        {money(data.money.balance)} still in Stripe, not yet paid out. Stripe combines Substack’s 10% and card processing in one fee — split here. Stripe Billing’s 0.7% usage fee (plus tax) posts the day after each
-        charge. Each year’s numbers also go to that year’s Tax Packet in Vault. I’m not a tax advisor — your accountant decides how to report it.
-      </p>
+      <p className="fin-dash__note">{money(data.money.balance)} still in Stripe, not yet paid out.</p>
       <button type="button" className="btn btn--ghost btn--sm" onClick={() => setShowCharges((v) => !v)}>
         {showCharges ? 'Hide Charges' : `Show All ${data.money.charges.length} Charges`}
       </button>
@@ -638,7 +666,7 @@ function MoneyCard({ data }: { data: BeeSubstack }) {
               {data.money.charges.map((c) => (
                 <tr key={c.id}>
                   <td>{fmtDate(c.date)}</td>
-                  <td>{/creation/i.test(c.description ?? '') ? 'New' : /update/i.test(c.description ?? '') ? 'Renewal / Change' : c.description ?? c.type}</td>
+                  <td>{/creation/i.test(c.description ?? '') ? 'New' : /update/i.test(c.description ?? '') ? 'Renewal / Change' : (c.description ?? c.type)}</td>
                   <td className="num">{money(c.amount)}</td>
                   <td className="num fin-dash__muted">{money(-c.fee)}</td>
                   <td className="num">{money(c.net)}</td>
@@ -662,14 +690,7 @@ function YearCard({ data }: { data: BeeSubstack }) {
     <section className="fin-dash__card fin-dash__card--full">
       <div className="fin-dash__card-head">
         <h3 className="fin-dash__card-title">Year in Review</h3>
-        <div className="ally__range bee-tabs" role="tablist" aria-label="Year">
-          {data.years.map((r) => (
-            <button key={r.year} type="button" role="tab" aria-selected={year === r.year} className={`btn btn--sm${year === r.year ? ' is-active' : ' btn--ghost'}`} onClick={() => setYear(r.year)}>
-              {r.year}
-              {r.partial ? ' (So Far)' : ''}
-            </button>
-          ))}
-        </div>
+        <SectionPicker label="Year" value={String(year)} onChange={(v) => setYear(Number(v))} options={data.years.map((r) => [String(r.year), `${r.year}${r.partial ? ' (So Far)' : ''}`] as const)} />
       </div>
       <div className="bee-year">
         <YearFact label="Posts" value={n0(y.posts)} sub={`${y.emailedPosts} emailed`} />
@@ -735,10 +756,12 @@ function FilesCard({ data, onScan, scanning, scanMsg }: { data: BeeSubstack; onS
             {data.settings.folderName ?? 'Bedford Bee'}
           </a>
         ) : (
-          data.settings.folderName ?? 'Bedford Bee'
+          (data.settings.folderName ?? 'Bedford Bee')
         )}{' '}
-        in Google Drive{data.settings.lastScanAt ? ` · last checked ${new Date(data.settings.lastScanAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}` : ''} · nightly. Each month add a
-        new posts, subscriber and Stripe export (all time) named “YYYY.MM.DD - Bedford Bee - Posts/Subscribers/Stripe.csv” — never delete old subscriber files; comparing them is how people who leave are found.
+        in Google Drive
+        {data.settings.lastScanAt ? ` · last checked ${new Date(data.settings.lastScanAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}` : ''} ·
+        nightly. Each month add a new posts, subscriber and Stripe export (all time) named “YYYY.MM.DD - Bedford Bee - Posts/Subscribers/Stripe.csv” — never delete old subscriber files; comparing them
+        is how people who leave are found.
       </p>
       {scanMsg && <p className="fin-dash__note">{scanMsg}</p>}
       {data.settings.lastError && <p className="fin-dash__note fin-dash__neg">{data.settings.lastError}</p>}
@@ -755,7 +778,7 @@ function FilesCard({ data, onScan, scanning, scanMsg }: { data: BeeSubstack; onS
               )}
             </span>
             <span className={`bee-list__meta${f.status === 'failed' ? ' fin-dash__neg' : ''}`}>
-              {KIND_LABEL[f.kind]} · {f.status === 'parsed' ? `${f.rows ?? 0} rows · ${fmtDate(f.exportDate)}` : f.error ?? f.status}
+              {KIND_LABEL[f.kind]} · {f.status === 'parsed' ? `${f.rows ?? 0} rows · ${fmtDate(f.exportDate)}` : (f.error ?? f.status)}
             </span>
           </li>
         ))}

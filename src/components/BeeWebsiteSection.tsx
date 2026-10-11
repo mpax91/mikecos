@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { DashTitle } from './dash/InfoTip';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import type { BeeAnalytics } from '../api/types';
@@ -40,7 +41,11 @@ export function BeeWebsiteSection() {
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
-  const load = () => api.getBeeAnalytics().then(setData).catch((e: Error) => setError(e.message));
+  const load = () =>
+    api
+      .getBeeAnalytics()
+      .then(setData)
+      .catch((e: Error) => setError(e.message));
   useEffect(() => {
     load();
   }, []);
@@ -70,17 +75,15 @@ export function BeeWebsiteSection() {
         <div className="fin-dash__card">
           {c.connected && c.property ? (
             <>
-              <p>
-                Google Analytics is connected ({c.propertyName}). Pull its history:
-              </p>
+              <p>Google Analytics is connected ({c.propertyName}). Pull its history:</p>
               <button type="button" className="btn btn--sm" onClick={sync} disabled={syncing}>
                 {syncing ? 'Syncing… (a minute or two the first time)' : 'Sync Now'}
               </button>
             </>
           ) : c.connected && !c.hasScope ? (
             <p>
-              Your Google connection was made before Analytics was added. Click <strong>Reconnect</strong> in <Link to="/settings?cat=bee">Settings → Bedford Bee</Link> and allow “See and download your Google
-              Analytics data.”
+              Your Google connection was made before Analytics was added. Click <strong>Reconnect</strong> in <Link to="/settings?cat=bee">Settings → Bedford Bee</Link> and allow “See and download
+              your Google Analytics data.”
             </p>
           ) : c.connected ? (
             <p>Connected, but no Google Analytics property for thebedfordbee.com was found on {c.email}. Make sure that account has access to the property, then Reconnect.</p>
@@ -107,7 +110,7 @@ function WebsiteBody({ data, onSync, syncing, msg }: { data: Loaded; onSync: () 
       { name: 'All Visits', color: TOTAL_COLOR, points: months.map((m) => ({ x: toMs(`${m.month}-15`), y: m.sessions })) },
       { name: 'From Social', color: SOCIAL_COLOR, points: months.map((m) => ({ x: toMs(`${m.month}-15`), y: m.social })) },
     ],
-    [months]
+    [months],
   );
   const visitsCh = change(p.now.sessions, p.prev.sessions);
   const visitorsCh = p.visitors && p.prevVisitors ? change(p.visitors.users, p.prevVisitors.users) : { text: '', tone: '' as const };
@@ -143,13 +146,14 @@ function WebsiteBody({ data, onSync, syncing, msg }: { data: Loaded; onSync: () 
 
       <div className="fin-dash__grid">
         <section className="fin-dash__card">
-          <h3 className="fin-dash__card-title">Visits by Month</h3>
+          <DashTitle info={<p>A visit = a GA4 session. The current month joins the chart once it has 20 days of data.</p>}>Visits by Month</DashTitle>
           <FinanceLineChart series={series} formatY={n0} formatX={fmtAxis} ariaLabel="Website visits per month, all and from social media" />
-          <p className="fin-dash__note">A visit = a GA4 session. The current month joins the chart once it has 20 days of data.</p>
         </section>
 
         <section className="fin-dash__card">
-          <h3 className="fin-dash__card-title">Local Reach</h3>
+          <DashTitle info={<p>Towns counted: {local.towns.join(', ')}. GA guesses city from the internet provider, so some locals show as nearby hubs (White Plains, New York).</p>}>
+            Local Reach
+          </DashTitle>
           <div className="bee-big">{pct(local.now.share)}</div>
           <p className="fin-dash__muted">
             of visits from Bedford-area towns in the last 28 days ({n0(local.now.local)} of {n0(local.now.total)}){local.prev.share !== null ? ` · prior 28 days ${pct(local.prev.share)}` : ''}.
@@ -166,11 +170,19 @@ function WebsiteBody({ data, onSync, syncing, msg }: { data: Loaded; onSync: () 
               </li>
             ))}
           </ul>
-          <p className="fin-dash__note">Towns counted: {local.towns.join(', ')}. GA guesses city from the internet provider, so some locals show as nearby hubs (White Plains, New York).</p>
         </section>
 
         <section className="fin-dash__card fin-dash__card--full">
-          <h3 className="fin-dash__card-title">Where Visitors Come From</h3>
+          <DashTitle
+            info={
+              <p>
+                Facebook and Instagram app visits often arrive without a referrer and land in Direct. Tag the links you post (for example <code>?utm_source=facebook&amp;utm_medium=social</code>) to
+                count them exactly.
+              </p>
+            }
+          >
+            Where Visitors Come From
+          </DashTitle>
           <div className="fin-dash__table-wrap">
             <table className="fin-dash__table bee-posts">
               <thead>
@@ -204,14 +216,10 @@ function WebsiteBody({ data, onSync, syncing, msg }: { data: Loaded; onSync: () 
               </tbody>
             </table>
           </div>
-          <p className="fin-dash__note">
-            Facebook and Instagram app visits often arrive without a referrer and land in Direct. Tag the links you post (for example <code>?utm_source=facebook&amp;utm_medium=social</code>) to count them exactly.
-          </p>
         </section>
 
         <section className="fin-dash__card">
-          <h3 className="fin-dash__card-title">Clicks to Your Substack</h3>
-          <p className="fin-dash__muted bee-spot__explain">Outbound clicks from the website to Substack (last 90 days) — which pages send readers toward subscribing.</p>
+          <DashTitle info={<p>Outbound clicks from the website to Substack (last 90 days) — which pages send readers toward subscribing.</p>}>Clicks to Your Substack</DashTitle>
           {data.subscribeClicks.length ? (
             <ul className="bee-list">
               {data.subscribeClicks.map((s) => (
@@ -230,8 +238,9 @@ function WebsiteBody({ data, onSync, syncing, msg }: { data: Loaded; onSync: () 
         </section>
 
         <section className="fin-dash__card">
-          <h3 className="fin-dash__card-title">Do Google Visitors Stay?</h3>
-          <p className="fin-dash__muted bee-spot__explain">Pages people land on from Google Search (last 90 days, 10+ visits). A low engaged share means the page doesn’t deliver what the search promised.</p>
+          <DashTitle info={<p>Pages people land on from Google Search (last 90 days, 10+ visits). A low engaged share means the page doesn’t deliver what the search promised.</p>}>
+            Do Google Visitors Stay?
+          </DashTitle>
           {data.searchLanding.length ? (
             <ul className="bee-list">
               {data.searchLanding.map((s) => (
@@ -283,7 +292,7 @@ function WebsiteBody({ data, onSync, syncing, msg }: { data: Loaded; onSync: () 
         </section>
 
         <section className="fin-dash__card">
-          <h3 className="fin-dash__card-title">Best Days &amp; Times (90 Days)</h3>
+          <DashTitle info={<p>In the GA property’s time zone.</p>}>Best Days &amp; Times (90 Days)</DashTitle>
           <div className="bee-bars">
             {data.bestDays.map((d) => (
               <div key={d.day} className="bee-bars__row bee-bars__row--static">
@@ -309,7 +318,6 @@ function WebsiteBody({ data, onSync, syncing, msg }: { data: Loaded; onSync: () 
               </div>
             ))}
           </div>
-          <p className="fin-dash__note">In the GA property’s time zone.</p>
         </section>
 
         <section className="fin-dash__card">
@@ -335,8 +343,7 @@ function WebsiteBody({ data, onSync, syncing, msg }: { data: Loaded; onSync: () 
           </ul>
           {p.visitorsThisYear && (
             <p className="fin-dash__note">
-              Unique visitors this year: {n0(p.visitorsThisYear.users)}
-              {p.visitorsLastYear?.users ? ` · last year: ${n0(p.visitorsLastYear.users)}` : ''}.
+              Unique visitors this year: {n0(p.visitorsThisYear.users)} {p.visitorsLastYear?.users ? ` · last year: ${n0(p.visitorsLastYear.users)}` : ''}.
             </p>
           )}
         </section>

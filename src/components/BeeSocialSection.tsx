@@ -6,6 +6,11 @@ import { FinanceLineChart } from './FinanceLineChart';
 import type { LineSeries } from './FinanceLineChart';
 import { apiError } from './BeeMicrosoftSections';
 import { BeeStoriesView } from './BeeStoriesView';
+import { SectionPicker } from './dash/SectionPicker';
+import { RangePicker } from './dash/RangePicker';
+import { InfoTip, DashTitle } from './dash/InfoTip';
+import { DetailSheet } from './dash/DetailSheet';
+import { type DateRange, resolveRange, previousRange, inRange, rangeText, nyToday, nyDay, daysBetween, bucketFor, bucketsIn, bucketStart, dayMs, addDays } from '../utils/dateRange';
 
 /** Bedford Bee → Social (Facebook + Instagram). Rules in
  * worker/src/bee/social.ts. Likes, views, comments and shares lead every
@@ -19,19 +24,34 @@ const toMs = (iso: string) => {
   const [y, m, d] = iso.slice(0, 10).split('-').map(Number);
   return new Date(y, m - 1, d).getTime();
 };
-const fmtDate = (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'America/New_York' });
-const fmtShort = (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' });
+const fmtDate = (iso: string) =>
+  new Date(iso).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'America/New_York',
+  });
+const fmtShort = (iso: string) =>
+  new Date(iso).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'America/New_York',
+  });
 const fmtAxis = (ms: number) => new Date(ms).toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
-const PLAT: Record<string, string> = { fb: 'Facebook', ig: 'Instagram', all: 'Both' };
+const PLAT: Record<string, string> = {
+  fb: 'Facebook',
+  ig: 'Instagram',
+  all: 'Both',
+};
 const CORE: BeeMetric[] = ['views', 'likes', 'comments', 'shares'];
-const LABEL: Record<BeeMetric, string> = { views: 'Views', likes: 'Likes', comments: 'Comments', shares: 'Shares', saves: 'Saves' };
+const LABEL: Record<BeeMetric, string> = {
+  views: 'Views',
+  likes: 'Likes',
+  comments: 'Comments',
+  shares: 'Shares',
+  saves: 'Saves',
+};
 const headline = (t: string | null) => (t ?? '').split('\n')[0].trim() || '(no text)';
-function change(now: number, prev: number) {
-  if (!prev) return now ? { text: 'new', tone: 'up' as const } : { text: '', tone: '' as const };
-  const d = (now - prev) / prev;
-  if (Math.abs(d) < 0.05) return { text: 'about the same', tone: '' as const };
-  return { text: `${d > 0 ? '+' : '−'}${Math.abs(d * 100).toFixed(0)}% vs prior 28 days`, tone: d > 0 ? ('up' as const) : ('down' as const) };
-}
 const tone = (r: number | null | undefined) => (r == null ? '' : r >= 1.5 ? ' bee-delta--up' : r <= 0.6 ? ' bee-delta--down' : '');
 
 export function BeeSocialSection() {
@@ -39,7 +59,11 @@ export function BeeSocialSection() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
-  const load = () => api.getBeeSocial().then(setData).catch((e: Error) => setError(e.message));
+  const load = () =>
+    api
+      .getBeeSocial()
+      .then(setData)
+      .catch((e: Error) => setError(e.message));
   useEffect(() => {
     load();
   }, []);
@@ -89,239 +113,498 @@ export function BeeSocialSection() {
 }
 
 type Loaded = Extract<BeeSocial, { empty: false }>;
+type Plat = 'all' | 'fb' | 'ig';
+type Totals = {
+  posts: number;
+  views: number;
+  likes: number;
+  comments: number;
+  shares: number;
+  saves: number;
+};
+type TileKey = 'views' | 'likes' | 'comments' | 'shares' | 'posts';
+const TILES: TileKey[] = ['views', 'likes', 'comments', 'shares', 'posts'];
+const TILE_LABEL: Record<TileKey, string> = {
+  ...LABEL,
+  posts: 'Posts',
+} as Record<TileKey, string>;
+
+function sumPosts(ps: BeeSocialPost[]): Totals {
+  const t: Totals = {
+    posts: ps.length,
+    views: 0,
+    likes: 0,
+    comments: 0,
+    shares: 0,
+    saves: 0,
+  };
+  for (const p of ps) for (const k of ['views', 'likes', 'comments', 'shares', 'saves'] as const) t[k] += p[k] ?? 0;
+  return t;
+}
+function changeVs(now: number, prev: number | null, label: string | null) {
+  if (prev == null || label == null) return { text: '', tone: '' as const };
+  if (!prev) return now ? { text: `new vs ${label}`, tone: 'up' as const } : { text: '', tone: '' as const };
+  const d = (now - prev) / prev;
+  if (Math.abs(d) < 0.05) return { text: `≈ ${label}`, tone: '' as const };
+  return {
+    text: `${d > 0 ? '+' : '−'}${Math.abs(d * 100).toFixed(0)}% vs ${label}`,
+    tone: d > 0 ? ('up' as const) : ('down' as const),
+  };
+}
+const postDay = (p: BeeSocialPost) => nyDay(p.createdAt);
+
+/** What the open drill-down sheet shows. */
+type Sheet = { kind: 'metric'; metric: TileKey } | { kind: 'post'; post: BeeSocialPost } | { kind: 'posts'; title: string; sub?: string; posts: BeeSocialPost[] };
 
 function SocialBody({ data, onSync, busy, msg, onReload }: { data: Loaded; onSync: () => void; busy: boolean; msg: string | null; onReload: () => void }) {
-  const [plat, setPlat] = useState<'all' | 'fb' | 'ig'>('all');
-  const now = data.period.now[plat];
-  const prev = data.period.prev[plat];
+  const today = nyToday();
+  const earliest = nyDay(data.range.from);
+  const [range, setRange] = useState<DateRange>(() => resolveRange('28d', today, earliest));
+  const [plat, setPlat] = useState<Plat>('all');
+  const [sheet, setSheet] = useState<Sheet | null>(null);
+  const prevR = previousRange(range);
+  const platPosts = useMemo(() => data.posts.filter((p) => plat === 'all' || p.platform === plat), [data.posts, plat]);
+  const inR = useMemo(() => platPosts.filter((p) => inRange(postDay(p), range)), [platPosts, range]);
+  const inPrev = useMemo(() => (prevR ? platPosts.filter((p) => inRange(postDay(p), prevR)) : []), [platPosts, prevR]);
+  const now = sumPosts(inR);
+  const prev = prevR ? sumPosts(inPrev) : null;
+  // keep an open post's numbers fresh after a tag save reloads data
+  const openPost = (post: BeeSocialPost) => setSheet({ kind: 'post', post });
+
   const fbSeries = data.followers.fb.series;
   const igSeries = data.followers.ig.series;
   const followers = useMemo<LineSeries[]>(
     () =>
       [
-        fbSeries.length > 1 && { name: 'Facebook', color: FB_COLOR, points: fbSeries.map((p) => ({ x: toMs(p.date), y: p.value })) },
-        igSeries.length > 1 && { name: 'Instagram', color: IG_COLOR, points: igSeries.map((p) => ({ x: toMs(p.date), y: p.value })) },
+        fbSeries.length > 1 && {
+          name: 'Facebook',
+          color: FB_COLOR,
+          points: fbSeries.map((p) => ({ x: toMs(p.date), y: p.value })),
+        },
+        igSeries.length > 1 && {
+          name: 'Instagram',
+          color: IG_COLOR,
+          points: igSeries.map((p) => ({ x: toMs(p.date), y: p.value })),
+        },
       ].filter(Boolean) as LineSeries[],
-    [fbSeries, igSeries]
+    [fbSeries, igSeries],
   );
   return (
     <section className="bee-section">
-      <div className="bee-section__head">
-        <h2 className="bee-section__title">Social</h2>
-        <span className="fin-dash__muted">
-          {data.range.fbPosts} Facebook · {data.range.igPosts} Instagram posts since {fmtDate(data.range.from)}
+      <div className="dash-controls">
+        <RangePicker value={range} onChange={setRange} today={today} earliest={earliest} />
+        <SectionPicker
+          label="Platform"
+          value={plat}
+          onChange={setPlat}
+          options={[
+            ['all', 'Both Platforms'],
+            ['fb', 'Facebook'],
+            ['ig', 'Instagram'],
+          ]}
+        />
+        <span className="dash-controls__range-text">
+          {rangeText(range)}
+          {prevR ? ` · vs ${rangeText(prevR)}` : ''}{' '}
+          <InfoTip label="About these totals">
+            <p>Totals are the lifetime views, likes, comments and shares of the posts published in this date range — a post from last week keeps counting its views here as they grow.</p>
+            <p>The comparison is the same-length stretch just before (for Year to Date, the same dates last year).</p>
+            <p>
+              History: {data.range.fbPosts} Facebook and {data.range.igPosts} Instagram posts since {fmtDate(data.range.from)}. Tap any number for the detail.
+            </p>
+          </InfoTip>
         </span>
-        <div className="ally__range bee-tabs bee-social__plat" role="tablist" aria-label="Platform">
-          {(['all', 'fb', 'ig'] as const).map((p) => (
-            <button key={p} type="button" role="tab" aria-selected={plat === p} className={`btn btn--sm${plat === p ? ' is-active' : ' btn--ghost'}`} onClick={() => setPlat(p)}>
-              {PLAT[p]}
-            </button>
-          ))}
-        </div>
       </div>
 
-      <div className="fin-dash__stats">
-        {CORE.map((m) => {
-          const ch = change(now[m], prev[m]);
-          return <Stat key={m} label={LABEL[m]} value={n0(now[m])} sub={`${ch.text || `${now.posts} posts`}`} tone={ch.tone} />;
+      <div className="fin-dash__stats fin-dash__stats--5">
+        {TILES.map((m) => {
+          const ch = changeVs(now[m], prev ? prev[m] : null, prevR ? (range.key === 'ytd' ? 'last year' : prevR.label) : null);
+          const sub = ch.text || (m === 'posts' ? `${(now.posts / Math.max(1, daysBetween(range.from, range.to))).toFixed(1)} a day` : now.posts ? `${n0(now[m] / now.posts)} per post` : '');
+          return (
+            <button key={m} type="button" className="fin-dash__stat" onClick={() => setSheet({ kind: 'metric', metric: m })}>
+              <span className="fin-dash__stat-label">{TILE_LABEL[m]}</span>
+              <span className="fin-dash__stat-value">{compact(now[m])}</span>
+              {sub && <span className={`fin-dash__stat-sub${ch.tone === 'up' ? ' bee-delta--up' : ch.tone === 'down' ? ' bee-delta--down' : ''}`}>{sub}</span>}
+            </button>
+          );
         })}
       </div>
-      <p className="fin-dash__muted bee-social__sub">
-        Last 28 days · {now.posts} posts · per post: {n0(now.posts ? now.views / now.posts : null)} views, {n0(now.posts ? now.likes / now.posts : null)} likes, {(now.posts ? now.comments / now.posts : 0).toFixed(1)} comments,{' '}
-        {(now.posts ? now.shares / now.posts : 0).toFixed(1)} shares
-      </p>
 
       <div className="fin-dash__grid">
-        <PostScorecards data={data} plat={plat} onReload={onReload} />
-        <WeeklyCard data={data} plat={plat} />
-        <DayOfWeekCard data={data} plat={plat} />
-        <WhatWorksCard data={data} plat={plat} />
+        <PostScorecards posts={inR} plat={plat} range={range} onOpen={openPost} />
+        <WeeklyCard data={data} plat={plat} range={range} onOpenWeek={(title, sub, posts) => setSheet({ kind: 'posts', title, sub, posts })} />
+        <DayOfWeekCard
+          data={data}
+          plat={plat}
+          onOpenDay={(title, posts) =>
+            setSheet({
+              kind: 'posts',
+              title,
+              sub: 'Posts at least a week old, last 12 months',
+              posts,
+            })
+          }
+        />
+        <WhatWorksCard
+          data={data}
+          plat={plat}
+          onOpenGroup={(title, posts) =>
+            setSheet({
+              kind: 'posts',
+              title,
+              sub: `${posts.length} posts, last 12 months`,
+              posts,
+            })
+          }
+        />
         <section className="fin-dash__card fin-dash__card--full">
-          <h3 className="fin-dash__card-title">Followers</h3>
+          <DashTitle info={<p>Instagram only shares the last 30 days of follower history, so its line starts when MikeOS began saving it.</p>}>Followers</DashTitle>
           <div className="fin-dash__stats bee-social__mini">
-            <Stat label="Facebook" value={n0(data.followers.fb.now)} />
-            <Stat label="Instagram" value={n0(data.followers.ig.now)} sub={data.followers.ig.newLast30 ? `+${n0(data.followers.ig.newLast30)} new in 30 days` : undefined} />
+            <div className="fin-dash__stat">
+              <span className="fin-dash__stat-label">Facebook</span>
+              <span className="fin-dash__stat-value">{n0(data.followers.fb.now)}</span>
+            </div>
+            <div className="fin-dash__stat">
+              <span className="fin-dash__stat-label">Instagram</span>
+              <span className="fin-dash__stat-value">{n0(data.followers.ig.now)}</span>
+              {data.followers.ig.newLast30 ? <span className="fin-dash__stat-sub">+{n0(data.followers.ig.newLast30)} in 30 days</span> : null}
+            </div>
           </div>
-          {followers.length ? (
-            <FinanceLineChart series={followers} formatY={n0} formatX={fmtAxis} ariaLabel="Facebook and Instagram followers over time" yFromZero={false} />
-          ) : (
-            <p className="fin-dash__muted">Follower history builds from here — Instagram only shares the last 30 days.</p>
-          )}
-        </section>
-        <section className="fin-dash__card fin-dash__card--full">
-          <div className="fin-dash__card-head">
-            <h3 className="fin-dash__card-title">Meta Connection</h3>
-            <button type="button" className="btn btn--ghost btn--sm" onClick={onSync} disabled={busy}>
-              {busy ? 'Syncing…' : 'Sync Now'}
-            </button>
-          </div>
-          <p className="fin-dash__muted">
-            {data.connection.page}
-            {data.connection.instagram ? ` · @${data.connection.instagram}` : ' · no Instagram linked'} · full sync nightly, new posts hourly
-            {data.connection.lastRecentAt ? ` (last ${new Date(data.connection.lastRecentAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })})` : ''}.
-          </p>
-          {(msg || data.connection.lastError) && <p className="fin-dash__note">{msg ?? data.connection.lastError}</p>}
+          {followers.length > 0 && <FinanceLineChart series={followers} formatY={n0} formatX={fmtAxis} ariaLabel="Facebook and Instagram followers over time" yFromZero={false} />}
         </section>
       </div>
+
+      <div className="dash-footer">
+        <span>
+          {data.connection.page}
+          {data.connection.instagram ? ` · @${data.connection.instagram}` : ' · no Instagram linked'}
+          {data.connection.lastRecentAt ? ` · synced ${new Date(data.connection.lastRecentAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}` : ''}
+        </span>
+        <InfoTip label="About syncing">
+          <p>Full sync from Meta every night; new posts every hour.</p>
+        </InfoTip>
+        <button type="button" className="btn btn--ghost btn--sm" onClick={onSync} disabled={busy}>
+          {busy ? 'Syncing…' : 'Sync Now'}
+        </button>
+        {(msg || data.connection.lastError) && <span className="fin-dash__note">{msg ?? data.connection.lastError}</span>}
+      </div>
+
+      {sheet?.kind === 'metric' && <MetricSheet metric={sheet.metric} posts={inR} prevPosts={inPrev} range={range} prevR={prevR} plat={plat} onClose={() => setSheet(null)} onOpenPost={openPost} />}
+      {sheet?.kind === 'posts' && (
+        <DetailSheet title={sheet.title} sub={sheet.sub} onClose={() => setSheet(null)}>
+          <PostCardList posts={sheet.posts} onOpen={openPost} alwaysCards />
+        </DetailSheet>
+      )}
+      {sheet?.kind === 'post' && (
+        <DetailSheet title={headline(sheet.post.text)} onClose={() => setSheet(null)}>
+          <Scorecard p={data.posts.find((x) => x.platform === sheet.post.platform && x.id === sheet.post.id) ?? sheet.post} data={data} onReload={onReload} />
+        </DetailSheet>
+      )}
     </section>
+  );
+}
+
+const compact = (n: number) => (n >= 100000 ? `${(n / 1000).toFixed(0)}K` : n >= 10000 ? `${(n / 1000).toFixed(1)}K` : Math.round(n).toLocaleString('en-US'));
+
+function MetricSheet({
+  metric,
+  posts,
+  prevPosts,
+  range,
+  prevR,
+  plat,
+  onClose,
+  onOpenPost,
+}: {
+  metric: TileKey;
+  posts: BeeSocialPost[];
+  prevPosts: BeeSocialPost[];
+  range: DateRange;
+  prevR: { from: string; to: string; label: string } | null;
+  plat: Plat;
+  onClose: () => void;
+  onOpenPost: (p: BeeSocialPost) => void;
+}) {
+  const val = (ps: BeeSocialPost[]) => (metric === 'posts' ? ps.length : ps.reduce((s, p) => s + (p[metric] ?? 0), 0));
+  const total = val(posts);
+  const prevTotal = prevR ? val(prevPosts) : null;
+  const fb = posts.filter((p) => p.platform === 'fb');
+  const ig = posts.filter((p) => p.platform === 'ig');
+  const bucket = bucketFor(range);
+  const buckets = bucketsIn(range, bucket);
+  const seriesFor = (ps: BeeSocialPost[]) => {
+    const m = new Map(buckets.map((b) => [b, 0]));
+    for (const p of ps) {
+      const b = bucketStart(postDay(p), bucket);
+      if (m.has(b)) m.set(b, (m.get(b) ?? 0) + (metric === 'posts' ? 1 : (p[metric] ?? 0)));
+    }
+    return buckets.map((b) => ({ x: dayMs(b), y: m.get(b) ?? 0 }));
+  };
+  const series: LineSeries[] =
+    plat === 'all'
+      ? [
+          { name: 'Facebook', color: FB_COLOR, points: seriesFor(fb) },
+          { name: 'Instagram', color: IG_COLOR, points: seriesFor(ig) },
+        ]
+      : [
+          {
+            name: PLAT[plat],
+            color: plat === 'ig' ? IG_COLOR : FB_COLOR,
+            points: seriesFor(posts),
+          },
+        ];
+  const top = metric === 'posts' ? [...posts].sort((a, b) => (b.score ?? -1) - (a.score ?? -1)).slice(0, 8) : [...posts].sort((a, b) => (b[metric] ?? -1) - (a[metric] ?? -1)).slice(0, 8);
+  const missing = metric === 'posts' ? 0 : posts.filter((p) => p[metric] == null).length;
+  const ch = changeVs(total, prevTotal, prevR?.label ?? null);
+  const fmtX = (ms: number) => new Date(ms).toLocaleDateString('en-US', bucket === 'month' ? { month: 'short', year: '2-digit' } : { month: 'short', day: 'numeric' });
+  return (
+    <DetailSheet title={TILE_LABEL[metric]} sub={`${range.label} · ${rangeText(range)}${plat === 'all' ? '' : ` · ${PLAT[plat]}`}`} onClose={onClose}>
+      <div className="dash-split">
+        <div className="dash-split__item">
+          <span className="fin-dash__stat-label">Total</span>
+          <span className="dash-split__value">{n0(total)}</span>
+          {ch.text && <span className={`fin-dash__stat-sub${ch.tone === 'up' ? ' bee-delta--up' : ch.tone === 'down' ? ' bee-delta--down' : ''}`}>{ch.text}</span>}
+        </div>
+        {prevTotal != null && (
+          <div className="dash-split__item">
+            <span className="fin-dash__stat-label">Before</span>
+            <span className="dash-split__value">{n0(prevTotal)}</span>
+            <span className="fin-dash__stat-sub">{prevR ? rangeText(prevR) : ''}</span>
+          </div>
+        )}
+        {metric !== 'posts' && (
+          <div className="dash-split__item">
+            <span className="fin-dash__stat-label">Per Post</span>
+            <span className="dash-split__value">{posts.length ? n0(total / posts.length) : '—'}</span>
+            <span className="fin-dash__stat-sub">{posts.length} posts</span>
+          </div>
+        )}
+        {plat === 'all' && (
+          <>
+            <div className="dash-split__item">
+              <span className="fin-dash__stat-label">
+                <span className="bee-social__dot bee-social__dot--fb" />
+                Facebook
+              </span>
+              <span className="dash-split__value">{n0(val(fb))}</span>
+              <span className="fin-dash__stat-sub">{total ? `${Math.round((val(fb) / total) * 100)}%` : '—'}</span>
+            </div>
+            <div className="dash-split__item">
+              <span className="fin-dash__stat-label">
+                <span className="bee-social__dot bee-social__dot--ig" />
+                Instagram
+              </span>
+              <span className="dash-split__value">{n0(val(ig))}</span>
+              <span className="fin-dash__stat-sub">{total ? `${Math.round((val(ig) / total) * 100)}%` : '—'}</span>
+            </div>
+          </>
+        )}
+      </div>
+      <div className="dash-sheet__section">
+        <h4>By {bucket === 'day' ? 'Day' : bucket === 'week' ? 'Week' : 'Month'} Posted</h4>
+        <FinanceLineChart series={series} formatY={n0} formatX={fmtX} ariaLabel={`${TILE_LABEL[metric]} by ${bucket}`} height={200} />
+      </div>
+      {missing > 0 && (
+        <p className="fin-dash__note">
+          {missing} post{missing === 1 ? ' has' : 's have'} no {TILE_LABEL[metric].toLowerCase()} from Meta (counted as 0).
+        </p>
+      )}
+      <div className="dash-sheet__section">
+        <h4>{metric === 'posts' ? 'Best Scoring Posts' : `Top Posts by ${TILE_LABEL[metric]}`}</h4>
+        {top.length ? <PostCardList posts={top} onOpen={onOpenPost} alwaysCards /> : <p className="fin-dash__muted">No posts in this range.</p>}
+      </div>
+    </DetailSheet>
   );
 }
 
 type SortKey = 'date' | 'score' | BeeMetric;
 
-function PostScorecards({ data, plat, onReload }: { data: Loaded; plat: 'all' | 'fb' | 'ig'; onReload: () => void }) {
+function PostScorecards({ posts, plat, range, onOpen }: { posts: BeeSocialPost[]; plat: Plat; range: DateRange; onOpen: (p: BeeSocialPost) => void }) {
   const [view, setView] = useState<'posts' | 'stories'>('posts');
+  const toggle = (
+    <SectionPicker
+      label="Posts or stories"
+      value={view}
+      onChange={setView}
+      options={[
+        ['posts', 'By Platform'],
+        ['stories', 'Stories (Combined)'],
+      ]}
+    />
+  );
   if (view === 'stories')
     return (
       <section className="fin-dash__card fin-dash__card--full">
         <div className="fin-dash__card-head bee-posts__head">
-          <h3 className="fin-dash__card-title">Stories (All Platforms Combined)</h3>
-          <ViewToggle view={view} setView={setView} />
+          <DashTitle
+            info={
+              <>
+                <p>A story = the same headline on Facebook and Instagram within 36 hours, plus the Substack post within 2 days. Totals add every platform; Substack views include email opens.</p>
+                <p>Combined score = how the story ranks on total views, likes, comments and shares against the 60 stories before it.</p>
+              </>
+            }
+          >
+            Stories
+          </DashTitle>
+          {toggle}
         </div>
-        <BeeStoriesView platform={plat} />
+        <BeeStoriesView platform={plat} range={range} />
       </section>
     );
-  return <PostList data={data} plat={plat} onReload={onReload} view={view} setView={setView} />;
+  return <PostList posts={posts} onOpen={onOpen} toggle={toggle} />;
 }
 
-function ViewToggle({ view, setView }: { view: 'posts' | 'stories'; setView: (v: 'posts' | 'stories') => void }) {
-  return (
-    <div className="ally__range bee-tabs" role="tablist" aria-label="Posts or stories">
-      {(
-        [
-          ['posts', 'By Platform'],
-          ['stories', 'Stories (Combined)'],
-        ] as const
-      ).map(([k, label]) => (
-        <button key={k} type="button" role="tab" aria-selected={view === k} className={`btn btn--sm${view === k ? ' is-active' : ' btn--ghost'}`} onClick={() => setView(k)}>
-          {label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function PostList({
-  data,
-  plat,
-  onReload,
-  view,
-  setView,
-}: {
-  data: Loaded;
-  plat: 'all' | 'fb' | 'ig';
-  onReload: () => void;
-  view: 'posts' | 'stories';
-  setView: (v: 'posts' | 'stories') => void;
-}) {
+function PostList({ posts, onOpen, toggle }: { posts: BeeSocialPost[]; onOpen: (p: BeeSocialPost) => void; toggle: React.ReactNode }) {
   const [sort, setSort] = useState<SortKey>('date');
   const [tag, setTag] = useState('');
   const [q, setQ] = useState('');
   const [limit, setLimit] = useState(20);
-  const [open, setOpen] = useState<string | null>(null);
-  const allTags = [...new Set(data.posts.flatMap((p) => p.tags))].sort();
-  const list = data.posts
-    .filter((p) => (plat === 'all' || p.platform === plat) && (!tag || p.tags.includes(tag)) && (!q.trim() || (p.text ?? '').toLowerCase().includes(q.trim().toLowerCase())))
+  const allTags = [...new Set(posts.flatMap((p) => p.tags))].sort();
+  const list = posts
+    .filter((p) => (!tag || p.tags.includes(tag)) && (!q.trim() || (p.text ?? '').toLowerCase().includes(q.trim().toLowerCase())))
     .sort((a, b) => (sort === 'date' ? b.createdAt.localeCompare(a.createdAt) : sort === 'score' ? (b.score ?? -1) - (a.score ?? -1) : (b[sort] ?? -1) - (a[sort] ?? -1)));
   return (
     <section className="fin-dash__card fin-dash__card--full">
       <div className="fin-dash__card-head bee-posts__head">
-        <h3 className="fin-dash__card-title">Post Scorecards</h3>
-        <ViewToggle view={view} setView={setView} />
-        <div className="ally__txn-tools">
-          <input placeholder="Search Posts" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search posts" />
-          <select value={tag} onChange={(e) => setTag(e.target.value)} aria-label="Filter by tag">
-            <option value="">All Tags</option>
-            {allTags.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
-          <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)} aria-label="Sort">
-            <option value="date">Sort: Newest</option>
-            <option value="score">Sort: Score</option>
-            {CORE.map((m) => (
-              <option key={m} value={m}>
-                Sort: {LABEL[m]}
-              </option>
-            ))}
-          </select>
-        </div>
+        <DashTitle
+          info={
+            <>
+              <p>
+                Each number’s ×multiple compares it with a typical post at the time: the median of the 60 posts before it on that platform, so older posts are judged against the audience they had.
+              </p>
+              <p>Score (0–100) = how the post ranks on views, likes, comments and shares (+ saves on Instagram) against those 60. 90+ Top, 65+ Above typical, 35+ Typical.</p>
+              <p>Posts under a week old show numbers so far. Tap a post for its scorecard.</p>
+            </>
+          }
+        >
+          Posts ({list.length})
+        </DashTitle>
+        {toggle}
       </div>
-      <div className="fin-dash__table-wrap">
-        <table className="fin-dash__table bee-posts bee-social__table">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Post</th>
-              <th className="num">Score</th>
-              {CORE.map((m) => (
-                <th key={m} className={`num${m === 'views' ? '' : ' bee-hide-sm'}`}>
-                  {LABEL[m]}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {list.slice(0, limit).map((p) => {
-              const key = `${p.platform}|${p.id}`;
-              const isOpen = open === key;
-              return (
-                <PostRow key={key} p={p} open={isOpen} onToggle={() => setOpen(isOpen ? null : key)} data={data} onReload={onReload} />
-              );
-            })}
-          </tbody>
-        </table>
+      <div className="ally__txn-tools dash-card-tools">
+        <input placeholder="Search Posts" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search posts" />
+        <select value={tag} onChange={(e) => setTag(e.target.value)} aria-label="Filter by tag">
+          <option value="">All Tags</option>
+          {allTags.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </select>
+        <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)} aria-label="Sort">
+          <option value="date">Newest</option>
+          <option value="score">Best Score</option>
+          {CORE.map((m) => (
+            <option key={m} value={m}>
+              Most {LABEL[m]}
+            </option>
+          ))}
+        </select>
       </div>
+      {list.length ? (
+        <>
+          <div className="fin-dash__table-wrap post-table">
+            <table className="fin-dash__table bee-posts bee-social__table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Post</th>
+                  <th className="num">Score</th>
+                  {CORE.map((m) => (
+                    <th key={m} className="num">
+                      {LABEL[m]}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {list.slice(0, limit).map((p) => (
+                  <PostRow key={`${p.platform}|${p.id}`} p={p} onOpen={() => onOpen(p)} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <PostCardList posts={list.slice(0, limit)} onOpen={onOpen} />
+        </>
+      ) : (
+        <p className="fin-dash__muted">No posts in this range.</p>
+      )}
       {list.length > limit && (
         <button type="button" className="btn btn--ghost btn--sm" onClick={() => setLimit((l) => l + 40)}>
           Show More ({list.length - limit} left)
         </button>
       )}
-      <p className="fin-dash__note">
-        Each number shows its multiple of a typical post at the time: the median of the 60 posts before it on that platform, so older posts are judged against the audience they had. Score = how the
-        post ranks on views, likes, comments and shares (+ saves on Instagram) against those 60. Posts under a week old show numbers so far. Click a post for its scorecard.
-      </p>
     </section>
   );
 }
 
-function PostRow({ p, open, onToggle, data, onReload }: { p: BeeSocialPost; open: boolean; onToggle: () => void; data: Loaded; onReload: () => void }) {
-  const ratios = p.mature || !p.early ? p.vsTypical : p.early.vsTypical;
+function ScoreBadge({ p }: { p: BeeSocialPost }) {
+  return p.mature ? (
+    <span className={`bee-social__score bee-social__score--${(p.verdict ?? '').split(' ')[0].toLowerCase()}`}>{p.score ?? '—'}</span>
+  ) : (
+    <span className="bee-badge bee-badge--muted" title="Under a week old — compared with past posts at the same age">
+      {p.early && p.early.baseline === 'same-age' ? `Early · ${p.early.bucket}` : 'So Far'}
+    </span>
+  );
+}
+const ratiosOf = (p: BeeSocialPost) => (p.mature || !p.early ? p.vsTypical : p.early.vsTypical);
+const ratioTone = (p: BeeSocialPost, r: number | null | undefined) => (p.mature || p.early?.baseline === 'same-age' ? tone(r) : '');
+
+function PostRow({ p, onOpen }: { p: BeeSocialPost; onOpen: () => void }) {
+  const ratios = ratiosOf(p);
   return (
-    <>
-      <tr className="bee-social__row" onClick={onToggle} aria-expanded={open}>
-        <td className="bee-posts__date">
-          <span className={`bee-social__dot bee-social__dot--${p.platform}`} title={PLAT[p.platform]} />
-          {fmtShort(p.createdAt)}
-          <span className="bee-hide-sm fin-dash__muted"> · {p.day.slice(0, 3)}</span>
+    <tr className="bee-social__row" onClick={onOpen}>
+      <td className="bee-posts__date">
+        <span className={`bee-social__dot bee-social__dot--${p.platform}`} title={PLAT[p.platform]} />
+        {fmtShort(p.createdAt)}
+        <span className="fin-dash__muted"> · {p.day.slice(0, 3)}</span>
+      </td>
+      <td className="bee-posts__title">{headline(p.text)}</td>
+      <td className="num">
+        <ScoreBadge p={p} />
+      </td>
+      {CORE.map((m) => (
+        <td key={m} className="num">
+          {n0(p[m])}
+          {ratios[m] != null && <span className={`bee-social__x${ratioTone(p, ratios[m])}`}> {x1(ratios[m])}</span>}
         </td>
-        <td className="bee-posts__title">{headline(p.text)}</td>
-        <td className="num">
-          {p.mature ? (
-            <span className={`bee-social__score bee-social__score--${(p.verdict ?? '').split(' ')[0].toLowerCase()}`}>{p.score ?? '—'}</span>
-          ) : (
-            <span className="bee-badge bee-badge--muted" title="Under a week old — compared with past posts at the same age">
-              {p.early && p.early.baseline === 'same-age' ? `Early · ${p.early.bucket}` : 'So Far'}
-            </span>
-          )}
-        </td>
-        {CORE.map((m) => (
-          <td key={m} className={`num${m === 'views' ? '' : ' bee-hide-sm'}`}>
-            {n0(p[m])}
-            {ratios[m] != null && <span className={`bee-social__x${p.mature || p.early?.baseline === 'same-age' ? tone(ratios[m]) : ''}`}> {x1(ratios[m])}</span>}
-          </td>
-        ))}
-      </tr>
-      {open && (
-        <tr className="bee-social__detail">
-          <td colSpan={7}>
-            <Scorecard p={p} data={data} onReload={onReload} />
-          </td>
-        </tr>
-      )}
-    </>
+      ))}
+    </tr>
+  );
+}
+
+/** Posts as tappable cards — the phone layout of the posts table, and the
+ * list inside drill-down sheets everywhere. */
+function PostCardList({ posts, onOpen, alwaysCards }: { posts: BeeSocialPost[]; onOpen: (p: BeeSocialPost) => void; alwaysCards?: boolean }) {
+  return (
+    <ul className="post-cards" style={alwaysCards ? { display: 'block' } : undefined}>
+      {posts.map((p) => {
+        const ratios = ratiosOf(p);
+        return (
+          <li key={`${p.platform}|${p.id}`}>
+            <button type="button" className="post-card" onClick={() => onOpen(p)}>
+              <div className="post-card__top">
+                <span className={`bee-social__dot bee-social__dot--${p.platform}`} />
+                {PLAT[p.platform]} · {fmtShort(p.createdAt)} · {p.day.slice(0, 3)}
+                <ScoreBadge p={p} />
+              </div>
+              <div className="post-card__title">{headline(p.text)}</div>
+              <div className="post-card__metrics">
+                {CORE.map((m) => (
+                  <span key={m} className="post-card__metric">
+                    <span className="post-card__metric-label">{LABEL[m]}</span>
+                    <span className="post-card__metric-value">
+                      {compact(p[m] ?? 0)}
+                      {ratios[m] != null && <span className={`bee-social__x${ratioTone(p, ratios[m])}`}> {x1(ratios[m])}</span>}
+                    </span>
+                  </span>
+                ))}
+              </div>
+            </button>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
@@ -336,7 +619,10 @@ function Scorecard({ p, data, onReload }: { p: BeeSocialPost; data: Loaded; onRe
       await api.setBeePostTags(
         p.platform,
         p.id,
-        tagText.split(',').map((x) => x.trim()).filter(Boolean)
+        tagText
+          .split(',')
+          .map((x) => x.trim())
+          .filter(Boolean),
       );
       onReload();
     } finally {
@@ -416,63 +702,96 @@ function Scorecard({ p, data, onReload }: { p: BeeSocialPost; data: Loaded; onRe
   );
 }
 
-function WeeklyCard({ data, plat }: { data: Loaded; plat: 'all' | 'fb' | 'ig' }) {
+function WeeklyCard({ data, plat, range, onOpenWeek }: { data: Loaded; plat: Plat; range: DateRange; onOpenWeek: (title: string, sub: string, posts: BeeSocialPost[]) => void }) {
   const side = (w: Loaded['weekly'][number]) =>
     plat === 'all'
       ? (['posts', 'views', 'likes', 'comments', 'shares', 'newFollowers'] as const).reduce((o, k) => ({ ...o, [k]: w.fb[k] + w.ig[k] }), {} as Record<string, number>)
       : (w[plat] as unknown as Record<string, number>);
+  const weeks = data.weekly.filter((w) => addDays(w.week, 6) >= range.from && w.week <= range.to);
+  const open = (w: Loaded['weekly'][number]) => {
+    const end = addDays(w.week, 6);
+    const posts = data.posts.filter((p) => (plat === 'all' || p.platform === plat) && inRange(nyDay(p.createdAt), { from: w.week, to: end })).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const s = side(w);
+    onOpenWeek(
+      `Week of ${fmtShort(`${w.week}T16:00:00Z`)}`,
+      `${n0(s.posts)} posts · ${n0(s.views)} views · ${n0(s.likes)} likes${w.substack ? ` · ${n0(w.substack.opened)} email opens · ${n0(w.substack.siteVisits)} site visits` : ''}`,
+      posts,
+    );
+  };
   return (
     <section className="fin-dash__card fin-dash__card--full">
-      <h3 className="fin-dash__card-title">Weekly Scorecard</h3>
-      <div className="fin-dash__table-wrap">
-        <table className="fin-dash__table bee-posts">
-          <thead>
-            <tr>
-              <th>Week Of</th>
-              <th className="num">Posts</th>
-              <th className="num">Views</th>
-              <th className="num">Likes</th>
-              <th className="num bee-hide-sm">Comments</th>
-              <th className="num bee-hide-sm">Shares</th>
-              <th className="num bee-hide-sm">Followers</th>
-              <th className="num bee-hide-sm">Email Opens</th>
-              <th className="num bee-hide-sm">Site Visits</th>
-              <th className="bee-hide-sm">Best Post</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.weekly.map((w) => {
-              const s = side(w);
-              return (
-                <tr key={w.week}>
-                  <td>{fmtShort(`${w.week}T16:00:00Z`)}</td>
-                  <td className="num">{n0(s.posts)}</td>
-                  <td className="num">{n0(s.views)}</td>
-                  <td className="num">{n0(s.likes)}</td>
-                  <td className="num bee-hide-sm">{n0(s.comments)}</td>
-                  <td className="num bee-hide-sm">{n0(s.shares)}</td>
-                  <td className="num bee-hide-sm">{s.newFollowers ? `${s.newFollowers > 0 ? '+' : ''}${n0(s.newFollowers)}` : '—'}</td>
-                  <td className="num bee-hide-sm">{n0(w.substack?.opened)}</td>
-                  <td className="num bee-hide-sm">{n0(w.substack?.siteVisits)}</td>
-                  <td className="bee-hide-sm bee-web__landing">{w.best ? `${w.best.text} (${w.best.score})` : '—'}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-      <p className="fin-dash__note">Monday–Sunday. Email opens = unique opens of that week’s Substack emails; site visits from Google Analytics. Instagram followers per week only for the last 30 days.</p>
+      <DashTitle
+        info={
+          <p>
+            Monday–Sunday, numbers for the posts published that week. Email opens = unique opens of that week’s Substack emails; site visits from Google Analytics. Instagram followers per week only
+            for the last 30 days. Tap a week for its posts.
+          </p>
+        }
+      >
+        Weekly Scorecard
+      </DashTitle>
+      {weeks.length ? (
+        <div className="fin-dash__table-wrap">
+          <table className="fin-dash__table bee-posts">
+            <thead>
+              <tr>
+                <th>Week Of</th>
+                <th className="num">Posts</th>
+                <th className="num">Views</th>
+                <th className="num">Likes</th>
+                <th className="num bee-hide-sm">Comments</th>
+                <th className="num bee-hide-sm">Shares</th>
+                <th className="num bee-hide-sm">Followers</th>
+                <th className="num bee-hide-sm">Email Opens</th>
+                <th className="num bee-hide-sm">Site Visits</th>
+                <th className="bee-hide-sm">Best Post</th>
+              </tr>
+            </thead>
+            <tbody>
+              {weeks.map((w) => {
+                const s = side(w);
+                return (
+                  <tr key={w.week} className="bee-social__row" onClick={() => open(w)}>
+                    <td>{fmtShort(`${w.week}T16:00:00Z`)}</td>
+                    <td className="num">{n0(s.posts)}</td>
+                    <td className="num">{n0(s.views)}</td>
+                    <td className="num">{n0(s.likes)}</td>
+                    <td className="num bee-hide-sm">{n0(s.comments)}</td>
+                    <td className="num bee-hide-sm">{n0(s.shares)}</td>
+                    <td className="num bee-hide-sm">{s.newFollowers ? `${s.newFollowers > 0 ? '+' : ''}${n0(s.newFollowers)}` : '—'}</td>
+                    <td className="num bee-hide-sm">{n0(w.substack?.opened)}</td>
+                    <td className="num bee-hide-sm">{n0(w.substack?.siteVisits)}</td>
+                    <td className="bee-hide-sm bee-web__landing">{w.best ? `${w.best.text} (${w.best.score})` : '—'}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="fin-dash__muted">No weeks in this range.</p>
+      )}
     </section>
   );
 }
 
-function DayOfWeekCard({ data, plat }: { data: Loaded; plat: 'all' | 'fb' | 'ig' }) {
+function DayOfWeekCard({ data, plat, onOpenDay }: { data: Loaded; plat: Plat; onOpenDay: (title: string, posts: BeeSocialPost[]) => void }) {
+  const yearAgo = addDays(nyToday(), -365);
   const [metric, setMetric] = useState<'score' | 'views' | 'likes' | 'comments' | 'shares'>('score');
   const sets = data.dayOfWeek.filter((d) => plat === 'all' || d.platform === plat);
   return (
     <section className="fin-dash__card">
       <div className="fin-dash__card-head">
-        <h3 className="fin-dash__card-title">Day of the Week</h3>
+        <DashTitle
+          info={
+            <p>
+              Median per post over the last 12 months (posts at least a week old), whatever range is picked above. The small number is how many posts. Everything posts at 3pm, so time of day is left
+              out. Tap a day for its posts.
+            </p>
+          }
+        >
+          Day of the Week
+        </DashTitle>
         <select value={metric} onChange={(e) => setMetric(e.target.value as typeof metric)} aria-label="Metric" className="bee-social__select">
           <option value="score">Typical Score</option>
           {CORE.map((m) => (
@@ -489,33 +808,58 @@ function DayOfWeekCard({ data, plat }: { data: Loaded; plat: 'all' | 'fb' | 'ig'
             {sets.length > 1 && <h4 className="fin-dash__subtitle">{PLAT[s.platform]}</h4>}
             <div className="bee-bars">
               {s.days.map((d) => (
-                <div key={d.day} className="bee-bars__row bee-bars__row--static">
+                <button
+                  key={d.day}
+                  type="button"
+                  className="bee-bars__row"
+                  onClick={() =>
+                    onOpenDay(
+                      `${d.day}s · ${PLAT[s.platform]}`,
+                      data.posts.filter((p) => p.platform === s.platform && p.day === d.day && p.mature && nyDay(p.createdAt) >= yearAgo).sort((a, b) => (b.score ?? -1) - (a.score ?? -1)),
+                    )
+                  }
+                >
                   <span className="bee-bars__label">{d.day}</span>
                   <span className="bee-bars__track">
-                    <span className="bee-bars__bar" style={{ width: `${((d[metric] ?? 0) / max) * 100}%`, background: s.platform === 'ig' ? IG_COLOR : FB_COLOR }} />
+                    <span
+                      className="bee-bars__bar"
+                      style={{
+                        width: `${((d[metric] ?? 0) / max) * 100}%`,
+                        background: s.platform === 'ig' ? IG_COLOR : FB_COLOR,
+                      }}
+                    />
                   </span>
                   <span className="bee-bars__value">
                     {metric === 'score' ? (d.score ?? '—') : n0(d[metric])}
                     <span className="fin-dash__muted"> · {d.posts}</span>
                   </span>
-                </div>
+                </button>
               ))}
             </div>
           </div>
         );
       })}
-      <p className="fin-dash__note">Median per post over the last year (posts at least a week old) · the small number is how many posts. Everything posts at 3pm, so time of day is left out.</p>
     </section>
   );
 }
 
-function WhatWorksCard({ data, plat }: { data: Loaded; plat: 'all' | 'fb' | 'ig' }) {
+function WhatWorksCard({ data, plat, onOpenGroup }: { data: Loaded; plat: Plat; onOpenGroup: (title: string, posts: BeeSocialPost[]) => void }) {
+  const yearAgo = addDays(nyToday(), -365);
   const [kind, setKind] = useState<'Format' | 'Topic' | 'Style' | 'Tag'>('Topic');
   const sets = data.tagPerf.filter((d) => plat === 'all' || d.platform === plat);
   return (
     <section className="fin-dash__card">
       <div className="fin-dash__card-head">
-        <h3 className="fin-dash__card-title">What Works</h3>
+        <DashTitle
+          info={
+            <p>
+              Last 12 months. Median score of the posts in each group, and their typical views / shares / comments vs all posts on that platform. Topics come from whole-word keyword rules in the
+              headline, editable in <Link to="/settings?cat=bee">Settings → Bedford Bee</Link>. Tap a group for its posts.
+            </p>
+          }
+        >
+          What Works
+        </DashTitle>
         <select value={kind} onChange={(e) => setKind(e.target.value as typeof kind)} aria-label="Tag type" className="bee-social__select">
           <option value="Topic">By Topic</option>
           <option value="Format">By Format</option>
@@ -531,7 +875,18 @@ function WhatWorksCard({ data, plat }: { data: Loaded; plat: 'all' | 'fb' | 'ig'
             {rows.length ? (
               <ul className="bee-list">
                 {rows.map((r) => (
-                  <li key={r.tag} className="bee-list__row">
+                  <li
+                    key={r.tag}
+                    className="bee-list__row bee-list__row--click"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() =>
+                      onOpenGroup(
+                        `${r.tag.replace(/^[^:]+:\s*/, '')} · ${PLAT[s.platform]}`,
+                        data.posts.filter((p) => p.platform === s.platform && p.tags.includes(r.tag) && nyDay(p.createdAt) >= yearAgo).sort((a, b) => (b.score ?? -1) - (a.score ?? -1)),
+                      )
+                    }
+                  >
                     <span>
                       {r.tag.replace(/^[^:]+:\s*/, '')}
                       <span className="fin-dash__muted">
@@ -552,19 +907,6 @@ function WhatWorksCard({ data, plat }: { data: Loaded; plat: 'all' | 'fb' | 'ig'
           </div>
         );
       })}
-      <p className="fin-dash__note">
-        Median score of the posts in each group, and their typical views / shares / comments vs all posts on that platform. Topics come from whole-word keyword rules you can edit in <Link to="/settings?cat=bee">Settings → Bedford Bee</Link>.
-      </p>
     </section>
-  );
-}
-
-function Stat({ label, value, sub, tone: t }: { label: string; value: string; sub?: string; tone?: '' | 'up' | 'down' }) {
-  return (
-    <div className="fin-dash__stat">
-      <span className="fin-dash__stat-label">{label}</span>
-      <span className="fin-dash__stat-value">{value}</span>
-      {sub && <span className={`fin-dash__stat-sub${t === 'up' ? ' bee-delta--up' : t === 'down' ? ' bee-delta--down' : ''}`}>{sub}</span>}
-    </div>
   );
 }
