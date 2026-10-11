@@ -234,8 +234,8 @@ function PostScorecards({ data, plat, onReload }: { data: Loaded; plat: 'all' | 
         </button>
       )}
       <p className="fin-dash__note">
-        Each number shows its multiple of your typical post on that platform (median of the last 60 posts at least a week old). Score = how the post ranks on views, likes, comments and shares (+ saves on
-        Instagram) against those 60. Posts under a week old show an early read against past posts at the same age. Click a post for its scorecard.
+        Each number shows its multiple of a typical post at the time: the median of the 60 posts before it on that platform, so older posts are judged against the audience they had. Score = how the
+        post ranks on views, likes, comments and shares (+ saves on Instagram) against those 60. Posts under a week old show numbers so far. Click a post for its scorecard.
       </p>
     </section>
   );
@@ -336,7 +336,7 @@ function Scorecard({ p, data, onReload }: { p: BeeSocialPost; data: Loaded; onRe
               <span className="bee-year__value">{n0(p[m])}</span>
               <span className={`fin-dash__stat-sub${tone(r)}`}>
                 {r != null ? `${x1(r)} typical` : '—'}
-                {t[m] != null ? ` (typical ${n0(t[m])})` : ''}
+                {t[m] != null ? ` · typical today ${n0(t[m])}` : ''}
               </span>
             </div>
           );
@@ -507,7 +507,7 @@ function WhatWorksCard({ data, plat }: { data: Loaded; plat: 'all' | 'fb' | 'ig'
         );
       })}
       <p className="fin-dash__note">
-        Typical (median) post in each group vs all posts on that platform. Topics come from keyword rules you can edit in <Link to="/settings?cat=bee">Settings → Bedford Bee</Link>.
+        Median score of the posts in each group, and their typical views / shares / comments vs all posts on that platform. Topics come from whole-word keyword rules you can edit in <Link to="/settings?cat=bee">Settings → Bedford Bee</Link>.
       </p>
     </section>
   );

@@ -108,7 +108,16 @@ export async function socialDashboard(env: Env) {
   if (!posts.length) return { connection, empty: true as const };
   const { results: snapRows } = await db.prepare('SELECT * FROM bee_meta_snaps').all<Snap>();
   const { results: rules } = await db.prepare('SELECT topic, keywords FROM bee_topic_rules ORDER BY position, topic').all<{ topic: string; keywords: string }>();
-  const topicRules = (rules ?? []).map((r) => ({ topic: r.topic, kws: r.keywords.split(',').map((k) => k.trim().toLowerCase()).filter(Boolean) }));
+  // Whole words only (plural s/es allowed): "bus" must not match "business".
+  const esc = (k: string) => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+  const topicRules = (rules ?? []).map((r) => ({
+    topic: r.topic,
+    res: r.keywords
+      .split(',')
+      .map((k) => k.trim().toLowerCase())
+      .filter(Boolean)
+      .map((k) => new RegExp(`(^|[^a-z0-9])${esc(k)}(s|es)?(?![a-z0-9])`, 'i')),
+  }));
   const nowMs = Date.now();
 
   // Baselines per platform.
@@ -135,7 +144,7 @@ export async function socialDashboard(env: Env) {
 
   const tagsFor = (p: Post): string[] => {
     const t = (p.text ?? '').toLowerCase();
-    const topics = topicRules.filter((r) => r.kws.some((k) => t.includes(k))).map((r) => r.topic);
+    const topics = topicRules.filter((r) => r.res.some((re) => re.test(t))).map((r) => r.topic);
     let manual: string[] = [];
     try {
       manual = JSON.parse(p.manual_tags || '[]');
@@ -145,14 +154,26 @@ export async function socialDashboard(env: Env) {
     return [`Format: ${p.format.charAt(0).toUpperCase()}${p.format.slice(1)}`, ...topics.map((x) => `Topic: ${x}`), ...styleTags(p.text).map((x) => `Style: ${x}`), ...manual.map((x) => `Tag: ${x}`)];
   };
 
+  // Each post is judged against the 60 posts on its platform published
+  // before it (the audience it actually had), so old posts aren't graded
+  // against today's bigger reach. The first posts use the first 60.
+  const chrono = new Map<string, Post[]>();
+  for (const plat of ['fb', 'ig'] as const) chrono.set(plat, posts.filter((p) => p.platform === plat).sort((a, b) => a.created_at.localeCompare(b.created_at)));
+  const priorOf = (p: Post): Post[] => {
+    const list = chrono.get(p.platform) ?? [];
+    const i = list.findIndex((x) => x.id === p.id);
+    const before = list.slice(Math.max(0, i - 60), i);
+    return before.length >= 20 ? before : list.slice(0, 60).filter((x) => x.id !== p.id);
+  };
   const scored = posts.map((p) => {
-    const base = baseline.get(p.platform) ?? [];
+    // Under a week old: judged against the latest mature baseline.
+    const base = mature(p) ? priorOf(p) : baseline.get(p.platform) ?? [];
     const used = METRICS.filter((m) => p[m] != null && (m !== 'saves' || p.platform === 'ig'));
     const ranks = used.map((m) => pctRank(p[m]!, base.map((b) => b[m]).filter((v): v is number => v != null)));
     const score = ranks.length ? Math.round((ranks.reduce((a, b) => a + b, 0) / ranks.length) * 100) : null;
     const vsTypical: Record<string, number | null> = {};
     for (const m of used) {
-      const t = typical(p.platform, m);
+      const t = median(base.map((b) => b[m]).filter((v): v is number => v != null));
       vsTypical[m] = t && t > 0 ? p[m]! / t : null;
     }
     // Early read: latest snapshot.
