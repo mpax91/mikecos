@@ -1294,6 +1294,27 @@ a {
   color: var(--color-placeholder);
   cursor: grab;
   font-size: 12px;
+  /* Without touch-action:none a finger on the handle starts a page scroll,
+     the browser fires pointercancel and dnd-kit never begins the drag —
+     reordering was impossible on phones. Padding gives a finger-sized
+     target without changing the look. */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+  margin: -10px;
+}
+
+@media (max-width: 640px) {
+  .entity-card__drag {
+    font-size: 16px;
+    padding: 12px 10px;
+    margin: -12px -4px -12px -10px;
+  }
 }
 
 .entity-card__pin {
@@ -1743,8 +1764,9 @@ a {
   color: var(--color-muted);
 }
 
-.project-card-list + .detail-section {
-  margin-top: 20px;
+.project-card-list + .detail-section,
+.projects-archived {
+  margin-top: 28px;
 }
 
 .project-card.is-archived .project-card__title-text {

@@ -134,6 +134,10 @@ export function ProjectsList() {
       )}
 
       {archived.length > 0 && (
+        // Own wrapper for the gap: dnd-kit renders its screen-reader live
+        // region inline after the list, so `.project-card-list + .detail-section`
+        // never matched and Archived sat flush against the last card.
+        <div className="projects-archived">
         <Section title="Archived" count={archived.length} defaultExpanded={false}>
           <div className="project-card-list">
             {archived.map((p) => (
@@ -148,6 +152,7 @@ export function ProjectsList() {
             ))}
           </div>
         </Section>
+        </div>
       )}
 
       {toast && (

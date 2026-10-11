@@ -65,9 +65,18 @@ export function ProjectCard({
         ]);
       }}
     >
-      <span className="entity-card__drag" {...attributes} {...listeners} onClick={(e) => e.stopPropagation()}>
-        ⠿
-      </span>
+      {/* Archived projects aren't sortable — no handle that does nothing. */}
+      {!isArchived && (
+        <span
+          className="entity-card__drag"
+          aria-label="Drag to reorder"
+          {...attributes}
+          {...listeners}
+          onClick={(e) => e.stopPropagation()}
+        >
+          ⠿
+        </span>
+      )}
       {isPinned && <span className="entity-card__pin" title="Pinned">📌</span>}
       <div style={{ minWidth: 0, flex: 1 }}>
         <p className="project-card__title">
