@@ -130,7 +130,7 @@ function BookmarkLinkRow({ node, depth }: { node: BookmarkNode; depth: number })
 }
 
 /** Bookmarks — a periodic, manual mirror of a Chrome bookmarks export
- * (Settings → Links → Bookmarks), shown as its own collapsed section below
+ * (Settings → Links → Bookmarks), shown as its own section (expanded by default) below
  * Quick Links. Read-only here on purpose: the actual edits happen in
  * Chrome, and the next import just replaces this wholesale — see
  * BookmarksImportPanel and worker/migrations/0060_bookmarks.sql. */
@@ -138,7 +138,7 @@ function BookmarksSection() {
   const [nodes, setNodes] = useState<BookmarkNode[] | null>(null);
   const [linkCount, setLinkCount] = useState(0);
   const [lastImportedAt, setLastImportedAt] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {

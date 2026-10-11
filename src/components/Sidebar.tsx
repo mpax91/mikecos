@@ -36,6 +36,7 @@ interface NavSectionDef {
 //               to jot as a note)
 //   Plan      — structured, ongoing work
 //   Reference — lookup data, not something you "do"
+//   Collections — things around the house (Home, Media, Bar)
 //   Insights  — summaries/analysis of everything else, including Journal
 //               (you revisit entries more than you actively write in it)
 const SIDEBAR_SECTIONS: NavSectionDef[] = [
@@ -69,14 +70,19 @@ const SIDEBAR_SECTIONS: NavSectionDef[] = [
     label: 'Reference',
     items: [
       { path: '/vault', label: 'Vault', kind: 'vault-list' },
-      { path: '/wallet', label: 'Wallet', kind: 'wallet-list' },
       { path: '/finance', label: 'Finance', kind: 'finance' },
+      { path: '/wallet', label: 'Wallet', kind: 'wallet-list' },
+      { path: '/contacts', label: 'Contacts', kind: 'contacts-list' },
+      { path: '/cloud', label: 'Cloud', kind: 'cloud' },
+      { path: '/links', label: 'Links', kind: 'links' },
+    ],
+  },
+  {
+    label: 'Collections',
+    items: [
+      { path: '/home', label: 'Home', kind: 'home-list' },
       { path: '/media', label: 'Media', kind: 'media-list' },
       { path: '/bar', label: 'Bar', kind: 'bar-list' },
-      { path: '/home', label: 'Home', kind: 'home-list' },
-      { path: '/links', label: 'Links', kind: 'links' },
-      { path: '/cloud', label: 'Cloud', kind: 'cloud' },
-      { path: '/contacts', label: 'Contacts', kind: 'contacts-list' },
     ],
   },
   {
