@@ -70,7 +70,7 @@ export async function analyticsDashboard(env: Env) {
     propertyName: acct?.ga_property_name ?? null,
     email: acct?.account_email ?? null,
     lastSyncAt: acct?.ga_last_sync_at ?? null,
-    lastError: acct?.ga_last_error ?? null,
+    lastError: acct?.ga_last_error ?? (acct?.ga_snapshot_json?.includes('"_error"') ? `Visitor counts: ${JSON.parse(acct.ga_snapshot_json)._error}` : null),
     firstDate: acct?.ga_first_date ?? null,
     lastDate: acct?.ga_last_date ?? null,
   };

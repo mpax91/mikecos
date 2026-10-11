@@ -199,13 +199,13 @@ async function visitorSnapshot(token: string, property: string, end: string) {
     thisYear: { startDate: `${y}-01-01`, endDate: end },
     lastYear: { startDate: `${Number(y) - 1}-01-01`, endDate: `${Number(y) - 1}-12-31` },
   };
-  const out: Record<string, { users: number; newUsers: number; from: string; to: string }> = {};
+  const out: Record<string, unknown> = {};
   for (const [k, r] of Object.entries(ranges)) {
     try {
       const rows = await report(token, property, { dateRanges: [r], metrics: mets('totalUsers', 'newUsers') });
       out[k] = { users: rows[0]?.m[0] ?? 0, newUsers: rows[0]?.m[1] ?? 0, from: r.startDate, to: r.endDate };
-    } catch {
-      continue;
+    } catch (err) {
+      out._error = err instanceof Error ? err.message : String(err);
     }
   }
   return out;
