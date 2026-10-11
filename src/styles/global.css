@@ -18600,3 +18600,127 @@ td.month-page__upcoming-actions .today-page__meeting-actions {
   background: var(--color-card-bg);
   color: inherit;
 }
+
+/* Bedford Bee → Social */
+.bee-social__plat {
+  margin-left: auto;
+}
+.bee-social__sub {
+  margin: -8px 0 14px;
+}
+.bee-social__mini {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 10px;
+}
+.bee-social__row {
+  cursor: pointer;
+}
+.bee-social__row:hover td {
+  background: var(--color-sidebar);
+}
+.bee-social__dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: 1px;
+}
+.bee-social__dot--fb {
+  background: #2a6fb0;
+}
+.bee-social__dot--ig {
+  background: #c0662e;
+}
+.bee-social__x {
+  font-size: 11.5px;
+  color: var(--color-muted);
+}
+.bee-social__score {
+  display: inline-block;
+  min-width: 32px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  text-align: center;
+  font-weight: 600;
+  background: var(--color-sidebar);
+}
+.bee-social__score--top {
+  background: #e8f2ea;
+  color: #2c6b3f;
+}
+.bee-social__score--above {
+  background: #f1f7f2;
+  color: #2c6b3f;
+}
+.bee-social__score--below {
+  background: #fbe9e5;
+  color: #a3341f;
+}
+.bee-social__detail td {
+  background: var(--color-bg, #faf8f3);
+  white-space: normal !important;
+}
+.bee-social__select {
+  font: inherit;
+  font-size: 13px;
+  padding: 4px 8px;
+  border: var(--border-hairline);
+  border-radius: 8px;
+  background: var(--color-card-bg);
+  color: inherit;
+}
+.bee-scorecard {
+  padding: 6px 2px 4px;
+}
+.bee-scorecard__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: baseline;
+}
+.bee-scorecard__verdict {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.bee-scorecard__text {
+  margin: 8px 0 12px;
+  white-space: pre-wrap;
+  font-size: 13px;
+  max-width: 760px;
+}
+.bee-scorecard__grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.bee-scorecard__metric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.bee-scorecard__tags {
+  margin: 10px 0 6px;
+}
+.bee-rules {
+  width: 100%;
+  max-width: 640px;
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+  border: var(--border-hairline);
+  border-radius: 8px;
+  background: var(--color-card-bg);
+  color: inherit;
+}
+@media (max-width: 640px) {
+  .bee-social__plat {
+    margin-left: 0;
+  }
+  .bee-scorecard__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

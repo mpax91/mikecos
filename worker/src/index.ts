@@ -64,6 +64,7 @@ import { gscSyncDue, syncGscAll } from './bee/gsc';
 import { gaSyncDue, syncGaAll } from './bee/ga';
 import { bingSyncDue, syncBing } from './bee/bing';
 import { claritySyncDue, syncClarity } from './bee/clarity';
+import { metaSyncDue, syncMeta } from './bee/meta';
 import { contactsAssistantRouter } from './contactsAssistant';
 import { betsEnrichmentRouter } from './betsEnrichment';
 import { buildVoterInsight, ELECTION_CODE_RE, titleCaseVoterText, voterDiffs, voterKeyOf, type VoterDiff } from './voterInsight';
@@ -8418,6 +8419,12 @@ export default {
           if (await claritySyncDue(env, event.scheduledTime)) await syncClarity(env);
         } catch (err) {
           console.error('Clarity sync failed', err);
+        }
+        try {
+          const due = await metaSyncDue(env, event.scheduledTime);
+          if (due) await syncMeta(env, due === 'full');
+        } catch (err) {
+          console.error('Meta sync failed', err);
         }
       }
       return;

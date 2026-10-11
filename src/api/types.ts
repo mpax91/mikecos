@@ -3433,3 +3433,84 @@ export type BeeClarity =
       devices: BeeClarityRow[];
       projectUrl: string;
     };
+
+// ---- Bedford Bee: Meta / Social (worker/src/bee/social.ts) ----
+export interface BeeSocialConnection {
+  hasApp: boolean;
+  appId: string | null;
+  connected: boolean;
+  status: string | null;
+  userName: string | null;
+  page: string | null;
+  instagram: string | null;
+  scopes: string | null;
+  lastSyncAt: string | null;
+  lastRecentAt: string | null;
+  lastError: string | null;
+}
+export type BeeMetric = 'views' | 'likes' | 'comments' | 'shares' | 'saves';
+export interface BeeSocialPost {
+  platform: 'fb' | 'ig';
+  id: string;
+  createdAt: string;
+  day: string;
+  text: string | null;
+  permalink: string | null;
+  format: string;
+  linkUrl: string | null;
+  views: number | null;
+  reach: number | null;
+  likes: number | null;
+  comments: number | null;
+  shares: number | null;
+  saves: number | null;
+  per1k: { likes: number | null; comments: number | null; shares: number | null };
+  vsTypical: Partial<Record<BeeMetric, number | null>>;
+  score: number | null;
+  verdict: string | null;
+  mature: boolean;
+  early: { bucket: string; vsTypical: Partial<Record<BeeMetric, number | null>>; baseline: 'same-age' | 'final' } | null;
+  tags: string[];
+  manualTags: string[];
+  story: { title: string; date: string; sent: number | null; opened: number | null; views: number | null } | null;
+  siteVisits: number | null;
+}
+export interface BeeSocialPeriod {
+  posts: number;
+  views: number;
+  likes: number;
+  comments: number;
+  shares: number;
+  saves: number;
+}
+export interface BeeSocialWeekSide {
+  posts: number;
+  views: number;
+  likes: number;
+  comments: number;
+  shares: number;
+  saves: number;
+  newFollowers: number;
+}
+export type BeeSocial =
+  | { connection: BeeSocialConnection; empty: true }
+  | {
+      connection: BeeSocialConnection;
+      empty: false;
+      range: { from: string; to: string; fbPosts: number; igPosts: number };
+      period: { now: Record<'all' | 'fb' | 'ig', BeeSocialPeriod>; prev: Record<'all' | 'fb' | 'ig', BeeSocialPeriod> };
+      typical: Record<'fb' | 'ig', Record<BeeMetric, number | null>>;
+      followers: { fb: { now: number | null; series: { date: string; value: number }[] }; ig: { now: number | null; series: { date: string; value: number }[]; newLast30: number } };
+      posts: BeeSocialPost[];
+      weekly: {
+        week: string;
+        fb: BeeSocialWeekSide;
+        ig: BeeSocialWeekSide;
+        best: { platform: string; id: string; text: string; score: number | null; permalink: string | null } | null;
+        worst: { platform: string; id: string; text: string; score: number | null; permalink: string | null } | null;
+        substack: { emails: number; opened: number; siteVisits: number } | null;
+      }[];
+      dayOfWeek: { platform: 'fb' | 'ig'; days: { day: string; posts: number; views: number | null; likes: number | null; comments: number | null; shares: number | null; score: number | null }[] }[];
+      tagPerf: { platform: 'fb' | 'ig'; posts: number; rows: { tag: string; posts: number; few: boolean; score: number | null; views: number | null; likes: number | null; comments: number | null; shares: number | null }[] }[];
+      topicRules: { topic: string; keywords: string }[];
+    };

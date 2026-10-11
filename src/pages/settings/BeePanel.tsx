@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../../api/client';
 import { MicrosoftKeys } from './BeeMicrosoftKeys';
+import { MetaSettings } from './BeeMetaSettings';
 import type { BeeFolderCandidate, BeeGaConnection, BeeGscConnection, BeeSettings } from '../../api/types';
 
 /** Settings → Bedford Bee: which Drive folder holds the Substack / Stripe
@@ -182,6 +183,8 @@ export function BeePanel() {
         </>
       )}
       {(gscMsg || gsc?.lastError) && <p className="settings-page__section-hint">{gscMsg ?? gsc?.lastError}</p>}
+
+      <MetaSettings />
 
       <MicrosoftKeys />
 

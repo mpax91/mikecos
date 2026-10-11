@@ -10,6 +10,8 @@ import { syncGaAll } from './ga';
 import { analyticsDashboard } from './analytics';
 import { bingDashboard, saveBingKey, syncBing } from './bing';
 import { clarityDashboard, saveClarityToken, syncClarity } from './clarity';
+import { disconnectMeta, metaAuthUrl, saveMetaApp, syncMeta } from './meta';
+import { socialDashboard } from './social';
 
 /** /api/bee — Bedford Bee dashboard. Substack + Stripe come from CSV
  * exports in the Drive "Bedford Bee" folder; more sources (Search
@@ -90,6 +92,54 @@ beeRouter.post('/clarity/sync', async (c) => {
   } catch (err) {
     return c.json(fail(err), 502);
   }
+});
+
+// ---- Meta (Facebook Page + Instagram) ----
+beeRouter.get('/social', async (c) => c.json(await socialDashboard(c.env)));
+beeRouter.put('/meta/app', async (c) => {
+  const { appId, appSecret } = await c.req.json<{ appId: string; appSecret?: string | null }>();
+  try {
+    await saveMetaApp(c.env, appId ?? '', appSecret?.trim() || null);
+    return c.json({ ok: true });
+  } catch (err) {
+    return c.json(fail(err), 400);
+  }
+});
+beeRouter.get('/meta/connect', async (c) => {
+  const returnOrigin = c.req.query('returnOrigin') || c.env.ALLOWED_ORIGINS.split(',')[0];
+  try {
+    return c.redirect(await metaAuthUrl(c.env, new URL(c.req.url).origin, returnOrigin));
+  } catch (err) {
+    return c.redirect(`${returnOrigin}/settings?cat=bee&metaError=${encodeURIComponent(err instanceof Error ? err.message : String(err))}`);
+  }
+});
+beeRouter.post('/meta/sync', async (c) => {
+  try {
+    return c.json(await syncMeta(c.env, c.req.query('recent') !== '1'));
+  } catch (err) {
+    return c.json(fail(err), 502);
+  }
+});
+beeRouter.post('/meta/disconnect', async (c) => {
+  await disconnectMeta(c.env);
+  return c.json({ ok: true });
+});
+// Manual tags on a post (overrides nothing — adds to the rule tags).
+beeRouter.put('/meta/posts/:platform/:id/tags', async (c) => {
+  const { tags } = await c.req.json<{ tags: string[] }>();
+  const clean = [...new Set((tags ?? []).map((t) => String(t).trim()).filter(Boolean))].slice(0, 12);
+  await c.env.DB.prepare('UPDATE bee_meta_posts SET manual_tags = ? WHERE platform = ? AND id = ?').bind(JSON.stringify(clean), c.req.param('platform'), c.req.param('id')).run();
+  return c.json({ tags: clean });
+});
+// Topic rules: [{ topic, keywords }] replaces the list.
+beeRouter.put('/topic-rules', async (c) => {
+  const { rules } = await c.req.json<{ rules: { topic: string; keywords: string }[] }>();
+  const clean = (rules ?? []).map((r) => ({ topic: r.topic.trim(), keywords: r.keywords.trim() })).filter((r) => r.topic && r.keywords);
+  await c.env.DB.batch([
+    c.env.DB.prepare('DELETE FROM bee_topic_rules'),
+    ...clean.map((r, i) => c.env.DB.prepare('INSERT OR REPLACE INTO bee_topic_rules (topic, keywords, position) VALUES (?, ?, ?)').bind(r.topic, r.keywords, i)),
+  ]);
+  return c.json({ rules: clean });
 });
 
 beeRouter.post('/gsc/disconnect', async (c) => {

@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { BeeSearchSection } from '../components/BeeSearchSection';
 import { BeeWebsiteSection } from '../components/BeeWebsiteSection';
 import { BeeBingSection, BeeClaritySection } from '../components/BeeMicrosoftSections';
+import { BeeSocialSection } from '../components/BeeSocialSection';
 import { api } from '../api/client';
 import type { BeePost, BeeSpotlightPerson, BeeSubstack, BeeYear } from '../api/types';
 import { useReportTabMeta } from '../contexts/TabsContext';
@@ -49,7 +50,8 @@ export function BeePage() {
   const [scanning, setScanning] = useState(false);
   const [scanMsg, setScanMsg] = useState<string | null>(null);
   const [params, setParams] = useSearchParams();
-  const tab = params.get('tab') === 'search' ? 'search' : params.get('tab') === 'website' ? 'website' : 'substack';
+  const tabParam = params.get('tab');
+  const tab = tabParam === 'search' || tabParam === 'website' || tabParam === 'social' ? tabParam : 'substack';
 
   const load = useCallback(() => {
     api
@@ -86,6 +88,7 @@ export function BeePage() {
       <div className="bee-sources" role="tablist" aria-label="Source">
         {(
           [
+            ['social', 'Social'],
             ['substack', 'Substack'],
             ['search', 'Google Search'],
             ['website', 'Website'],
@@ -103,7 +106,9 @@ export function BeePage() {
           </button>
         ))}
       </div>
-      {tab === 'search' ? (
+      {tab === 'social' ? (
+        <BeeSocialSection />
+      ) : tab === 'search' ? (
         <>
           <BeeSearchSection />
           <BeeBingSection />
