@@ -8,6 +8,8 @@ import { disconnectGsc, gscAuthUrl, syncGscAll } from './gsc';
 import { searchDashboard } from './search';
 import { syncGaAll } from './ga';
 import { analyticsDashboard } from './analytics';
+import { bingDashboard, saveBingKey, syncBing } from './bing';
+import { clarityDashboard, saveClarityToken, syncClarity } from './clarity';
 
 /** /api/bee — Bedford Bee dashboard. Substack + Stripe come from CSV
  * exports in the Drive "Bedford Bee" folder; more sources (Search
@@ -45,6 +47,46 @@ beeRouter.post('/ga/sync', async (c) => {
     return c.json(await syncGaAll(c.env));
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 502);
+  }
+});
+
+// ---- Bing Webmaster Tools + Microsoft Clarity (pasted keys) ----
+const fail = (err: unknown) => ({ error: err instanceof Error ? err.message : String(err) });
+beeRouter.get('/bing', async (c) => c.json(await bingDashboard(c.env)));
+beeRouter.get('/clarity', async (c) => c.json(await clarityDashboard(c.env)));
+
+beeRouter.put('/bing/key', async (c) => {
+  const { key } = await c.req.json<{ key: string | null }>();
+  try {
+    const r = await saveBingKey(c.env, key?.trim() || null);
+    if (r.site) await syncBing(c.env).catch(() => null);
+    return c.json(r);
+  } catch (err) {
+    return c.json(fail(err), 400);
+  }
+});
+beeRouter.post('/bing/sync', async (c) => {
+  try {
+    return c.json(await syncBing(c.env));
+  } catch (err) {
+    return c.json(fail(err), 502);
+  }
+});
+beeRouter.put('/clarity/token', async (c) => {
+  const { token } = await c.req.json<{ token: string | null }>();
+  try {
+    await saveClarityToken(c.env, token?.trim() || null);
+    if (token?.trim()) await syncClarity(c.env).catch(() => null);
+    return c.json({ ok: true });
+  } catch (err) {
+    return c.json(fail(err), 400);
+  }
+});
+beeRouter.post('/clarity/sync', async (c) => {
+  try {
+    return c.json(await syncClarity(c.env));
+  } catch (err) {
+    return c.json(fail(err), 502);
   }
 });
 

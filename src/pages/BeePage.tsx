@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { BeeSearchSection } from '../components/BeeSearchSection';
 import { BeeWebsiteSection } from '../components/BeeWebsiteSection';
+import { BeeBingSection, BeeClaritySection } from '../components/BeeMicrosoftSections';
 import { api } from '../api/client';
 import type { BeePost, BeeSpotlightPerson, BeeSubstack, BeeYear } from '../api/types';
 import { useReportTabMeta } from '../contexts/TabsContext';
@@ -103,9 +104,15 @@ export function BeePage() {
         ))}
       </div>
       {tab === 'search' ? (
-        <BeeSearchSection />
+        <>
+          <BeeSearchSection />
+          <BeeBingSection />
+        </>
       ) : tab === 'website' ? (
-        <BeeWebsiteSection />
+        <>
+          <BeeWebsiteSection />
+          <BeeClaritySection />
+        </>
       ) : (
         <>
           {error && <p className="fin-dash__muted">{error}</p>}

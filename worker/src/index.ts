@@ -62,6 +62,8 @@ import { beeScanDue, scanBee } from './bee/ingest';
 import { BEE_TASK_DEF_ID, syncBeeExportTask } from './bee/reminder';
 import { gscSyncDue, syncGscAll } from './bee/gsc';
 import { gaSyncDue, syncGaAll } from './bee/ga';
+import { bingSyncDue, syncBing } from './bee/bing';
+import { claritySyncDue, syncClarity } from './bee/clarity';
 import { contactsAssistantRouter } from './contactsAssistant';
 import { betsEnrichmentRouter } from './betsEnrichment';
 import { buildVoterInsight, ELECTION_CODE_RE, titleCaseVoterText, voterDiffs, voterKeyOf, type VoterDiff } from './voterInsight';
@@ -8406,6 +8408,16 @@ export default {
           if (await gaSyncDue(env, event.scheduledTime)) await syncGaAll(env);
         } catch (err) {
           console.error('Google Analytics sync failed', err);
+        }
+        try {
+          if (await bingSyncDue(env, event.scheduledTime)) await syncBing(env);
+        } catch (err) {
+          console.error('Bing sync failed', err);
+        }
+        try {
+          if (await claritySyncDue(env, event.scheduledTime)) await syncClarity(env);
+        } catch (err) {
+          console.error('Clarity sync failed', err);
         }
       }
       return;

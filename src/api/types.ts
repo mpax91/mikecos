@@ -3383,3 +3383,53 @@ export type BeeAnalytics =
       devices: { device: string; sessions: number }[];
       years: { year: string; sessions: number; views: number; first: string; last: string }[];
     };
+
+// ---- Bedford Bee: Bing + Clarity (worker/src/bee/bing.ts, clarity.ts) ----
+export interface BeeBingRow {
+  query?: string;
+  page?: string;
+  clicks: number;
+  impressions: number;
+  position: number | null;
+  ctr: number;
+}
+export type BeeBing =
+  | { connection: { connected: boolean; site: string | null; lastSyncAt: string | null; lastError: string | null }; empty: true }
+  | {
+      connection: { connected: boolean; site: string | null; lastSyncAt: string | null; lastError: string | null };
+      empty: false;
+      range: { from: string | null; to: string | null; weeks: number; last4: string[] };
+      period: { now: { clicks: number; impressions: number; ctr: number }; prev: { clicks: number; impressions: number; ctr: number } };
+      monthly: { month: string; clicks: number; impressions: number; days: number }[];
+      topQueries: BeeBingRow[];
+      topPages: BeeBingRow[];
+      strikingDistance: BeeBingRow[];
+      compare: { query: string; bingPos: number; googlePos: number; bingImpr: number; googleImpr: number }[];
+      issues: { url: string; issue: string; http_code: number | null }[];
+    };
+export interface BeeClarityRow {
+  key: string;
+  sessions: number;
+  bots: number;
+  scrollDepth: number | null;
+  activeTime: number | null;
+  rageClicks: number | null;
+  deadClicks: number | null;
+  quickBacks: number | null;
+  excessiveScroll: number | null;
+  scriptErrors: number | null;
+}
+export type BeeClarity =
+  | { connection: { connected: boolean; lastSyncAt: string | null; lastError: string | null }; empty: true }
+  | {
+      connection: { connected: boolean; lastSyncAt: string | null; lastError: string | null };
+      empty: false;
+      range: { from: string; to: string; days: number; windowDays: number };
+      site: BeeClarityRow | null;
+      daily: ({ date: string } & Record<string, number | string>)[];
+      readDepth: BeeClarityRow[];
+      frustrated: BeeClarityRow[];
+      sources: BeeClarityRow[];
+      devices: BeeClarityRow[];
+      projectUrl: string;
+    };
