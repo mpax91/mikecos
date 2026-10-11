@@ -62,7 +62,7 @@ export interface CommsRunResult {
   folder: string | null;
   calls: { file: string | null; added: number };
   texts: { file: string | null; added: number };
-  chats: { file: string | null; added: number; bytes: number; done: boolean; through: number | null; offset?: number };
+  chats: { file: string | null; added: number; bytes: number; done: boolean; through: number | null; offset?: number; probes?: [number, number | null][] };
   errors: string[];
 }
 
@@ -327,7 +327,7 @@ async function probeMmsDate(source: BackupSource, file: BackupFile, offset: numb
 }
 
 /** Largest offset whose first chat message is ≤ watermark (start reading there). */
-async function findChatStart(source: BackupSource, file: BackupFile, wm: number): Promise<number> {
+async function findChatStart(source: BackupSource, file: BackupFile, wm: number, trace?: [number, number | null][]): Promise<number> {
   const size = file.size ?? 0;
   if (!wm || size < 64 * 1024 * 1024) return 0;
   let lo = 0;
@@ -335,6 +335,7 @@ async function findChatStart(source: BackupSource, file: BackupFile, wm: number)
   while (hi - lo > 8 * 1024 * 1024) {
     const mid = Math.floor((lo + hi) / 2);
     const d = await probeMmsDate(source, file, mid);
+    trace?.push([Math.round(mid / 1e6), d === null ? null : d === -Infinity ? -1 : d]);
     if (d === null || d > wm) hi = mid;
     else lo = mid;
   }
@@ -423,7 +424,9 @@ export async function runComms(env: Env, sourceOverride?: BackupSource, opts: { 
         } catch {
           stats = {};
         }
-        const offset = await findChatStart(source, sms, start);
+        const probes: [number, number | null][] = [];
+        const offset = await findChatStart(source, sms, start, probes);
+        result.chats.probes = probes;
         const out = await pump(await source.read(sms, offset), new BackupScanner({ mms: true }), async (ev) => {
           for (const e of ev) {
             if (e.kind !== 'mms' || e.date <= start) continue;
