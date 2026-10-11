@@ -21,7 +21,8 @@ export const META_STATE_PROVIDER = 'meta';
 const V = 'v24.0';
 const GRAPH = `https://graph.facebook.com/${V}`;
 const ENC = 'CLOUD_ACCOUNT_ENC_KEY';
-const SCOPES = ['pages_show_list', 'pages_read_engagement', 'read_insights', 'business_management', 'instagram_basic', 'instagram_manage_insights'];
+// pages_read_user_content: comment counts on the Page's own posts (Meta treats comments as user content).
+const SCOPES = ['pages_show_list', 'pages_read_engagement', 'pages_read_user_content', 'read_insights', 'business_management', 'instagram_basic', 'instagram_manage_insights'];
 const HISTORY_DAYS = 730;
 const now = () => new Date().toISOString();
 const DAY = 86400000;
@@ -233,15 +234,17 @@ async function fetchFbPosts(pageId: string, token: string, sinceDays: number): P
     reactions?: { summary?: { total_count: number } };
     comments?: { summary?: { total_count: number } };
   };
-  const posts = await graphAll<P>(
-    `${pageId}/posts`,
-    {
-      fields: 'id,created_time,message,permalink_url,status_type,attachments{media_type,type,unshimmed_url,url,title},shares,reactions.summary(total_count).limit(0),comments.summary(total_count).limit(0)',
-      since: String(since),
-      limit: '100',
-    },
-    token
-  );
+  const base = 'id,created_time,message,permalink_url,status_type,attachments{media_type,type,unshimmed_url,url,title},shares,reactions.summary(total_count).limit(0)';
+  let withComments = true;
+  let posts: P[];
+  try {
+    posts = await graphAll<P>(`${pageId}/posts`, { fields: `${base},comments.summary(total_count).limit(0)`, since: String(since), limit: '100' }, token);
+  } catch (err) {
+    // Comments need pages_read_user_content (error #10) — pull everything else meanwhile.
+    if (!(err instanceof GraphError) || err.code !== 10) throw err;
+    withComments = false;
+    posts = await graphAll<P>(`${pageId}/posts`, { fields: base, since: String(since), limit: '100' }, token);
+  }
   const ins = await batchInsights(
     posts.map((p) => p.id),
     [['post_media_view'], ['post_impressions'], []].filter((s) => s.length),
@@ -259,7 +262,7 @@ async function fetchFbPosts(pageId: string, token: string, sinceDays: number): P
       format: fbFormat(p),
       link_url: a?.unshimmed_url ?? (a?.url && !/facebook\.com/.test(a.url) ? a.url : null),
       likes: p.reactions?.summary?.total_count ?? 0,
-      comments: p.comments?.summary?.total_count ?? 0,
+      comments: withComments ? (p.comments?.summary?.total_count ?? 0) : null,
       shares: p.shares?.count ?? 0,
       saves: null,
       views: i.post_media_view ?? i.post_impressions ?? null,
@@ -321,7 +324,7 @@ async function storePosts(env: Env, posts: PostRow[]): Promise<void> {
         `INSERT INTO bee_meta_posts (platform, id, created_at, text, permalink, format, link_url, likes, comments, shares, saves, views, reach, raw_json, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(platform, id) DO UPDATE SET text = excluded.text, permalink = excluded.permalink, format = excluded.format, link_url = excluded.link_url,
-           likes = excluded.likes, comments = excluded.comments, shares = COALESCE(excluded.shares, bee_meta_posts.shares), saves = COALESCE(excluded.saves, bee_meta_posts.saves),
+           likes = excluded.likes, comments = COALESCE(excluded.comments, bee_meta_posts.comments), shares = COALESCE(excluded.shares, bee_meta_posts.shares), saves = COALESCE(excluded.saves, bee_meta_posts.saves),
            views = COALESCE(excluded.views, bee_meta_posts.views), reach = COALESCE(excluded.reach, bee_meta_posts.reach), raw_json = excluded.raw_json, updated_at = excluded.updated_at`
       ).bind(p.platform, p.id, p.created_at, p.text, p.permalink, p.format, p.link_url, p.likes, p.comments, p.shares, p.saves, p.views, p.reach, JSON.stringify(p.raw), ts)
     );
@@ -425,7 +428,10 @@ export async function syncMeta(env: Env, full: boolean): Promise<MetaSyncResult>
       await syncFbDays(env, row.page_id, token);
       if (row.ig_id) await syncIgDays(env, row.ig_id, token);
     }
-    await env.DB.prepare(`UPDATE bee_meta_account SET ${full ? 'last_sync_at' : 'last_recent_at'} = ?, last_error = NULL, status = 'connected' WHERE id = 1`).bind(now()).run();
+    const note = fb.some((p) => p.comments === null)
+      ? 'Comment counts are missing: add pages_read_user_content to the Meta app (Manage everything on your Page → Permissions and features), then Reconnect Meta.'
+      : null;
+    await env.DB.prepare(`UPDATE bee_meta_account SET ${full ? 'last_sync_at' : 'last_recent_at'} = ?, last_error = ?, status = 'connected' WHERE id = 1`).bind(now(), note).run();
     return { fbPosts: fb.length, igPosts: ig.length, full };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
