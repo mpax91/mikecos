@@ -174,7 +174,8 @@ export const TEMPLATES: StatementTemplate[] = [
 ];
 
 /** Folders that are never statements (Mike's tickler folder etc.). */
-export const DEFAULT_IGNORED_FOLDERS = ['!nbox'];
+// 'Bedford Bee' holds Substack/Stripe CSV exports read by the Bee dashboard (worker/src/bee/).
+export const DEFAULT_IGNORED_FOLDERS = ['!nbox', 'Bedford Bee'];
 
 export const templateById = (id: string | null | undefined) => TEMPLATES.find((t) => t.id === id) ?? null;
 export const templateForFolder = (name: string) => TEMPLATES.find((t) => t.folderNames.some((n) => n.toLowerCase() === name.trim().toLowerCase())) ?? null;

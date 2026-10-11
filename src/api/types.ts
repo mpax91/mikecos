@@ -895,6 +895,7 @@ export interface Contact {
   updated_at: string;
   labels?: string; // JSON string[] — Mike's own labels (Google Contacts), migration 0098
   is_voter?: number; // list only: 1 when the contact has a voter record → automatic "Voter" label
+  is_bee?: number; // list only: 1 when linked to a current Bedford Bee subscriber → automatic "Bee" label
 }
 
 export interface ContactConnection {
@@ -1293,6 +1294,7 @@ export interface ContactDetail extends Contact {
   connections: (ContactConnection & { direction: 'from' | 'to' })[];
   householdMembers: HouseholdMember[];
   voterDiffs?: VoterDiff[];
+  bee?: BeeContactInfo | null;
 }
 
 /** Manual dedup — for the pairs the import matcher's automatic name/
@@ -3085,4 +3087,173 @@ export interface CashPlacement {
   rules: { bufferMonths: number; cushionPct: number; minIdleGain: number; minMoveGain: number; fdicLimit: number };
   banks: CashBankPlacement[];
   suggestions: CashSuggestion[];
+}
+
+// ---- Bedford Bee dashboard (2026-10-10) — worker/src/bee/summary.ts ----
+export interface BeeFile {
+  fileId: string;
+  name: string;
+  kind: 'posts' | 'subscribers' | 'stripe' | 'other';
+  exportDate: string | null;
+  status: 'parsed' | 'skipped' | 'failed';
+  error: string | null;
+  rows: number | null;
+  url: string | null;
+}
+export interface BeePost {
+  date: string;
+  title: string;
+  emailed: boolean;
+  sent: number;
+  delivered: number;
+  opened: number;
+  opens: number;
+  openRate: number | null;
+  ratio: number | null;
+  opensDay7: number | null;
+  opensDay28: number | null;
+  clicks: number;
+  views: number;
+  likes: number;
+  comments: number;
+  shares: number;
+  restacks: number;
+  signups: number;
+  paid: number;
+  unsubscribes: number;
+}
+export interface BeeEngagement {
+  ratio: number | null;
+  readShare: number | null;
+  score: number;
+  forwarder: 'burst' | 'steady' | null;
+  superfan: boolean;
+  inflated: 'work' | 'apple' | null;
+}
+export interface BeeSpotlightPerson extends BeeEngagement {
+  email: string;
+  name: string | null;
+  contactId: string | null;
+  type: string | null;
+  paid: boolean;
+  opened6mo: number | null;
+  seen6mo: number | null;
+  received6mo: number | null;
+  clicks: number | null;
+  shares: number | null;
+  comments: number | null;
+  daysActive30d: number | null;
+  lastOpen: string | null;
+}
+export interface BeeMoneyYear {
+  year: number;
+  charges: number;
+  newSubs: number;
+  renewals: number;
+  gross: number;
+  substackFee: number;
+  processing: number;
+  billingFee: number;
+  refunds: number;
+  disputes: number;
+  net: number;
+  paidOut: number;
+}
+export interface BeeTopPost {
+  date: string;
+  title: string;
+  openRate: number | null;
+  ratio: number | null;
+  opens: number;
+}
+export interface BeeYear {
+  year: number;
+  partial: boolean;
+  posts: number;
+  emailedPosts: number;
+  sent: number;
+  delivered: number;
+  opened: number;
+  opens: number;
+  openRate: number | null;
+  clicks: number;
+  views: number;
+  likes: number;
+  comments: number;
+  unsubscribes: number;
+  subsStart: number;
+  subsEnd: number;
+  paidStart: number;
+  paidEnd: number;
+  freeGained: number;
+  paidGained: number;
+  lost: number;
+  gross: number;
+  net: number;
+  topByOpenRate: BeeTopPost[];
+  topByForward: BeeTopPost[];
+}
+export interface BeeSource {
+  channel: string;
+  count: number;
+  paid: number;
+  raw: { source: string; count: number }[];
+}
+export interface BeeSubstack {
+  today: string;
+  settings: { folderName: string | null; folderUrl: string | null; lastScanAt: string | null; lastError: string | null };
+  asOf: { posts: string | null; subscribers: string | null; stripe: string | null };
+  firstSubscriberExport: string | null;
+  files: BeeFile[];
+  exportTask: { taskId: string; dueDate: string; status: string; missing: string[] } | null;
+  reminder: { active: boolean; dayOfMonth: number };
+  list: { total: number; free: number; paid: number; byType: { type: string; count: number }[]; left: number; joined30d: number };
+  growth: { date: string; total: number; paid: number }[];
+  months: { month: string; freeJoined: number; paidJoined: number; upgrades: number; left: number; cancelled: number }[];
+  sources: { free: BeeSource[]; paid: BeeSource[] };
+  posts: BeePost[];
+  postMedians: { openRate: number | null; ratio: number | null; views: number | null; recentOpenRate: number | null };
+  spotlight: {
+    medianRatio: number;
+    forwarders: BeeSpotlightPerson[];
+    superfans: BeeSpotlightPerson[];
+    upgradeCandidates: BeeSpotlightPerson[];
+    dormant: { neverOpened: number; quiet30d: number };
+  };
+  renewals: { email: string; name: string | null; contactId: string | null; type: string | null; plan: string | null; expires: string; cancelled: boolean }[];
+  money: {
+    years: BeeMoneyYear[];
+    balance: number;
+    charges: { id: string; date: string; type: string; description: string | null; amount: number; fee: number; net: number; payoutDate: string | null }[];
+    payouts: { id: string; date: string; amount: number }[];
+  };
+  years: BeeYear[];
+}
+export interface BeeContactInfo {
+  email: string;
+  type: string | null;
+  paid: boolean;
+  startDate: string | null;
+  firstPaidDate: string | null;
+  expires: string | null;
+  cancelled: boolean;
+  plan: string | null;
+  revenue: number | null;
+  source: string | null;
+  engagement: BeeSpotlightPerson | null;
+}
+export interface BeeSettings {
+  cloudAccountId: string | null;
+  folderId: string | null;
+  folderName: string | null;
+  folderUrl: string | null;
+  lastScanAt: string | null;
+  lastError: string | null;
+}
+export interface BeeFolderCandidate {
+  accountId: string;
+  accountLabel: string;
+  folderId: string;
+  folderName: string;
+  folderUrl: string | null;
 }

@@ -18265,3 +18265,283 @@ td.month-page__upcoming-actions .today-page__meeting-actions {
 .bofa__kv td:last-child {
   text-align: right;
 }
+
+/* ---- Bedford Bee dashboard (BeePage.tsx) — on the fin-dash card system ---- */
+.bee-section {
+  margin-top: 18px;
+}
+.bee-section__head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 0 0 12px;
+}
+.bee-section__title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--color-ink);
+}
+.bee-export-banner {
+  margin: 0 0 14px;
+}
+.bee-swatch {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  margin-right: 6px;
+  vertical-align: 1px;
+}
+.fin-dash__table th.num,
+.fin-dash__table td.num {
+  text-align: right;
+}
+.fin-dash__table td.num:last-child,
+.fin-dash__table th.num:last-child {
+  padding-right: 0;
+}
+.bee-table--compact td {
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+.bee-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.bee-bars__row {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr) 96px;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 3px 0;
+  background: none;
+  border: 0;
+  font: inherit;
+  font-size: 13px;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.bee-bars__label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bee-bars__track {
+  height: 10px;
+  border-radius: 5px;
+  background: var(--color-sidebar);
+  overflow: hidden;
+}
+.bee-bars__bar {
+  display: block;
+  height: 100%;
+  border-radius: 5px;
+  background: #2a6fb0;
+}
+.bee-bars__value {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.bee-bars__paid {
+  color: #c0662e;
+}
+.bee-bars__raw {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 2px 0 6px 160px;
+  font-size: 12px;
+  color: var(--color-muted);
+}
+.bee-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.bee-list__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 13px;
+}
+.bee-list__row:last-child {
+  border-bottom: none;
+}
+.bee-list__meta {
+  color: var(--color-muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.bee-person {
+  display: inline-flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.bee-person__email {
+  font-size: 11.5px;
+  color: var(--color-muted);
+}
+.bee-posts__head {
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.fin-dash__table td.bee-posts__title {
+  min-width: 260px;
+  max-width: 520px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.bee-posts__date {
+  color: var(--color-muted);
+}
+.bee-delta--up {
+  color: #2c6b3f;
+  font-weight: 600;
+}
+.bee-delta--down {
+  color: #a3341f;
+}
+.bee-tabs {
+  margin: 0;
+  flex-wrap: wrap;
+}
+.bee-spot__explain {
+  margin: 8px 0 10px;
+}
+.bee-badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-left: 8px;
+  vertical-align: top;
+}
+.bee-badge {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  border: var(--border-hairline);
+  background: var(--color-sidebar);
+  color: var(--color-ink);
+  white-space: nowrap;
+}
+.bee-badge--paid {
+  background: #fbefe6;
+  border-color: #ecc9ad;
+  color: #8a3f06;
+}
+.bee-badge--fwd {
+  background: #e8f0f8;
+  border-color: #bcd3ea;
+  color: #1d4f80;
+}
+.bee-badge--muted {
+  background: transparent;
+  border-style: dashed;
+  color: var(--color-muted);
+}
+.bee-money__strong td {
+  font-weight: 600;
+}
+.bee-year {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px 20px;
+  margin: 14px 0 6px;
+}
+.bee-year__fact {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.bee-year__value {
+  font-size: 22px;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+.bee-year__tops {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 24px;
+}
+.bee-tops {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 13px;
+}
+.bee-tops li {
+  padding: 4px 0;
+}
+.bee-tops li > * {
+  vertical-align: middle;
+}
+.bee-tops__title {
+  display: inline-block;
+  max-width: calc(100% - 64px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bee-tops__metric {
+  float: right;
+  color: var(--color-muted);
+  font-variant-numeric: tabular-nums;
+}
+.contact-label--bee {
+  color: #8a5a00;
+  background: transparent;
+  border-style: dashed;
+  border-color: #e3c779;
+}
+@media (max-width: 860px) {
+  .bee-year {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .bee-year__tops {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 640px) {
+  .bee-hide-sm {
+    display: none;
+  }
+  .bee-bars__row {
+    grid-template-columns: 110px minmax(0, 1fr) 84px;
+  }
+  .bee-bars__raw {
+    margin-left: 0;
+  }
+  .fin-dash__table td.bee-posts__title {
+    min-width: 130px;
+  }
+  .bee-posts td,
+  .bee-posts th {
+    padding-right: 8px;
+  }
+  .bee-posts__date {
+    font-size: 12px;
+    white-space: normal !important;
+    min-width: 52px;
+  }
+  .bee-list__row {
+    flex-direction: column;
+    gap: 2px;
+  }
+  .bee-list__meta {
+    white-space: normal;
+  }
+  .bee-badges {
+    margin-left: 0;
+    margin-top: 2px;
+    display: flex;
+  }
+}

@@ -31,11 +31,12 @@ export async function syncTaxPacketSection(env: Env, year: number, folderId: str
   sections[folderId] = section;
   const children: { noteId?: string; note?: AutoNoteState; links?: Record<string, string> } = row?.children_json && !entry.created ? JSON.parse(row.children_json) : {};
 
-  // Only folders still live keep a section.
+  // Only folders still live keep a section ('bee:' sections come from the
+  // Bedford Bee dashboard, not a statements folder — always kept).
   const { results } = await env.DB.prepare(`SELECT id FROM statement_folders WHERE status = 'live'`).all<{ id: string }>();
   const live = new Set((results ?? []).map((r) => r.id));
   const ordered = Object.entries(sections)
-    .filter(([id]) => live.has(id))
+    .filter(([id]) => live.has(id) || id.startsWith('bee:'))
     .sort(([, a], [, b]) => a.title.localeCompare(b.title));
 
   const expected = ordered.flatMap(([, sec]) => sec.expected);

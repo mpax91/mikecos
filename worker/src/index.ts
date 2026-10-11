@@ -57,6 +57,9 @@ import { statementsRouter } from './statements/router';
 import { accountPayersRouter } from './accountPayersRouter';
 import { afterBillTaskSpawned, billsOnCalendar, billsRouter } from './bills';
 import { scanAllLiveFolders, statementsScanDue } from './statements/engine';
+import { beeForContact, beeRouter } from './bee/router';
+import { beeScanDue, scanBee } from './bee/ingest';
+import { BEE_TASK_DEF_ID, syncBeeExportTask } from './bee/reminder';
 import { contactsAssistantRouter } from './contactsAssistant';
 import { betsEnrichmentRouter } from './betsEnrichment';
 import { buildVoterInsight, ELECTION_CODE_RE, titleCaseVoterText, voterDiffs, voterKeyOf, type VoterDiff } from './voterInsight';
@@ -94,6 +97,7 @@ app.route('/api/cloud', cloudRouter);
 app.route('/api/statements', statementsRouter);
 app.route('/api/account-payers', accountPayersRouter);
 app.route('/api/bills', billsRouter);
+app.route('/api/bee', beeRouter);
 app.route('/api/contacts/ask', contactsAssistantRouter);
 app.route('/api/bets/enrichment', betsEnrichmentRouter);
 
@@ -427,6 +431,8 @@ async function spawnDueRecurringTasks(db: D1Database, todayIso: string): Promise
     // A Bills & Due Dates task (bills.ts): amount in the title, the
     // statement's exact due date, and checked off if already paid.
     if (def.bill_id) await afterBillTaskSpawned(db, def.bill_id, def.id, id, dueDate);
+    // Monthly Bedford Bee export reminder: already done if the files came early.
+    if (def.id === BEE_TASK_DEF_ID) await syncBeeExportTask({ DB: db } as Env);
   }
 }
 
@@ -851,7 +857,9 @@ app.get('/api/contacts', async (c) => {
 
   // is_voter: has a voter record (bare roll entry or merged into one of
   // Mike's contacts) — shown as the automatic "Voter" label (2026-10-10).
-  let sql = 'SELECT contacts.*, EXISTS (SELECT 1 FROM voter_records vr WHERE vr.contact_id = contacts.id) AS is_voter FROM contacts WHERE 1=1';
+  // is_bee: linked to a current Bedford Bee subscriber — the automatic
+  // "Bee" label (2026-10-10; gone once they leave the newest export).
+  let sql = `SELECT contacts.*, EXISTS (SELECT 1 FROM voter_records vr WHERE vr.contact_id = contacts.id) AS is_voter, EXISTS (SELECT 1 FROM bee_subscribers b WHERE ${BEE_ACTIVE_SQL}) AS is_bee FROM contacts WHERE 1=1`;
   const binds: unknown[] = [];
 
   if (!includeVoters) {
@@ -867,6 +875,8 @@ app.get('/api/contacts', async (c) => {
     binds.push(label);
     // "Voter" is automatic: anyone with a voter record.
     if (label.toLowerCase() === VOTER_LABEL.toLowerCase()) sql += ' OR EXISTS (SELECT 1 FROM voter_records vr WHERE vr.contact_id = contacts.id)';
+    // "Bee" is automatic too: linked to a current Bedford Bee subscriber.
+    if (label.toLowerCase() === BEE_LABEL.toLowerCase()) sql += ` OR EXISTS (SELECT 1 FROM bee_subscribers b WHERE ${BEE_ACTIVE_SQL})`;
     sql += ')';
   }
   if (remindersOnly) {
@@ -986,6 +996,9 @@ app.post('/api/contacts/name-case/fix', async (c) => {
 
 /** The automatic label every contact with a voter record carries. */
 const VOTER_LABEL = 'Voter';
+/** Automatic label for contacts linked to a current Bedford Bee subscriber. */
+const BEE_LABEL = 'Bee';
+const BEE_ACTIVE_SQL = "b.contact_id = contacts.id AND b.active = 1 AND lower(COALESCE(b.type, '')) != 'author'";
 
 // GET /api/contacts/labels — every label on Mike's own contacts (voter-roll
 // entries have none) with how many people carry it, A–Z. Drives
@@ -995,12 +1008,18 @@ app.get('/api/contacts/labels', async (c) => {
     `SELECT j.value AS label, COUNT(*) AS n FROM contacts, json_each(contacts.labels) j
      WHERE contacts.source != 'voter_file' GROUP BY lower(j.value) ORDER BY label COLLATE NOCASE`
   ).all<{ label: string; n: number }>();
-  const labels = (results ?? []).filter((r) => r.label.toLowerCase() !== VOTER_LABEL.toLowerCase()).map((r) => ({ label: r.label, count: r.n }));
+  const labels = (results ?? [])
+    .filter((r) => r.label.toLowerCase() !== VOTER_LABEL.toLowerCase() && r.label.toLowerCase() !== BEE_LABEL.toLowerCase())
+    .map((r) => ({ label: r.label, count: r.n }));
   // Automatic "Voter" label: everyone with a voter record (the roll plus
   // Mike's merged contacts). Picking it in the dropdown turns the Voter
   // Roll on, so the count matches what the list then shows.
   const voters = await c.env.DB.prepare('SELECT COUNT(DISTINCT contact_id) AS n FROM voter_records').first<{ n: number }>();
   if (voters?.n) labels.push({ label: VOTER_LABEL, count: voters.n });
+  const bees = await c.env.DB.prepare(
+    `SELECT COUNT(DISTINCT contact_id) AS n FROM bee_subscribers WHERE active = 1 AND contact_id IS NOT NULL AND contact_id != 'none' AND lower(COALESCE(type, '')) != 'author'`
+  ).first<{ n: number }>();
+  if (bees?.n) labels.push({ label: BEE_LABEL, count: bees.n });
   // Alphabetical (Mike, 2026-10-10) — not by how many contacts carry it.
   labels.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base', numeric: true }));
   return c.json({ labels });
@@ -1165,6 +1184,7 @@ app.get('/api/contacts/:id', async (c) => {
     connections,
     householdMembers,
     voterDiffs: voterDiffList.map(({ apply: _apply, ...d }) => d),
+    bee: await beeForContact(c.env, id),
   });
 });
 
@@ -1348,6 +1368,9 @@ app.delete('/api/contacts/:id', async (c) => {
   const id = c.req.param('id');
   await c.env.DB.prepare('DELETE FROM voter_records WHERE contact_id = ?').bind(id).run();
   await c.env.DB.prepare('DELETE FROM contact_notes WHERE contact_id = ?').bind(id).run();
+  // A deleted Bee contact stays deleted — the subscriber isn't re-linked
+  // or re-created on the next import ('none').
+  await c.env.DB.prepare("UPDATE bee_subscribers SET contact_id = 'none' WHERE contact_id = ?").bind(id).run();
   await c.env.DB.prepare('DELETE FROM contacts WHERE id = ?').bind(id).run();
   return c.json({ ok: true });
 });
@@ -1424,6 +1447,7 @@ app.post('/api/contacts/:id/merge', async (c) => {
   stmts.push(c.env.DB.prepare('DELETE FROM contact_connections WHERE contact_id = ? AND related_contact_id = ?').bind(survivorId, survivorId));
   stmts.push(c.env.DB.prepare('UPDATE contact_voter_links SET contact_id = ? WHERE contact_id = ?').bind(survivorId, goneId));
   stmts.push(c.env.DB.prepare('DELETE FROM contact_voter_reviews WHERE contact_id = ?').bind(goneId));
+  stmts.push(c.env.DB.prepare('UPDATE bee_subscribers SET contact_id = ? WHERE contact_id = ?').bind(survivorId, goneId));
   stmts.push(c.env.DB.prepare('DELETE FROM contacts WHERE id = ?').bind(goneId));
   if (target.source !== 'voter_file') {
     const { results: keyRows } = await c.env.DB.prepare('SELECT voter_key FROM voter_records WHERE contact_id IN (?, ?)')
@@ -8364,6 +8388,12 @@ export default {
           if (await statementsScanDue(env, event.scheduledTime)) await scanAllLiveFolders(env);
         } catch (err) {
           console.error('Statements scan failed', err);
+        }
+        // Bedford Bee: the Drive "Bedford Bee" exports, same nightly slot.
+        try {
+          if (await beeScanDue(env, event.scheduledTime)) await scanBee(env);
+        } catch (err) {
+          console.error('Bedford Bee scan failed', err);
         }
       }
       return;

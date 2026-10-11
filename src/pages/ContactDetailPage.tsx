@@ -3,7 +3,8 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
 import type { Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, VoterDiff } from '../api/types';
 import { partyTone, VoterDiffBox, VoterInsightSection } from '../components/VoterInsight';
-import { contactLabels, displayLabels, VOTER_LABEL } from '../utils/contactLabels';
+import { BeeContactSection } from '../components/BeeContactSection';
+import { autoLabelClass, contactLabels, displayLabels, isAutoLabel } from '../utils/contactLabels';
 import { Modal } from '../components/Modal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { KebabMenu } from '../components/KebabMenu';
@@ -68,7 +69,7 @@ function EditDetailsModal({ contact, onSave, onClose }: { contact: ContactDetail
   const [labelDraft, setLabelDraft] = useState('');
   const [knownLabels, setKnownLabels] = useState<string[]>([]);
   useEffect(() => {
-    api.listContactLabels().then((r) => setKnownLabels(r.labels.map((l) => l.label).filter((l) => l !== VOTER_LABEL))).catch(() => {});
+    api.listContactLabels().then((r) => setKnownLabels(r.labels.map((l) => l.label).filter((l) => !isAutoLabel(l)))).catch(() => {});
   }, []);
   function addLabel(raw: string) {
     const l = raw.trim();
@@ -554,7 +555,7 @@ export function ContactDetailPage() {
   const anniversary = formatDate(contact.anniversary_month, contact.anniversary_day, contact.anniversary_year);
   const isPinned = contact.pinned === 1;
   const tz = timezoneForCity(contact.city);
-  const cardLabels = displayLabels(contact, contact.voterRecords.length > 0);
+  const cardLabels = displayLabels(contact, contact.voterRecords.length > 0, !!contact.bee);
   // Google's official search link (maps.google.com/?q= now often lands on a
   // blank map). Adds the city when the address line doesn't already have it.
   const mapsQuery =
@@ -600,7 +601,7 @@ export function ContactDetailPage() {
       {(cardLabels.length > 0 || contact.circle !== 'other') && (
         <div className="contact-detail__meta contact-labels">
           {cardLabels.map((l) => (
-            <span key={l} className={`contact-label${l === VOTER_LABEL ? ' contact-label--voter' : ''}`}>
+            <span key={l} className={`contact-label${autoLabelClass(l)}`}>
               {l}
             </span>
           ))}
@@ -705,6 +706,8 @@ export function ContactDetailPage() {
       <VoterDiffBox diffs={contact.voterDiffs ?? []} onDecide={handleVoterDiff} />
 
       <VoterInsightSection records={contact.voterRecords} household={contact.householdMembers} />
+
+      <BeeContactSection bee={contact.bee} />
 
       <ConnectionsSection contact={contact} onAdd={handleAddConnection} onDelete={handleDeleteConnection} />
 

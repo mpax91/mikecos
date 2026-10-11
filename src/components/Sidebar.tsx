@@ -83,6 +83,7 @@ const SIDEBAR_SECTIONS: NavSectionDef[] = [
     label: 'Insights',
     items: [
       { path: '/dashboard', label: 'Dashboard', kind: 'dashboard' },
+      { path: '/bee', label: 'Bedford Bee', kind: 'bee' },
       { path: '/stats', label: 'Stats', kind: 'stats' },
       { path: '/journal', label: 'Journal', kind: 'journal' },
     ],

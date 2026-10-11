@@ -7,6 +7,7 @@ import { WeekPage } from './pages/WeekPage';
 import { MonthPage } from './pages/MonthPage';
 import { ProjectsList } from './pages/ProjectsList';
 import { WaitingPage } from './pages/WaitingPage';
+import { BeePage } from './pages/BeePage';
 import { FollowUpToast } from './components/FollowUpToast';
 import { ProjectDetail } from './pages/ProjectDetail';
 import { NotesPage } from './pages/NotesPage';
@@ -71,6 +72,7 @@ export default function App() {
             <Route path="/today/month/:month" element={<MonthPage />} />
             <Route path="/projects" element={<ProjectsList />} />
             <Route path="/waiting" element={<WaitingPage />} />
+            <Route path="/bee" element={<BeePage />} />
             <Route path="/projects/:id" element={<ProjectDetail />} />
             <Route path="/notes" element={<NotesPage />} />
             <Route path="/notes/:id" element={<NotesPage />} />
