@@ -7500,7 +7500,7 @@ async function computeBriefing(db: D1Database, date: string) {
   // in the nightly Cron Trigger, not a page load. This just reads the
   // small table that job maintains.
   const { results: missingEpisodesRow } = await db
-    .prepare(`SELECT id, show_title, season_number, episode_number, episode_name, aired_on FROM plex_missing_episodes WHERE dismissed = 0 ORDER BY aired_on DESC LIMIT 15`)
+    .prepare(`SELECT id, show_title, season_number, episode_number, episode_name, aired_on FROM plex_missing_episodes WHERE dismissed = 0 AND show_item_id NOT IN (SELECT show_item_id FROM plex_ignored_shows) ORDER BY aired_on DESC LIMIT 15`)
     .all<{ id: string; show_title: string; season_number: number; episode_number: number; episode_name: string | null; aired_on: string }>();
 
   // ---- retrospective: plain aggregation over the trailing week, no

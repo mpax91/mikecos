@@ -2142,6 +2142,13 @@ export interface PlexMissingEpisode {
   dismissed: boolean;
 }
 
+/** A show Mike never wants Airing reminders for (migrations/0109). */
+export interface PlexIgnoredShow {
+  showItemId: string;
+  title: string;
+  ignoredAt: string;
+}
+
 // The hand-entered physical/digital catalog — see worker/migrations/
 // 0073_media_catalog.sql and worker/src/mediaCatalog.ts. Deliberately just
 // a catalog (title/author/format/notes), no read/listened status.

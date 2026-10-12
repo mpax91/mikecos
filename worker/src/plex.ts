@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Env, PlexCronRunRow } from './types';
 import { runPlexSyncChunk, PlexNotConfiguredError } from './plexSync';
-import { runAiringCheckChunk, runFullHistoryScanChunk, deleteEpisodeTask } from './plexAiring';
+import { runAiringCheckChunk, runFullHistoryScanChunk, deleteEpisodeTask, ignoreShow } from './plexAiring';
 
 /** Plex library mirror — browse/search the synced catalogue, surface
  * metadata gaps, and manage aired-but-missing episode flags. See
@@ -342,8 +342,36 @@ function missingEpisodeJson(r: MissingEpisodeRow) {
 }
 
 plexRouter.get('/missing-episodes', async (c) => {
-  const { results } = await c.env.DB.prepare('SELECT * FROM plex_missing_episodes WHERE dismissed = 0 ORDER BY aired_on DESC').all<MissingEpisodeRow>();
+  const { results } = await c.env.DB.prepare(
+    'SELECT * FROM plex_missing_episodes WHERE dismissed = 0 AND show_item_id NOT IN (SELECT show_item_id FROM plex_ignored_shows) ORDER BY aired_on DESC'
+  ).all<MissingEpisodeRow>();
   return c.json((results ?? []).map(missingEpisodeJson));
+});
+
+// ---- Ignored shows (migrations/0109) — never in Airing, no tasks ----
+
+plexRouter.get('/ignored-shows', async (c) => {
+  const { results } = await c.env.DB.prepare('SELECT show_item_id, title, ignored_at FROM plex_ignored_shows ORDER BY title COLLATE NOCASE').all<{
+    show_item_id: string;
+    title: string;
+    ignored_at: string;
+  }>();
+  return c.json((results ?? []).map((r) => ({ showItemId: r.show_item_id, title: r.title, ignoredAt: r.ignored_at })));
+});
+
+plexRouter.post('/ignored-shows', async (c) => {
+  const body = await c.req.json<{ showItemId?: string }>();
+  if (!body.showItemId) return c.json({ error: 'showItemId is required' }, 400);
+  const title = await ignoreShow(c.env, body.showItemId);
+  if (!title) return c.json({ error: 'show not found' }, 404);
+  return c.json({ showItemId: body.showItemId, title });
+});
+
+// Unignoring doesn't bring back episodes cleared when it was ignored — the
+// next nightly check (last few days) or a full-history scan picks it up.
+plexRouter.delete('/ignored-shows/:id', async (c) => {
+  await c.env.DB.prepare('DELETE FROM plex_ignored_shows WHERE show_item_id = ?').bind(c.req.param('id')).run();
+  return c.json({ ok: true });
 });
 
 // GET /airing-debug?title=<substring> — read-only troubleshooting for

@@ -39,7 +39,8 @@ async function pendingTvmazeResolves(env: Env): Promise<{ show_item_id: string; 
     `SELECT s.id as show_item_id, s.tvdb_id
      FROM plex_items s
      LEFT JOIN plex_tvmaze_shows t ON t.show_item_id = s.id
-     WHERE s.type = 'show' AND s.tvdb_id IS NOT NULL AND (t.show_item_id IS NULL OR t.tvdb_id != s.tvdb_id)`
+     WHERE s.type = 'show' AND s.tvdb_id IS NOT NULL AND (t.show_item_id IS NULL OR t.tvdb_id != s.tvdb_id)
+       AND ${NOT_IGNORED_SHOW_SQL}`
   ).all<{ show_item_id: string; tvdb_id: string }>();
   return results ?? [];
 }
@@ -115,6 +116,47 @@ async function reconcileMissingEpisodes(env: Env): Promise<void> {
          AND e.episode_number = plex_missing_episodes.episode_number
      )`
   ).run();
+}
+
+/** SQL condition (over a show row aliased `s`) that's true when Mike has
+ * ignored the show — by its Plex id, or by its TheTVDB id so a re-match in
+ * Plex (new rating key) stays ignored. Ignored shows get no TVMaze calls,
+ * no missing-episode rows and no "Download …" tasks. migrations/0109. */
+export const NOT_IGNORED_SHOW_SQL = `NOT EXISTS (
+  SELECT 1 FROM plex_ignored_shows ig
+  WHERE ig.show_item_id = s.id OR (ig.tvdb_id IS NOT NULL AND ig.tvdb_id = s.tvdb_id)
+)`;
+
+/** Ignores a show: records it, then clears what it already put in Airing —
+ * outstanding missing-episode rows and their open "Download …" tasks
+ * (deleted, same as a dismissal: Mike doesn't want them). Returns the
+ * stored title, or null when the id isn't a synced show. */
+export async function ignoreShow(env: Env, showItemId: string): Promise<string | null> {
+  const show = await env.DB.prepare(`SELECT id, title, tvdb_id FROM plex_items WHERE id = ? AND type = 'show'`)
+    .bind(showItemId)
+    .first<{ id: string; title: string; tvdb_id: string | null }>();
+  if (!show) return null;
+  await env.DB.prepare(
+    `INSERT INTO plex_ignored_shows (show_item_id, tvdb_id, title, ignored_at) VALUES (?, ?, ?, ?)
+     ON CONFLICT(show_item_id) DO UPDATE SET tvdb_id = excluded.tvdb_id, title = excluded.title`
+  )
+    .bind(show.id, show.tvdb_id, show.title, new Date().toISOString())
+    .run();
+  // Every Plex item for the same show (a re-match can leave an old id on
+  // missing-episode rows) — by id or by TheTVDB id.
+  const { results: rows } = await env.DB.prepare(
+    `SELECT m.id, m.task_id FROM plex_missing_episodes m
+     WHERE m.dismissed = 0 AND (m.show_item_id = ? OR (? IS NOT NULL AND m.show_item_id IN (SELECT id FROM plex_items WHERE type = 'show' AND tvdb_id = ?)))`
+  )
+    .bind(show.id, show.tvdb_id, show.tvdb_id)
+    .all<{ id: string; task_id: string | null }>();
+  for (const r of rows ?? []) {
+    if (r.task_id) {
+      await env.DB.prepare(`DELETE FROM entities WHERE id = ? AND type = 'task' AND status = 'open'`).bind(r.task_id).run();
+    }
+    await env.DB.prepare(`DELETE FROM plex_missing_episodes WHERE id = ?`).bind(r.id).run();
+  }
+  return show.title;
 }
 
 interface TvmazeEpisode {
@@ -307,7 +349,7 @@ export async function runAiringCheckChunk(env: Env): Promise<AiringCheckChunkRes
         `SELECT s.id as show_item_id, s.title as show_title, t.tvmaze_id
          FROM plex_items s
          JOIN plex_tvmaze_shows t ON t.show_item_id = s.id
-         WHERE s.type = 'show' AND t.tvmaze_id IS NOT NULL`
+         WHERE s.type = 'show' AND t.tvmaze_id IS NOT NULL AND ${NOT_IGNORED_SHOW_SQL}`
       ).all<{ show_item_id: string; show_title: string; tvmaze_id: number }>();
       state.checkQueue = (shows ?? []).map((s) => ({ showItemId: s.show_item_id, showTitle: s.show_title, tvmazeId: s.tvmaze_id }));
       spent++;
@@ -397,7 +439,7 @@ export async function runFullHistoryScanChunk(env: Env): Promise<AiringScanChunk
       `SELECT s.id as show_item_id, s.title as show_title, t.tvmaze_id
        FROM plex_items s
        JOIN plex_tvmaze_shows t ON t.show_item_id = s.id
-       WHERE s.type = 'show' AND t.tvmaze_id IS NOT NULL`
+       WHERE s.type = 'show' AND t.tvmaze_id IS NOT NULL AND ${NOT_IGNORED_SHOW_SQL}`
     ).all<{ show_item_id: string; show_title: string; tvmaze_id: number }>();
     const queue = (shows ?? []).map((s) => ({ showItemId: s.show_item_id, showTitle: s.show_title, tvmazeId: s.tvmaze_id }));
     state = { queue, showsScanned: 0, showsTotal: queue.length, newlyFlagged: 0 };

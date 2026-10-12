@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import type { PlexMissingEpisode } from '../api/types';
+import { KebabMenu } from './KebabMenu';
 
 function formatAired(iso: string): string {
   const [y, m, d] = iso.split('-').map(Number);
@@ -33,6 +35,21 @@ export function PlexAiringPanel() {
       await api.dismissPlexMissingEpisode(ep.id, true);
     } catch {
       load(); // put it back if the dismiss didn't actually land
+    }
+  }
+
+  // Ignore the whole show (Saturday Night Live, Cops…): every row of it
+  // leaves the list now, and the nightly check skips it from here on.
+  // Undone from Settings → Ignored Shows.
+  async function ignoreShow(ep: PlexMissingEpisode) {
+    const prev = episodes;
+    setEpisodes((list) => list?.filter((e) => e.showItemId !== ep.showItemId) ?? list);
+    try {
+      await api.ignorePlexShow(ep.showItemId);
+      setCheckMessage(`Ignoring ${ep.showTitle} — it won't show up here again.`);
+    } catch {
+      setEpisodes(prev);
+      setError(`Couldn't ignore ${ep.showTitle} — try again.`);
     }
   }
 
@@ -106,6 +123,9 @@ export function PlexAiringPanel() {
           Runs automatically every night. Shows in your Plex library are checked against TVMaze's schedule for what
           aired recently.
         </div>
+        <Link to="/settings?cat=ignored-shows" className="settings-gear-link" title="Ignored Shows" aria-label="Ignored Shows">
+          ⚙️
+        </Link>
         <button type="button" className="btn" onClick={handleCheck} disabled={checking}>
           {checking ? 'Checking…' : 'Check now'}
         </button>
@@ -132,9 +152,12 @@ export function PlexAiringPanel() {
               </div>
               <div className="plex-issues__row-tags">
                 <span className="plex-issues__tag">Aired {formatAired(ep.airedOn)}</span>
-                <button type="button" className="wallet-editor__manage-link" onClick={() => dismiss(ep)}>
-                  Dismiss
-                </button>
+                <KebabMenu
+                  items={[
+                    { label: 'Dismiss Episode', onClick: () => dismiss(ep) },
+                    { label: 'Ignore Show', onClick: () => ignoreShow(ep), danger: true, separatorBefore: true },
+                  ]}
+                />
               </div>
             </div>
           ))}
