@@ -20138,6 +20138,23 @@ button.fin-dash__stat::after {
 
 /* Settings → Meetings */
 .mtg-settings__names { margin-top: 18px; padding: 12px 14px; }
+.mtg-settings__check { display: flex; align-items: center; gap: 8px; font-size: 14px; margin-top: 6px; cursor: pointer; }
+.mtg-section__title--row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.mtg-section__title--row .btn { text-transform: none; letter-spacing: 0; }
+.mtg-with { font-size: 12px; color: var(--color-muted); white-space: nowrap; }
+.mtg-own__label { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+.mtg-section__title--row + .mtg-hint { margin-bottom: 8px; }
+.mtg__toolbar .info-tip, .mtg__toolbar > button[aria-label] { align-self: center; }
+.today-page__wrapup { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; margin: 0 0 8px; padding: 10px 14px; border: 1px solid var(--color-border); border-left: 3px solid var(--color-accent); border-radius: 10px; background: var(--color-card-bg); color: inherit; font: inherit; cursor: pointer; }
+.today-page__wrapup:hover { background: var(--color-paper); }
+.today-page__wrapup-tag { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-accent); white-space: nowrap; }
+.today-page__wrapup-title { font-weight: 500; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.today-page__wrapup-count { font-size: 13px; color: var(--color-muted); white-space: nowrap; }
+@media (max-width: 640px) {
+  .today-page__wrapup { flex-wrap: wrap; row-gap: 2px; }
+  .today-page__wrapup-title { flex-basis: calc(100% - 90px); }
+  .today-page__wrapup-count { flex-basis: 100%; }
+}
 .mtg-settings__names-row { display: flex; gap: 8px; }
 .mtg-settings__names-row input { flex: 1; }
 .mtg-form-modal { width: min(620px, 94vw); }

@@ -72,7 +72,7 @@ import { metaSyncDue, syncMeta } from './bee/meta';
 import { contactsAssistantRouter } from './contactsAssistant';
 import { betsEnrichmentRouter } from './betsEnrichment';
 import { cascadeRealm, contactRealmSql, inheritRealmFromParent, realmOf, realmSql, stampRealm, createRealm, workLabel, type RealmFilter } from './work/realm';
-import { workRouter, enrichMeetings, seriesFeedSource, setMeetingLoader } from './work/router';
+import { workRouter, enrichMeetings, seriesFeedSource, setMeetingLoader, meetingNoteStart } from './work/router';
 import { cleanDateParts, importantDates, isAnniversaryLabel, normalizeEventLabel, parseYearlessDate, type ContactEvent, type DateParts } from './contactDates';
 import { buildVoterInsight, ELECTION_CODE_RE, splitVoterDiffs, titleCaseVoterText, voterDiffs, voterKeyOf, type VoterDiff } from './voterInsight';
 
@@ -4820,7 +4820,7 @@ app.get('/api/meetings/:meetingId/note', async (c) => {
 // note icon was clicked" instead of "only saved once text was typed".
 app.post('/api/meetings/:meetingId/note', async (c) => {
   const meetingId = c.req.param('meetingId');
-  const body = await c.req.json<{ title: string; realm?: string }>();
+  const body = await c.req.json<{ title: string; realm?: string; people?: string[] }>();
 
   const existing = await c.env.DB.prepare('SELECT id, note_entity_id FROM meeting_notes WHERE meeting_id = ?')
     .bind(meetingId)
@@ -4833,11 +4833,14 @@ app.post('/api/meetings/:meetingId/note', async (c) => {
   const noteId = uid();
   const ts = now();
   const title = body.title?.trim() || 'Untitled Note';
+  // Starts from the Notes / Decisions / Next Steps template (2026-10-12) —
+  // the note is read for next steps afterwards (work/noteScan.ts).
+  const start = await meetingNoteStart(c.env.DB, Array.isArray(body.people) ? body.people.map(String).slice(0, 20) : []).catch(() => null);
   await c.env.DB.prepare(
     `INSERT INTO entities (id, type, title, content, parent_id, is_top_level, status, position, last_touched, created_at, updated_at, search_text)
-     VALUES (?, 'note', ?, NULL, NULL, 1, NULL, 0, ?, ?, ?, ?)`
+     VALUES (?, 'note', ?, ?, NULL, 1, NULL, 0, ?, ?, ?, ?)`
   )
-    .bind(noteId, title, ts, ts, ts, null)
+    .bind(noteId, title, start?.content ?? null, ts, ts, ts, start?.text ?? null)
     .run();
   await stampRealm(c.env.DB, c, noteId, body.realm);
 

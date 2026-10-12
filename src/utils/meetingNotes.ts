@@ -26,6 +26,13 @@ export function buildMeetingNoteTitle(m: { title: string; start: string; end: st
   return `${dateLabel} | ${timeLabel(m.start)} – ${timeLabel(m.end)} | ${title}`;
 }
 
+/** Names for the "<Name> will …" lines of a new meeting note's template:
+ * the meeting's people (Contacts), else the invite's attendee names. */
+export function meetingPeopleNames(m: { people?: { name: string }[]; attendees?: { name: string | null; email: string }[] }): string[] {
+  if (m.people?.length) return m.people.map((p) => p.name);
+  return (m.attendees ?? []).map((a) => a.name?.trim() ?? '').filter(Boolean);
+}
+
 /** Whether this meeting occurrence is already over — the same rule used
  * for the strikethrough on Today/Journal meeting rows. A past meeting's
  * note icon never creates a new note (see each page's openMeetingNote) —

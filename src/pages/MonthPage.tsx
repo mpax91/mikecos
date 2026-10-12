@@ -6,7 +6,7 @@ import type { MeetingsRangeResponse, MonthResponse, RangeMeetingItem } from '../
 import { getHolidays } from '../utils/holidays';
 import { fmtBillMoney } from '../utils/bills';
 import { useReportTabMeta } from '../contexts/TabsContext';
-import { buildMeetingNoteTitle, meetingHasEnded } from '../utils/meetingNotes';
+import { meetingPeopleNames, buildMeetingNoteTitle, meetingHasEnded } from '../utils/meetingNotes';
 
 // Same fixed home-timezone treatment as the Day/Week views' own meeting
 // times — see TodayPage's MEETING_TZ comment.
@@ -321,7 +321,7 @@ export function MonthPage() {
       loadMeetings(); // stale hasNote — the worker dropped the dangling link
     }
     if (meetingHasEnded(m)) return;
-    const { noteEntityId } = await api.createMeetingNote(m.id, buildMeetingNoteTitle(m), m.realm);
+    const { noteEntityId } = await api.createMeetingNote(m.id, buildMeetingNoteTitle(m), m.realm, meetingPeopleNames(m));
     navigate(`/notes/${noteEntityId}`);
   }
 

@@ -9,7 +9,7 @@ import { BlankLine } from '../components/BlankLine';
 import { WeatherWidget } from '../components/WeatherWidget';
 import { getHolidays } from '../utils/holidays';
 import { fmtBillMoney } from '../utils/bills';
-import { buildMeetingNoteTitle, meetingHasEnded } from '../utils/meetingNotes';
+import { meetingPeopleNames, buildMeetingNoteTitle, meetingHasEnded } from '../utils/meetingNotes';
 import { MEETING_CHANGED_EVENT, openMeetingSheet } from '../components/MeetingSheet';
 import { DOC_ICON } from '../components/MeetingDocs';
 import { RealmChip } from '../components/RealmSwitch';
@@ -200,6 +200,18 @@ export function TodayPage() {
   useEffect(() => {
     loadMeetings();
   }, [loadMeetings]);
+  // Coming back to the tab (after a meeting, notes typed elsewhere) re-reads
+  // meetings, which re-reads their 📝 notes for next steps — the Wrap Up
+  // line below appears without a manual refresh. Plus a quiet 5-minute tick
+  // so a meeting ending while Today sits open still gets its line.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!isToday) return;
+    const onVis = () => document.visibilityState === 'visible' && loadMeetings();
+    document.addEventListener('visibilitychange', onVis);
+    const t = window.setInterval(() => (setTick((n) => n + 1), document.visibilityState === 'visible' && loadMeetings()), 5 * 60_000);
+    return () => (document.removeEventListener('visibilitychange', onVis), window.clearInterval(t));
+  }, [isToday, loadMeetings]);
 
   // Morning-of meeting prep (today only): per meeting, what's open with the
   // people on it and what happened last time — shown under each meeting row.
@@ -250,7 +262,7 @@ export function TodayPage() {
       loadMeetings();
     }
     if (meetingHasEnded(m)) return;
-    const { noteEntityId } = await api.createMeetingNote(m.id, buildMeetingNoteTitle(m), m.realm);
+    const { noteEntityId } = await api.createMeetingNote(m.id, buildMeetingNoteTitle(m), m.realm, meetingPeopleNames(m));
     navigate(`/notes/${noteEntityId}`);
     loadMeetings();
   }
@@ -520,6 +532,21 @@ export function TodayPage() {
                 + Add
               </Link>
             </div>
+            {/* Wrap Up (2026-10-12): a meeting that ended 15+ minutes ago
+                with next steps still to sort (from its 📝 note or pasted
+                Gemini notes). Tap → the sheet with Add My Tasks; other
+                people's items wait for Mike's own tap. */}
+            {meetings
+              .filter((m) => !m.allDay && Date.parse(m.end) <= Date.now() - 15 * 60_000 && (m.pendingActions ?? 0) > 0)
+              .map((m) => (
+                <button key={`wrap-${m.id}`} type="button" className="today-page__wrapup" onClick={() => openMeetingSheet({ ...m, date })}>
+                  <span className="today-page__wrapup-tag">Wrap Up</span>
+                  <span className="today-page__wrapup-title">{m.title}</span>
+                  <span className="today-page__wrapup-count">
+                    {m.pendingActions} next step{m.pendingActions === 1 ? '' : 's'} to sort ›
+                  </span>
+                </button>
+              ))}
             {meetings.length === 0 ? (
               <div className="today-page__meetings card">
                 <div className="empty-state">No meetings {isToday ? 'today' : 'that day'}.</div>

@@ -3,8 +3,9 @@ import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import type { MeetingAction, MeetingItem, MeetingPrep, MeetingSummary, WorkTask } from '../api/types';
 import { DetailSheet } from './dash/DetailSheet';
+import { InfoTip } from './dash/InfoTip';
 import { RealmChip } from './RealmSwitch';
-import { buildMeetingNoteTitle } from '../utils/meetingNotes';
+import { meetingPeopleNames, buildMeetingNoteTitle } from '../utils/meetingNotes';
 import { MeetingDocs, seriesKeyFor } from './MeetingDocs';
 
 /** One meeting, everything about it: morning-of prep (people, what's open
@@ -85,6 +86,7 @@ function ActionRow({ a, onChange }: { a: MeetingAction; onChange: (a: MeetingAct
       <div className="mtg-action__text">
         {who && <span className={`mtg-owner${a.isMine ? ' mtg-owner--me' : ''}`}>{who}</span>}
         <span>{a.text}</span>
+        {a.isMine && a.contactName && <span className="mtg-with">with {a.contactName.split(' ')[0]}</span>}
       </div>
       <div className="mtg-action__btns">
         {!decided ? (
@@ -93,7 +95,7 @@ function ActionRow({ a, onChange }: { a: MeetingAction; onChange: (a: MeetingAct
               ✓ My Task
             </button>
             {!a.isMine && (
-              <button type="button" className="btn btn--ghost btn--sm" disabled={busy} onClick={() => decide('waiting')}>
+              <button type="button" className="btn btn--sm" disabled={busy} onClick={() => decide('waiting')}>
                 ⏳ Waiting On {who?.split(' ')[0] ?? 'Them'}
               </button>
             )}
@@ -147,10 +149,28 @@ function MeetingSheet({ meeting, startPasting, onClose }: { meeting: SheetMeetin
   const fileRef = useRef<HTMLInputElement>(null);
   const ended = !meeting.allDay && Date.parse(meeting.end) <= Date.now();
 
+  // Prep first: loading it re-reads this meeting's 📝 note for next steps,
+  // so the items list fetched after it is current.
   const load = useCallback(() => {
-    api.getMeetingPrep(date, meeting.id).then(setPrep).catch((e) => setError(String(e.message ?? e)));
-    api.getMeetingSummaries(meeting.id).then(setOwn).catch(() => setOwn({ summaries: [], actions: [] }));
+    api
+      .getMeetingPrep(date, meeting.id)
+      .then(setPrep)
+      .catch((e) => setError(String(e.message ?? e)))
+      .finally(() => api.getMeetingSummaries(meeting.id).then(setOwn).catch(() => setOwn({ summaries: [], actions: [] })));
   }, [date, meeting.id]);
+  const [accepting, setAccepting] = useState(false);
+  const myPending = own?.actions.filter((a) => a.status === 'pending' && a.isMine).length ?? 0;
+  const theirPending = own?.actions.filter((a) => a.status === 'pending' && !a.isMine).length ?? 0;
+  async function acceptMine() {
+    setAccepting(true);
+    try {
+      const r = await api.acceptMyMeetingActions(meeting.id);
+      setOwn((o) => (o ? { ...o, actions: r.actions } : o));
+      window.dispatchEvent(new Event(MEETING_CHANGED_EVENT));
+    } finally {
+      setAccepting(false);
+    }
+  }
   useEffect(load, [load]);
 
   const m = prep?.meeting ?? meeting;
@@ -163,7 +183,7 @@ function MeetingSheet({ meeting, startPasting, onClose }: { meeting: SheetMeetin
       navigate(`/notes/${existing}`);
       return;
     }
-    const { noteEntityId } = await api.createMeetingNote(meeting.id, buildMeetingNoteTitle(meeting), m.realm);
+    const { noteEntityId } = await api.createMeetingNote(meeting.id, buildMeetingNoteTitle(meeting), m.realm, meetingPeopleNames(m));
     onClose();
     window.dispatchEvent(new Event(MEETING_CHANGED_EVENT));
     navigate(`/notes/${noteEntityId}`);
@@ -241,6 +261,10 @@ function MeetingSheet({ meeting, startPasting, onClose }: { meeting: SheetMeetin
           <button type="button" className="btn btn--ghost btn--sm" onClick={openAgenda} disabled={!prep?.agendaNoteId && !meeting.hasNote && ended}>
             📝 {prep?.agendaNoteId || meeting.hasNote ? 'My Notes' : 'Agenda / Notes'}
           </button>
+          <InfoTip label="How meeting notes work">
+            Your 📝 note starts with Notes / Decisions / Next Steps. Write "Elliott will …", "I'll …", "TODO …", "@Name …" or a checkbox anywhere in it — after the meeting each one shows up here to sort. Your own items become tasks with
+            the person attached (Add My Tasks does them all at once); other people's items wait for you to tap Waiting On or Dismiss.
+          </InfoTip>
           <button type="button" className="btn btn--ghost btn--sm" onClick={() => setPasting((v) => !v)}>
             ✨ Add Meeting Notes
           </button>
@@ -298,12 +322,35 @@ function MeetingSheet({ meeting, startPasting, onClose }: { meeting: SheetMeetin
         )}
 
         {/* This occurrence's own notes + next steps. */}
-        {own && own.summaries.length > 0 && (
+        {own && own.summaries.some((s) => s.source !== 'own_note' || own.actions.some((a) => a.summaryId === s.id)) && (
           <section className="mtg-section">
-            <div className="mtg-section__title">From This Meeting</div>
-            {own.summaries.map((s) => (
+            <div className="mtg-section__title mtg-section__title--row">
+              <span>From This Meeting</span>
+              {myPending > 0 && (
+                <button type="button" className="btn btn--sm" disabled={accepting} onClick={acceptMine}>
+                  ✓ Add My {myPending} Task{myPending === 1 ? '' : 's'}
+                </button>
+              )}
+            </div>
+            {theirPending > 0 && (
+              <div className="mtg-hint">
+                {theirPending} for someone else — check each one: Waiting On or Dismiss.
+              </div>
+            )}
+            {own.summaries.filter((s) => s.source !== 'own_note' || own.actions.some((a) => a.summaryId === s.id)).map((s) => (
               <div key={s.id} className="mtg-own">
-                <SummaryBlock s={s} />
+                {s.source === 'own_note' ? (
+                  <div className="mtg-label mtg-own__label">
+                    From My Notes{' '}
+                    {s.noteEntityId && (
+                      <Link className="mtg-link" to={`/notes/${s.noteEntityId}`} onClick={onClose}>
+                        Open →
+                      </Link>
+                    )}
+                  </div>
+                ) : (
+                  <SummaryBlock s={s} />
+                )}
                 <ul className="mtg-actions">
                   {own.actions
                     .filter((a) => a.summaryId === s.id)
@@ -311,9 +358,11 @@ function MeetingSheet({ meeting, startPasting, onClose }: { meeting: SheetMeetin
                       <ActionRow key={a.id} a={a} onChange={(na) => setOwn((o) => (o ? { ...o, actions: updateAction(o.actions, na) } : o))} />
                     ))}
                 </ul>
-                <button type="button" className="mtg-link mtg-link--quiet" onClick={() => removeSummary(s.id)}>
-                  Remove these notes
-                </button>
+                {s.source !== 'own_note' && (
+                  <button type="button" className="mtg-link mtg-link--quiet" onClick={() => removeSummary(s.id)}>
+                    Remove these notes
+                  </button>
+                )}
               </div>
             ))}
           </section>

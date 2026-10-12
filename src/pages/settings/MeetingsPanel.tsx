@@ -180,6 +180,8 @@ export function MeetingsPanel() {
   const [deleting, setDeleting] = useState<MeetingSeries | null>(null);
   const [myNames, setMyNames] = useState('');
   const [workLabel, setWorkLabel] = useState('');
+  const [noteTemplate, setNoteTemplate] = useState(true);
+  const [noteTip, setNoteTip] = useState(true);
   const [namesSaved, setNamesSaved] = useState(false);
   const [docsLoaded, setDocsLoaded] = useState<FormDoc[]>([]);
   const formId = form?.id;
@@ -211,7 +213,10 @@ export function MeetingsPanel() {
   useEffect(() => {
     load();
     api.listProjects(false, true).then(setProjects).catch(() => setProjects([]));
-    api.getWorkSettings().then((s) => (setMyNames(s.myNames), setWorkLabel(s.workLabel))).catch(() => undefined);
+    api
+      .getWorkSettings()
+      .then((s) => (setMyNames(s.myNames), setWorkLabel(s.workLabel), setNoteTemplate(s.noteTemplate), setNoteTip(s.noteTip)))
+      .catch(() => undefined);
   }, []);
 
   // Deep link from Today's "+ Add" (a one-off on that day).
@@ -280,6 +285,12 @@ export function MeetingsPanel() {
         if (!was || was.url !== d.url.trim() || was.title !== d.title.trim()) await api.updateMeetingDoc(d.id, { url: d.url.trim(), title: d.title.trim() });
       }
     }
+  }
+
+  async function saveNoteSetting(patch: { noteTemplate?: boolean; noteTip?: boolean }) {
+    const r = await api.updateWorkSettings(patch);
+    setNoteTemplate(r.noteTemplate);
+    setNoteTip(r.noteTip);
   }
 
   async function saveNames() {
@@ -367,6 +378,19 @@ export function MeetingsPanel() {
             {namesSaved ? 'Saved' : 'Save'}
           </button>
         </div>
+        <div className="settings-page__field-label" style={{ marginTop: 12 }}>
+          Meeting Notes
+        </div>
+        <p className="settings-page__section-hint">
+          A new 📝 note on a meeting starts with Notes / Decisions / Next Steps and a "Name will …" line per person. After the meeting the whole note is read for next steps — "Name will …", "I'll …", "TODO …", "@Name …", unchecked
+          checkboxes — and they wait in the meeting for you to sort.
+        </p>
+        <label className="mtg-settings__check">
+          <input type="checkbox" checked={noteTemplate} onChange={(e) => saveNoteSetting({ noteTemplate: e.target.checked })} /> Start Meeting Notes From the Template
+        </label>
+        <label className="mtg-settings__check">
+          <input type="checkbox" checked={noteTip} disabled={!noteTemplate} onChange={(e) => saveNoteSetting({ noteTip: e.target.checked })} /> Show the Tip Line at the Top
+        </label>
       </div>
 
       {form && (

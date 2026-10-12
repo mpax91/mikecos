@@ -1,7 +1,8 @@
 import { Hono } from 'hono';
 import type { Env } from '../types';
 import type { ParsedMeeting } from '../ics';
-import { isMe, parseMeetingSummary } from './gemini';
+import { isMe, parseMeetingSummary, type ParsedAction } from './gemini';
+import { firstName, meetingNoteTemplate, noteLines, scanNoteActions } from './noteScan';
 import { realmMatches, realmOf, realmSql, workLabel, type Realm, type RealmFilter } from './realm';
 
 /** Work features (migration 0106) — mounted at /api/work.
@@ -197,7 +198,7 @@ export async function enrichMeetings<T extends ParsedMeeting>(db: D1Database, me
     db.prepare(`SELECT id, realm FROM calendar_feeds`).all<{ id: string; realm: string }>(),
     inChunks(seriesIds, async (ch, ph) => (await db.prepare(`SELECT id, realm, rrule, project_id, link FROM meeting_series WHERE id IN (${ph})`).bind(...ch).all<{ id: string; realm: string; rrule: string | null; project_id: string | null; link: string | null }>()).results ?? []),
     inChunks(ids, async (ch, ph) => (await db.prepare(`SELECT mn.meeting_id FROM meeting_notes mn JOIN entities e ON e.id = mn.note_entity_id WHERE mn.meeting_id IN (${ph})`).bind(...ch).all<{ meeting_id: string }>()).results ?? []),
-    inChunks(ids, async (ch, ph) => (await db.prepare(`SELECT meeting_id, COUNT(*) AS n FROM meeting_summaries WHERE meeting_id IN (${ph}) GROUP BY meeting_id`).bind(...ch).all<{ meeting_id: string; n: number }>()).results ?? []),
+    inChunks(ids, async (ch, ph) => (await db.prepare(`SELECT meeting_id, COUNT(*) AS n FROM meeting_summaries WHERE source != 'own_note' AND meeting_id IN (${ph}) GROUP BY meeting_id`).bind(...ch).all<{ meeting_id: string; n: number }>()).results ?? []),
     inChunks(ids, async (ch, ph) => (await db.prepare(`SELECT meeting_id, COUNT(*) AS n FROM meeting_actions WHERE status = 'pending' AND meeting_id IN (${ph}) GROUP BY meeting_id`).bind(...ch).all<{ meeting_id: string; n: number }>()).results ?? []),
     inChunks(seriesIds, async (ch, ph) => (await db.prepare(`SELECT sp.series_id, c.id, c.name FROM meeting_series_people sp JOIN contacts c ON c.id = sp.contact_id WHERE sp.series_id IN (${ph}) ORDER BY sp.position, c.name`).bind(...ch).all<{ series_id: string; id: string; name: string }>()).results ?? []),
     inChunks(keys, async (ch, ph) => (await db.prepare(`SELECT * FROM meeting_docs WHERE series_key IN (${ph}) ORDER BY position, created_at`).bind(...ch).all<DocRow>()).results ?? []).catch(() => [] as DocRow[]),
@@ -259,6 +260,19 @@ export async function enrichMeetings<T extends ParsedMeeting>(db: D1Database, me
       docs: docsByKey.get(key) ?? [],
       joinUrl: (manual ? manual.link?.trim() || null : null) ?? (m.links ?? []).find((l) => VIDEO_LINK.test(l)) ?? null,
     });
+  }
+
+  // Mike's own 📝 notes: read any that changed for next steps, then refresh
+  // those meetings' pending counts. Never lets a scan problem break a list.
+  try {
+    const read = await scanStaleNotes(db, out.filter((m) => m.hasNote));
+    if (read.length) {
+      const counts = await inChunks(read, async (ch, ph) => (await db.prepare(`SELECT meeting_id, COUNT(*) AS n FROM meeting_actions WHERE status = 'pending' AND meeting_id IN (${ph}) GROUP BY meeting_id`).bind(...ch).all<{ meeting_id: string; n: number }>()).results ?? []);
+      const n = new Map(counts.map((x) => [x.meeting_id, x.n]));
+      for (const m of out) if (read.includes(m.id)) m.pendingActions = n.get(m.id) ?? 0;
+    }
+  } catch (e) {
+    console.error('meeting note scan failed', e);
   }
   return out;
 }
@@ -379,15 +393,38 @@ async function myNames(db: D1Database): Promise<string[]> {
     .filter(Boolean);
 }
 
-workRouter.get('/settings', async (c) => c.json({ myNames: (await myNames(c.env.DB)).join(', '), workLabel: await workLabel(c.env.DB) }));
+async function settingsJson(db: D1Database) {
+  return {
+    myNames: (await myNames(db)).join(', '),
+    workLabel: await workLabel(db),
+    noteTemplate: (await getSetting(db, 'note_template', '1')) !== '0',
+    noteTip: (await getSetting(db, 'note_tip', '1')) !== '0',
+  };
+}
+
+/** The body a new meeting 📝 note starts with — the Notes / Decisions /
+ * Next Steps template (Settings → Meetings can turn it or its tip line off).
+ * null = start blank. `people` = full names on the meeting. */
+export async function meetingNoteStart(db: D1Database, people: string[]): Promise<{ content: string; text: string } | null> {
+  if ((await getSetting(db, 'note_template', '1')) === '0') return null;
+  const mine = await myNames(db);
+  const me = firstName(mine[0] ?? 'Mike');
+  const others = [...new Set(people.filter((n) => n.trim() && !isMe(n, mine) && !isMe(firstName(n), mine)).map(firstName))];
+  const content = meetingNoteTemplate(me, others, (await getSetting(db, 'note_tip', '1')) !== '0');
+  return { content, text: noteLines(content).map((l) => l.text).join(' ') };
+}
+
+workRouter.get('/settings', async (c) => c.json(await settingsJson(c.env.DB)));
 
 workRouter.put('/settings', async (c) => {
-  const body = await c.req.json<{ myNames?: string; workLabel?: string }>();
+  const body = await c.req.json<{ myNames?: string; workLabel?: string; noteTemplate?: boolean; noteTip?: boolean }>();
   const put = (key: string, value: string) =>
     c.env.DB.prepare(`INSERT INTO work_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).bind(key, value).run();
   if (typeof body.myNames === 'string') await put('my_names', body.myNames.trim());
   if (typeof body.workLabel === 'string' && body.workLabel.trim()) await put('work_label', body.workLabel.trim());
-  return c.json({ myNames: (await myNames(c.env.DB)).join(', '), workLabel: await workLabel(c.env.DB) });
+  if (typeof body.noteTemplate === 'boolean') await put('note_template', body.noteTemplate ? '1' : '0');
+  if (typeof body.noteTip === 'boolean') await put('note_tip', body.noteTip ? '1' : '0');
+  return c.json(await settingsJson(c.env.DB));
 });
 
 // ---------------------------------------------------------------------------
@@ -682,6 +719,123 @@ function matchPerson(owner: string, people: PersonRef[]): PersonRef | null {
   return null;
 }
 
+/** Who one of Mike's own next steps is "with / for": a person on the
+ * meeting named in the text ("send Elliott the deck"), else the only other
+ * person on the meeting (a 1:1). */
+export function mineContact(text: string, people: PersonRef[]): PersonRef | null {
+  const t = ` ${text.toLowerCase().replace(/[^\p{L}'’ ]+/gu, ' ')} `;
+  const named = people.filter((p) => {
+    const full = p.name.trim().toLowerCase();
+    const first = firstName(p.name).toLowerCase();
+    return t.includes(` ${full} `) || (first.length > 1 && t.includes(` ${first} `));
+  });
+  if (named.length === 1) return named[0];
+  return people.length === 1 ? people[0] : null;
+}
+
+/** Insert the next steps found in a summary/note as pending meeting_actions. */
+function actionInserts(db: D1Database, summaryId: string, meetingId: string, seriesKey: string, actions: ParsedAction[], mine: string[], people: PersonRef[], ts: string): D1PreparedStatement[] {
+  const stmts: D1PreparedStatement[] = [];
+  for (const a of actions) {
+    const owners = a.owners.length ? a.owners : [''];
+    // "Mike and Sarah will…" → one item each; Mike's copy is his task.
+    for (const owner of owners) {
+      const me = owner ? isMe(owner, mine) || isMe(firstName(owner), mine) : false;
+      const person = owner && !me ? matchPerson(owner, people) : me ? mineContact(a.text, people) : null;
+      stmts.push(
+        db
+          .prepare(
+            `INSERT INTO meeting_actions (id, summary_id, meeting_id, series_key, text, owner_name, contact_id, is_mine, status, entity_id, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, ?)`
+          )
+          .bind(uid(), summaryId, meetingId, seriesKey, a.text.slice(0, 1000), owner || null, person?.id ?? null, me ? 1 : 0, ts)
+      );
+    }
+  }
+  return stmts;
+}
+
+// ---------------------------------------------------------------------------
+// Mike's own meeting notes → next steps (migration 0114, noteScan.ts)
+// ---------------------------------------------------------------------------
+
+type ScanMeeting = { id: string; title: string; start: string; realm: Realm; people: PersonRef[] };
+const actionKey = (owner: string | null, text: string) => `${(owner ?? '').trim().toLowerCase()}|${text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()}`;
+
+/** Read one meeting's 📝 note for next steps and keep its own_note summary
+ * row + pending actions in step with it. Items Mike already decided (task,
+ * waiting, dismissed) are never touched; pending ones whose line is gone
+ * from the note are removed; new lines become pending items. */
+export async function syncOwnNote(db: D1Database, m: ScanMeeting, note: { id: string; content: string | null; updated_at: string }): Promise<void> {
+  const mine = await myNames(db);
+  const me = firstName(mine[0] ?? 'Mike');
+  const known = [...mine, ...mine.map(firstName), ...m.people.map((p) => p.name), ...m.people.map((p) => firstName(p.name))];
+  const lines = noteLines(note.content);
+  const found = scanNoteActions(lines, known, me);
+  const raw = lines.map((l) => l.text).join('\n');
+  const seriesKey = seriesKeyOf(m.id);
+  const ts = now();
+
+  let row = await db.prepare(`SELECT * FROM meeting_summaries WHERE meeting_id = ? AND source = 'own_note'`).bind(m.id).first<SummaryRow>();
+  if (!row) {
+    const id = uid();
+    await db
+      .prepare(
+        `INSERT INTO meeting_summaries (id, meeting_id, series_key, occurrence_start, meeting_title, realm, note_entity_id, summary, details, decisions, raw_text, source, created_at, scanned_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, 'own_note', ?, ?)`
+      )
+      .bind(id, m.id, seriesKey, m.start, m.title, m.realm, note.id, raw, ts, note.updated_at)
+      .run();
+    row = (await db.prepare('SELECT * FROM meeting_summaries WHERE id = ?').bind(id).first<SummaryRow>())!;
+  }
+
+  const { results: existing } = await db.prepare(`SELECT * FROM meeting_actions WHERE summary_id = ?`).bind(row.id).all<ActionRow>();
+  const have = new Map((existing ?? []).map((a) => [actionKey(a.owner_name, a.text), a]));
+  const wanted = new Set<string>();
+  const fresh: ParsedAction[] = [];
+  for (const a of found) {
+    const owners = a.owners.length ? a.owners : [''];
+    const missing = owners.filter((o) => {
+      const k = actionKey(o || null, a.text.slice(0, 1000));
+      wanted.add(k);
+      return !have.has(k);
+    });
+    if (missing.length) fresh.push({ text: a.text, owners: missing.filter(Boolean) });
+  }
+  const stmts: D1PreparedStatement[] = [];
+  for (const [k, a] of have) if (a.status === 'pending' && !wanted.has(k)) stmts.push(db.prepare('DELETE FROM meeting_actions WHERE id = ?').bind(a.id));
+  stmts.push(...actionInserts(db, row.id, m.id, seriesKey, fresh, mine, m.people, ts));
+  stmts.push(db.prepare(`UPDATE meeting_summaries SET raw_text = ?, note_entity_id = ?, meeting_title = ?, scanned_at = ? WHERE id = ?`).bind(raw, note.id, m.title, note.updated_at, row.id));
+  await db.batch(stmts);
+}
+
+/** Re-read the notes of these meetings that changed since their last read;
+ * returns the meeting ids that were read. */
+async function scanStaleNotes(db: D1Database, meetings: ScanMeeting[]): Promise<string[]> {
+  if (!meetings.length) return [];
+  const byId = new Map(meetings.map((m) => [m.id, m]));
+  const rows = await inChunks([...byId.keys()], async (ch, ph) =>
+    (
+      await db
+        .prepare(
+          `SELECT mn.meeting_id, e.id, e.content, e.updated_at FROM meeting_notes mn JOIN entities e ON e.id = mn.note_entity_id
+           LEFT JOIN meeting_summaries s ON s.meeting_id = mn.meeting_id AND s.source = 'own_note'
+           WHERE mn.meeting_id IN (${ph}) AND (s.id IS NULL OR s.scanned_at IS NULL OR s.scanned_at < e.updated_at OR s.note_entity_id != e.id)`
+        )
+        .bind(...ch)
+        .all<{ meeting_id: string; id: string; content: string | null; updated_at: string }>()
+    ).results ?? []
+  );
+  const done: string[] = [];
+  for (const r of rows) {
+    const m = byId.get(r.meeting_id);
+    if (!m) continue;
+    await syncOwnNote(db, m, r);
+    done.push(m.id);
+  }
+  return done;
+}
+
 workRouter.post('/meetings/:meetingId/summaries', async (c) => {
   const meetingId = c.req.param('meetingId');
   const b = await c.req.json<{ text: string; title?: string; start?: string; realm?: string; peopleIds?: string[]; source?: string }>();
@@ -734,23 +888,7 @@ workRouter.post('/meetings/:meetingId/summaries', async (c) => {
     .bind(id, meetingId, seriesKey, start, title, realm, noteId, parsed.summary, parsed.details, parsed.decisions, raw, b.source === 'manual' ? 'manual' : 'gemini', ts)
     .run();
 
-  const stmts: D1PreparedStatement[] = [];
-  for (const a of parsed.actions) {
-    const owners = a.owners.length ? a.owners : [''];
-    // "Mike and Sarah will…" → one item each; Mike's copy is his task.
-    for (const owner of owners) {
-      const me = owner ? isMe(owner, mine) : false;
-      const person = owner && !me ? matchPerson(owner, people) : null;
-      stmts.push(
-        db
-          .prepare(
-            `INSERT INTO meeting_actions (id, summary_id, meeting_id, series_key, text, owner_name, contact_id, is_mine, status, entity_id, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, ?)`
-          )
-          .bind(uid(), id, meetingId, seriesKey, a.text.slice(0, 1000), owner || null, person?.id ?? null, me ? 1 : 0, ts)
-      );
-    }
-  }
+  const stmts = actionInserts(db, id, meetingId, seriesKey, parsed.actions, mine, people, ts);
   if (stmts.length) await db.batch(stmts);
 
   const row = await db.prepare('SELECT * FROM meeting_summaries WHERE id = ?').bind(id).first<SummaryRow>();
@@ -768,21 +906,17 @@ workRouter.delete('/summaries/:id', async (c) => {
   return c.json({ ok: true });
 });
 
-/** Decide a next step: { decision: 'task' | 'waiting' | 'dismissed' | 'pending',
- *  text?, contactId?, dueDate? }. 'task' → an open task for Mike (in the
- *  series' project if it has one); 'waiting' → a Waiting For check-back on
- *  the person; 'pending' undoes (removes the item made, if still open). */
-workRouter.post('/actions/:id', async (c) => {
-  const id = c.req.param('id');
-  const db = c.env.DB;
-  const a = await db.prepare('SELECT * FROM meeting_actions WHERE id = ?').bind(id).first<ActionRow>();
-  if (!a) return c.json({ error: 'not found' }, 404);
-  const b = await c.req.json<{ decision: string; text?: string; contactId?: string | null; dueDate?: string | null }>();
+type Decision = { decision: string; text?: string; contactId?: string | null; dueDate?: string | null };
+
+/** Turn one next step into a task / Waiting item / dismissal (or undo). */
+async function decideAction(db: D1Database, a: ActionRow, b: Decision): Promise<ActionRow | { error: string }> {
+  const id = a.id;
   const sum = await db.prepare('SELECT * FROM meeting_summaries WHERE id = ?').bind(a.summary_id).first<SummaryRow>();
   const realm = (sum?.realm as Realm) || 'work';
   const text = (b.text ?? a.text).trim() || a.text;
   const contactId = b.contactId !== undefined ? b.contactId || null : a.contact_id;
   const ts = now();
+  if (!['task', 'waiting', 'dismissed', 'pending'].includes(b.decision)) return { error: 'decision must be task, waiting, dismissed or pending' };
 
   // Re-deciding: drop whatever was made before, if it's still open.
   if (a.entity_id) {
@@ -790,7 +924,6 @@ workRouter.post('/actions/:id', async (c) => {
   }
   let entityId: string | null = null;
   const due = b.dueDate && DATE_RE.test(b.dueDate) ? b.dueDate : null;
-
   if (b.decision === 'task') {
     let parentId: string | null = null;
     if (a.series_key.startsWith('ms-')) {
@@ -821,16 +954,38 @@ workRouter.post('/actions/:id', async (c) => {
       )
       .bind(entityId, title, (maxPos?.m ?? -1) + 1, due ?? addDays(easternToday(), 7), ts, ts, ts, title, entityId, since, realm, contactId)
       .run();
-  } else if (b.decision !== 'dismissed' && b.decision !== 'pending') {
-    return c.json({ error: 'decision must be task, waiting, dismissed or pending' }, 400);
   }
 
   await db
     .prepare('UPDATE meeting_actions SET status = ?, entity_id = ?, text = ?, contact_id = ? WHERE id = ?')
     .bind(b.decision, entityId, text, contactId, id)
     .run();
-  const row = await db.prepare('SELECT * FROM meeting_actions WHERE id = ?').bind(id).first<ActionRow>();
-  return c.json((await actionsJson(db, [row!]))[0]);
+  return (await db.prepare('SELECT * FROM meeting_actions WHERE id = ?').bind(id).first<ActionRow>())!;
+}
+
+/** Decide a next step: { decision: 'task' | 'waiting' | 'dismissed' | 'pending',
+ *  text?, contactId?, dueDate? }. 'task' → an open task for Mike (in the
+ *  series' project if it has one); 'waiting' → a Waiting For check-back on
+ *  the person; 'pending' undoes (removes the item made, if still open). */
+workRouter.post('/actions/:id', async (c) => {
+  const db = c.env.DB;
+  const a = await db.prepare('SELECT * FROM meeting_actions WHERE id = ?').bind(c.req.param('id')).first<ActionRow>();
+  if (!a) return c.json({ error: 'not found' }, 404);
+  const r = await decideAction(db, a, await c.req.json<Decision>());
+  if ('error' in r) return c.json(r, 400);
+  return c.json((await actionsJson(db, [r]))[0]);
+});
+
+/** "Add My Tasks": every pending next step that's Mike's on this meeting
+ * becomes a task at once. Other people's items are never touched here —
+ * Mike checks those one by one (Waiting On / Dismiss). */
+workRouter.post('/meetings/:meetingId/accept-mine', async (c) => {
+  const db = c.env.DB;
+  const meetingId = c.req.param('meetingId');
+  const { results } = await db.prepare(`SELECT * FROM meeting_actions WHERE meeting_id = ? AND status = 'pending' AND is_mine = 1 ORDER BY created_at, rowid`).bind(meetingId).all<ActionRow>();
+  for (const a of results ?? []) await decideAction(db, a, { decision: 'task' });
+  const { results: acts } = await db.prepare('SELECT * FROM meeting_actions WHERE meeting_id = ? ORDER BY created_at, rowid').bind(meetingId).all<ActionRow>();
+  return c.json({ accepted: (results ?? []).length, actions: await actionsJson(db, acts ?? []) });
 });
 
 // ---------------------------------------------------------------------------
@@ -865,7 +1020,7 @@ async function openItemsForPeople(db: D1Database, ids: string[], realm: RealmFil
 async function buildPrep(db: D1Database, m: EnrichedMeeting, realm: RealmFilter) {
   const key = m.seriesKey;
   const [summaries, notes, actions, noteRow] = await Promise.all([
-    db.prepare(`SELECT * FROM meeting_summaries WHERE series_key = ? AND occurrence_start < ? ORDER BY occurrence_start DESC LIMIT 6`).bind(key, m.start).all<SummaryRow>(),
+    db.prepare(`SELECT * FROM meeting_summaries WHERE series_key = ? AND source != 'own_note' AND occurrence_start < ? ORDER BY occurrence_start DESC LIMIT 6`).bind(key, m.start).all<SummaryRow>(),
     db
       .prepare(
         `SELECT mn.meeting_id, e.id AS entity_id, e.title, e.search_text, e.updated_at FROM meeting_notes mn JOIN entities e ON e.id = mn.note_entity_id
@@ -984,8 +1139,8 @@ workRouter.get('/person/:contactId', async (c) => {
     db.prepare(`SELECT * FROM meeting_actions WHERE contact_id = ? AND status = 'pending' ORDER BY created_at DESC LIMIT 20`).bind(id).all<ActionRow>(),
     db
       .prepare(
-        `SELECT s.* FROM meeting_summaries s WHERE s.series_key IN (SELECT 'ms-' || series_id FROM meeting_series_people WHERE contact_id = ?)
-         OR s.id IN (SELECT summary_id FROM meeting_actions WHERE contact_id = ?) ORDER BY s.occurrence_start DESC LIMIT 6`
+        `SELECT s.* FROM meeting_summaries s WHERE (s.series_key IN (SELECT 'ms-' || series_id FROM meeting_series_people WHERE contact_id = ?)
+         OR s.id IN (SELECT summary_id FROM meeting_actions WHERE contact_id = ?)) AND s.source != 'own_note' ORDER BY s.occurrence_start DESC LIMIT 6`
       )
       .bind(id, id)
       .all<SummaryRow>(),

@@ -1,7 +1,7 @@
 import type { AuthenticationResponseJSON, PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON, RegistrationResponseJSON } from '@simplewebauthn/browser';
 import type { CashPlacement, RewardsOverview, FinanceAttention, WaitingList, AuthCredentialSummary, AuthStatus, Bet, BetLeg, BetGameNote, BetOption, BetOptionCategory, BetPromo, BetPromoStatus, BetScheduleGame, BetTransaction, BetTransactionType, VaultEntryDetail, VaultFact, BriefingResponse, CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, CreditScoreEntry, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitDirection, HabitEvent, HabitLog, HabitSummary, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsFeedsResponse, NewsFolder, NewsSavedArticle, NewsSettings, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, VoterFieldsBackfillChunkResponse,
   ContactAskResponse, BetGameEnrichment, VaultFactLabel, VaultRollupGroup, WalletCard, WalletCardFact, WalletCategory, WalletCardIdSecret, RewardsCard, RewardsBonus, RewardsPerk, RewardsImportResult, RewardsMerchant, RewardsOffer, PaymentCard, PaymentCardFact, PaymentCardSecrets, BankAccountSuggestion, PlexLibrary, PlexItem, PlexItemDetail, PlexIssue, PlexMissingEpisode, PlexIgnoredShow, PlexSyncChunkResult, PlexAiringCheckChunkResult, PlexAiringScanChunkResult, MediaCatalogItem, MediaCatalogFormat, BarItem, BarItemDetail, BarItemType, BarTasting, BarTopTastingEntry, HomeFloor, HomeFloorLayout, HomeRoom, HomePoint, HomeRoomSpecPayload, HomeFixture, HomeFixtureType, HomeWallItem, HomeWallItemType, ElectricalPanel, ElectricalBreaker, ElectricalBreakerWithFixtures, HomeNetworkPoint, HomeNetworkDevice, HomeNetworkDeviceInput, HomeWifiNetwork, HomeWifiInput, WeatherResponse, WeekResponse, EmailAccount, EmailInboxFeed, EmailPeekResult, EmailSyncResult, BookmarksResponse, BookmarksImportResult, CloudProviderId, CloudProviderInfo, CloudAccount, CloudBrowseResponse, CloudSearchResponse, StatementFolder, StatementDriveAccount, StatementScanResult, FinanceAccount, Ny529Dashboard, FinanceDashboard, StatementFolderStatus, AccountOwner, AccountPayer, AccountPayerMode, CardPaidAccount, Bill, BeeSubstack, BeeSettings, BeeFolderCandidate, BeeSearch,
-  BeeSearchDetail, BeeAnalytics, BeeVisitors, BeeAnalyticsDetail, BeeBing, BeeClarity, BeeMerch, BeeSocial, BeeStory, BeeReview, CommsSettings, CommsRunResult, QuietContact, MeetingSeries, MeetingSeriesInput, MeetingDoc, MeetingSummary, MeetingAction, MeetingActionStatus, MeetingPrep, PersonWork, WeekBrief, WeekReview } from './types';
+  BeeSearchDetail, BeeAnalytics, BeeVisitors, BeeAnalyticsDetail, BeeBing, BeeClarity, BeeMerch, BeeSocial, BeeStory, BeeReview, CommsSettings, CommsRunResult, QuietContact, MeetingSeries, MeetingSeriesInput, MeetingDoc, MeetingSummary, MeetingAction, MeetingActionStatus, MeetingPrep, PersonWork, WorkSettings, WeekBrief, WeekReview } from './types';
 
 import { emitTaskCompleted } from '../utils/taskEvents';
 import { getRealm } from '../utils/realm';
@@ -510,16 +510,15 @@ export const api = {
    * for this meeting, titled `title` — see the worker's POST handler.
    * Nothing is created until this is actually called, i.e. until the note
    * icon is clicked. */
-  createMeetingNote: (meetingId: string, title: string, realm?: 'personal' | 'work') =>
+  createMeetingNote: (meetingId: string, title: string, realm?: 'personal' | 'work', people?: string[]) =>
     request<{ noteEntityId: string }>(`/api/meetings/${encodeURIComponent(meetingId)}/note`, {
       method: 'POST',
-      body: JSON.stringify({ title, realm }),
+      body: JSON.stringify({ title, realm, people }),
     }),
 
   // ---- Work: meetings Mike enters by hand, Gemini notes, prep, briefs ----
-  getWorkSettings: () => request<{ myNames: string; workLabel: string }>('/api/work/settings'),
-  updateWorkSettings: (patch: { myNames?: string; workLabel?: string }) =>
-    request<{ myNames: string; workLabel: string }>('/api/work/settings', { method: 'PUT', body: JSON.stringify(patch) }),
+  getWorkSettings: () => request<WorkSettings>('/api/work/settings'),
+  updateWorkSettings: (patch: Partial<WorkSettings>) => request<WorkSettings>('/api/work/settings', { method: 'PUT', body: JSON.stringify(patch) }),
   updateJournalWorkEntry: (date: string, work_content: string) =>
     request<JournalEntry>(`/api/journal/${date}`, { method: 'PATCH', body: JSON.stringify({ work_content }) }),
   listMeetingSeries: () => request<{ series: MeetingSeries[] }>('/api/work/series?realm=all'),
@@ -544,6 +543,9 @@ export const api = {
   deleteMeetingSummary: (id: string) => request<{ ok: true }>(`/api/work/summaries/${id}`, { method: 'DELETE' }),
   decideMeetingAction: (id: string, body: { decision: MeetingActionStatus; text?: string; contactId?: string | null; dueDate?: string | null }) =>
     request<MeetingAction>(`/api/work/actions/${id}`, { method: 'POST', body: JSON.stringify(body) }),
+  /** Every pending next step that's Mike's on this meeting → a task. */
+  acceptMyMeetingActions: (meetingId: string) =>
+    request<{ accepted: number; actions: MeetingAction[] }>(`/api/work/meetings/${encodeURIComponent(meetingId)}/accept-mine`, { method: 'POST' }),
   getMeetingPrep: (date: string, meetingId: string) =>
     request<MeetingPrep>(`/api/work/prep?date=${date}&id=${encodeURIComponent(meetingId)}&realm=all`),
   getDayPrep: (date: string) => request<{ date: string; preps: MeetingPrep[] }>(`/api/work/prep?date=${date}`),

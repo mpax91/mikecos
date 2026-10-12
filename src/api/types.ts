@@ -4075,6 +4075,15 @@ export interface MeetingSummary {
 
 export type MeetingActionStatus = 'pending' | 'task' | 'waiting' | 'dismissed';
 
+export interface WorkSettings {
+  myNames: string;
+  workLabel: string;
+  /** New meeting 📝 notes start from the Notes / Decisions / Next Steps template. */
+  noteTemplate: boolean;
+  /** …with a one-line tip at the top. */
+  noteTip: boolean;
+}
+
 export interface MeetingAction {
   id: string;
   summaryId: string;

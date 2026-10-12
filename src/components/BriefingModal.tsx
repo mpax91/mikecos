@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import type { BriefingResponse, BriefingMeeting, SearchResult } from '../api/types';
-import { buildMeetingNoteTitle } from '../utils/meetingNotes';
+import { meetingPeopleNames, buildMeetingNoteTitle } from '../utils/meetingNotes';
 import { MOOD_BY_VALUE, moodEmojiForAverage } from '../utils/mood';
 
 // Fired by anything that wants to open the briefing without importing it
@@ -221,7 +221,7 @@ export function BriefingModal() {
     }
     setPreppingId(m.id);
     try {
-      const { noteEntityId } = await api.createMeetingNote(m.id, buildMeetingNoteTitle(m));
+      const { noteEntityId } = await api.createMeetingNote(m.id, buildMeetingNoteTitle(m), undefined, meetingPeopleNames(m));
       await api.updateEntity(noteEntityId, { content: buildPrepContent(m) });
       goTo(`/notes/${noteEntityId}`);
     } finally {
