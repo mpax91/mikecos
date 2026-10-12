@@ -1,7 +1,7 @@
 import type { AuthenticationResponseJSON, PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON, RegistrationResponseJSON } from '@simplewebauthn/browser';
 import type { CashPlacement, RewardsOverview, FinanceAttention, WaitingList, AuthCredentialSummary, AuthStatus, Bet, BetLeg, BetGameNote, BetOption, BetOptionCategory, BetPromo, BetPromoStatus, BetScheduleGame, BetTransaction, BetTransactionType, VaultEntryDetail, VaultFact, BriefingResponse, CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, CreditScoreEntry, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitDirection, HabitEvent, HabitLog, HabitSummary, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsFeedsResponse, NewsFolder, NewsSavedArticle, NewsSettings, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, VoterFieldsBackfillChunkResponse,
   ContactAskResponse, BetGameEnrichment, VaultFactLabel, VaultRollupGroup, WalletCard, WalletCardFact, WalletCategory, WalletCardIdSecret, RewardsCard, RewardsBonus, RewardsPerk, RewardsImportResult, RewardsMerchant, RewardsOffer, PaymentCard, PaymentCardFact, PaymentCardSecrets, BankAccountSuggestion, PlexLibrary, PlexItem, PlexItemDetail, PlexIssue, PlexMissingEpisode, PlexSyncChunkResult, PlexAiringCheckChunkResult, PlexAiringScanChunkResult, MediaCatalogItem, MediaCatalogFormat, BarItem, BarItemDetail, BarItemType, BarTasting, BarTopTastingEntry, HomeFloor, HomeFloorLayout, HomeRoom, HomePoint, HomeRoomSpecPayload, HomeFixture, HomeFixtureType, HomeWallItem, HomeWallItemType, ElectricalPanel, ElectricalBreaker, ElectricalBreakerWithFixtures, WeatherResponse, WeekResponse, EmailAccount, EmailInboxFeed, EmailPeekResult, EmailSyncResult, BookmarksResponse, BookmarksImportResult, CloudProviderId, CloudProviderInfo, CloudAccount, CloudBrowseResponse, CloudSearchResponse, StatementFolder, StatementDriveAccount, StatementScanResult, FinanceAccount, Ny529Dashboard, FinanceDashboard, StatementFolderStatus, AccountOwner, AccountPayer, AccountPayerMode, CardPaidAccount, Bill, BeeSubstack, BeeSettings, BeeFolderCandidate, BeeSearch,
-  BeeSearchDetail, BeeAnalytics, BeeBing, BeeClarity, BeeSocial, BeeStory, BeeReview, CommsSettings, CommsRunResult, QuietContact } from './types';
+  BeeSearchDetail, BeeAnalytics, BeeVisitors, BeeAnalyticsDetail, BeeBing, BeeClarity, BeeSocial, BeeStory, BeeReview, CommsSettings, CommsRunResult, QuietContact } from './types';
 
 import { emitTaskCompleted } from '../utils/taskEvents';
 
@@ -714,7 +714,10 @@ export const api = {
   getBeeSearch: (r?: { from: string; to: string }) => request<BeeSearch>(`/api/bee/search${r ? `?from=${r.from}&to=${r.to}` : ''}`),
   getBeeSearchDetail: (kind: 'query' | 'page', key: string, r: { from: string; to: string }) =>
     request<BeeSearchDetail>(`/api/bee/search/detail?kind=${kind}&key=${encodeURIComponent(key)}&from=${r.from}&to=${r.to}`),
-  getBeeAnalytics: () => request<BeeAnalytics>('/api/bee/analytics'),
+  getBeeAnalytics: (r?: { from: string; to: string }) => request<BeeAnalytics>(`/api/bee/analytics${r ? `?from=${r.from}&to=${r.to}` : ''}`),
+  getBeeVisitors: (r: { from: string; to: string }) => request<BeeVisitors>(`/api/bee/analytics/visitors?from=${r.from}&to=${r.to}`),
+  getBeeAnalyticsDetail: (kind: 'platform' | 'page', key: string, r: { from: string; to: string }) =>
+    request<BeeAnalyticsDetail>(`/api/bee/analytics/detail?kind=${kind}&key=${encodeURIComponent(key)}&from=${r.from}&to=${r.to}`),
   getBeeBing: (r?: { from: string; to: string }) => request<BeeBing>(`/api/bee/bing${r ? `?from=${r.from}&to=${r.to}` : ''}`),
   getBeeSocial: () => request<BeeSocial>('/api/bee/social'),
   getBeeStories: () => request<{ stories: BeeStory[] }>('/api/bee/stories'),
@@ -728,7 +731,7 @@ export const api = {
   setBeePostTags: (platform: string, id: string, tags: string[]) =>
     request<{ tags: string[] }>(`/api/bee/meta/posts/${platform}/${encodeURIComponent(id)}/tags`, { method: 'PUT', body: JSON.stringify({ tags }) }),
   setBeeTopicRules: (rules: { topic: string; keywords: string }[]) => request<{ rules: { topic: string; keywords: string }[] }>('/api/bee/topic-rules', { method: 'PUT', body: JSON.stringify({ rules }) }),
-  getBeeClarity: () => request<BeeClarity>('/api/bee/clarity'),
+  getBeeClarity: (r?: { from: string; to: string }) => request<BeeClarity>(`/api/bee/clarity${r ? `?from=${r.from}&to=${r.to}` : ''}`),
   setBeeBingKey: (key: string | null) => request<{ site: string | null; pending?: boolean }>('/api/bee/bing/key', { method: 'PUT', body: JSON.stringify({ key }) }),
   setBeeClarityToken: (token: string | null) => request<{ ok: true }>('/api/bee/clarity/token', { method: 'PUT', body: JSON.stringify({ token }) }),
   syncBeeBing: () => request<{ weeks: number; queries: number; pages: number; days: number; issues: number }>('/api/bee/bing/sync', { method: 'POST' }),

@@ -19339,3 +19339,23 @@ button.fin-dash__stat::after {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+.bee-local__big {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0 0 8px;
+  cursor: pointer;
+}
+.bee-tops__click {
+  cursor: pointer;
+}
+.bee-tops__click:hover .bee-tops__title {
+  text-decoration: underline;
+}

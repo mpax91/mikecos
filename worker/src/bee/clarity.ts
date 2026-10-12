@@ -133,7 +133,7 @@ function parseView(view: string, metrics: Metric[]): Map<string, Record<string, 
 }
 
 /** GET /api/bee/clarity — Reading Behavior panel on the Website tab. */
-export async function clarityDashboard(env: Env) {
+export async function clarityDashboard(env: Env, asked: { from: string; to: string } | null = null) {
   const row = await loadKeys(env);
   const connection = { connected: !!row.clarity_token_enc, lastSyncAt: row.clarity_last_sync_at, lastError: row.clarity_last_error };
   const { results } = await env.DB.prepare('SELECT date, view, raw_json FROM bee_clarity_days ORDER BY date').all<{ date: string; view: string; raw_json: string }>();
@@ -141,7 +141,8 @@ export async function clarityDashboard(env: Env) {
   if (!rows.length) return { connection, empty: true as const };
   const dates = [...new Set(rows.map((r) => r.date))].sort();
   const last = dates[dates.length - 1];
-  const since = dates.filter((d) => d > new Date(new Date(`${last}T12:00:00Z`).getTime() - 28 * 86400000).toISOString().slice(0, 10));
+  // Snapshot days inside the asked range (default: the last 28 days).
+  const since = asked ? dates.filter((d) => d >= asked.from && d <= asked.to) : dates.filter((d) => d > new Date(new Date(`${last}T12:00:00Z`).getTime() - 28 * 86400000).toISOString().slice(0, 10));
 
   // Daily site series.
   const daily = rows

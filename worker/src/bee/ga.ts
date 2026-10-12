@@ -1,5 +1,6 @@
 import type { Env } from '../types';
 import { accessToken, addDays, loadGsc } from './gsc';
+import { pickRanges } from './search';
 
 /** Google Analytics 4 for the Bedford Bee (2026-10-10). Same Google
  * connection as Search Console (one consent, `analytics.readonly`).
@@ -176,7 +177,14 @@ export async function syncGa(env: Env, maxWindows = 6): Promise<GaSyncResult> {
     const span = await env.DB.prepare('SELECT MIN(date) AS a, MAX(date) AS b FROM bee_ga_days').first<{ a: string | null; b: string | null }>();
     const lastDate = result.remaining ? addDays(start, -1 + REFETCH_DAYS) : span?.b ?? end;
     let snapshot = row.ga_snapshot_json;
-    if (!result.remaining) snapshot = JSON.stringify(await visitorSnapshot(token, property, span?.b ?? end));
+    if (!result.remaining) {
+      const snap = await visitorSnapshot(token, property, span?.b ?? end);
+      // Unique visitors for every preset range (and the stretch before
+      // each) so the Website tab's Visitors tile is instant; custom ranges
+      // ask GA live and land in the same cache (rangeVisitors).
+      snap.ranges = await presetVisitors(token, property, span?.a ?? end, span?.b ?? end);
+      snapshot = JSON.stringify(snap);
+    }
     await env.DB.prepare('UPDATE bee_gsc_account SET ga_first_date = ?, ga_last_date = ?, ga_last_sync_at = ?, ga_last_error = NULL, ga_snapshot_json = ? WHERE id = 1')
       .bind(span?.a ?? null, lastDate, now(), snapshot)
       .run();
@@ -190,7 +198,7 @@ export async function syncGa(env: Env, maxWindows = 6): Promise<GaSyncResult> {
 
 /** Visitors don't add up across days — ask GA for the de-duplicated count
  * per period (last 28, prior 28, last 90, this year, last year). */
-async function visitorSnapshot(token: string, property: string, end: string) {
+async function visitorSnapshot(token: string, property: string, end: string): Promise<Record<string, unknown>> {
   const y = end.slice(0, 4);
   const ranges: Record<string, { startDate: string; endDate: string }> = {
     last28: { startDate: addDays(end, -27), endDate: end },
@@ -226,4 +234,80 @@ export async function gaSyncDue(env: Env, scheduledTime: number): Promise<boolea
   if (!row?.refresh_token_enc || !row.ga_property) return false;
   if (new Date(scheduledTime).getUTCHours() === 7) return true;
   return !row.ga_last_sync_at || row.ga_last_sync_at < new Date(scheduledTime - 20 * 60 * 60 * 1000).toISOString();
+}
+
+// ---- Unique visitors for any date range (Mike, 2026-10-11) -------------
+
+type VisitorCount = { users: number; newUsers: number; at: string };
+const PRESET_DAYS: Record<string, number> = { '7d': 7, '28d': 28, '90d': 90, '1y': 365 };
+
+/** The same preset ranges the dashboard's RangePicker sends (resolved on
+ * today's New York date, then clipped to the data like pickRanges). */
+function presetRanges(first: string, end: string) {
+  const today = easternToday();
+  const asked: { from: string; to: string }[] = Object.values(PRESET_DAYS).map((n) => ({ from: addDays(today, -(n - 1)), to: today }));
+  asked.push({ from: `${today.slice(0, 4)}-01-01`, to: today }, { from: first, to: today });
+  const out: { from: string; to: string }[] = [];
+  for (const a of asked) {
+    const { cur, prev } = pickRanges(a, first, end);
+    out.push(cur, prev);
+  }
+  return out;
+}
+
+async function countVisitors(token: string, property: string, r: { from: string; to: string }): Promise<VisitorCount> {
+  const rows = await report(token, property, { dateRanges: [{ startDate: r.from, endDate: r.to }], metrics: mets('totalUsers', 'newUsers') });
+  return { users: rows[0]?.m[0] ?? 0, newUsers: rows[0]?.m[1] ?? 0, at: easternToday() };
+}
+
+async function presetVisitors(token: string, property: string, first: string, end: string) {
+  const out: Record<string, VisitorCount> = {};
+  for (const r of presetRanges(first, end)) {
+    const key = `${r.from}_${r.to}`;
+    if (out[key]) continue;
+    try {
+      out[key] = await countVisitors(token, property, r);
+    } catch {
+      /* leave it to the live path */
+    }
+  }
+  return out;
+}
+
+/** GET /api/bee/analytics/visitors — de-duplicated visitors for a range and
+ * the stretch before it. Cached in ga_snapshot_json.ranges (presets filled
+ * nightly; others asked live once a day, ~40 kept). */
+export async function rangeVisitors(env: Env, asked: { from: string; to: string } | null) {
+  const row = await loadGsc(env);
+  const span = await env.DB.prepare('SELECT MIN(date) AS a, MAX(date) AS b FROM bee_ga_days').first<{ a: string | null; b: string | null }>();
+  if (!row?.refresh_token_enc || !row.ga_property || !span?.b) return { now: null, prev: null, live: false };
+  const { cur, prev } = pickRanges(asked, span.a ?? span.b, span.b);
+  const snap = (row.ga_snapshot_json ? JSON.parse(row.ga_snapshot_json) : {}) as { ranges?: Record<string, VisitorCount> };
+  const cache = snap.ranges ?? {};
+  const today = easternToday();
+  let token: string | null = null;
+  let live = false;
+  const get = async (r: { from: string; to: string }) => {
+    const key = `${r.from}_${r.to}`;
+    const hit = cache[key];
+    if (hit && hit.at === today) return hit;
+    try {
+      token ??= await accessToken(env, row);
+      cache[key] = await countVisitors(token, row.ga_property!, r);
+      live = true;
+      return cache[key];
+    } catch {
+      return hit ?? null; // yesterday's count beats nothing
+    }
+  };
+  const [a, b] = await Promise.all([get(cur), get(prev)]);
+  if (live) {
+    const keys = Object.keys(cache).sort((x, y) => (cache[y].at ?? '').localeCompare(cache[x].at ?? ''));
+    const kept = Object.fromEntries(keys.slice(0, 60).map((k) => [k, cache[k]]));
+    const fresh = await env.DB.prepare('SELECT ga_snapshot_json FROM bee_gsc_account WHERE id = 1').first<{ ga_snapshot_json: string | null }>();
+    const base = fresh?.ga_snapshot_json ? JSON.parse(fresh.ga_snapshot_json) : {};
+    base.ranges = { ...(base.ranges ?? {}), ...kept };
+    await env.DB.prepare('UPDATE bee_gsc_account SET ga_snapshot_json = ? WHERE id = 1').bind(JSON.stringify(base)).run();
+  }
+  return { now: a ? { users: a.users, newUsers: a.newUsers } : null, prev: b ? { users: b.users, newUsers: b.newUsers } : null, live, range: { current: cur, previous: prev } };
 }

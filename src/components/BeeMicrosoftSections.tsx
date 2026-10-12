@@ -195,14 +195,14 @@ export function BeeBingSection({ range }: { range?: { from: string; to: string }
   );
 }
 
-export function BeeClaritySection() {
+export function BeeClaritySection({ range }: { range?: { from: string; to: string } }) {
   const [data, setData] = useState<BeeClarity | null>(null);
   useEffect(() => {
     api
-      .getBeeClarity()
+      .getBeeClarity(range ? { from: range.from, to: range.to } : undefined)
       .then(setData)
       .catch(() => setData(null));
-  }, []);
+  }, [range?.from, range?.to]);
   if (!data) return null;
   if (data.empty) {
     return (
@@ -229,7 +229,7 @@ export function BeeClaritySection() {
       <div className="bee-section__head">
         <h2 className="bee-section__title">Reading Behavior (Microsoft Clarity)</h2>
         <span className="fin-dash__muted">
-          {data.range.windowDays} day{data.range.windowDays === 1 ? '' : 's'} of snapshots (last 28 days) · collecting since {fmtDate(data.range.from)}
+          {data.range.windowDays} day{data.range.windowDays === 1 ? '' : 's'} of snapshots in this range · collecting since {fmtDate(data.range.from)}
         </span>
       </div>
       <div className="fin-dash__stats">

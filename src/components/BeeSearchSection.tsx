@@ -174,7 +174,7 @@ function SearchBody({ data, range, setRange, onSync, syncing, msg }: { data: Loa
 
       <div className="fin-dash__grid">
         <section className="fin-dash__card fin-dash__card--full">
-          <DashTitle info={<p>Clicks and impressions per {bucketFor(cur)} in the range. Tap the tiles above for each number on its own.</p>}>Clicks &amp; Impressions</DashTitle>
+          <DashTitle info={<p>Clicks per {bucketFor(cur)} in the range. Tap a tile above for impressions, click rate and position.</p>}>Clicks Over Time</DashTitle>
           <TrendChart daily={data.daily} range={cur} metric="clicks" />
         </section>
 
@@ -357,11 +357,7 @@ function TrendChart({ daily, range, metric, height = 220 }: { daily: DailyRow[];
     }
     const pts = (f: (a: { c: number; i: number; pw: number }) => number | null) =>
       buckets.map((b) => ({ x: dayMs(b), y: f(acc.get(b)!) })).filter((p): p is { x: number; y: number } => p.y != null);
-    if (metric === 'clicks')
-      return [
-        { name: 'Clicks', color: TOTAL_COLOR, points: pts((a) => a.c) },
-        { name: 'Impressions ÷ 10', color: DISCOVERY_COLOR, points: pts((a) => a.i / 10) },
-      ];
+    if (metric === 'clicks') return [{ name: 'Clicks', color: TOTAL_COLOR, points: pts((a) => a.c) }];
     if (metric === 'impressions') return [{ name: 'Impressions', color: TOTAL_COLOR, points: pts((a) => a.i) }];
     if (metric === 'ctr') return [{ name: 'Click rate %', color: TOTAL_COLOR, points: pts((a) => (a.i ? (a.c / a.i) * 100 : null)) }];
     return [{ name: 'Avg position', color: TOTAL_COLOR, points: pts((a) => (a.i ? a.pw / a.i : null)) }];
@@ -520,8 +516,12 @@ function SearchDetailSheet({ kind, keyText, range, ninety, onClose, onOpen }: { 
             </p>
           )}
           <div className="dash-sheet__section">
-            <h4>Clicks &amp; Impressions</h4>
-            <TrendChart daily={d.daily} range={d.range.current} metric="clicks" height={180} />
+            <h4>Clicks</h4>
+            <TrendChart daily={d.daily} range={d.range.current} metric="clicks" height={170} />
+          </div>
+          <div className="dash-sheet__section">
+            <h4>Impressions</h4>
+            <TrendChart daily={d.daily} range={d.range.current} metric="impressions" height={150} />
           </div>
           <div className="dash-sheet__section">
             <h4>Position</h4>

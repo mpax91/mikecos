@@ -3475,12 +3475,30 @@ export interface BeeGaTotals {
   engaged: number;
   engagementSec: number;
 }
+export interface BeeVisitors {
+  now: { users: number; newUsers: number } | null;
+  prev: { users: number; newUsers: number } | null;
+  live: boolean;
+}
+export type BeeAnalyticsDetail =
+  | { empty: true }
+  | {
+      empty: false;
+      kind: 'platform' | 'page';
+      key: string;
+      range: { current: { from: string; to: string }; previous: { from: string; to: string } };
+      now: { sessions: number; engagedRate: number | null; secPerSession: number | null; pageViews: number | null };
+      prev: { sessions: number; engagedRate: number | null; secPerSession: number | null };
+      daily: { date: string; sessions: number }[];
+      breakdown: { key: string; sessions: number; engagedRate: number | null }[];
+    };
 export type BeeAnalytics =
   | { connection: BeeGaConnection; empty: true }
   | {
       connection: BeeGaConnection;
       empty: false;
       range: { from: string; to: string; current: { from: string; to: string }; previous: { from: string; to: string } };
+      daily: { date: string; sessions: number; views: number; engaged: number }[];
       period: {
         now: BeeGaTotals;
         prev: BeeGaTotals;

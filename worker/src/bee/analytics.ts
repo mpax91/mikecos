@@ -1,5 +1,6 @@
 import type { Env } from '../types';
-import { addDays, loadGsc } from './gsc';
+import { pickRanges, type DayRange } from './search';
+import { loadGsc } from './gsc';
 
 /** GET /api/bee/analytics — the Website (GA4) part of the Bedford Bee
  * dashboard. Rule-based, with minimum floors for a small site:
@@ -61,7 +62,7 @@ interface Totals {
   engagementSec: number;
 }
 
-export async function analyticsDashboard(env: Env) {
+export async function analyticsDashboard(env: Env, asked: DayRange | null = null) {
   const acct = await loadGsc(env);
   const connection = {
     connected: !!acct?.refresh_token_enc,
@@ -78,9 +79,9 @@ export async function analyticsDashboard(env: Env) {
   const span = await db.prepare('SELECT MIN(date) AS a, MAX(date) AS b FROM bee_ga_days').first<{ a: string | null; b: string | null }>();
   if (!span?.b) return { connection, empty: true as const };
   const end = span.b;
-  const cur = { from: addDays(end, -27), to: end };
-  const prev = { from: addDays(end, -55), to: addDays(end, -28) };
-  const d90 = addDays(end, -89);
+  // Everything below follows the asked range (default last 28 days),
+  // compared with the same length before (Mike, 2026-10-11).
+  const { cur, prev } = pickRanges(asked, span.a ?? end, end);
 
   const totals = async (r: { from: string; to: string }): Promise<Totals> => {
     const x = await db
@@ -113,7 +114,7 @@ export async function analyticsDashboard(env: Env) {
         .bind(from, to)
         .all<{ landing: string; source: string; medium: string; channel: string | null; s: number; e: number; t: number; v: number }>()
     ).results ?? [];
-  const [l28, lPrev, l90] = await Promise.all([landingRows(cur.from, cur.to), landingRows(prev.from, prev.to), landingRows(d90, end)]);
+  const [l28, lPrev, l90] = await Promise.all([landingRows(cur.from, cur.to), landingRows(prev.from, prev.to), landingRows(cur.from, cur.to)]);
   const byPlatform = (rows: typeof l28) => {
     const m = new Map<string, Totals>();
     for (const r of rows) {
@@ -141,7 +142,7 @@ export async function analyticsDashboard(env: Env) {
     .map((name) => {
       const a = p28.get(name) ?? { sessions: 0, views: 0, engaged: 0, engagementSec: 0 };
       const b = pPrev.get(name) ?? { sessions: 0, views: 0, engaged: 0, engagementSec: 0 };
-      const lp = [...(landingByPlatform.get(name) ?? new Map()).entries()].sort((x, y) => y[1].sessions - x[1].sessions).slice(0, 3);
+      const lp = [...(landingByPlatform.get(name) ?? new Map()).entries()].sort((x, y) => y[1].sessions - x[1].sessions).slice(0, 5);
       return {
         name,
         social: SOCIAL.has(name),
@@ -174,8 +175,8 @@ export async function analyticsDashboard(env: Env) {
 
   // Pages (90 d): top + stickiest; website vs Substack host split.
   const { results: pageRows } = await db
-    .prepare('SELECT host, path, MAX(title) title, SUM(views) v, SUM(engagement_sec) t FROM bee_ga_pages WHERE date >= ? GROUP BY host, path')
-    .bind(d90)
+    .prepare('SELECT host, path, MAX(title) title, SUM(views) v, SUM(engagement_sec) t FROM bee_ga_pages WHERE date BETWEEN ? AND ? GROUP BY host, path')
+    .bind(cur.from, cur.to)
     .all<{ host: string; path: string; title: string | null; v: number; t: number }>();
   const pages = (pageRows ?? []).map((p) => ({ host: p.host, path: p.path, title: p.title, views: p.v, secPerView: p.v ? p.t / p.v : 0 }));
   const topPages = [...pages].sort((a, b) => b.views - a.views).slice(0, 15);
@@ -188,8 +189,8 @@ export async function analyticsDashboard(env: Env) {
 
   // Subscribe clicks (outbound to Substack), 90 d.
   const { results: clickRows } = await db
-    .prepare('SELECT path, domain, SUM(clicks) c FROM bee_ga_clicks WHERE date >= ? GROUP BY path, domain')
-    .bind(d90)
+    .prepare('SELECT path, domain, SUM(clicks) c FROM bee_ga_clicks WHERE date BETWEEN ? AND ? GROUP BY path, domain')
+    .bind(cur.from, cur.to)
     .all<{ path: string; domain: string; c: number }>();
   const viewsByPath = new Map<string, number>();
   for (const p of pages) viewsByPath.set(p.path, (viewsByPath.get(p.path) ?? 0) + p.views);
@@ -230,7 +231,7 @@ export async function analyticsDashboard(env: Env) {
   }
 
   // Best days & hours (90 d).
-  const { results: hourRows } = await db.prepare(`SELECT date, value, sessions FROM bee_ga_dims WHERE dim = 'hour' AND date >= ?`).bind(d90).all<{ date: string; value: string; sessions: number }>();
+  const { results: hourRows } = await db.prepare(`SELECT date, value, sessions FROM bee_ga_dims WHERE dim = 'hour' AND date BETWEEN ? AND ?`).bind(cur.from, cur.to).all<{ date: string; value: string; sessions: number }>();
   const byDow = Array(7).fill(0) as number[];
   const byHour = Array(24).fill(0) as number[];
   for (const r of hourRows ?? []) {
@@ -243,6 +244,11 @@ export async function analyticsDashboard(env: Env) {
     .bind(cur.from, cur.to)
     .all<{ value: string; s: number }>();
 
+  const { results: daily } = await db
+    .prepare('SELECT date, sessions, views, engaged FROM bee_ga_days WHERE date BETWEEN ? AND ? ORDER BY date')
+    .bind(cur.from, cur.to)
+    .all<{ date: string; sessions: number; views: number; engaged: number }>();
+
   const { results: years } = await db
     .prepare('SELECT substr(date,1,4) AS year, SUM(sessions) s, SUM(views) v, MIN(date) first, MAX(date) last FROM bee_ga_days GROUP BY year ORDER BY year DESC')
     .all<{ year: string; s: number; v: number; first: string; last: string }>();
@@ -253,6 +259,7 @@ export async function analyticsDashboard(env: Env) {
     range: { from: span.a, to: end, current: cur, previous: prev },
     period: { now: now28, prev: prev28, visitors: snapshot.last28 ?? null, prevVisitors: snapshot.prev28 ?? null, visitorsThisYear: snapshot.thisYear ?? null, visitorsLastYear: snapshot.lastYear ?? null },
     monthly,
+    daily: daily ?? [],
     platforms,
     searchLanding,
     topPages,
@@ -267,5 +274,63 @@ export async function analyticsDashboard(env: Env) {
     bestHours: byHour.map((sessions, hour) => ({ hour, sessions })),
     devices: (devices ?? []).map((d) => ({ device: d.value, sessions: d.s })),
     years: (years ?? []).map((y) => ({ year: y.year, sessions: y.s, views: y.v, first: y.first, last: y.last })),
+  };
+}
+
+/** GET /api/bee/analytics/detail?kind=platform|page&key=…&from&to — one
+ * traffic source (platform, as grouped by platformOf) or one page: daily
+ * visits in the range, totals vs before, and its landing pages (platform)
+ * or the sources sending visits to it (page). */
+export async function analyticsDetail(env: Env, kind: 'platform' | 'page', key: string, asked: DayRange | null) {
+  const db = env.DB;
+  const span = await db.prepare('SELECT MIN(date) AS a, MAX(date) AS b FROM bee_ga_days').first<{ a: string | null; b: string | null }>();
+  if (!span?.b) return { empty: true as const };
+  const { cur, prev } = pickRanges(asked, span.a ?? span.b, span.b);
+  const rows = async (r: DayRange) =>
+    (
+      await db
+        .prepare(
+          kind === 'page'
+            ? 'SELECT date, landing, source, medium, channel, sessions s, engaged e, engagement_sec t, views v FROM bee_ga_landing WHERE landing = ? AND date BETWEEN ? AND ?'
+            : 'SELECT date, landing, source, medium, channel, sessions s, engaged e, engagement_sec t, views v FROM bee_ga_landing WHERE date BETWEEN ? AND ?'
+        )
+        .bind(...(kind === 'page' ? [key, r.from, r.to] : [r.from, r.to]))
+        .all<{ date: string; landing: string; source: string; medium: string; channel: string | null; s: number; e: number; t: number; v: number }>()
+    ).results ?? [];
+  const pick = (list: Awaited<ReturnType<typeof rows>>) => (kind === 'platform' ? list.filter((r) => platformOf(r.source, r.medium, r.channel) === key) : list);
+  const [a, b] = await Promise.all([rows(cur).then(pick), rows(prev).then(pick)]);
+  const tot = (list: typeof a) => {
+    const sessions = list.reduce((n, r) => n + r.s, 0);
+    const engaged = list.reduce((n, r) => n + r.e, 0);
+    const sec = list.reduce((n, r) => n + r.t, 0);
+    return { sessions, engagedRate: sessions ? engaged / sessions : null, secPerSession: sessions ? sec / sessions : null };
+  };
+  const byDate = new Map<string, number>();
+  for (const r of a) byDate.set(r.date, (byDate.get(r.date) ?? 0) + r.s);
+  const group = new Map<string, { sessions: number; engaged: number }>();
+  for (const r of a) {
+    const k = kind === 'platform' ? r.landing : platformOf(r.source, r.medium, r.channel);
+    const g = group.get(k) ?? { sessions: 0, engaged: 0 };
+    g.sessions += r.s;
+    g.engaged += r.e;
+    group.set(k, g);
+  }
+  let pageViews: number | null = null;
+  if (kind === 'page') {
+    const x = await db.prepare('SELECT COALESCE(SUM(views),0) v FROM bee_ga_pages WHERE path = ? AND date BETWEEN ? AND ?').bind(key, cur.from, cur.to).first<{ v: number }>();
+    pageViews = x?.v ?? 0;
+  }
+  return {
+    empty: false as const,
+    kind,
+    key,
+    range: { current: cur, previous: prev },
+    now: { ...tot(a), pageViews },
+    prev: tot(b),
+    daily: [...byDate.entries()].sort((x, y) => x[0].localeCompare(y[0])).map(([date, sessions]) => ({ date, sessions })),
+    breakdown: [...group.entries()]
+      .map(([k, g]) => ({ key: k, sessions: g.sessions, engagedRate: g.sessions ? g.engaged / g.sessions : null }))
+      .sort((x, y) => y.sessions - x.sessions)
+      .slice(0, 20),
   };
 }

@@ -94,8 +94,8 @@ export function BeePage() {
         </>
       ) : tab === 'website' ? (
         <>
-          <BeeWebsiteSection />
-          <BeeClaritySection />
+          <BeeWebsiteSection range={range} setRange={setRange} />
+          <BeeClaritySection range={range} />
         </>
       ) : (
         <>

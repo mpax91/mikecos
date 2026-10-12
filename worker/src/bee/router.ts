@@ -6,8 +6,8 @@ import { loadSubscribers, spotlightFor, substackDashboard } from './summary';
 import { isPaidType } from './engagement';
 import { disconnectGsc, gscAuthUrl, syncGscAll } from './gsc';
 import { searchDashboard, searchDetail } from './search';
-import { syncGaAll } from './ga';
-import { analyticsDashboard } from './analytics';
+import { rangeVisitors, syncGaAll } from './ga';
+import { analyticsDashboard, analyticsDetail } from './analytics';
 import { bingDashboard, saveBingKey, syncBing } from './bing';
 import { clarityDashboard, saveClarityToken, syncClarity } from './clarity';
 import { disconnectMeta, metaAuthUrl, saveMetaApp, syncMeta } from './meta';
@@ -56,7 +56,14 @@ beeRouter.post('/gsc/sync', async (c) => {
 });
 
 // ---- Google Analytics (same Google connection) ----
-beeRouter.get('/analytics', async (c) => c.json(await analyticsDashboard(c.env)));
+beeRouter.get('/analytics', async (c) => c.json(await analyticsDashboard(c.env, askedRange(c.req.query('from'), c.req.query('to')))));
+beeRouter.get('/analytics/visitors', async (c) => c.json(await rangeVisitors(c.env, askedRange(c.req.query('from'), c.req.query('to')))));
+beeRouter.get('/analytics/detail', async (c) => {
+  const kind = c.req.query('kind') === 'page' ? 'page' : 'platform';
+  const key = c.req.query('key');
+  if (!key) return c.json({ error: 'key required' }, 400);
+  return c.json(await analyticsDetail(c.env, kind, key, askedRange(c.req.query('from'), c.req.query('to'))));
+});
 
 beeRouter.post('/ga/sync', async (c) => {
   try {
@@ -69,7 +76,7 @@ beeRouter.post('/ga/sync', async (c) => {
 // ---- Bing Webmaster Tools + Microsoft Clarity (pasted keys) ----
 const fail = (err: unknown) => ({ error: err instanceof Error ? err.message : String(err) });
 beeRouter.get('/bing', async (c) => c.json(await bingDashboard(c.env, askedRange(c.req.query('from'), c.req.query('to')))));
-beeRouter.get('/clarity', async (c) => c.json(await clarityDashboard(c.env)));
+beeRouter.get('/clarity', async (c) => c.json(await clarityDashboard(c.env, askedRange(c.req.query('from'), c.req.query('to')))));
 
 beeRouter.put('/bing/key', async (c) => {
   const { key } = await c.req.json<{ key: string | null }>();
