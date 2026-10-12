@@ -945,6 +945,7 @@ export interface Contact {
   labels?: string; // JSON string[] — Mike's own labels (Google Contacts), migration 0098
   is_voter?: number; // list only: 1 when the contact has a voter record → automatic "Voter" label
   is_bee?: number; // list only: 1 when linked to a current Bedford Bee subscriber → automatic "Bee" label
+  is_merch?: number; // list only: 1 when they bought from the Bee merch store → automatic "Merch" label
 }
 
 export interface ContactConnection {
@@ -1345,6 +1346,7 @@ export interface ContactDetail extends Contact {
   dates?: ContactDate[];
   voterDiffs?: VoterDiff[];
   bee?: BeeContactInfo | null;
+  merch?: MerchContactInfo | null;
   comms?: ContactComms | null;
 }
 
@@ -3859,6 +3861,7 @@ export interface BeeReviewTotals {
   substack: { posts: number; views: number; likes: number; comments: number; shares: number; emailsSent: number; opened: number; opens: number };
   website: { visits: number; pageViews: number };
   search: { googleClicks: number; googleImpressions: number; bingClicks: number; bingImpressions: number };
+  merch?: { orders: number; sales: number };
   everything: { views: number; likes: number; comments: number; shares: number };
 }
 export interface BeeReviewTop {
@@ -3886,7 +3889,7 @@ export interface BeeReview {
   followers: { facebook: number | null; instagram: number | null };
   tops: Record<'combined' | 'facebook' | 'instagram' | 'substack', BeeTopSet>;
   months: { month: string; views: number; social: number; substack: number; website: number; stories: number }[];
-  sources: { meta: string | null; ga: string | null; gsc: string | null };
+  sources: { meta: string | null; ga: string | null; gsc: string | null; merch?: string | null };
 }
 
 /** Calls & Texts on a contact card (worker/src/comms/read.ts). */
@@ -4077,4 +4080,78 @@ export interface WeekBrief {
   meetingHours: number;
   pendingActions: number;
   suggestions: { kind: 'start' | 'stop' | 'continue'; text: string }[];
+}
+
+// ---- Bedford Bee: Merch store (worker/src/bee/merch.ts) ----
+export interface MerchItem {
+  name: string;
+  variant: string | null;
+  sku: string | null;
+  qty: number;
+  price: number | null;
+  cost: number | null;
+}
+export interface MerchOrder {
+  id: string;
+  friendlyId: string | null;
+  type: string;
+  createdAt: string;
+  day: string;
+  status: string | null;
+  cancelled: boolean;
+  email: string | null;
+  name: string | null;
+  shipName: string | null;
+  city: string | null;
+  state: string | null;
+  shipCity: string | null;
+  contactId: string | null;
+  isMe: boolean;
+  merchandise: number;
+  discount: number;
+  refunded: number;
+  shipping: number;
+  tax: number;
+  donation: number;
+  total: number;
+  sales: number;
+  cost: number | null;
+  profit: number | null;
+  items: MerchItem[];
+  units: number | null;
+  promo: string | null;
+  utm: { source: string | null; medium: string | null; campaign: string | null };
+  via: 'api' | 'csv';
+}
+export interface MerchYear {
+  year: number;
+  orders: number;
+  cancelled: number;
+  units: number | null;
+  merchandise: number;
+  discount: number;
+  refunded: number;
+  sales: number;
+  shipping: number;
+  tax: number;
+  tips: number;
+  cost: number | null;
+  costKnown: number;
+  profit: number | null;
+  buyers: number;
+}
+export interface BeeMerch {
+  today: string;
+  connection: { connected: boolean; shop: string | null; domain: string | null; lastSyncAt: string | null; lastError: string | null };
+  files: { fileId: string; name: string; exportDate: string | null; url: string | null; rows: number | null; status: string; error: string | null }[];
+  orders: MerchOrder[];
+  years: MerchYear[];
+}
+export interface MerchContactInfo {
+  orders: number;
+  spent: number;
+  sales: number;
+  first: string;
+  last: string;
+  list: { id: string; friendlyId: string | null; day: string; status: string | null; total: number; items: string[] }[];
 }

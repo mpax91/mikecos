@@ -41,6 +41,10 @@ export default defineConfig({
         skipWaiting: true,
         clientsClaim: true,
         cleanupOutdatedCaches: true,
+        // The single app bundle passed workbox's 2 MiB default on 2026-10-12
+        // (Bee Merch tab) — above it the bundle silently drops out of the
+        // precache and the build errors. Room to grow until it's code-split.
+        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
       },
     }),
   ],

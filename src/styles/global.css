@@ -18653,6 +18653,12 @@ td.month-page__upcoming-actions .today-page__meeting-actions {
   border-style: dashed;
   border-color: #e3c779;
 }
+.contact-label--merch {
+  color: #6b3fa0;
+  background: transparent;
+  border-style: dashed;
+  border-color: #c7b0e3;
+}
 @media (max-width: 860px) {
   .bee-year {
     grid-template-columns: repeat(2, minmax(0, 1fr));

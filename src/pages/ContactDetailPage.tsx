@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
 import type { Contact, ContactCircle, ContactConnection, ContactDate, ContactDetail, ContactNote, VoterDiff } from '../api/types';
 import { partyTone, VoterDiffBox, VoterInsightSection } from '../components/VoterInsight';
-import { BeeContactSection } from '../components/BeeContactSection';
+import { BeeContactSection, MerchContactSection } from '../components/BeeContactSection';
 import { ContactCommsSection } from '../components/ContactCommsSection';
 import { PersonWorkSection } from '../components/PersonWorkSection';
 import { RealmToggle } from '../components/RealmSwitch';
@@ -586,7 +586,7 @@ export function ContactDetailPage() {
   const anniversary = formatDate(contact.anniversary_month, contact.anniversary_day, contact.anniversary_year);
   const isPinned = contact.pinned === 1;
   const tz = timezoneForCity(contact.city);
-  const cardLabels = displayLabels(contact, contact.voterRecords.length > 0, !!contact.bee);
+  const cardLabels = displayLabels(contact, contact.voterRecords.length > 0, !!contact.bee, !!contact.merch);
   // Google's official search link (maps.google.com/?q= now often lands on a
   // blank map). Adds the city when the address line doesn't already have it.
   const mapsQuery =
@@ -762,6 +762,7 @@ export function ContactDetailPage() {
       <ContactCommsSection comms={contact.comms} />
 
       <BeeContactSection bee={contact.bee} />
+      <MerchContactSection merch={contact.merch} />
 
       <ConnectionsSection contact={contact} onAdd={handleAddConnection} onDelete={handleDeleteConnection} />
 

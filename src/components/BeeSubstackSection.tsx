@@ -19,7 +19,7 @@ import { type DateRange, addDays, bucketFor, bucketStart, bucketsIn, dayMs, inRa
 
 const TOTAL_COLOR = '#2A6FB0';
 const PAID_COLOR = '#C0662E';
-const KIND_LABEL: Record<string, string> = { posts: 'Posts', subscribers: 'Subscribers', stripe: 'Stripe', other: 'Not Recognized' };
+const KIND_LABEL: Record<string, string> = { posts: 'Posts', subscribers: 'Subscribers', stripe: 'Stripe', fourthwall: 'Fourthwall Orders', other: 'Not Recognized' };
 
 const toMs = (iso: string) => dayMs(iso.slice(0, 10));
 const fmtDate = (iso: string | null) => (iso ? new Date(toMs(iso)).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—');

@@ -58,6 +58,7 @@ import { accountPayersRouter } from './accountPayersRouter';
 import { afterBillTaskSpawned, billsOnCalendar, billsRouter } from './bills';
 import { scanAllLiveFolders, statementsScanDue } from './statements/engine';
 import { beeForContact, beeRouter } from './bee/router';
+import { fwSyncDue, merchForContact, syncFourthwall } from './bee/merch';
 import { commsRouter } from './comms/router';
 import { commsForContact } from './comms/read';
 import { commsScanDue, runComms } from './comms/ingest';
@@ -882,7 +883,7 @@ app.get('/api/contacts', async (c) => {
   // Mike's contacts) — shown as the automatic "Voter" label (2026-10-10).
   // is_bee: linked to a current Bedford Bee subscriber — the automatic
   // "Bee" label (2026-10-10; gone once they leave the newest export).
-  let sql = `SELECT contacts.*, EXISTS (SELECT 1 FROM voter_records vr WHERE vr.contact_id = contacts.id) AS is_voter, EXISTS (SELECT 1 FROM bee_subscribers b WHERE ${BEE_ACTIVE_SQL}) AS is_bee FROM contacts WHERE 1=1`;
+  let sql = `SELECT contacts.*, EXISTS (SELECT 1 FROM voter_records vr WHERE vr.contact_id = contacts.id) AS is_voter, EXISTS (SELECT 1 FROM bee_subscribers b WHERE ${BEE_ACTIVE_SQL}) AS is_bee, EXISTS (SELECT 1 FROM bee_fw_orders m WHERE ${MERCH_SQL}) AS is_merch FROM contacts WHERE 1=1`;
   const binds: unknown[] = [];
 
   if (!includeVoters) {
@@ -901,6 +902,8 @@ app.get('/api/contacts', async (c) => {
     if (label.toLowerCase() === VOTER_LABEL.toLowerCase()) sql += ' OR EXISTS (SELECT 1 FROM voter_records vr WHERE vr.contact_id = contacts.id)';
     // "Bee" is automatic too: linked to a current Bedford Bee subscriber.
     if (label.toLowerCase() === BEE_LABEL.toLowerCase()) sql += ` OR EXISTS (SELECT 1 FROM bee_subscribers b WHERE ${BEE_ACTIVE_SQL})`;
+    // "Merch": bought from the Bedford Bee merch store (any order not cancelled).
+    if (label.toLowerCase() === MERCH_LABEL.toLowerCase()) sql += ` OR EXISTS (SELECT 1 FROM bee_fw_orders m WHERE ${MERCH_SQL})`;
     sql += ')';
   }
   if (remindersOnly) {
@@ -1032,6 +1035,9 @@ const VOTER_LABEL = 'Voter';
 /** Automatic label for contacts linked to a current Bedford Bee subscriber. */
 const BEE_LABEL = 'Bee';
 const BEE_ACTIVE_SQL = "b.contact_id = contacts.id AND b.active = 1 AND lower(COALESCE(b.type, '')) != 'author'";
+/** Automatic label for contacts who bought from the Bee merch store (Fourthwall). */
+const MERCH_LABEL = 'Merch';
+const MERCH_SQL = "m.contact_id = contacts.id AND upper(COALESCE(m.status, '')) NOT LIKE '%CANCEL%'";
 
 // GET /api/contacts/labels — every label on Mike's own contacts (voter-roll
 // entries have none) with how many people carry it, A–Z. Drives
@@ -1042,7 +1048,7 @@ app.get('/api/contacts/labels', async (c) => {
      WHERE contacts.source != 'voter_file' GROUP BY lower(j.value) ORDER BY label COLLATE NOCASE`
   ).all<{ label: string; n: number }>();
   const labels = (results ?? [])
-    .filter((r) => r.label.toLowerCase() !== VOTER_LABEL.toLowerCase() && r.label.toLowerCase() !== BEE_LABEL.toLowerCase())
+    .filter((r) => ![VOTER_LABEL, BEE_LABEL, MERCH_LABEL].some((a) => a.toLowerCase() === r.label.toLowerCase()))
     .map((r) => ({ label: r.label, count: r.n }));
   // Automatic "Voter" label: everyone with a voter record (the roll plus
   // Mike's merged contacts). Picking it in the dropdown turns the Voter
@@ -1053,6 +1059,10 @@ app.get('/api/contacts/labels', async (c) => {
     `SELECT COUNT(DISTINCT contact_id) AS n FROM bee_subscribers WHERE active = 1 AND contact_id IS NOT NULL AND contact_id != 'none' AND lower(COALESCE(type, '')) != 'author'`
   ).first<{ n: number }>();
   if (bees?.n) labels.push({ label: BEE_LABEL, count: bees.n });
+  const buyers = await c.env.DB.prepare(
+    `SELECT COUNT(DISTINCT contact_id) AS n FROM bee_fw_orders WHERE contact_id IS NOT NULL AND contact_id != 'none' AND upper(COALESCE(status, '')) NOT LIKE '%CANCEL%'`
+  ).first<{ n: number }>();
+  if (buyers?.n) labels.push({ label: MERCH_LABEL, count: buyers.n });
   // Alphabetical (Mike, 2026-10-10) — not by how many contacts carry it.
   labels.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base', numeric: true }));
   return c.json({ labels });
@@ -1228,6 +1238,7 @@ app.get('/api/contacts/:id', async (c) => {
       ).results ?? [],
     voterDiffs: voterDiffList.map(({ apply: _apply, ...d }) => d),
     bee: await beeForContact(c.env, id),
+    merch: await merchForContact(c.env, id),
     comms: contact.source === 'voter_file' ? null : await commsForContact(c.env, contact).catch(() => null),
   });
 });
@@ -1515,6 +1526,7 @@ app.delete('/api/contacts/:id', async (c) => {
   // A deleted Bee contact stays deleted — the subscriber isn't re-linked
   // or re-created on the next import ('none').
   await c.env.DB.prepare("UPDATE bee_subscribers SET contact_id = 'none' WHERE contact_id = ?").bind(id).run();
+  await c.env.DB.prepare("UPDATE bee_fw_orders SET contact_id = 'none' WHERE contact_id = ?").bind(id).run();
   await c.env.DB.prepare('DELETE FROM contacts WHERE id = ?').bind(id).run();
   return c.json({ ok: true });
 });
@@ -1599,6 +1611,7 @@ app.post('/api/contacts/:id/merge', async (c) => {
   stmts.push(c.env.DB.prepare('UPDATE contact_voter_links SET contact_id = ? WHERE contact_id = ?').bind(survivorId, goneId));
   stmts.push(c.env.DB.prepare('DELETE FROM contact_voter_reviews WHERE contact_id = ?').bind(goneId));
   stmts.push(c.env.DB.prepare('UPDATE bee_subscribers SET contact_id = ? WHERE contact_id = ?').bind(survivorId, goneId));
+  stmts.push(c.env.DB.prepare('UPDATE bee_fw_orders SET contact_id = ? WHERE contact_id = ?').bind(survivorId, goneId));
   stmts.push(c.env.DB.prepare('DELETE FROM contacts WHERE id = ?').bind(goneId));
   if (target.source !== 'voter_file') {
     const { results: keyRows } = await c.env.DB.prepare('SELECT voter_key FROM voter_records WHERE contact_id IN (?, ?)')
@@ -8798,6 +8811,11 @@ export default {
           if (await claritySyncDue(env, event.scheduledTime)) await syncClarity(env);
         } catch (err) {
           console.error('Clarity sync failed', err);
+        }
+        try {
+          if (await fwSyncDue(env)) await syncFourthwall(env);
+        } catch (err) {
+          console.error('Fourthwall sync failed', err);
         }
         try {
           const due = await metaSyncDue(env, event.scheduledTime);

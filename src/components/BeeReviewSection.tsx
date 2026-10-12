@@ -188,6 +188,9 @@ function Headline({ data, prev, compare, scale }: { data: BeeReview; prev: BeeRe
         fmt={money}
         prev={compare === 'same' ? `net ${money(sub?.net)} after fees` : undefined}
       />
+      {(n.merch?.orders ?? 0) > 0 && (
+        <Tile label={`Merch Sales${per}`} value={money(sv(n.merch?.sales ?? 0))} raw={sv(n.merch?.sales ?? 0)} prevRaw={pv(prev.merch?.sales ?? 0)} prevLabel={pl} fmt={money} />
+      )}
       <Tile label={`Emails Sent${per}`} value={big(sv(n.substack.emailsSent))} raw={sv(n.substack.emailsSent)} prevRaw={pv(prev.substack.emailsSent)} prevLabel={pl} />
       <Tile
         label="Website Visits"
@@ -390,6 +393,17 @@ function PlatformTable({ data, prev, compare, scale }: { data: BeeReview; prev: 
       label: 'Net revenue',
       now: data.substack.now?.net ?? null,
       prev: compare !== 'same' ? (data.substack.prev?.net ?? null) : null,
+      fmt: money,
+    },
+    {
+      label: 'Merch orders',
+      now: n.merch?.orders ?? 0,
+      prev: prev.merch?.orders ?? 0,
+    },
+    {
+      label: 'Merch sales',
+      now: n.merch?.sales ?? 0,
+      prev: prev.merch?.sales ?? 0,
       fmt: money,
     },
     {

@@ -3,6 +3,7 @@ import { buildStories } from './stories';
 import type { Story } from './stories';
 import { substackDashboard } from './summary';
 import { loadGsc } from './gsc';
+import { merchTotals } from './merch';
 
 /** GET /api/bee/review?year=2026 — Bedford Bee Year in Review across every
  * source (Mike, 2026-10-11): the year so far, vs the previous year on the
@@ -40,6 +41,7 @@ async function rangeTotals(env: Env, r: Range, stories: Story[]) {
     .bind(r.from, r.to)
     .all<{ date: string; value: number }>();
   const fol = fbFollow.results ?? [];
+  const merch = await merchTotals(env, r);
   const totalViews = fb.views + ig.views + sub.views + (ga?.v ?? 0);
   return {
     range: r,
@@ -56,6 +58,7 @@ async function rangeTotals(env: Env, r: Range, stories: Story[]) {
     instagram: ig,
     substack: { ...sub, posts: emails?.posts ?? sub.posts, emailsSent: emails?.sent ?? 0, opened: emails?.opened ?? 0, opens: emails?.opens ?? 0 },
     website: { visits: ga?.s ?? 0, pageViews: ga?.v ?? 0 },
+    merch,
     search: { googleClicks: gsc?.c ?? 0, googleImpressions: gsc?.i ?? 0, bingClicks: bing?.c ?? 0, bingImpressions: bing?.i ?? 0 },
     everything: {
       views: totalViews,
@@ -154,6 +157,7 @@ export async function reviewDashboard(env: Env, year: number) {
       meta: firstDate,
       ga: (await env.DB.prepare('SELECT MIN(date) d FROM bee_ga_days').first<{ d: string | null }>())?.d ?? null,
       gsc: (await env.DB.prepare('SELECT MIN(date) d FROM bee_gsc_days').first<{ d: string | null }>())?.d ?? null,
+      merch: (await env.DB.prepare('SELECT MIN(day) d FROM bee_fw_orders').first<{ d: string | null }>())?.d ?? null,
     },
   };
 }

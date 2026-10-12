@@ -4,6 +4,7 @@ import { blank, csvRecords, int, num } from './csv';
 import { linkBeeContacts } from './contacts';
 import { syncBeeExportTask } from './reminder';
 import { syncBeeTaxPackets } from './tax';
+import { deriveMerch, ingestFourthwallCsv, isFourthwallCsv } from './merch';
 
 /** Bedford Bee importer (2026-10-10). Mike drops Substack's posts export,
  * Substack's subscriber export and Stripe's balance history into a Drive
@@ -12,7 +13,7 @@ import { syncBeeTaxPackets } from './tax';
  * from the name ("2026.10.10 - …", "…_2026-10-11…") or else Drive's
  * modified date. Idempotent — re-reads a file only when it changes. */
 
-export type BeeFileKind = 'posts' | 'subscribers' | 'stripe' | 'other';
+export type BeeFileKind = 'posts' | 'subscribers' | 'stripe' | 'fourthwall' | 'other';
 
 export interface BeeSettingsRow {
   id: number;
@@ -41,6 +42,7 @@ export function classifyHeaders(headers: string[]): BeeFileKind {
   if (h.has('post_date') && h.has('open_rate')) return 'posts';
   if (h.has('email') && h.has('type') && h.has('start date')) return 'subscribers';
   if (h.has('id') && h.has('type') && h.has('net') && h.has('created (utc)')) return 'stripe';
+  if (isFourthwallCsv(headers)) return 'fourthwall';
   return 'other';
 }
 
@@ -118,7 +120,7 @@ export async function scanBee(env: Env): Promise<BeeScanResult> {
         kind = out.kind;
         rows = out.rows;
         status = kind === 'other' ? 'skipped' : 'parsed';
-        if (kind === 'other') error = 'Not a Substack posts, subscriber or Stripe export';
+        if (kind === 'other') error = 'Not a Substack posts, subscriber, Stripe or Fourthwall orders export';
       } catch (err) {
         error = err instanceof Error ? err.message : String(err);
         result.errors.push(`${e.name}: ${error}`);
@@ -165,6 +167,7 @@ export async function deriveBee(env: Env): Promise<void> {
   await linkBeeContacts(env);
   await syncBeeExportTask(env);
   await syncBeeTaxPackets(env);
+  await deriveMerch(env);
 }
 
 /** Reads one export (any of the three kinds) into the tables. */
@@ -174,6 +177,7 @@ export async function ingestBeeCsv(env: Env, f: { fileId: string; exportDate: st
   if (kind === 'posts') await ingestPosts(env, f, records);
   else if (kind === 'subscribers') await ingestSubscribers(env, f, records);
   else if (kind === 'stripe') await ingestStripe(env, f, records);
+  else if (kind === 'fourthwall') await ingestFourthwallCsv(env, records);
   return { kind, rows: records.length };
 }
 

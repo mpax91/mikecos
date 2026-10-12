@@ -14,6 +14,7 @@ import { disconnectMeta, metaAuthUrl, saveMetaApp, syncMeta } from './meta';
 import { socialDashboard } from './social';
 import { buildStories } from './stories';
 import { reviewDashboard } from './review';
+import { deriveMerch, linkMerchContacts, merchDashboard, saveFourthwall, syncFourthwall } from './merch';
 
 /** /api/bee — Bedford Bee dashboard. Substack + Stripe come from CSV
  * exports in the Drive "Bedford Bee" folder; more sources (Search
@@ -168,6 +169,33 @@ beeRouter.put('/topic-rules', async (c) => {
     ...clean.map((r, i) => c.env.DB.prepare('INSERT OR REPLACE INTO bee_topic_rules (topic, keywords, position) VALUES (?, ?, ?)').bind(r.topic, r.keywords, i)),
   ]);
   return c.json({ rules: clean });
+});
+
+// ---- Merch store (Fourthwall Open API + orders CSV) ----
+beeRouter.get('/merch', async (c) => c.json(await merchDashboard(c.env)));
+beeRouter.put('/merch/fourthwall', async (c) => {
+  const body = await c.req.json<{ username?: string | null; password?: string | null }>();
+  const username = body.username?.trim();
+  const password = body.password?.trim();
+  try {
+    const r = await saveFourthwall(c.env, username && password ? { username, password } : null);
+    // First pull (every order) right away — a shop's history is small.
+    if (r.shop) await syncFourthwall(c.env, true).catch(() => null);
+    return c.json(r);
+  } catch (err) {
+    return c.json(fail(err), 400);
+  }
+});
+beeRouter.post('/merch/sync', async (c) => {
+  try {
+    return c.json(await syncFourthwall(c.env, c.req.query('full') === '1'));
+  } catch (err) {
+    return c.json(fail(err), 502);
+  }
+});
+beeRouter.post('/merch/derive', async (c) => {
+  await deriveMerch(c.env);
+  return c.json(await linkMerchContacts(c.env));
 });
 
 beeRouter.post('/gsc/disconnect', async (c) => {
