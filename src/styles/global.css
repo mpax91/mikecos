@@ -4919,6 +4919,21 @@ a.today-page__important-dates-row:hover .today-page__important-dates-name {
   margin-top: 2px;
 }
 
+/* Family (contact label) — their dates lead the list, a touch heavier. */
+.today-page__important-dates-row--family .today-page__important-dates-name {
+  font-weight: 600;
+}
+
+/* Coming Up · Family — 7-day heads-up under the day's own dates. */
+.today-page__important-dates-upcoming {
+  margin-top: 12px;
+}
+
+.today-page__important-dates-row--upcoming .today-page__important-dates-kind {
+  white-space: normal;
+  text-align: right;
+}
+
 /* Previously a collapse/expand toggle — Mike wanted it gone entirely: no
    fold to click through, just a divider marking the split and the full
    voter-roll list underneath it, plain and always visible. Noticeably
@@ -8551,6 +8566,26 @@ td.month-page__upcoming-actions .today-page__meeting-actions {
 
 .contact-edit-form__date-row input {
   margin-bottom: 0;
+}
+
+.contact-edit-form__date-row--event {
+  grid-template-columns: 2fr 1fr 1fr 1.2fr auto;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.contact-edit-form__add-date {
+  align-self: flex-start;
+  margin-top: 2px;
+}
+
+@media (max-width: 640px) {
+  .contact-edit-form__date-row--event {
+    grid-template-columns: 1fr 1fr 1fr auto;
+  }
+  .contact-edit-form__date-row--event input:first-child {
+    grid-column: 1 / -1;
+  }
 }
 
 /* ---- Contact & voter file import (Settings) ---- */

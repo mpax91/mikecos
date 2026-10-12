@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
-import type { CompletionItem, Entity, MeetingItem, StatsResponse, TodayResponse, TodayTask, TopNewsItem, WeatherDay } from '../api/types';
+import type { CompletionItem, Entity, ImportantDate, MeetingItem, StatsResponse, TodayResponse, TodayTask, TopNewsItem, WeatherDay } from '../api/types';
 import { TaskRow } from '../components/TaskRow';
 import { TaskDetailModal } from '../components/TaskDetailModal';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -24,6 +24,21 @@ import { OPEN_BRIEFING_EVENT } from '../components/BriefingModal';
  * down to 10. Kept in sync with WeekPage's per-column blank count by eye
  * rather than shared, same as the rest of this page's small date helpers. */
 const DEFAULT_ROWS = 10;
+
+/** "🎂 Birthday · Turns 40", "💍 Anniversary · 12 Years", "📅 Wedding". */
+function importantDateKindText(d: ImportantDate): string {
+  const icon = d.kind === 'birthday' ? '🎂' : d.kind === 'anniversary' ? '💍' : '📅';
+  const extra = d.years == null || d.years <= 0 ? '' : d.kind === 'birthday' ? ` · Turns ${d.years}` : ` · ${d.years} ${d.years === 1 ? 'Year' : 'Years'}`;
+  return `${icon} ${d.label}${extra}`;
+}
+
+/** "Tomorrow" / "Thu 10/15 · in 3 days". */
+function upcomingWhen(d: ImportantDate): string {
+  if (d.inDays === 1) return 'Tomorrow';
+  const dt = new Date(`${d.date}T12:00:00`);
+  const wd = dt.toLocaleDateString('en-US', { weekday: 'short' });
+  return `${wd} ${dt.getMonth() + 1}/${dt.getDate()} · in ${d.inDays} days`;
+}
 
 function todayLocalISO(): string {
   const d = new Date();
@@ -378,16 +393,24 @@ export function TodayPage() {
 
   // Birthdays and anniversaries for the viewed day, combined into one list
   // (sorted by name) for the Important Dates panel — see /api/today.
-  const importantDateContacts = [
-    ...(data?.birthdays ?? []).map((contact) => ({ contact, kind: 'birthday' as const })),
-    ...(data?.anniversaries ?? []).map((contact) => ({ contact, kind: 'anniversary' as const })),
-  ].sort((a, b) => a.contact.name.localeCompare(b.contact.name));
+  // importantDates (contactDates.ts) carries other dates too, merges couples
+  // and puts Family first; the old birthdays/anniversaries arrays are only a
+  // fallback for a cached response from before it existed.
+  const importantDateRows: ImportantDate[] =
+    data?.importantDates ??
+    [
+      ...(data?.birthdays ?? []).map((ct) => ({ ct, kind: 'birthday' as const, label: 'Birthday' })),
+      ...(data?.anniversaries ?? []).map((ct) => ({ ct, kind: 'anniversary' as const, label: 'Anniversary' })),
+    ]
+      .map(({ ct, kind, label }) => ({ key: `${kind}-${ct.id}`, kind, label, contactIds: [ct.id], name: ct.name, family: false, source: ct.source, year: null, years: null, inDays: 0, date }))
+      .sort((a, b) => a.name.localeCompare(b.name));
   // Split so the panel leads with people Mike actually knows — a personal
   // contact he saved himself — and tucks voter-roll-only matches (which can
   // be a couple dozen strangers sharing a birthday) behind a fold rather
   // than burying the actionable names in a long, mostly-unfamiliar list.
-  const personalDateContacts = importantDateContacts.filter((d) => d.contact.source !== 'voter_file');
-  const voterDateContacts = importantDateContacts.filter((d) => d.contact.source === 'voter_file');
+  const personalDateContacts = importantDateRows.filter((d) => d.source !== 'voter_file');
+  const voterDateContacts = importantDateRows.filter((d) => d.source === 'voter_file');
+  const upcomingDates = data?.upcomingDates ?? [];
 
   return (
     <div>
@@ -649,18 +672,33 @@ export function TodayPage() {
                   </div>
                 ) : (
                   <div className="today-page__important-dates-list">
-                    {personalDateContacts.map(({ contact, kind }) => (
+                    {personalDateContacts.map((d) => (
                       <Link
-                        key={`${kind}-${contact.id}`}
-                        to={`/contacts/${contact.id}`}
-                        className="today-page__important-dates-row"
+                        key={d.key}
+                        to={`/contacts/${d.contactIds[0]}`}
+                        className={`today-page__important-dates-row${d.family ? ' today-page__important-dates-row--family' : ''}`}
                       >
-                        <span className="today-page__important-dates-name">{contact.name}</span>
-                        <span className="today-page__important-dates-kind">
-                          {kind === 'birthday' ? '🎂 Birthday' : '💍 Anniversary'}
-                        </span>
+                        <span className="today-page__important-dates-name">{d.name}</span>
+                        <span className="today-page__important-dates-kind">{importantDateKindText(d)}</span>
                       </Link>
                     ))}
+                  </div>
+                )}
+                {/* Family heads-up: their dates in the next 7 days, so there's
+                    time for a card or a call (contactDates.ts). */}
+                {upcomingDates.length > 0 && (
+                  <div className="today-page__important-dates-upcoming">
+                    <div className="today-page__important-dates-group-title">Coming Up · Family</div>
+                    <div className="today-page__important-dates-list">
+                      {upcomingDates.map((d) => (
+                        <Link key={`${d.key}-${d.date}`} to={`/contacts/${d.contactIds[0]}`} className="today-page__important-dates-row today-page__important-dates-row--upcoming">
+                          <span className="today-page__important-dates-name">{d.name}</span>
+                          <span className="today-page__important-dates-kind">
+                            {importantDateKindText(d)} · {upcomingWhen(d)}
+                          </span>
+                        </Link>
+                      ))}
+                    </div>
                   </div>
                 )}
                 {/* Voter-roll matches are usually people Mike doesn't
@@ -674,21 +712,19 @@ export function TodayPage() {
                   <div className="today-page__important-dates-voters">
                     <hr className="today-page__important-dates-divider" />
                     <div className="today-page__important-dates-list">
-                      {voterDateContacts.map(({ contact, kind }) => (
+                      {voterDateContacts.map((d) => (
                         <Link
-                          key={`${kind}-${contact.id}`}
-                          to={`/contacts/${contact.id}`}
+                          key={d.key}
+                          to={`/contacts/${d.contactIds[0]}`}
                           className="today-page__important-dates-row today-page__important-dates-row--voter"
                         >
                           <span className="today-page__important-dates-name">
                             <span className="today-page__important-dates-source" title="From the voter roll, not a saved contact">
                               🗳️{' '}
                             </span>
-                            {contact.name}
+                            {d.name}
                           </span>
-                          <span className="today-page__important-dates-kind">
-                            {kind === 'birthday' ? '🎂' : '💍'}
-                          </span>
+                          <span className="today-page__important-dates-kind">{d.kind === 'birthday' ? '🎂' : d.kind === 'anniversary' ? '💍' : '📅'}</span>
                         </Link>
                       ))}
                     </div>

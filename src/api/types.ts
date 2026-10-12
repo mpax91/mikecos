@@ -154,6 +154,11 @@ export interface TodayResponse {
    * (month+day match; year is optional and irrelevant to the match). */
   birthdays: ImportantDateContact[];
   anniversaries: ImportantDateContact[];
+  /** Everything on the viewed day — birthdays, anniversaries, other dates;
+   * couples merged; Family first (contactDates.ts). */
+  importantDates?: ImportantDate[];
+  /** Family dates in the next 7 days (heads-up). */
+  upcomingDates?: ImportantDate[];
   /** Tasks actually checked off on the viewed day (task_completions'
    * completed_date) — only populated when the viewed date is strictly
    * before the viewer's real "today" (see the worker's /api/today
@@ -182,6 +187,30 @@ export interface TopNewsResponse {
 /** A contact surfaced in the Today page's Important Dates panel — just
  * enough to render and link to the full contact, not the whole Contact
  * record. */
+export interface ImportantDate {
+  key: string;
+  kind: 'birthday' | 'anniversary' | 'event';
+  label: string;
+  contactIds: string[];
+  name: string;
+  family: boolean;
+  source: string;
+  year: number | null;
+  years: number | null;
+  inDays: number;
+  date: string;
+}
+
+/** A contact's other dates ("Wedding", "Passed Away") — contact_dates. */
+export interface ContactDate {
+  id?: string;
+  label: string;
+  month: number;
+  day: number;
+  year: number | null;
+  source?: string;
+}
+
 export interface ImportantDateContact {
   id: string;
   name: string;
@@ -1313,6 +1342,7 @@ export interface ContactDetail extends Contact {
   voterRecords: VoterRecord[];
   connections: (ContactConnection & { direction: 'from' | 'to' })[];
   householdMembers: HouseholdMember[];
+  dates?: ContactDate[];
   voterDiffs?: VoterDiff[];
   bee?: BeeContactInfo | null;
   comms?: ContactComms | null;

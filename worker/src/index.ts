@@ -72,6 +72,7 @@ import { contactsAssistantRouter } from './contactsAssistant';
 import { betsEnrichmentRouter } from './betsEnrichment';
 import { cascadeRealm, contactRealmSql, inheritRealmFromParent, realmOf, realmSql, stampRealm, createRealm, workLabel, type RealmFilter } from './work/realm';
 import { workRouter, enrichMeetings, seriesFeedSource, setMeetingLoader } from './work/router';
+import { cleanDateParts, importantDates, isAnniversaryLabel, normalizeEventLabel, parseYearlessDate, type ContactEvent, type DateParts } from './contactDates';
 import { buildVoterInsight, ELECTION_CODE_RE, titleCaseVoterText, voterDiffs, voterKeyOf, type VoterDiff } from './voterInsight';
 
 const app = new Hono<{ Bindings: Env }>();
@@ -1215,6 +1216,12 @@ app.get('/api/contacts/:id', async (c) => {
     voterRecords: records,
     connections,
     householdMembers,
+    dates:
+      (
+        await c.env.DB.prepare('SELECT id, label, month, day, year, source FROM contact_dates WHERE contact_id = ? ORDER BY month, day, label')
+          .bind(id)
+          .all<{ id: string; label: string; month: number; day: number; year: number | null; source: string }>()
+      ).results ?? [],
     voterDiffs: voterDiffList.map(({ apply: _apply, ...d }) => d),
     bee: await beeForContact(c.env, id),
     comms: contact.source === 'voter_file' ? null : await commsForContact(c.env, contact).catch(() => null),
@@ -1388,6 +1395,34 @@ app.patch('/api/contacts/:id', async (c) => {
   const realmIn = (body as { realm?: string }).realm;
   if (realmIn === 'work' || realmIn === 'personal') fields.push(['realm', realmIn]);
 
+  // Other dates: the edit form sends the whole list, which replaces it.
+  const datesIn = (body as { dates?: unknown }).dates;
+  if (Array.isArray(datesIn)) {
+    const ts = now();
+    const clean: ContactEvent[] = [];
+    for (const raw of datesIn as { label?: unknown; month?: unknown; day?: unknown; year?: unknown }[]) {
+      const parts = cleanDateParts(Number(raw?.month) || null, Number(raw?.day) || null, Number(raw?.year) || null);
+      if (!parts.month || !parts.day) continue;
+      clean.push({ label: normalizeEventLabel(typeof raw.label === 'string' ? raw.label : ''), month: parts.month, day: parts.day, year: parts.year });
+    }
+    await c.env.DB.batch([
+      c.env.DB.prepare('DELETE FROM contact_dates WHERE contact_id = ?').bind(id),
+      ...clean.map((e) =>
+        c.env.DB.prepare('INSERT INTO contact_dates (id, contact_id, label, month, day, year, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(
+          uid(),
+          id,
+          e.label,
+          e.month,
+          e.day,
+          e.year,
+          'manual',
+          ts,
+          ts
+        )
+      ),
+    ]);
+  }
+
   if (fields.length > 0) {
     fields.push(['updated_at', now()]);
     const setClause = fields.map(([k]) => `${k} = ?`).join(', ');
@@ -1403,6 +1438,7 @@ app.delete('/api/contacts/:id', async (c) => {
   const id = c.req.param('id');
   await c.env.DB.prepare('DELETE FROM voter_records WHERE contact_id = ?').bind(id).run();
   await c.env.DB.prepare('DELETE FROM contact_notes WHERE contact_id = ?').bind(id).run();
+  await c.env.DB.prepare('DELETE FROM contact_dates WHERE contact_id = ?').bind(id).run();
   // A deleted Bee contact stays deleted — the subscriber isn't re-linked
   // or re-created on the next import ('none').
   await c.env.DB.prepare("UPDATE bee_subscribers SET contact_id = 'none' WHERE contact_id = ?").bind(id).run();
@@ -1476,6 +1512,13 @@ app.post('/api/contacts/:id/merge', async (c) => {
   }
   stmts.push(c.env.DB.prepare('UPDATE voter_records SET contact_id = ? WHERE contact_id = ?').bind(survivorId, goneId));
   stmts.push(c.env.DB.prepare('UPDATE contact_notes SET contact_id = ? WHERE contact_id = ?').bind(survivorId, goneId));
+  // Other dates move over unless the survivor already has the same one.
+  stmts.push(
+    c.env.DB.prepare(
+      `DELETE FROM contact_dates WHERE contact_id = ? AND EXISTS (SELECT 1 FROM contact_dates t WHERE t.contact_id = ? AND lower(t.label) = lower(contact_dates.label) AND t.month = contact_dates.month AND t.day = contact_dates.day)`
+    ).bind(goneId, survivorId)
+  );
+  stmts.push(c.env.DB.prepare('UPDATE contact_dates SET contact_id = ? WHERE contact_id = ?').bind(survivorId, goneId));
   // Connections on either side used to be left pointing at the deleted id.
   stmts.push(c.env.DB.prepare('UPDATE contact_connections SET contact_id = ? WHERE contact_id = ?').bind(survivorId, goneId));
   stmts.push(c.env.DB.prepare('UPDATE contact_connections SET related_contact_id = ? WHERE related_contact_id = ?').bind(survivorId, goneId));
@@ -1562,6 +1605,10 @@ interface ParsedContactRecord {
   birthday_month: number | null;
   birthday_day: number | null;
   birthday_year: number | null;
+  /** Anniversary (Google "Event N" labeled Anniversary, vCard ANNIVERSARY). */
+  anniversary?: DateParts | null;
+  /** Other dated events (custom Google Event labels, Apple X-ABDATE). */
+  events?: ContactEvent[];
   party: string | null;
   voter_age: number | null;
   household_members: string[] | null;
@@ -1701,12 +1748,17 @@ function splitLabels(value: string): string[] {
 function parseDateParts(value: string): { month: number | null; day: number | null; year: number | null } {
   const trimmed = value.trim();
   if (!trimmed) return { month: null, day: null, year: null };
+  // Year-less: Google CSV "--10-12", vCard "--1012" (new Date() can't read these).
+  const yearless = parseYearlessDate(trimmed);
+  if (yearless) return yearless;
   let m = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-  if (m) return { year: +m[1], month: +m[2], day: +m[3] };
+  if (m) return cleanDateParts(+m[2], +m[3], +m[1]);
+  m = trimmed.match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (m) return cleanDateParts(+m[2], +m[3], +m[1]);
   m = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
   if (m) {
     const year = m[3].length === 2 ? 2000 + +m[3] : +m[3];
-    return { month: +m[1], day: +m[2], year };
+    return cleanDateParts(+m[1], +m[2], year);
   }
   const parsed = new Date(trimmed);
   if (!Number.isNaN(parsed.getTime())) {
@@ -1807,6 +1859,17 @@ function parseContactsCsv(text: string): ParsedContactRecord[] {
     const valueIdx = findColumn(headers, [`relation ${i} value`]);
     if (labelIdx >= 0 && valueIdx >= 0) relationIdxPairs.push([labelIdx, valueIdx]);
   }
+  // Google's "Event N - Label/Value" columns hold anniversaries and custom
+  // dates ("Wedding", "Passed Away"); Outlook has a plain Anniversary column.
+  const EVENT_SLOTS = 10;
+  const eventIdxPairs: [number, number][] = [];
+  for (let i = 1; i <= EVENT_SLOTS; i++) {
+    const labels = headers.map(normalizeHeader);
+    const labelIdx = labels.findIndex((h) => h === `event ${i} label` || h === `event ${i} type`);
+    const valueIdx = labels.findIndex((h) => h === `event ${i} value`);
+    if (labelIdx >= 0 && valueIdx >= 0) eventIdxPairs.push([labelIdx, valueIdx]);
+  }
+  const anniversaryIdx = headers.map(normalizeHeader).indexOf('anniversary');
 
   const records: ParsedContactRecord[] = [];
   for (const row of rows.slice(1)) {
@@ -1820,6 +1883,16 @@ function parseContactsCsv(text: string): ParsedContactRecord[] {
     const relations = relationIdxPairs
       .map(([labelIdx, valueIdx]) => ({ label: get(labelIdx) || 'Related', name: get(valueIdx) }))
       .filter((r) => r.name);
+    let anniversary: DateParts | null = anniversaryIdx >= 0 ? parseDateParts(get(anniversaryIdx)) : null;
+    if (anniversary && !anniversary.month) anniversary = null;
+    const events: ContactEvent[] = [];
+    for (const [labelIdx, valueIdx] of eventIdxPairs) {
+      const parts = parseDateParts(get(valueIdx));
+      if (!parts.month || !parts.day) continue;
+      const label = normalizeEventLabel(get(labelIdx));
+      if (isAnniversaryLabel(label) && !anniversary) anniversary = parts;
+      else if (!isAnniversaryLabel(label)) events.push({ label, month: parts.month, day: parts.day, year: parts.year });
+    }
     records.push({
       name,
       emails: emailIdx >= 0 ? splitMulti(get(emailIdx)) : [],
@@ -1833,6 +1906,8 @@ function parseContactsCsv(text: string): ParsedContactRecord[] {
       birthday_month: bday.month,
       birthday_day: bday.day,
       birthday_year: bday.year,
+      anniversary,
+      events,
       party: null,
       voter_age: null,
       household_members: null,
@@ -2113,12 +2188,33 @@ function parseVCard(text: string): ParsedContactRecord[] {
     const phones: string[] = [];
     let categories: string[] = [];
     let bday = { month: null as number | null, day: null as number | null, year: null as number | null };
+    let anniversary: DateParts | null = null;
+    // Apple: item1.X-ABDATE:2010-06-12 + item1.X-ABLabel:_$!<Anniversary>!$_
+    const abDates = new Map<string, DateParts>();
+    const abLabels = new Map<string, string>();
     for (const line of lines) {
       const colonIdx = line.indexOf(':');
       if (colonIdx === -1) continue;
       const keyPart = line.slice(0, colonIdx);
       const value = line.slice(colonIdx + 1).trim();
-      const key = keyPart.split(';')[0].toUpperCase();
+      const fullKey = keyPart.split(';')[0].toUpperCase();
+      const dot = fullKey.indexOf('.');
+      const group = dot >= 0 ? fullKey.slice(0, dot) : '';
+      const key = dot >= 0 ? fullKey.slice(dot + 1) : fullKey;
+      if (key === 'ANNIVERSARY' || key === 'X-ANNIVERSARY') {
+        const parts = parseDateParts(value);
+        if (parts.month) anniversary = parts;
+        continue;
+      }
+      if (key === 'X-ABDATE' && group) {
+        const parts = parseDateParts(value);
+        if (parts.month) abDates.set(group, parts);
+        continue;
+      }
+      if (key === 'X-ABLABEL' && group) {
+        abLabels.set(group, value);
+        continue;
+      }
       if (key === 'FN') name = value;
       else if (key === 'N' && !name) name = value.split(';').filter(Boolean).reverse().join(' ');
       else if (key === 'EMAIL') emails.push(value);
@@ -2138,6 +2234,13 @@ function parseVCard(text: string): ParsedContactRecord[] {
       else if (key === 'CATEGORIES') categories = splitMulti(value);
     }
     if (!name) continue;
+    const events: ContactEvent[] = [];
+    for (const [group, parts] of abDates) {
+      const label = normalizeEventLabel(abLabels.get(group) ?? 'Other');
+      if (isAnniversaryLabel(label)) {
+        if (!anniversary) anniversary = parts;
+      } else if (parts.month && parts.day) events.push({ label, month: parts.month, day: parts.day, year: parts.year });
+    }
     records.push({
       name: tidyNameCase(name),
       emails,
@@ -2151,6 +2254,8 @@ function parseVCard(text: string): ParsedContactRecord[] {
       birthday_month: bday.month,
       birthday_day: bday.day,
       birthday_year: bday.year,
+      anniversary,
+      events,
       party: null,
       voter_age: null,
       household_members: null,
@@ -2555,8 +2660,13 @@ async function processDecisionChunk(
       const relatedId = nameToContactId.get(nameMatchKey(rel.name)) ?? null;
       newStmts.push(
         db
-          .prepare('INSERT INTO contact_connections (id, contact_id, related_contact_id, related_name, label, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-          .bind(uid(), contactId, relatedId, rel.name, rel.label, 'import', ts, ts)
+          // Re-importing the same Google CSV doesn't stack the same relation again.
+          .prepare(
+            `INSERT INTO contact_connections (id, contact_id, related_contact_id, related_name, label, source, created_at, updated_at)
+             SELECT ?, ?, ?, ?, ?, ?, ?, ?
+             WHERE NOT EXISTS (SELECT 1 FROM contact_connections WHERE contact_id = ? AND lower(label) = lower(?) AND lower(related_name) = lower(?))`
+          )
+          .bind(uid(), contactId, relatedId, rel.name, rel.label, 'import', ts, ts, contactId, rel.label, rel.name)
       );
     }
   }
@@ -2600,6 +2710,10 @@ async function processDecisionChunk(
         if (!existing.birthday_month && r.birthday_month) {
           fields.push(['birthday_month', r.birthday_month], ['birthday_day', r.birthday_day], ['birthday_year', r.birthday_year]);
         }
+        if (!existing.anniversary_month && r.anniversary?.month) {
+          fields.push(['anniversary_month', r.anniversary.month], ['anniversary_day', r.anniversary.day], ['anniversary_year', r.anniversary.year]);
+        }
+        if (r.events?.length) newStmts.push(...contactEventStmts(db, contactId, r.events, ts));
         // Labels are additive: the file's labels join whatever the contact
         // has (a re-import of the Google CSV is how labels arrive).
         const existingLabels = mergeLabels(existing.labels, []);
@@ -2647,7 +2761,7 @@ async function processDecisionChunk(
                 birthday_month, birthday_day, birthday_year,
                 anniversary_month, anniversary_day, anniversary_year,
                 pinned, source, import_batch_id, created_at, updated_at, labels)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, 0, ?, ?, ?, ?, ?)`
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)`
           )
           .bind(
             contactId,
@@ -2662,6 +2776,9 @@ async function processDecisionChunk(
             r.birthday_month,
             r.birthday_day,
             r.birthday_year,
+            r.anniversary?.month ?? null,
+            r.anniversary?.day ?? null,
+            r.anniversary?.year ?? null,
             kind === 'voter_file' ? 'voter_file' : 'contact_import',
             batchId,
             ts,
@@ -2674,11 +2791,26 @@ async function processDecisionChunk(
         newStmts.push(voterRecordInsertStmt(db, contactId, r, batchId, ts));
       }
       if (r.relations.length > 0) queueRelationStmts(contactId, r.relations);
+      if (r.events?.length) newStmts.push(...contactEventStmts(db, contactId, r.events, ts));
     }
   }
 
   if (newStmts.length > 0) await db.batch(newStmts);
   return { newCount, updatedCount };
+}
+
+/** Other dates from an import — added only when the contact doesn't already
+ * have that label on that day (re-imports don't stack). */
+function contactEventStmts(db: D1Database, contactId: string, events: ContactEvent[], ts: string): D1PreparedStatement[] {
+  return events.map((e) =>
+    db
+      .prepare(
+        `INSERT INTO contact_dates (id, contact_id, label, month, day, year, source, created_at, updated_at)
+         SELECT ?, ?, ?, ?, ?, ?, 'import', ?, ?
+         WHERE NOT EXISTS (SELECT 1 FROM contact_dates WHERE contact_id = ? AND lower(label) = lower(?) AND month = ? AND day = ?)`
+      )
+      .bind(uid(), contactId, e.label, e.month, e.day, e.year, ts, ts, contactId, e.label, e.month, e.day)
+  );
 }
 
 // Shared by both the merge and brand-new-contact paths above — a voter-file
@@ -4150,6 +4282,9 @@ app.get('/api/today', async (c) => {
   )
     .bind(dm, dd)
     .all<{ id: string; name: string; anniversary_year: number | null; source: string }>();
+  // Everything on the day (other dates too, couples merged) + Family dates
+  // in the next 7 days — see contactDates.ts.
+  const dates = await importantDates(c.env.DB, date, await contactRealmSql(c.env.DB, realmOf(c), 'c'));
 
   // Tasks actually checked off on the viewed day (task_completions'
   // completed_date, not due_date — a task finished a day late should still
@@ -4174,6 +4309,8 @@ app.get('/api/today', async (c) => {
     spotlight,
     birthdays: birthdayContacts ?? [],
     anniversaries: anniversaryContacts ?? [],
+    importantDates: dates.today,
+    upcomingDates: dates.upcoming,
     completed,
     // Auto-Pay bills due that day (Bills & Due Dates) — shown, not checkable.
     autopayBills: realmOf(c) === 'work' ? [] : await billsOnCalendar(c.env.DB, date, date),

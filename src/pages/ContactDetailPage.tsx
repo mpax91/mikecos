@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
-import type { Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, VoterDiff } from '../api/types';
+import type { Contact, ContactCircle, ContactConnection, ContactDate, ContactDetail, ContactNote, VoterDiff } from '../api/types';
 import { partyTone, VoterDiffBox, VoterInsightSection } from '../components/VoterInsight';
 import { BeeContactSection } from '../components/BeeContactSection';
 import { ContactCommsSection } from '../components/ContactCommsSection';
@@ -68,6 +68,9 @@ function EditDetailsModal({ contact, onSave, onClose }: { contact: ContactDetail
   const [aMonth, setAMonth] = useState(contact.anniversary_month?.toString() ?? '');
   const [aDay, setADay] = useState(contact.anniversary_day?.toString() ?? '');
   const [aYear, setAYear] = useState(contact.anniversary_year?.toString() ?? '');
+  const [otherDates, setOtherDates] = useState<{ label: string; month: string; day: string; year: string }[]>(
+    (contact.dates ?? []).map((d) => ({ label: d.label, month: String(d.month), day: String(d.day), year: d.year ? String(d.year) : '' }))
+  );
   const [labels, setLabels] = useState<string[]>(contactLabels(contact));
   const [labelDraft, setLabelDraft] = useState('');
   const [knownLabels, setKnownLabels] = useState<string[]>([]);
@@ -113,6 +116,9 @@ function EditDetailsModal({ contact, onSave, onClose }: { contact: ContactDetail
       anniversary_month: num(aMonth),
       anniversary_day: num(aDay),
       anniversary_year: num(aYear),
+      dates: otherDates
+        .map((d) => ({ label: d.label.trim() || 'Other', month: num(d.month), day: num(d.day), year: num(d.year) }))
+        .filter((d) => d.month && d.day),
     });
     onClose();
   }
@@ -185,6 +191,26 @@ function EditDetailsModal({ contact, onSave, onClose }: { contact: ContactDetail
           <input placeholder="Day" inputMode="numeric" value={aDay} onChange={(e) => setADay(e.target.value)} />
           <input placeholder="Year (optional)" inputMode="numeric" value={aYear} onChange={(e) => setAYear(e.target.value)} />
         </div>
+
+        <label className="contact-edit-form__label">Other Dates</label>
+        {otherDates.map((d, i) => (
+          <div key={i} className="contact-edit-form__date-row contact-edit-form__date-row--event">
+            <input
+              placeholder="Label (e.g. Wedding)"
+              value={d.label}
+              onChange={(e) => setOtherDates((prev) => prev.map((p, j) => (j === i ? { ...p, label: e.target.value } : p)))}
+            />
+            <input placeholder="Month" inputMode="numeric" value={d.month} onChange={(e) => setOtherDates((prev) => prev.map((p, j) => (j === i ? { ...p, month: e.target.value } : p)))} />
+            <input placeholder="Day" inputMode="numeric" value={d.day} onChange={(e) => setOtherDates((prev) => prev.map((p, j) => (j === i ? { ...p, day: e.target.value } : p)))} />
+            <input placeholder="Year" inputMode="numeric" value={d.year} onChange={(e) => setOtherDates((prev) => prev.map((p, j) => (j === i ? { ...p, year: e.target.value } : p)))} />
+            <button type="button" className="contact-label__remove" aria-label="Remove date" onClick={() => setOtherDates((prev) => prev.filter((_, j) => j !== i))}>
+              ✕
+            </button>
+          </div>
+        ))}
+        <button type="button" className="link-btn contact-edit-form__add-date" onClick={() => setOtherDates((prev) => [...prev, { label: '', month: '', day: '', year: '' }])}>
+          + Add Date
+        </button>
       </div>
       <div className="modal__actions">
         <button className="btn btn--ghost" onClick={onClose}>
@@ -486,6 +512,8 @@ export function ContactDetailPage() {
   async function handleSaveDetails(patch: Record<string, unknown>) {
     const updated = await api.updateContact(contactId, patch);
     setContact((prev) => (prev ? { ...prev, ...updated } : prev));
+    // Other dates aren't on the contact row — refetch so the card shows them.
+    if ('dates' in patch) load();
   }
 
   async function handleTogglePin() {
@@ -712,7 +740,15 @@ export function ContactDetailPage() {
               <span className="contact-detail__field-value">{anniversary}</span>
             </div>
           )}
-          {phones.length === 0 && emails.length === 0 && !contact.address && !contact.city && !contact.company && !contact.title && !birthday && !anniversary && (
+          {(contact.dates ?? []).map((d: ContactDate) => (
+            <div key={d.id ?? `${d.label}-${d.month}-${d.day}`} className="contact-detail__field">
+              <span className="contact-detail__field-icon">📅</span>
+              <span className="contact-detail__field-value">
+                {d.label} · {formatDate(d.month, d.day, d.year)}
+              </span>
+            </div>
+          ))}
+          {phones.length === 0 && emails.length === 0 && !contact.address && !contact.city && !contact.company && !contact.title && !birthday && !anniversary && !(contact.dates ?? []).length && (
             <div className="contact-detail__field contact-detail__field--empty">No contact info yet — click Edit to add some.</div>
           )}
         </div>
