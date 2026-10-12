@@ -1,6 +1,6 @@
 import type { AuthenticationResponseJSON, PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON, RegistrationResponseJSON } from '@simplewebauthn/browser';
 import type { CashPlacement, RewardsOverview, FinanceAttention, WaitingList, AuthCredentialSummary, AuthStatus, Bet, BetLeg, BetGameNote, BetOption, BetOptionCategory, BetPromo, BetPromoStatus, BetScheduleGame, BetTransaction, BetTransactionType, VaultEntryDetail, VaultFact, BriefingResponse, CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, CreditScoreEntry, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitDirection, HabitEvent, HabitLog, HabitSummary, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsFeedsResponse, NewsFolder, NewsSavedArticle, NewsSettings, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, VoterFieldsBackfillChunkResponse,
-  ContactAskResponse, BetGameEnrichment, VaultFactLabel, VaultRollupGroup, WalletCard, WalletCardFact, WalletCategory, WalletCardIdSecret, RewardsCard, RewardsBonus, RewardsPerk, RewardsImportResult, RewardsMerchant, RewardsOffer, PaymentCard, PaymentCardFact, PaymentCardSecrets, BankAccountSuggestion, PlexLibrary, PlexItem, PlexItemDetail, PlexIssue, PlexMissingEpisode, PlexIgnoredShow, PlexSyncChunkResult, PlexAiringCheckChunkResult, PlexAiringScanChunkResult, MediaCatalogItem, MediaCatalogFormat, BarItem, BarItemDetail, BarItemType, BarTasting, BarTopTastingEntry, HomeFloor, HomeFloorLayout, HomeRoom, HomePoint, HomeRoomSpecPayload, HomeFixture, HomeFixtureType, HomeWallItem, HomeWallItemType, ElectricalPanel, ElectricalBreaker, ElectricalBreakerWithFixtures, WeatherResponse, WeekResponse, EmailAccount, EmailInboxFeed, EmailPeekResult, EmailSyncResult, BookmarksResponse, BookmarksImportResult, CloudProviderId, CloudProviderInfo, CloudAccount, CloudBrowseResponse, CloudSearchResponse, StatementFolder, StatementDriveAccount, StatementScanResult, FinanceAccount, Ny529Dashboard, FinanceDashboard, StatementFolderStatus, AccountOwner, AccountPayer, AccountPayerMode, CardPaidAccount, Bill, BeeSubstack, BeeSettings, BeeFolderCandidate, BeeSearch,
+  ContactAskResponse, BetGameEnrichment, VaultFactLabel, VaultRollupGroup, WalletCard, WalletCardFact, WalletCategory, WalletCardIdSecret, RewardsCard, RewardsBonus, RewardsPerk, RewardsImportResult, RewardsMerchant, RewardsOffer, PaymentCard, PaymentCardFact, PaymentCardSecrets, BankAccountSuggestion, PlexLibrary, PlexItem, PlexItemDetail, PlexIssue, PlexMissingEpisode, PlexIgnoredShow, PlexSyncChunkResult, PlexAiringCheckChunkResult, PlexAiringScanChunkResult, MediaCatalogItem, MediaCatalogFormat, BarItem, BarItemDetail, BarItemType, BarTasting, BarTopTastingEntry, HomeFloor, HomeFloorLayout, HomeRoom, HomePoint, HomeRoomSpecPayload, HomeFixture, HomeFixtureType, HomeWallItem, HomeWallItemType, ElectricalPanel, ElectricalBreaker, ElectricalBreakerWithFixtures, HomeNetworkPoint, HomeNetworkDevice, HomeNetworkDeviceInput, WeatherResponse, WeekResponse, EmailAccount, EmailInboxFeed, EmailPeekResult, EmailSyncResult, BookmarksResponse, BookmarksImportResult, CloudProviderId, CloudProviderInfo, CloudAccount, CloudBrowseResponse, CloudSearchResponse, StatementFolder, StatementDriveAccount, StatementScanResult, FinanceAccount, Ny529Dashboard, FinanceDashboard, StatementFolderStatus, AccountOwner, AccountPayer, AccountPayerMode, CardPaidAccount, Bill, BeeSubstack, BeeSettings, BeeFolderCandidate, BeeSearch,
   BeeSearchDetail, BeeAnalytics, BeeVisitors, BeeAnalyticsDetail, BeeBing, BeeClarity, BeeMerch, BeeSocial, BeeStory, BeeReview, CommsSettings, CommsRunResult, QuietContact, MeetingSeries, MeetingSeriesInput, MeetingSummary, MeetingAction, MeetingActionStatus, MeetingPrep, PersonWork, WeekBrief, WeekReview } from './types';
 
 import { emitTaskCompleted } from '../utils/taskEvents';
@@ -1694,4 +1694,26 @@ export const api = {
     request<ElectricalBreaker>(`/api/home/breakers/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
 
   deleteElectricalBreaker: (id: string) => request<{ ok: true }>(`/api/home/breakers/${id}`, { method: 'DELETE' }),
+
+  // Home → Internet: Wi-Fi points + network devices.
+  listNetworkPoints: () => request<HomeNetworkPoint[]>('/api/home/network/points'),
+
+  createNetworkPoint: (point: { name: string; notes?: string | null }) =>
+    request<HomeNetworkPoint>('/api/home/network/points', { method: 'POST', body: JSON.stringify(point) }),
+
+  updateNetworkPoint: (id: string, patch: Partial<{ name: string; notes: string | null }>) =>
+    request<HomeNetworkPoint>(`/api/home/network/points/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+
+  deleteNetworkPoint: (id: string) => request<{ ok: true }>(`/api/home/network/points/${id}`, { method: 'DELETE' }),
+
+  listNetworkDevices: (roomId?: string) =>
+    request<HomeNetworkDevice[]>(`/api/home/network/devices${roomId ? `?roomId=${encodeURIComponent(roomId)}` : ''}`),
+
+  createNetworkDevice: (device: HomeNetworkDeviceInput & { name: string }) =>
+    request<HomeNetworkDevice>('/api/home/network/devices', { method: 'POST', body: JSON.stringify(device) }),
+
+  updateNetworkDevice: (id: string, patch: HomeNetworkDeviceInput) =>
+    request<HomeNetworkDevice>(`/api/home/network/devices/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+
+  deleteNetworkDevice: (id: string) => request<{ ok: true }>(`/api/home/network/devices/${id}`, { method: 'DELETE' }),
 };

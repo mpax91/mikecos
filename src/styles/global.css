@@ -16797,6 +16797,347 @@ td.month-page__upcoming-actions .today-page__meeting-actions {
   color: var(--color-muted);
 }
 
+
+/* ---- Home → Internet (network devices + Wi-Fi points) ---- */
+
+.home-net {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: 24px;
+}
+
+.home-net__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.home-net__search {
+  flex: 1 1 220px;
+  max-width: 360px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: var(--border-hairline);
+  background: var(--color-card-bg);
+  font: inherit;
+  font-size: 13px;
+}
+
+.home-net__group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.home-net__group select {
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: var(--border-hairline);
+  background: var(--color-card-bg);
+  color: var(--color-ink);
+}
+
+.home-net__actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.home-net__summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 14px 0 4px;
+  font-size: 12px;
+}
+
+.home-net__total {
+  font-weight: var(--weight-medium);
+  margin-right: 6px;
+}
+
+.home-net__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: var(--border-hairline);
+  background: var(--color-card-bg);
+  font: inherit;
+  font-size: 12px;
+  color: var(--color-ink);
+  cursor: pointer;
+}
+
+.home-net__chip b {
+  font-weight: var(--weight-medium);
+  font-variant-numeric: tabular-nums;
+}
+
+.home-net__chip.is-active {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-accent-text);
+}
+
+/* Connection dot: wired grey, 2.4 amber, 5 blue, 6 purple. */
+.home-net-conn {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+  background: #9a9384;
+}
+.home-net-conn--wired { background: #6b6558; border-radius: 2px; }
+.home-net-conn--24ghz { background: #c98a1b; }
+.home-net-conn--5ghz { background: #2a6fb0; }
+.home-net-conn--6ghz { background: #7a4fb0; }
+
+.home-net__conn-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.home-net__section {
+  margin-top: 18px;
+}
+
+.home-net__section-title {
+  font-size: 13px;
+  font-weight: var(--weight-medium);
+  margin: 0 0 6px;
+}
+
+.home-net__section-title span {
+  color: var(--color-muted);
+  font-weight: normal;
+  margin-left: 4px;
+}
+
+.home-net__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  background: var(--color-card-bg);
+  border: var(--border-hairline);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+  table-layout: fixed;
+}
+
+/* Fixed widths so the columns line up from one group to the next. */
+.home-net__table th:nth-child(1) { width: 27%; }
+.home-net__table th:nth-child(2) { width: 11%; }
+.home-net__table th:nth-child(3) { width: 14%; }
+.home-net__table th:nth-child(4) { width: 14%; }
+.home-net__table th:nth-child(5) { width: 17%; }
+
+.home-net__table th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: var(--weight-medium);
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 8px 12px;
+  border-bottom: var(--border-hairline);
+}
+
+.home-net__sort {
+  font: inherit;
+  color: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.home-net__sort.is-active {
+  color: var(--color-ink);
+}
+
+.home-net__table td {
+  padding: 8px 12px;
+  border-bottom: var(--border-hairline);
+  vertical-align: top;
+}
+
+.home-net__table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.home-net__table tbody tr {
+  cursor: pointer;
+}
+
+.home-net__table tbody tr:hover,
+.home-net__table tbody tr:focus-visible {
+  background: rgba(0, 0, 0, 0.03);
+  outline: none;
+}
+
+.home-net__name {
+  font-weight: var(--weight-medium);
+}
+
+.home-net__sub {
+  font-size: 12px;
+  color: var(--color-muted);
+  margin-top: 1px;
+}
+
+.home-net__muted {
+  color: var(--color-placeholder);
+}
+
+.home-net-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.home-net__reserved {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: var(--border-hairline);
+  font-family: inherit;
+  font-size: 10px;
+  color: var(--color-muted);
+  vertical-align: 1px;
+}
+
+.home-net__dupe {
+  margin-left: 6px;
+  color: #b8481c;
+  cursor: help;
+}
+
+.home-net__cards {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .home-net__actions {
+    margin-left: 0;
+    width: 100%;
+  }
+  .home-net__actions .btn {
+    flex: 1;
+  }
+  .home-net__search {
+    max-width: none;
+  }
+  .home-net__table {
+    display: none;
+  }
+  .home-net__cards {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+}
+
+.home-net__card {
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  border: var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: var(--color-card-bg);
+  padding: 10px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.home-net__card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.home-net__card-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.home-net-modal {
+  width: 460px;
+}
+
+.home-net-modal__form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.home-net-modal__error {
+  color: var(--color-danger, #c0392b);
+  font-size: 12px;
+}
+
+.home-net-points {
+  display: flex;
+  flex-direction: column;
+  border: var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: var(--color-card-bg);
+}
+
+.home-net-points__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 12px;
+  border-bottom: var(--border-hairline);
+}
+
+.home-net-points__row:last-child {
+  border-bottom: none;
+}
+
+.home-net-points__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  font: inherit;
+  font-size: 13px;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 4px 0;
+  cursor: pointer;
+}
+
+.home-net-points__count {
+  font-size: 12px;
+  color: var(--color-muted);
+  white-space: nowrap;
+}
+
 /* ---- Bets promos table (Workspace "Promos Available Today" + Promos tab) ---- */
 .bets-promos__header {
   display: flex;

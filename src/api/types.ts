@@ -2364,6 +2364,52 @@ export interface ElectricalBreaker {
   updatedAt: string;
 }
 
+// Home → Internet (migration 0111, worker/src/home.ts /api/home/network/*).
+export type HomeNetworkConnection = 'wired' | '2.4ghz' | '5ghz' | '6ghz';
+
+export interface HomeNetworkPoint {
+  id: string;
+  name: string;
+  notes: string | null;
+  deviceCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HomeNetworkDevice {
+  id: string;
+  name: string;
+  deviceType: string | null;
+  manufacturer: string | null;
+  model: string | null;
+  connection: HomeNetworkConnection | null;
+  pointId: string | null;
+  pointName: string | null;
+  roomId: string | null;
+  roomName: string | null;
+  floorName: string | null;
+  macAddress: string | null;
+  ipAddress: string | null;
+  ipReserved: boolean;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type HomeNetworkDeviceInput = Partial<{
+  name: string;
+  deviceType: string | null;
+  manufacturer: string | null;
+  model: string | null;
+  connection: HomeNetworkConnection | null;
+  pointId: string | null;
+  roomId: string | null;
+  macAddress: string | null;
+  ipAddress: string | null;
+  ipReserved: boolean;
+  notes: string | null;
+}>;
+
 export interface ElectricalBreakerWithFixtures extends ElectricalBreaker {
   fixtures: { id: string; label: string; type: HomeFixtureType; roomName: string; floorName: string }[];
 }

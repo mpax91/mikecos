@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import type { ElectricalBreakerRow, ElectricalPanelRow, Env, HomeFixtureRow, HomeFixtureType, HomeRoomRow, HomeFloorRow, HomeWallItemRow, HomeWallItemType } from './types';
+import type { ElectricalBreakerRow, ElectricalPanelRow, Env, HomeNetworkConnection, HomeNetworkDeviceRow, HomeNetworkPointRow, HomeFixtureRow, HomeFixtureType, HomeRoomRow, HomeFloorRow, HomeWallItemRow, HomeWallItemType } from './types';
 
 const now = () => new Date().toISOString();
 const uid = () => crypto.randomUUID();
@@ -203,6 +203,7 @@ homeRouter.patch('/floors/:id', async (c) => {
 homeRouter.delete('/floors/:id', async (c) => {
   const id = c.req.param('id');
   await db(c).batch([
+    db(c).prepare('UPDATE home_network_devices SET room_id = NULL WHERE room_id IN (SELECT id FROM home_rooms WHERE floor_id = ?)').bind(id),
     db(c).prepare('DELETE FROM home_fixtures WHERE room_id IN (SELECT id FROM home_rooms WHERE floor_id = ?)').bind(id),
     db(c).prepare('DELETE FROM home_wall_items WHERE room_id IN (SELECT id FROM home_rooms WHERE floor_id = ?)').bind(id),
     db(c).prepare('DELETE FROM home_rooms WHERE floor_id = ?').bind(id),
@@ -464,6 +465,7 @@ homeRouter.post('/rooms/:id/reshape', async (c) => {
 homeRouter.delete('/rooms/:id', async (c) => {
   const id = c.req.param('id');
   await db(c).batch([
+    db(c).prepare('UPDATE home_network_devices SET room_id = NULL WHERE room_id = ?').bind(id),
     db(c).prepare('DELETE FROM home_fixtures WHERE room_id = ?').bind(id),
     db(c).prepare('DELETE FROM home_wall_items WHERE room_id = ?').bind(id),
     db(c).prepare('DELETE FROM home_rooms WHERE id = ?').bind(id),
@@ -853,4 +855,216 @@ homeRouter.get('/panels/:id/breakers', async (c) => {
     }
   }
   return c.json((breakers.results ?? []).map((b) => ({ ...breakerJson(b), fixtures: fixturesByBreaker.get(b.id) ?? [] })));
+});
+
+// ---- Internet (network devices + Wi-Fi points, migration 0111) ----
+// Typed in by hand from the Google Home app's Devices list. A device can
+// sit on a Wi-Fi point (managed list) and optionally in a room, so the
+// room view can show "what's online in here".
+
+const CONNECTIONS: readonly HomeNetworkConnection[] = ['wired', '2.4ghz', '5ghz', '6ghz'];
+
+/** "aa-bb-cc-dd-ee-ff" / "aabb.ccdd.eeff" / "AABBCCDDEEFF" → "AA:BB:CC:DD:EE:FF".
+ * Anything that isn't 12 hex digits is kept as typed (trimmed). */
+export function normalizeMac(raw: string | null | undefined): string | null {
+  const t = raw?.trim();
+  if (!t) return null;
+  const hex = t.replace(/[^0-9a-fA-F]/g, '');
+  if (hex.length === 12 && /^[0-9a-fA-F:.\-\s]+$/.test(t)) return hex.toUpperCase().match(/../g)!.join(':');
+  return t;
+}
+
+function pointJson(r: HomeNetworkPointRow & { device_count?: number }) {
+  return { id: r.id, name: r.name, notes: r.notes, deviceCount: r.device_count ?? 0, createdAt: r.created_at, updatedAt: r.updated_at };
+}
+
+type DeviceJoinRow = HomeNetworkDeviceRow & { point_name: string | null; room_name: string | null; floor_name: string | null };
+
+function deviceJson(r: DeviceJoinRow) {
+  return {
+    id: r.id,
+    name: r.name,
+    deviceType: r.device_type,
+    manufacturer: r.manufacturer,
+    model: r.model,
+    connection: r.connection,
+    pointId: r.point_id,
+    pointName: r.point_name,
+    roomId: r.room_id,
+    roomName: r.room_name,
+    floorName: r.floor_name,
+    macAddress: r.mac_address,
+    ipAddress: r.ip_address,
+    ipReserved: !!r.ip_reserved,
+    notes: r.notes,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
+}
+
+const DEVICE_SELECT = `SELECT d.*, p.name AS point_name, r.name AS room_name, fl.name AS floor_name
+  FROM home_network_devices d
+  LEFT JOIN home_network_points p ON p.id = d.point_id
+  LEFT JOIN home_rooms r ON r.id = d.room_id
+  LEFT JOIN home_floors fl ON fl.id = r.floor_id`;
+
+homeRouter.get('/network/points', async (c) => {
+  const { results } = await db(c)
+    .prepare(
+      `SELECT p.*, (SELECT COUNT(*) FROM home_network_devices d WHERE d.point_id = p.id) AS device_count
+       FROM home_network_points p ORDER BY p.created_at ASC`
+    )
+    .all<HomeNetworkPointRow & { device_count: number }>();
+  return c.json((results ?? []).map(pointJson));
+});
+
+homeRouter.post('/network/points', async (c) => {
+  const body = await c.req.json<{ name?: string; notes?: string | null }>();
+  if (!body.name?.trim()) return c.json({ error: 'name is required' }, 400);
+  const id = uid();
+  const ts = now();
+  await db(c)
+    .prepare('INSERT INTO home_network_points (id, name, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?)')
+    .bind(id, body.name.trim(), body.notes?.trim() || null, ts, ts)
+    .run();
+  const row = await db(c).prepare('SELECT * FROM home_network_points WHERE id = ?').bind(id).first<HomeNetworkPointRow>();
+  return c.json(pointJson(row!), 201);
+});
+
+homeRouter.patch('/network/points/:id', async (c) => {
+  const id = c.req.param('id');
+  const existing = await db(c).prepare('SELECT * FROM home_network_points WHERE id = ?').bind(id).first<HomeNetworkPointRow>();
+  if (!existing) return c.json({ error: 'not found' }, 404);
+  const body = await c.req.json<{ name?: string; notes?: string | null }>();
+  const sets: string[] = [];
+  const binds: unknown[] = [];
+  if (body.name !== undefined) {
+    if (!body.name.trim()) return c.json({ error: 'name cannot be blank' }, 400);
+    sets.push('name = ?');
+    binds.push(body.name.trim());
+  }
+  if (body.notes !== undefined) {
+    sets.push('notes = ?');
+    binds.push(body.notes?.trim() || null);
+  }
+  if (sets.length) {
+    sets.push('updated_at = ?');
+    binds.push(now(), id);
+    await db(c).prepare(`UPDATE home_network_points SET ${sets.join(', ')} WHERE id = ?`).bind(...binds).run();
+  }
+  const row = await db(c)
+    .prepare('SELECT p.*, (SELECT COUNT(*) FROM home_network_devices d WHERE d.point_id = p.id) AS device_count FROM home_network_points p WHERE p.id = ?')
+    .bind(id)
+    .first<HomeNetworkPointRow & { device_count: number }>();
+  return c.json(pointJson(row!));
+});
+
+// Deleting a point keeps its devices (they just lose the point).
+homeRouter.delete('/network/points/:id', async (c) => {
+  const id = c.req.param('id');
+  await db(c).batch([
+    db(c).prepare('UPDATE home_network_devices SET point_id = NULL WHERE point_id = ?').bind(id),
+    db(c).prepare('DELETE FROM home_network_points WHERE id = ?').bind(id),
+  ]);
+  return c.json({ ok: true });
+});
+
+interface DeviceBody {
+  name?: string;
+  deviceType?: string | null;
+  manufacturer?: string | null;
+  model?: string | null;
+  connection?: string | null;
+  pointId?: string | null;
+  roomId?: string | null;
+  macAddress?: string | null;
+  ipAddress?: string | null;
+  ipReserved?: boolean;
+  notes?: string | null;
+}
+
+const text = (v: string | null | undefined) => v?.trim() || null;
+
+/** Validates + maps a body to column values (only keys present in the body). */
+async function deviceColumns(c: { env: Env }, body: DeviceBody): Promise<{ error: string } | Record<string, unknown>> {
+  const cols: Record<string, unknown> = {};
+  if (body.name !== undefined) {
+    if (!body.name?.trim()) return { error: 'name is required' };
+    cols.name = body.name.trim();
+  }
+  if (body.deviceType !== undefined) cols.device_type = text(body.deviceType);
+  if (body.manufacturer !== undefined) cols.manufacturer = text(body.manufacturer);
+  if (body.model !== undefined) cols.model = text(body.model);
+  if (body.connection !== undefined) {
+    const conn = text(body.connection);
+    if (conn && !CONNECTIONS.includes(conn as HomeNetworkConnection)) return { error: `connection must be one of ${CONNECTIONS.join(', ')}` };
+    cols.connection = conn;
+  }
+  if (body.pointId !== undefined) {
+    const pid = text(body.pointId);
+    if (pid && !(await db(c).prepare('SELECT id FROM home_network_points WHERE id = ?').bind(pid).first())) return { error: 'point not found' };
+    cols.point_id = pid;
+  }
+  if (body.roomId !== undefined) {
+    const rid = text(body.roomId);
+    if (rid && !(await db(c).prepare('SELECT id FROM home_rooms WHERE id = ?').bind(rid).first())) return { error: 'room not found' };
+    cols.room_id = rid;
+  }
+  if (body.macAddress !== undefined) cols.mac_address = normalizeMac(body.macAddress);
+  if (body.ipAddress !== undefined) cols.ip_address = text(body.ipAddress);
+  if (body.ipReserved !== undefined) cols.ip_reserved = body.ipReserved ? 1 : 0;
+  if (body.notes !== undefined) cols.notes = text(body.notes);
+  return cols;
+}
+
+async function deviceById(c: { env: Env }, id: string) {
+  return db(c).prepare(`${DEVICE_SELECT} WHERE d.id = ?`).bind(id).first<DeviceJoinRow>();
+}
+
+// GET /network/devices[?roomId=] — every device (or one room's), with
+// point / room / floor names joined.
+homeRouter.get('/network/devices', async (c) => {
+  const roomId = c.req.query('roomId');
+  const stmt = roomId
+    ? db(c).prepare(`${DEVICE_SELECT} WHERE d.room_id = ? ORDER BY d.name COLLATE NOCASE`).bind(roomId)
+    : db(c).prepare(`${DEVICE_SELECT} ORDER BY d.name COLLATE NOCASE`);
+  const { results } = await stmt.all<DeviceJoinRow>();
+  return c.json((results ?? []).map(deviceJson));
+});
+
+homeRouter.post('/network/devices', async (c) => {
+  const body = await c.req.json<DeviceBody>();
+  if (!body.name?.trim()) return c.json({ error: 'name is required' }, 400);
+  const cols = await deviceColumns(c, body);
+  if ('error' in cols) return c.json(cols, 400);
+  const id = uid();
+  const ts = now();
+  const all: Record<string, unknown> = { id, ...cols, created_at: ts, updated_at: ts };
+  const keys = Object.keys(all);
+  await db(c)
+    .prepare(`INSERT INTO home_network_devices (${keys.join(', ')}) VALUES (${keys.map(() => '?').join(', ')})`)
+    .bind(...keys.map((k) => all[k]))
+    .run();
+  return c.json(deviceJson((await deviceById(c, id))!), 201);
+});
+
+homeRouter.patch('/network/devices/:id', async (c) => {
+  const id = c.req.param('id');
+  const existing = await db(c).prepare('SELECT id FROM home_network_devices WHERE id = ?').bind(id).first();
+  if (!existing) return c.json({ error: 'not found' }, 404);
+  const cols = await deviceColumns(c, await c.req.json<DeviceBody>());
+  if ('error' in cols) return c.json(cols, 400);
+  const keys = Object.keys(cols);
+  if (keys.length) {
+    await db(c)
+      .prepare(`UPDATE home_network_devices SET ${keys.map((k) => `${k} = ?`).join(', ')}, updated_at = ? WHERE id = ?`)
+      .bind(...keys.map((k) => cols[k]), now(), id)
+      .run();
+  }
+  return c.json(deviceJson((await deviceById(c, id))!));
+});
+
+homeRouter.delete('/network/devices/:id', async (c) => {
+  await db(c).prepare('DELETE FROM home_network_devices WHERE id = ?').bind(c.req.param('id')).run();
+  return c.json({ ok: true });
 });

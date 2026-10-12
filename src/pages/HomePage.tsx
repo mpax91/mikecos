@@ -4,14 +4,18 @@ import type { HomeFloor, HomeRoom } from '../api/types';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { HomeElectricalPage } from '../components/HomeElectricalPage';
 import { HomeFloorCanvas } from '../components/HomeFloorCanvas';
+import { HomeInternetPage } from '../components/HomeInternetPage';
+import type { RoomOption } from '../components/HomeNetworkDeviceModal';
+import { HomeRoomDevicesButton } from '../components/HomeRoomDevicesButton';
 import { KebabMenu } from '../components/KebabMenu';
 import { Modal } from '../components/Modal';
 import { useReportTabMeta } from '../contexts/TabsContext';
 
 /** What the page is showing: one room, an empty floor (so Add Room has
- * somewhere to land), or the Electrical pill. Other non-room pills slot in
+ * somewhere to land), or the Electrical / Internet pills. Other non-room pills slot in
  * here as their own literal. */
-type Selection = `room:${string}` | `floor:${string}` | 'electrical';
+type Selection = `room:${string}` | `floor:${string}` | 'electrical' | 'internet';
+const SECTIONS: Selection[] = ['electrical', 'internet'];
 
 const SELECTION_KEY = 'mikeos.home.selection';
 
@@ -70,7 +74,7 @@ export function HomePage() {
         setSelectionState((prev) => {
           const allRooms = list.flatMap((f) => byFloor[f.id]);
           const valid =
-            prev === 'electrical' ||
+            SECTIONS.includes(prev) ||
             (prev.startsWith('room:') && allRooms.some((r) => `room:${r.id}` === prev)) ||
             (prev.startsWith('floor:') && list.some((f) => `floor:${f.id}` === prev && byFloor[f.id].length === 0));
           if (valid) return prev;
@@ -138,6 +142,9 @@ export function HomePage() {
     activeFloor = floors.find((f) => f.id === selection.slice(6)) ?? null;
   }
   const isElectrical = selection === 'electrical';
+  const isInternet = selection === 'internet';
+  const isSection = isElectrical || isInternet;
+  const roomOptions: RoomOption[] = floors.flatMap((f) => (roomsByFloor[f.id] ?? []).map((r) => ({ id: r.id, name: r.name, floorId: f.id, floorName: f.name })));
   const roomCount = floors.reduce((n, f) => n + (roomsByFloor[f.id]?.length ?? 0), 0);
 
   const floorMenu = [
@@ -159,17 +166,17 @@ export function HomePage() {
       </div>
 
       <div className="bar-tabs home-page__nav">
-        <label className={`home-room-picker${!isElectrical ? ' is-active' : ''}`}>
+        <label className={`home-room-picker${!isSection ? ' is-active' : ''}`}>
           <span className="home-room-picker__label">
             <span aria-hidden>🏠</span> Rooms
           </span>
           <select
-            value={isElectrical ? '' : selection}
+            value={isSection ? '' : selection}
             onChange={(e) => e.target.value && setSelection(e.target.value as Selection)}
             disabled={floors.length === 0}
             aria-label="Room"
           >
-            {(isElectrical || floors.length === 0) && (
+            {(isSection || floors.length === 0) && (
               <option value="" disabled hidden>
                 {floors.length === 0 ? 'No Rooms Yet' : roomCount ? `Choose a Room (${roomCount})` : 'Choose a Floor'}
               </option>
@@ -196,6 +203,9 @@ export function HomePage() {
         <button type="button" className={`bar-tabs__tab${isElectrical ? ' is-active' : ''}`} onClick={() => setSelection('electrical')}>
           <span>⚡</span> Electrical
         </button>
+        <button type="button" className={`bar-tabs__tab${isInternet ? ' is-active' : ''}`} onClick={() => setSelection('internet')}>
+          <span>📶</span> Internet
+        </button>
 
         <div className="home-page__floor-menu" title="Floors">
           <KebabMenu items={floorMenu} />
@@ -205,6 +215,8 @@ export function HomePage() {
       <div className="home-page__body">
         {isElectrical ? (
           <HomeElectricalPage />
+        ) : isInternet ? (
+          <HomeInternetPage rooms={roomOptions} />
         ) : floors.length === 0 ? (
           <div className="empty-state empty-state--section">
             No rooms yet. Rooms are grouped by floor —{' '}
@@ -221,6 +233,7 @@ export function HomePage() {
             floors={floors}
             onRoomsChanged={reload}
             onSelectRoom={(id) => setSelection(`room:${id}`)}
+            toolbarExtra={activeRoom ? <HomeRoomDevicesButton key={activeRoom.id} roomId={activeRoom.id} roomName={activeRoom.name} rooms={roomOptions} /> : null}
           />
         ) : (
           <div className="empty-state">Loading…</div>

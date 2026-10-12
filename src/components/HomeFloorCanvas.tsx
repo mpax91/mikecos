@@ -105,8 +105,11 @@ export function HomeFloorCanvas({
   floors,
   onRoomsChanged,
   onSelectRoom,
+  toolbarExtra,
 }: {
   floorId: string;
+  /** Extra toolbar buttons (Home → room view puts its 📶 Devices button here). */
+  toolbarExtra?: React.ReactNode;
   roomId?: string | null;
   floors?: HomeFloor[];
   onRoomsChanged?: () => void;
@@ -607,7 +610,9 @@ export function HomeFloorCanvas({
         <span className="home-canvas__hint">
           Scroll to pan · Ctrl/Cmd+scroll or pinch to zoom · drag a wall to reshape · click a wall for doors/windows/corners · click a room's ⋯ for appliances, furniture, outlets, switches
         </span>
-        <button type="button" className="btn btn--ghost btn--sm" onClick={toggleLabels} style={{ marginLeft: 'auto' }}>
+        <span style={{ marginLeft: 'auto' }} />
+        {toolbarExtra}
+        <button type="button" className="btn btn--ghost btn--sm" onClick={toggleLabels}>
           {labelsHidden ? 'Show Labels' : 'Hide Labels'}
         </button>
         <button type="button" className="btn btn--ghost btn--sm" onClick={fitToRooms}>

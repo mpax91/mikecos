@@ -815,6 +815,34 @@ export interface ElectricalPanelRow {
   updated_at: string;
 }
 
+// Home → Internet (migration 0111).
+export type HomeNetworkConnection = 'wired' | '2.4ghz' | '5ghz' | '6ghz';
+
+export interface HomeNetworkPointRow {
+  id: string;
+  name: string;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface HomeNetworkDeviceRow {
+  id: string;
+  name: string;
+  device_type: string | null;
+  manufacturer: string | null;
+  model: string | null;
+  connection: HomeNetworkConnection | null;
+  point_id: string | null;
+  room_id: string | null;
+  mac_address: string | null;
+  ip_address: string | null;
+  ip_reserved: number;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ElectricalBreakerRow {
   id: string;
   panel_id: string;
