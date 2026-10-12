@@ -65,7 +65,7 @@ export function VoterDiffBox({ diffs, onDecide }: { diffs: VoterDiff[]; onDecide
   return (
     <div className="voter-diff" role="region" aria-label="Voter File Differs">
       <div className="voter-diff__title">Voter File Differs</div>
-      <p className="voter-diff__hint">The voter roll disagrees with this card. Nothing changes until you choose.</p>
+      <p className="voter-diff__hint">The voter roll usually wins automatically, but this birthday doesn't match — it may be a different person with the same name (a parent or child). Nothing changes until you choose.</p>
       {diffs.map((d) => (
         <div key={d.field} className="voter-diff__row">
           <div className="voter-diff__label">{d.label}</div>

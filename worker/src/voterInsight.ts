@@ -459,3 +459,30 @@ export function voterDiffs(
   }
   return diffs;
 }
+
+/** Birth years further apart than this mean a parent/child with the same
+ * name (Jr./Sr. at one address), not a typo. */
+export const SAME_PERSON_MAX_YEAR_GAP = 15;
+
+/**
+ * The voter file is the source of truth for address, city and birthday
+ * (Mike, 2026-10-12): differences are applied automatically. Only a
+ * difference that looks like the merge matched the WRONG person is held for
+ * Mike's review in Voter File Differs — the birthday conflicts (not just a
+ * missing year) AND either the street also differs or the birth years are
+ * ≥15 apart. Then nothing is applied for that contact, so a wrong match
+ * can't half-overwrite the card.
+ */
+export function splitVoterDiffs(
+  diffs: VoterDiff[],
+  contact: { birthday_month: number | null; birthday_day: number | null; birthday_year: number | null },
+  voter: { birthday_month: number | null; birthday_day: number | null; birthday_year: number | null }
+): { apply: VoterDiff[]; hold: VoterDiff[] } {
+  const bday = diffs.find((d) => d.field === 'birthday');
+  const birthdayConflict = !!bday && bday.label === 'Birthday';
+  const yearGap =
+    contact.birthday_year && voter.birthday_year ? Math.abs(contact.birthday_year - voter.birthday_year) : 0;
+  const addressConflict = diffs.some((d) => d.field === 'address');
+  const suspicious = birthdayConflict && (addressConflict || yearGap >= SAME_PERSON_MAX_YEAR_GAP);
+  return suspicious ? { apply: [], hold: diffs } : { apply: diffs, hold: [] };
+}

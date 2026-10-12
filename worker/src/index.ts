@@ -73,7 +73,7 @@ import { betsEnrichmentRouter } from './betsEnrichment';
 import { cascadeRealm, contactRealmSql, inheritRealmFromParent, realmOf, realmSql, stampRealm, createRealm, workLabel, type RealmFilter } from './work/realm';
 import { workRouter, enrichMeetings, seriesFeedSource, setMeetingLoader } from './work/router';
 import { cleanDateParts, importantDates, isAnniversaryLabel, normalizeEventLabel, parseYearlessDate, type ContactEvent, type DateParts } from './contactDates';
-import { buildVoterInsight, ELECTION_CODE_RE, titleCaseVoterText, voterDiffs, voterKeyOf, type VoterDiff } from './voterInsight';
+import { buildVoterInsight, ELECTION_CODE_RE, splitVoterDiffs, titleCaseVoterText, voterDiffs, voterKeyOf, type VoterDiff } from './voterInsight';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -1208,10 +1208,14 @@ app.get('/api/contacts/:id', async (c) => {
   }
 
   const records = (voterRecords ?? []).map((vr) => ({ ...vr, insight: buildVoterInsight(vr.raw_data, vr, today) }));
-  const voterDiffList = contact.source === 'voter_file' ? [] : await pendingVoterDiffs(c.env.DB, contact, voterRecords ?? []);
+  // Voter file wins for address / city / birthday — applied here as the card
+  // opens (and in bulk after imports/merges); only a likely wrong-person
+  // match is left in Voter File Differs.
+  const synced = await syncVoterFields(c.env.DB, contact, voterRecords ?? []);
+  const voterDiffList = synced.pending;
 
   return c.json({
-    ...contact,
+    ...synced.contact,
     notes: notes ?? [],
     voterRecords: records,
     connections,
@@ -1267,6 +1271,75 @@ async function pendingVoterDiffs(db: D1Database, contact: Contact, voterRecords:
   const answered = new Map((results ?? []).map((r) => [r.field, r.voter_value]));
   return diffs.filter((d) => answered.get(d.field) !== d.voter);
 }
+
+/**
+ * The voter file is the source of truth for address, city and birthday
+ * (Mike, 2026-10-12). Applies every difference except a likely wrong-person
+ * match (`splitVoterDiffs`), recording each as a 'auto' review row so that if
+ * Mike later edits the field back by hand, his edit sticks (until the voter
+ * file itself changes). Earlier "Keep Mine" answers are still honored.
+ * Returns the (updated) contact and the differences still waiting on Mike.
+ */
+async function syncVoterFields(
+  db: D1Database,
+  contact: Contact,
+  voterRecords: VoterRecord[],
+  opts: { dry?: boolean } = {}
+): Promise<{ contact: Contact; applied: VoterDiff[]; pending: VoterDiff[] }> {
+  if (contact.source === 'voter_file') return { contact, applied: [], pending: [] };
+  const voter = voterFieldsFor(voterRecords);
+  if (!voter) return { contact, applied: [], pending: [] };
+  const pending = await pendingVoterDiffs(db, contact, voterRecords);
+  if (pending.length === 0) return { contact, applied: [], pending: [] };
+  const { apply, hold } = splitVoterDiffs(pending, contact, voter);
+  if (apply.length === 0 || opts.dry) return { contact, applied: apply, pending: hold };
+  const values: Record<string, string | number | null> = Object.assign({}, ...apply.map((d) => d.apply));
+  const entries = Object.entries(values);
+  const ts = now();
+  await db.batch([
+    db.prepare(`UPDATE contacts SET ${entries.map(([k]) => `${k} = ?`).join(', ')}, updated_at = ? WHERE id = ?`).bind(...entries.map(([, v]) => v), ts, contact.id),
+    ...apply.map((d) =>
+      db
+        .prepare(
+          `INSERT INTO contact_voter_reviews (contact_id, field, voter_value, decision, decided_at) VALUES (?, ?, ?, 'auto', ?)
+           ON CONFLICT(contact_id, field) DO UPDATE SET voter_value = excluded.voter_value, decision = excluded.decision, decided_at = excluded.decided_at`
+        )
+        .bind(contact.id, d.field, d.voter, ts)
+    ),
+  ]);
+  return { contact: { ...contact, ...values, updated_at: ts } as Contact, applied: apply, pending: hold };
+}
+
+/** syncVoterFields for every personal contact carrying a voter record. */
+async function syncAllVoterFields(db: D1Database, opts: { dry?: boolean } = {}) {
+  const { results: contacts } = await db
+    .prepare(`SELECT c.* FROM contacts c WHERE c.source != 'voter_file' AND EXISTS (SELECT 1 FROM voter_records vr WHERE vr.contact_id = c.id)`)
+    .all<Contact>();
+  const { results: records } = await db
+    .prepare(`SELECT vr.* FROM voter_records vr JOIN contacts c ON c.id = vr.contact_id WHERE c.source != 'voter_file'`)
+    .all<VoterRecord>();
+  const byContact = new Map<string, VoterRecord[]>();
+  for (const r of records ?? []) {
+    const list = byContact.get(r.contact_id!) ?? [];
+    list.push(r);
+    byContact.set(r.contact_id!, list);
+  }
+  const out = { checked: 0, updated: 0, fields: { address: 0, city: 0, birthday: 0 } as Record<string, number>, held: [] as { id: string; name: string; diffs: string[] }[] };
+  for (const contact of contacts ?? []) {
+    out.checked++;
+    const r = await syncVoterFields(db, contact, byContact.get(contact.id) ?? [], opts);
+    if (r.applied.length) out.updated++;
+    for (const d of r.applied) out.fields[d.field] = (out.fields[d.field] ?? 0) + 1;
+    if (r.pending.length) out.held.push({ id: contact.id, name: contact.name, diffs: r.pending.map((d) => `${d.label}: ${d.mine} → ${d.voter}`) });
+  }
+  return out;
+}
+
+// POST /api/contacts/voter-sync[?dry=1] — apply the voter file's address /
+// city / birthday to every merged personal contact (see syncVoterFields).
+app.post('/api/contacts/voter-sync', async (c) => {
+  return c.json(await syncAllVoterFields(c.env.DB, { dry: c.req.query('dry') === '1' }));
+});
 
 // POST /api/contacts/:id/voter-review { field, voter, decision } — the
 // card's Voter File Differs check. 'use' writes the voter-file value over
@@ -1535,7 +1608,11 @@ app.post('/api/contacts/:id/merge', async (c) => {
   }
   await c.env.DB.batch(stmts);
 
-  const merged = await c.env.DB.prepare('SELECT * FROM contacts WHERE id = ?').bind(survivorId).first<Contact>();
+  let merged = await c.env.DB.prepare('SELECT * FROM contacts WHERE id = ?').bind(survivorId).first<Contact>();
+  if (merged) {
+    const { results: mergedVoter } = await c.env.DB.prepare('SELECT * FROM voter_records WHERE contact_id = ?').bind(survivorId).all<VoterRecord>();
+    merged = (await syncVoterFields(c.env.DB, merged, mergedVoter ?? [])).contact;
+  }
   return c.json(merged);
 });
 
@@ -2971,6 +3048,9 @@ app.post('/api/contacts/import/commit/finish', async (c) => {
   const body = await c.req.json<{ batchId: string }>();
   if (!body.batchId) return c.json({ error: 'batchId required' }, 400);
   await c.env.DB.prepare("UPDATE import_batches SET status = 'complete' WHERE id = ?").bind(body.batchId).run();
+  // A voter-file (or contacts) import can bring new addresses/birthdays —
+  // the voter file wins on every merged personal contact.
+  await syncAllVoterFields(c.env.DB);
   const batch = await c.env.DB.prepare('SELECT * FROM import_batches WHERE id = ?').bind(body.batchId).first<ImportBatch>();
   return c.json(batch);
 });
