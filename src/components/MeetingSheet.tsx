@@ -224,7 +224,7 @@ function MeetingSheet({ meeting, startPasting, onClose }: { meeting: SheetMeetin
   }
 
   const updateAction = (list: MeetingAction[], a: MeetingAction) => list.map((x) => (x.id === a.id ? a : x));
-  const link = m.links?.find((l) => /meet\.google|zoom\.us|teams\.microsoft|webex/i.test(l)) ?? m.links?.[0];
+  const link = m.joinUrl ?? m.links?.find((l) => /meet\.google|zoom\.us|teams\.microsoft|webex/i.test(l)) ?? m.links?.[0];
 
   const sub = (
     <span className="mtg-sub">

@@ -20082,6 +20082,12 @@ button.fin-dash__stat::after {
 .mtg-section { border-top: var(--border-hairline); padding-top: 12px; }
 .mtg-section__title { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-muted); font-weight: var(--weight-medium); margin-bottom: 8px; }
 .mtg-section__title a { color: inherit; }
+.mtg-form__docs { display: flex; flex-direction: column; gap: 6px; }
+.mtg-form__doc { display: flex; gap: 6px; align-items: center; }
+.mtg-form__doc-url { flex: 2; min-width: 0; }
+.mtg-form__doc-title { flex: 1; min-width: 0; }
+.mtg-form__doc-add { align-self: flex-start; }
+@media (max-width: 640px) { .mtg-form__doc { flex-wrap: wrap; } .mtg-form__doc-url { flex-basis: 100%; } }
 .mtg-docs__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .mtg-docs__head .btn { text-transform: none; letter-spacing: 0; }
 .mtg-docs__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }

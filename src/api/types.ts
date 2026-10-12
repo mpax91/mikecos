@@ -352,6 +352,8 @@ export interface MeetingItem {
   projectId?: string | null;
   /** Documents saved on the meeting's series (MeetingSheet → Documents). */
   docs?: MeetingDoc[];
+  /** Video Link of a hand-entered meeting, else the invite's Meet/Zoom link. */
+  joinUrl?: string | null;
 }
 
 /** A link kept on a meeting series — every occurrence shows it

@@ -227,19 +227,16 @@ function UpcomingLinks({ m, onOpenNote }: { m: RangeMeetingItem; onOpenNote: (m:
   const noteDisabled = !m.hasNote && meetingHasEnded(m);
   return (
     <span className="today-page__meeting-actions">
-      <a
-        className="today-page__meeting-icon-btn"
-        href={m.gcalUrl ?? undefined}
-        target="_blank"
-        rel="noreferrer"
-        title="Open in Google Calendar"
-        aria-disabled={!m.gcalUrl}
-        onClick={(e) => {
-          if (!m.gcalUrl) e.preventDefault();
-        }}
-      >
-        📅
-      </a>
+      {m.joinUrl && (
+        <a className="today-page__meeting-icon-btn" href={m.joinUrl} target="_blank" rel="noreferrer" title="Join Meeting">
+          🎥
+        </a>
+      )}
+      {m.gcalUrl && (
+        <a className="today-page__meeting-icon-btn" href={m.gcalUrl} target="_blank" rel="noreferrer" title="Open in Google Calendar">
+          📅
+        </a>
+      )}
       <button
         type="button"
         className={`today-page__meeting-icon-btn${m.hasNote ? ' today-page__meeting-icon-btn--active' : ''}`}

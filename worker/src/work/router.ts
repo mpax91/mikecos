@@ -166,7 +166,11 @@ export type EnrichedMeeting<T extends ParsedMeeting = ParsedMeeting> = T & {
   pendingActions: number;
   projectId: string | null;
   docs: MeetingDoc[];
+  /** The link to join: a hand-entered series' Video Link, else the invite's
+   * Meet / Zoom / Teams / Webex link. null when there isn't one. */
+  joinUrl: string | null;
 };
+const VIDEO_LINK = /meet\.google|zoom\.us|teams\.microsoft|teams\.live|webex/i;
 
 /** 'ms-abc:2026-10-13T14:00:00.000Z' → 'ms-abc'; an ICS uid has no colon. */
 export function seriesKeyOf(meetingId: string): string {
@@ -191,7 +195,7 @@ export async function enrichMeetings<T extends ParsedMeeting>(db: D1Database, me
 
   const [feeds, series, notes, summaries, pending, seriesPeople, docRows] = await Promise.all([
     db.prepare(`SELECT id, realm FROM calendar_feeds`).all<{ id: string; realm: string }>(),
-    inChunks(seriesIds, async (ch, ph) => (await db.prepare(`SELECT id, realm, rrule, project_id FROM meeting_series WHERE id IN (${ph})`).bind(...ch).all<{ id: string; realm: string; rrule: string | null; project_id: string | null }>()).results ?? []),
+    inChunks(seriesIds, async (ch, ph) => (await db.prepare(`SELECT id, realm, rrule, project_id, link FROM meeting_series WHERE id IN (${ph})`).bind(...ch).all<{ id: string; realm: string; rrule: string | null; project_id: string | null; link: string | null }>()).results ?? []),
     inChunks(ids, async (ch, ph) => (await db.prepare(`SELECT mn.meeting_id FROM meeting_notes mn JOIN entities e ON e.id = mn.note_entity_id WHERE mn.meeting_id IN (${ph})`).bind(...ch).all<{ meeting_id: string }>()).results ?? []),
     inChunks(ids, async (ch, ph) => (await db.prepare(`SELECT meeting_id, COUNT(*) AS n FROM meeting_summaries WHERE meeting_id IN (${ph}) GROUP BY meeting_id`).bind(...ch).all<{ meeting_id: string; n: number }>()).results ?? []),
     inChunks(ids, async (ch, ph) => (await db.prepare(`SELECT meeting_id, COUNT(*) AS n FROM meeting_actions WHERE status = 'pending' AND meeting_id IN (${ph}) GROUP BY meeting_id`).bind(...ch).all<{ meeting_id: string; n: number }>()).results ?? []),
@@ -253,6 +257,7 @@ export async function enrichMeetings<T extends ParsedMeeting>(db: D1Database, me
       pendingActions: pendingN.get(m.id) ?? 0,
       projectId: manual?.project_id ?? null,
       docs: docsByKey.get(key) ?? [],
+      joinUrl: (manual ? manual.link?.trim() || null : null) ?? (m.links ?? []).find((l) => VIDEO_LINK.test(l)) ?? null,
     });
   }
   return out;

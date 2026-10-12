@@ -34,10 +34,19 @@ interface Form {
   people: PersonRef[];
   projectId: string;
   link: string;
+  /** Documents (Google Doc links) kept on the series — every occurrence
+   * shows them in the meeting sheet and on Today's row. `id` = saved row. */
+  docs: FormDoc[];
   location: string;
   description: string;
   active: boolean;
   skipDates: string[];
+}
+
+interface FormDoc {
+  id?: string;
+  url: string;
+  title: string;
 }
 
 function todayISO() {
@@ -72,6 +81,7 @@ function blank(): Form {
     people: [],
     projectId: '',
     link: '',
+    docs: [{ url: '', title: '' }],
     location: '',
     description: '',
     active: true,
@@ -125,6 +135,7 @@ function formFrom(s: MeetingSeries): Form {
     people: s.people.map((p) => ({ id: p.id, name: p.name })),
     projectId: s.projectId ?? '',
     link: s.link ?? '',
+    docs: [],
     location: s.location ?? '',
     description: s.description ?? '',
     active: s.active,
@@ -170,6 +181,26 @@ export function MeetingsPanel() {
   const [myNames, setMyNames] = useState('');
   const [workLabel, setWorkLabel] = useState('');
   const [namesSaved, setNamesSaved] = useState(false);
+  const [docsLoaded, setDocsLoaded] = useState<FormDoc[]>([]);
+  const formId = form?.id;
+  // Editing a series → load its saved documents into the form (empty row if none).
+  useEffect(() => {
+    setDocsLoaded([]);
+    if (!formId) return;
+    let live = true;
+    api
+      .listMeetingDocs(`ms-${formId}`)
+      .then(({ docs }) => {
+        if (!live) return;
+        const rows = docs.map((d) => ({ id: d.id, url: d.url, title: d.title }));
+        setDocsLoaded(rows);
+        setForm((f) => (f && f.id === formId ? { ...f, docs: rows.length ? rows : [{ url: '', title: '' }] } : f));
+      })
+      .catch(() => setForm((f) => (f && f.id === formId ? { ...f, docs: [{ url: '', title: '' }] } : f)));
+    return () => {
+      live = false;
+    };
+  }, [formId]);
 
   function load() {
     api
@@ -226,14 +257,28 @@ export function MeetingsPanel() {
       skipDates: form.skipDates,
     };
     try {
-      if (form.id) await api.updateMeetingSeries(form.id, body);
-      else await api.createMeetingSeries(body);
+      const saved = form.id ? await api.updateMeetingSeries(form.id, body) : await api.createMeetingSeries(body);
+      await saveDocs(`ms-${saved.id}`, form.docs, docsLoaded);
       setForm(null);
       load();
     } catch (e) {
       setError(e instanceof Error ? e.message.replace(/^API \d+: /, '').replace(/^\{"error":"(.*)"\}$/, '$1') : String(e));
     } finally {
       setSaving(false);
+    }
+  }
+
+  // Documents: compare with what was loaded, then add / update / remove.
+  async function saveDocs(seriesKey: string, docs: FormDoc[], before: FormDoc[]) {
+    const keep = docs.filter((d) => d.url.trim());
+    const keptIds = new Set(keep.map((d) => d.id).filter(Boolean));
+    for (const d of before) if (d.id && !keptIds.has(d.id)) await api.deleteMeetingDoc(d.id);
+    for (const d of keep) {
+      if (!d.id) await api.addMeetingDoc(seriesKey, d.url.trim(), d.title.trim());
+      else {
+        const was = before.find((b) => b.id === d.id);
+        if (!was || was.url !== d.url.trim() || was.title !== d.title.trim()) await api.updateMeetingDoc(d.id, { url: d.url.trim(), title: d.title.trim() });
+      }
     }
   }
 
@@ -433,6 +478,36 @@ export function MeetingsPanel() {
                 <input placeholder="Room / address" value={form.location} onChange={(e) => set({ location: e.target.value })} />
               </label>
             </div>
+            <div>
+              <span className="settings-page__field-label">Documents</span>
+              <div className="mtg-form__docs">
+                {form.docs.map((d, i) => (
+                  <div key={d.id ?? `new-${i}`} className="mtg-form__doc">
+                    <input
+                      className="mtg-form__doc-url"
+                      type="url"
+                      inputMode="url"
+                      placeholder="Paste a link — https://docs.google.com/document/d/…"
+                      value={d.url}
+                      onChange={(e) => set({ docs: form.docs.map((x, j) => (j === i ? { ...x, url: e.target.value } : x)) })}
+                    />
+                    <input
+                      className="mtg-form__doc-title"
+                      placeholder="Name (optional)"
+                      value={d.title}
+                      onChange={(e) => set({ docs: form.docs.map((x, j) => (j === i ? { ...x, title: e.target.value } : x)) })}
+                    />
+                    <button type="button" className="btn btn--ghost btn--sm" title="Remove" onClick={() => set({ docs: form.docs.length > 1 ? form.docs.filter((_, j) => j !== i) : [{ url: '', title: '' }] })}>
+                      ×
+                    </button>
+                  </div>
+                ))}
+                <button type="button" className="btn btn--ghost btn--sm mtg-form__doc-add" onClick={() => set({ docs: [...form.docs, { url: '', title: '' }] })}>
+                  + Add Another Document
+                </button>
+              </div>
+            </div>
+
             <label>
               <span className="settings-page__field-label">Notes</span>
               <textarea rows={2} value={form.description} placeholder="What this meeting is for" onChange={(e) => set({ description: e.target.value })} />
