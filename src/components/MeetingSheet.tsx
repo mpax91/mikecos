@@ -5,6 +5,7 @@ import type { MeetingAction, MeetingItem, MeetingPrep, MeetingSummary, WorkTask 
 import { DetailSheet } from './dash/DetailSheet';
 import { RealmChip } from './RealmSwitch';
 import { buildMeetingNoteTitle } from '../utils/meetingNotes';
+import { MeetingDocs, seriesKeyFor } from './MeetingDocs';
 
 /** One meeting, everything about it: morning-of prep (people, what's open
  * with them, last time's notes, open next steps), this meeting's own notes,
@@ -268,6 +269,13 @@ function MeetingSheet({ meeting, startPasting, onClose }: { meeting: SheetMeetin
         </div>
 
         {error && <div className="mtg-error">{error}</div>}
+
+        <MeetingDocs
+          seriesKey={meeting.seriesKey ?? seriesKeyFor(meeting.id)}
+          recurring={!!m.recurring}
+          inviteLinks={m.links ?? []}
+          onChanged={() => window.dispatchEvent(new Event(MEETING_CHANGED_EVENT))}
+        />
 
         {pasting && (
           <section className="mtg-section mtg-paste">

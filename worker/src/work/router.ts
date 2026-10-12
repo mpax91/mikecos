@@ -165,6 +165,7 @@ export type EnrichedMeeting<T extends ParsedMeeting = ParsedMeeting> = T & {
   summaryCount: number;
   pendingActions: number;
   projectId: string | null;
+  docs: MeetingDoc[];
 };
 
 /** 'ms-abc:2026-10-13T14:00:00.000Z' → 'ms-abc'; an ICS uid has no colon. */
@@ -188,14 +189,21 @@ export async function enrichMeetings<T extends ParsedMeeting>(db: D1Database, me
   const keys = [...new Set(meetings.map((m) => seriesKeyOf(m.id)))];
   const seriesIds = keys.filter((k) => k.startsWith('ms-')).map((k) => k.slice(3));
 
-  const [feeds, series, notes, summaries, pending, seriesPeople] = await Promise.all([
+  const [feeds, series, notes, summaries, pending, seriesPeople, docRows] = await Promise.all([
     db.prepare(`SELECT id, realm FROM calendar_feeds`).all<{ id: string; realm: string }>(),
     inChunks(seriesIds, async (ch, ph) => (await db.prepare(`SELECT id, realm, rrule, project_id FROM meeting_series WHERE id IN (${ph})`).bind(...ch).all<{ id: string; realm: string; rrule: string | null; project_id: string | null }>()).results ?? []),
     inChunks(ids, async (ch, ph) => (await db.prepare(`SELECT mn.meeting_id FROM meeting_notes mn JOIN entities e ON e.id = mn.note_entity_id WHERE mn.meeting_id IN (${ph})`).bind(...ch).all<{ meeting_id: string }>()).results ?? []),
     inChunks(ids, async (ch, ph) => (await db.prepare(`SELECT meeting_id, COUNT(*) AS n FROM meeting_summaries WHERE meeting_id IN (${ph}) GROUP BY meeting_id`).bind(...ch).all<{ meeting_id: string; n: number }>()).results ?? []),
     inChunks(ids, async (ch, ph) => (await db.prepare(`SELECT meeting_id, COUNT(*) AS n FROM meeting_actions WHERE status = 'pending' AND meeting_id IN (${ph}) GROUP BY meeting_id`).bind(...ch).all<{ meeting_id: string; n: number }>()).results ?? []),
     inChunks(seriesIds, async (ch, ph) => (await db.prepare(`SELECT sp.series_id, c.id, c.name FROM meeting_series_people sp JOIN contacts c ON c.id = sp.contact_id WHERE sp.series_id IN (${ph}) ORDER BY sp.position, c.name`).bind(...ch).all<{ series_id: string; id: string; name: string }>()).results ?? []),
+    inChunks(keys, async (ch, ph) => (await db.prepare(`SELECT * FROM meeting_docs WHERE series_key IN (${ph}) ORDER BY position, created_at`).bind(...ch).all<DocRow>()).results ?? []).catch(() => [] as DocRow[]),
   ]);
+  const docsByKey = new Map<string, MeetingDoc[]>();
+  for (const d of docRows) {
+    const list = docsByKey.get(d.series_key) ?? [];
+    list.push(docJson(d));
+    docsByKey.set(d.series_key, list);
+  }
   const feedRealm = new Map((feeds.results ?? []).map((f) => [f.id, f.realm || 'personal']));
   const seriesById = new Map(series.map((s) => [s.id, s]));
   const hasNote = new Set(notes.map((n) => n.meeting_id));
@@ -244,10 +252,112 @@ export async function enrichMeetings<T extends ParsedMeeting>(db: D1Database, me
       summaryCount: summaryN.get(m.id) ?? 0,
       pendingActions: pendingN.get(m.id) ?? 0,
       projectId: manual?.project_id ?? null,
+      docs: docsByKey.get(key) ?? [],
     });
   }
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// Documents on a meeting (migration 0113) — per series, so every occurrence
+// of a recurring meeting shows the same doc (e.g. a 1:1's running doc).
+// ---------------------------------------------------------------------------
+
+export interface MeetingDoc {
+  id: string;
+  title: string;
+  url: string;
+  kind: string;
+}
+interface DocRow {
+  id: string;
+  series_key: string;
+  title: string;
+  url: string;
+  position: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** What a link is, for the icon + a default name: Google Doc / Sheet /
+ * Slides / Form / Drive, else 'link'. */
+export function docKind(url: string): string {
+  const m = /^https?:\/\/(docs|drive|sheets|slides)\.google\.com\/(\w+)/i.exec(url);
+  if (!m) return 'link';
+  const what = m[1].toLowerCase() === 'drive' ? 'drive' : m[2].toLowerCase();
+  return { document: 'doc', spreadsheets: 'sheet', presentation: 'slides', forms: 'form', drive: 'drive', file: 'drive', open: 'drive' }[what] ?? 'drive';
+}
+const DOC_KIND_NAME: Record<string, string> = { doc: 'Google Doc', sheet: 'Google Sheet', slides: 'Google Slides', form: 'Google Form', drive: 'Google Drive File' };
+export function docDefaultTitle(url: string): string {
+  const k = docKind(url);
+  if (k !== 'link') return DOC_KIND_NAME[k];
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return 'Link';
+  }
+}
+function docJson(d: DocRow): MeetingDoc {
+  return { id: d.id, title: d.title || docDefaultTitle(d.url), url: d.url, kind: docKind(d.url) };
+}
+/** Accepts a full URL, or a bare 'docs.google.com/…' (adds https://).
+ * Returns null for anything that isn't http(s). */
+export function cleanDocUrl(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  let s = raw.trim();
+  if (!s) return null;
+  if (!/^[a-z]+:/i.test(s)) s = `https://${s}`;
+  try {
+    const u = new URL(s);
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
+    if (!u.hostname.includes('.')) return null;
+    return u.toString().slice(0, 2000);
+  } catch {
+    return null;
+  }
+}
+
+workRouter.get('/docs', async (c) => {
+  const key = (c.req.query('seriesKey') ?? '').trim();
+  if (!key) return c.json({ error: 'seriesKey required' }, 400);
+  const { results } = await c.env.DB.prepare('SELECT * FROM meeting_docs WHERE series_key = ? ORDER BY position, created_at').bind(key).all<DocRow>();
+  return c.json({ docs: (results ?? []).map(docJson) });
+});
+
+workRouter.post('/docs', async (c) => {
+  const b = await c.req.json<{ seriesKey?: string; url?: string; title?: string }>().catch(() => ({}) as { seriesKey?: string; url?: string; title?: string });
+  const key = (b.seriesKey ?? '').trim();
+  const url = cleanDocUrl(b.url);
+  if (!key || key.length > 500) return c.json({ error: 'seriesKey required' }, 400);
+  if (!url) return c.json({ error: 'Paste a link (https://…)' }, 400);
+  const pos = await c.env.DB.prepare('SELECT COALESCE(MAX(position), -1) + 1 AS n FROM meeting_docs WHERE series_key = ?').bind(key).first<{ n: number }>();
+  const row: DocRow = { id: uid(), series_key: key, title: (b.title ?? '').trim().slice(0, 200), url, position: pos?.n ?? 0, created_at: now(), updated_at: now() };
+  await c.env.DB.prepare('INSERT INTO meeting_docs (id, series_key, title, url, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .bind(row.id, row.series_key, row.title, row.url, row.position, row.created_at, row.updated_at)
+    .run();
+  return c.json(docJson(row));
+});
+
+workRouter.patch('/docs/:id', async (c) => {
+  const id = c.req.param('id');
+  const cur = await c.env.DB.prepare('SELECT * FROM meeting_docs WHERE id = ?').bind(id).first<DocRow>();
+  if (!cur) return c.json({ error: 'Not found' }, 404);
+  const b = await c.req.json<{ url?: string; title?: string }>().catch(() => ({}) as { url?: string; title?: string });
+  let url = cur.url;
+  if (b.url !== undefined) {
+    const u = cleanDocUrl(b.url);
+    if (!u) return c.json({ error: 'Paste a link (https://…)' }, 400);
+    url = u;
+  }
+  const title = b.title !== undefined ? String(b.title).trim().slice(0, 200) : cur.title;
+  await c.env.DB.prepare('UPDATE meeting_docs SET url = ?, title = ?, updated_at = ? WHERE id = ?').bind(url, title, now(), id).run();
+  return c.json(docJson({ ...cur, url, title }));
+});
+
+workRouter.delete('/docs/:id', async (c) => {
+  await c.env.DB.prepare('DELETE FROM meeting_docs WHERE id = ?').bind(c.req.param('id')).run();
+  return c.json({ ok: true });
+});
 
 // ---------------------------------------------------------------------------
 // Settings
@@ -432,6 +542,7 @@ workRouter.delete('/series/:id', async (c) => {
   await c.env.DB.batch([
     c.env.DB.prepare('DELETE FROM meeting_series_people WHERE series_id = ?').bind(id),
     c.env.DB.prepare('DELETE FROM meeting_series WHERE id = ?').bind(id),
+    c.env.DB.prepare('DELETE FROM meeting_docs WHERE series_key = ?').bind(`ms-${id}`),
   ]);
   return c.json({ ok: true });
 });

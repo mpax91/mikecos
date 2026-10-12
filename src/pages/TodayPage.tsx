@@ -11,6 +11,7 @@ import { getHolidays } from '../utils/holidays';
 import { fmtBillMoney } from '../utils/bills';
 import { buildMeetingNoteTitle, meetingHasEnded } from '../utils/meetingNotes';
 import { MEETING_CHANGED_EVENT, openMeetingSheet } from '../components/MeetingSheet';
+import { DOC_ICON } from '../components/MeetingDocs';
 import { RealmChip } from '../components/RealmSwitch';
 import { useRealm } from '../contexts/RealmContext';
 import type { MeetingPrep } from '../api/types';
@@ -546,6 +547,11 @@ export function TodayPage() {
                       <PrepLine m={m} prep={preps[m.id]} />
                     </button>
                     <span className="today-page__meeting-actions">
+                      {(m.docs ?? []).slice(0, 2).map((d) => (
+                        <a key={d.id} className="today-page__meeting-icon-btn" href={d.url} target="_blank" rel="noreferrer" title={`Open ${d.title}`}>
+                          {DOC_ICON[d.kind] ?? '🔗'}
+                        </a>
+                      ))}
                       <a
                         className="today-page__meeting-icon-btn"
                         href={m.gcalUrl ?? undefined}

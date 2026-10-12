@@ -20082,6 +20082,16 @@ button.fin-dash__stat::after {
 .mtg-section { border-top: var(--border-hairline); padding-top: 12px; }
 .mtg-section__title { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-muted); font-weight: var(--weight-medium); margin-bottom: 8px; }
 .mtg-section__title a { color: inherit; }
+.mtg-docs__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.mtg-docs__head .btn { text-transform: none; letter-spacing: 0; }
+.mtg-docs__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.mtg-doc { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border: 1px solid var(--color-border); border-radius: 8px; }
+.mtg-doc__link { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; color: var(--color-ink); text-decoration: none; font-size: 14px; }
+.mtg-doc__link:hover .mtg-doc__title { text-decoration: underline; }
+.mtg-doc__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mtg-doc--invite .mtg-doc__title { color: var(--color-muted); font-size: 13px; }
+.mtg-docs__form { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.mtg-docs__invite { margin-top: 10px; }
 .mtg-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-muted); margin-bottom: 3px; }
 .mtg-paste__box { width: 100%; font-family: var(--font-sans); font-size: 13px; line-height: 1.45; resize: vertical; margin: 8px 0; }
 .mtg-paste__row { display: flex; gap: 8px; flex-wrap: wrap; }

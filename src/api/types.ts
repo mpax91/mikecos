@@ -350,6 +350,18 @@ export interface MeetingItem {
   summaryCount?: number;
   pendingActions?: number;
   projectId?: string | null;
+  /** Documents saved on the meeting's series (MeetingSheet → Documents). */
+  docs?: MeetingDoc[];
+}
+
+/** A link kept on a meeting series — every occurrence shows it
+ * (migration 0113, /api/work/docs). kind: doc | sheet | slides | form |
+ * drive | link. */
+export interface MeetingDoc {
+  id: string;
+  title: string;
+  url: string;
+  kind: string;
 }
 
 export interface MeetingsResponse {
