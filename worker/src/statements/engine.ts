@@ -15,6 +15,7 @@ import { deriveAmexBank } from './amexBankDerive';
 import { deriveAmazon } from './amazonDerive';
 import { deriveAmexCard } from './amexCardDerive';
 import { deriveBofaCard } from './bofaCardDerive';
+import { derivePaypal } from './paypalDerive';
 import { syncPaymentFacts } from '../accountPayers';
 import { syncBills } from '../bills';
 import { syncCardFacts } from '../cardFacts';
@@ -193,6 +194,7 @@ export async function derive(env: Env, folder: FolderRow): Promise<void> {
   else if (folder.template_id === 'amexCard') await deriveAmexCard(env, fresh);
   else if (folder.template_id === 'bofaCard') await deriveBofaCard(env, fresh);
   else if (folder.template_id === 'tmobile') await deriveTmobile(env, fresh);
+  else if (folder.template_id === 'paypal') await derivePaypal(env, fresh);
   // Payment Quick Facts (Due Date, Auto-Pay, Paid With, bill amounts) from
   // the billing snapshot the template just stored + the account's payer.
   const after = await loadFolder(env, folder.id);
@@ -208,7 +210,12 @@ export async function derive(env: Env, folder: FolderRow): Promise<void> {
     if (card) await syncCardFacts(env, after.vault_entry_id, card, easternToday(), after.id);
   }
   // Card rewards: "Redeem …" task once the balance reaches the threshold.
-  if (templateById(folder.template_id)?.account.kind === 'card') await syncRedeemReminder(env, folder.id, easternToday());
+  if (templateById(folder.template_id)?.account.kind === 'card') {
+    await syncRedeemReminder(env, folder.id, easternToday());
+    // New card lines can prove (or settle) a missing PayPal month.
+    const pp = await env.DB.prepare(`SELECT * FROM statement_folders WHERE status = 'live' AND template_id = 'paypal'`).first<FolderRow>();
+    if (pp) await derivePaypal(env, pp).catch((err) => console.error('PayPal re-derive failed', err));
+  }
   // Bills & Due Dates: due day / Auto-Pay rows + the monthly pay task.
   await syncBills(env);
   // Cash Placement info flags (idle checking cash, cross-bank savings rates).

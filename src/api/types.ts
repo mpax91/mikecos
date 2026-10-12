@@ -2516,6 +2516,9 @@ export interface FinanceAccount extends StatementFolder {
     /** Credit cards: the statement balance owed (a liability — not added to
      * the account total; summed as Card Balances). */
     | { kind: 'card'; value: number; asOf: string | null; status: CardStatus; dueDate: string | null; minimum: number | null; pointsValue: number | null }
+    /** Payment apps (PayPal): pass-through — the balance (usually $0)
+     * counts toward the total; the row shows the last 12 months' activity. */
+    | { kind: 'app'; value: number; asOf: string | null; spent12: number; received12: number; lastActivity: string | null }
     | null;
 }
 
@@ -2867,7 +2870,10 @@ export interface AmazonDashboard {
   summary: AmazonSummary;
   statements: { id: string; periodStart: string; periodEnd: string; fileId: string; checks: StatementCheckRow[] }[];
   /** Last 24 statements only (transactionsSince = exclusive start). */
-  transactions: { date: string; description: string; kind: string; amount: number }[];
+  /** `paypal` = the real store behind a "PAYPAL *…" line (matched from the PayPal statements). */
+  transactions: { date: string; description: string; kind: string; amount: number; paypal?: string }[];
+  /** Stores paid through PayPal on this card (null when PayPal isn't live). */
+  paypal: CardPaypalPanel | null;
   transactionsSince: string | null;
   files: { fileId: string; name: string; url: string | null; status: string; error: string | null }[];
   flags: { id: string; severity: 'warn' | 'info'; message: string; created_at: string }[];
@@ -2995,7 +3001,10 @@ export interface AmexCardDashboard {
   summary: AmexCardSummary;
   statements: { id: string; periodStart: string; periodEnd: string; fileId: string; checks: StatementCheckRow[] }[];
   /** Last 24 statements only (transactionsSince = exclusive start). */
-  transactions: { date: string; description: string; kind: string; amount: number }[];
+  /** `paypal` = the real store behind a "PAYPAL *…" line (matched from the PayPal statements). */
+  transactions: { date: string; description: string; kind: string; amount: number; paypal?: string }[];
+  /** Stores paid through PayPal on this card (null when PayPal isn't live). */
+  paypal: CardPaypalPanel | null;
   transactionsSince: string | null;
   files: { fileId: string; name: string; url: string | null; status: string; error: string | null }[];
   flags: { id: string; severity: 'warn' | 'info'; message: string; created_at: string }[];
@@ -3098,7 +3107,10 @@ export interface BofaCardDashboard {
   gaps: { missing: string[]; quiet: string[] };
   summary: BofaCardSummary;
   statements: { id: string; periodStart: string; periodEnd: string; fileId: string; checks: StatementCheckRow[] }[];
-  transactions: { date: string; description: string; kind: string; amount: number }[];
+  /** `paypal` = the real store behind a "PAYPAL *…" line (matched from the PayPal statements). */
+  transactions: { date: string; description: string; kind: string; amount: number; paypal?: string }[];
+  /** Stores paid through PayPal on this card (null when PayPal isn't live). */
+  paypal: CardPaypalPanel | null;
   transactionsSince: string | null;
   files: { fileId: string; name: string; url: string | null; status: string; error: string | null }[];
   flags: { id: string; severity: 'warn' | 'info'; message: string; created_at: string }[];
@@ -3144,7 +3156,80 @@ export interface RewardsOverview {
   cards: { folderId: string; name: string; owner: AccountOwner; rewards: CardRewards; redeemAt: number }[];
 }
 
-export type FinanceDashboard = Ny529Dashboard | AdtDashboard | TmobileDashboard | AllyDashboard | AmazonDashboard | AmexBankDashboard | AmexCardDashboard | BofaCardDashboard;
+export type FinanceDashboard = Ny529Dashboard | AdtDashboard | TmobileDashboard | AllyDashboard | AmazonDashboard | AmexBankDashboard | AmexCardDashboard | BofaCardDashboard | PaypalDashboard;
+
+/** PayPal on a card dashboard (worker/src/statements/paypalMatch.ts). */
+export interface CardPaypalPanel {
+  matched: number;
+  unmatched: number;
+  unmatchedTotal: number;
+  merchants: { name: string; total: number; count: number; last: string }[];
+}
+
+// ---- PayPal (payment app) — worker/src/statements/paypalSummary.ts ----
+export type PaypalClass = 'purchase' | 'payment' | 'received' | 'refund' | 'reward' | 'withdrawal' | 'add_funds' | 'funding' | 'card_return';
+
+export interface PaypalActivity {
+  date: string;
+  cls: PaypalClass;
+  type: string;
+  name: string;
+  currency: string;
+  amount: number;
+  fee: number;
+  total: number;
+  recurring: boolean;
+  fundedBy: string[];
+  id: string | null;
+  statement: string;
+}
+
+export interface PaypalPartyTotal {
+  name: string;
+  total: number;
+  received: number;
+  count: number;
+  first: string;
+  last: string;
+}
+
+export interface PaypalSummary {
+  asOf: string | null;
+  balance: number;
+  balancePrinted: boolean;
+  firstStatement: string | null;
+  statements: number;
+  lastActivity: string | null;
+  totals: { spent: number; received: number; refunds: number; withdrawn: number; fees: number };
+  last12: { spent: number; received: number; refunds: number; withdrawn: number; fees: number; count: number; from: string | null };
+  years: { year: number; purchases: number; payments: number; received: number; refunds: number; withdrawn: number; fees: number; count: number }[];
+  months: { month: string; spent: number; received: number; count: number }[];
+  stores: PaypalPartyTotal[];
+  people: PaypalPartyTotal[];
+  subscriptions: { name: string; amount: number; first: string; last: string; count: number; total: number; active: boolean; change: { from: number; to: number; date: string } | null }[];
+  funding: { key: string; label: string; kind: 'card' | 'bank' | 'balance' | 'reward'; last4: string | null; total: number; count: number; first: string; last: string }[];
+  fees: { date: string; name: string; amount: number; fee: number }[];
+  withdrawals: { date: string; amount: number; to: string }[];
+  idle: { amount: number; since: string } | null;
+  activity: PaypalActivity[];
+}
+
+export interface PaypalDashboard {
+  kind: 'paypal';
+  folder: StatementFolder;
+  template: { nickname: string; institution: string; type: string; site?: string; phone?: string } | null;
+  summary: PaypalSummary;
+  /** Which card actually paid each card-funded PayPal row (keyed by PayPal ID). */
+  cards: {
+    paidBy: Record<string, { card: string; folderId: string; description: string; date: string }>;
+    byCard: { card: string; folderId: string; total: number; count: number }[];
+    unmatchedPaypal: number;
+    cardsLive: number;
+  };
+  statements: { id: string; periodStart: string; periodEnd: string; fileId: string; checks: StatementCheckRow[]; spent: number; received: number; withdrawn: number; fees: number; ending: number | null; count: number }[];
+  files: { fileId: string; name: string; url: string | null; status: string; error: string | null }[];
+  flags: { id: string; severity: 'warn' | 'info'; message: string; created_at: string }[];
+}
 
 // ---- Account payers (0092_account_payers.sql) — which card pays which
 // account. 'autopay' = charges the card by itself; 'on_file' = the card is

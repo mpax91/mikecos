@@ -24,6 +24,10 @@ import { summarizeAmexCard } from './amexCardSummary';
 import { bofaGaps, summarizeBofaCard } from './bofaCardSummary';
 import { cardRewardsSettings, combineRewards, rewardsFromAmazon, rewardsFromAmexCard, rewardsFromBofaCard, syncRedeemReminder } from './rewards';
 import type { CardRewards, RedeemTaskState, RewardsCardLine } from './rewards';
+import { loadPaypalData } from './paypalDerive';
+import { summarizePaypal } from './paypalSummary';
+import { cardPaypalView, loadPaypalMatches, paypalKey } from './paypalMatch';
+import type { PaypalMatchResult } from './paypalMatch';
 
 /** Statements API, mounted at /api/statements. */
 export const statementsRouter = new Hono<{ Bindings: Env }>();
@@ -210,6 +214,7 @@ statementsRouter.get('/accounts', async (c) => {
       | { kind: 'balance'; value: number; asOf: string | null; principal?: number; earnings?: number; parts?: { label: string; value: number }[] }
       | { kind: 'bill'; value: number; asOf: string | null; monthly: number | null; status: string }
       | { kind: 'card'; value: number; asOf: string | null; status: string; dueDate: string | null; minimum: number | null; pointsValue: number | null }
+      | { kind: 'app'; value: number; asOf: string | null; spent12: number; received12: number; lastActivity: string | null }
       | null = null;
     if (row.template_id === 'ny529') {
       const { stmts, txns } = await loadNy529Data(c.env, row.id);
@@ -219,6 +224,10 @@ statementsRouter.get('/accounts', async (c) => {
       const { stmts, txns } = await loadAdtData(c.env, row.id);
       const s = summarizeAdt(stmts, txns, easternToday());
       if (s.latest) headline = { kind: 'bill', value: s.latest.totalDue, asOf: s.asOf, monthly: s.monthlyWithTax ?? s.monthlyRate, status: s.status };
+    } else if (row.template_id === 'paypal') {
+      const { stmts } = await loadPaypalData(c.env, row.id);
+      const s = summarizePaypal(stmts, easternToday());
+      if (s.asOf) headline = { kind: 'app', value: s.balance, asOf: s.asOf, spent12: s.last12.spent, received12: s.last12.received, lastActivity: s.lastActivity };
     } else if (row.template_id === 'tmobile') {
       const { stmts, txns } = await loadTmobileData(c.env, row.id);
       const s = summarizeTmobile(stmts, txns, easternToday());
@@ -304,6 +313,7 @@ statementsRouter.get('/folders/:id/dashboard', async (c) => {
   if (!row) return c.json({ error: 'not found' }, 404);
   if (row.template_id === 'adt') return c.json(await adtDashboard(c.env, row));
   if (row.template_id === 'tmobile') return c.json(await tmobileDashboard(c.env, row));
+  if (row.template_id === 'paypal') return c.json(await paypalDashboard(c.env, row));
   if (row.template_id === 'ally') return c.json(await allyDashboard(c.env, row));
   if (row.template_id === 'amazon') return c.json(await amazonDashboard(c.env, row));
   if (row.template_id === 'amexBank') return c.json(await amexBankDashboard(c.env, row));
@@ -509,6 +519,7 @@ async function amazonDashboard(env: Env, row: FolderRow) {
   const last = stmts[stmts.length - 1];
   return {
     kind: 'amazon' as const,
+    ...(await cardPaypal(env, row.id, txns.filter((t) => t.date > since))),
     rewards: summary.latest ? rewardsFromAmazon(summary, easternToday()) : null,
     ...(await redeemInfo(env, row)),
     folder: folderJson(row, stats.get(row.id)),
@@ -516,7 +527,6 @@ async function amazonDashboard(env: Env, row: FolderRow) {
     account: last ? { accountLast: last.values.accountLast } : null,
     summary,
     statements: stmts.map((s) => ({ id: s.id, periodStart: s.periodStart, periodEnd: s.periodEnd, fileId: s.fileId, checks: s.checks })),
-    transactions: txns.filter((t) => t.date > since).map(({ date, description, kind, amount }) => ({ date, description, kind, amount })),
     transactionsSince: since || null,
     files: files.map((f) => ({ fileId: f.file_id, name: f.file_name, url: f.web_url, status: f.status, error: f.error })),
     flags: await openFlags(env, row.id),
@@ -534,6 +544,7 @@ async function amexCardDashboard(env: Env, row: FolderRow) {
   const last = stmts[stmts.length - 1];
   return {
     kind: 'amexCard' as const,
+    ...(await cardPaypal(env, row.id, txns.filter((t) => t.date > since))),
     rewards: summary.latest ? rewardsFromAmexCard(summary, easternToday()) : null,
     ...(await redeemInfo(env, row)),
     folder: folderJson(row, stats.get(row.id)),
@@ -541,7 +552,6 @@ async function amexCardDashboard(env: Env, row: FolderRow) {
     account: last ? { accountLast: last.values.accountLast, accountEnding: last.values.accountEnding } : null,
     summary,
     statements: stmts.map((s) => ({ id: s.id, periodStart: s.periodStart, periodEnd: s.periodEnd, fileId: s.fileId, checks: s.checks })),
-    transactions: txns.filter((t) => t.date > since).map(({ date, description, kind, amount }) => ({ date, description, kind, amount })),
     transactionsSince: since || null,
     files: files.map((f) => ({ fileId: f.file_id, name: f.file_name, url: f.web_url, status: f.status, error: f.error })),
     flags: await openFlags(env, row.id),
@@ -558,6 +568,7 @@ async function bofaCardDashboard(env: Env, row: FolderRow) {
   const last = stmts[stmts.length - 1];
   return {
     kind: 'bofaCard' as const,
+    ...(await cardPaypal(env, row.id, txns.filter((t) => t.date > since))),
     rewards: summary.latest ? rewardsFromBofaCard(summary, easternToday()) : null,
     ...(await redeemInfo(env, row)),
     folder: folderJson(row, stats.get(row.id)),
@@ -566,8 +577,70 @@ async function bofaCardDashboard(env: Env, row: FolderRow) {
     gaps: bofaGaps(stmts, files),
     summary,
     statements: stmts.map((s) => ({ id: s.id, periodStart: s.periodStart, periodEnd: s.periodEnd, fileId: s.fileId, checks: s.checks })),
-    transactions: txns.filter((t) => t.date > since).map(({ date, description, kind, amount }) => ({ date, description, kind, amount })),
     transactionsSince: since || null,
+    files: files.map((f) => ({ fileId: f.file_id, name: f.file_name, url: f.web_url, status: f.status, error: f.error })),
+    flags: await openFlags(env, row.id),
+  };
+}
+
+/** PayPal on a card dashboard: the real store behind each "PAYPAL *…" line
+ * (matched from the PayPal statements) + stores paid through PayPal. */
+async function cardPaypal(env: Env, folderId: string, txns: { date: string; description: string; kind: string; amount: number }[]) {
+  const res = await loadPaypalMatches(env);
+  const view = cardPaypalView(res, folderId);
+  return {
+    transactions: txns.map(({ date, description, kind, amount }) => {
+      const via = view.byKey[paypalKey({ date, amount, description })];
+      return via ? { date, description, kind, amount, paypal: via } : { date, description, kind, amount };
+    }),
+    paypal: view.hasPaypal ? { matched: view.matched, unmatched: view.unmatched, unmatchedTotal: view.unmatchedTotal, merchants: view.merchants.slice(0, 15) } : null,
+  };
+}
+
+/** PayPal (payment app) dashboard payload. */
+async function paypalDashboard(env: Env, row: FolderRow) {
+  const stats = await folderStats(env);
+  const { stmts, files } = await loadPaypalData(env, row.id);
+  const summary = summarizePaypal(stmts, easternToday());
+  const match: PaypalMatchResult = await loadPaypalMatches(env);
+  // Which card actually paid each card-funded PayPal row (by PayPal ID).
+  const paidBy: Record<string, { card: string; folderId: string; description: string; date: string }> = {};
+  for (const m of match.matches) {
+    if (!m.charge.paypalId || m.charge.amount <= 0) continue;
+    paidBy[m.charge.paypalId] = { card: match.cardNames.get(m.card.folderId) ?? 'Card', folderId: m.card.folderId, description: m.card.description, date: m.card.date };
+  }
+  const byCard = new Map<string, { card: string; folderId: string; total: number; count: number }>();
+  for (const m of match.matches.filter((x) => x.charge.amount > 0)) {
+    const name = match.cardNames.get(m.card.folderId) ?? 'Card';
+    const cur = byCard.get(m.card.folderId) ?? { card: name, folderId: m.card.folderId, total: 0, count: 0 };
+    cur.total = Math.round((cur.total + m.charge.amount) * 100) / 100;
+    cur.count++;
+    byCard.set(m.card.folderId, cur);
+  }
+  return {
+    kind: 'paypal' as const,
+    folder: folderJson(row, stats.get(row.id)),
+    template: templateById(row.template_id)?.account ?? null,
+    summary,
+    cards: {
+      paidBy,
+      byCard: [...byCard.values()].sort((a, b) => b.total - a.total),
+      unmatchedPaypal: match.unmatchedPaypal.filter((c) => c.amount > 0).length,
+      cardsLive: match.cardNames.size,
+    },
+    statements: stmts.map((s) => ({
+      id: s.id,
+      periodStart: s.periodStart,
+      periodEnd: s.periodEnd,
+      fileId: s.fileId,
+      checks: s.checks,
+      spent: s.values.spent,
+      received: s.values.received,
+      withdrawn: s.values.withdrawn,
+      fees: s.values.fees,
+      ending: s.values.ending,
+      count: s.values.rows.filter((r) => r.cls !== 'funding').length,
+    })),
     files: files.map((f) => ({ fileId: f.file_id, name: f.file_name, url: f.web_url, status: f.status, error: f.error })),
     flags: await openFlags(env, row.id),
   };

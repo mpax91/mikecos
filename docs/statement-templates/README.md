@@ -194,3 +194,15 @@ Taking the folder off live or setting 0 deletes an open task.
 Amex earnings across a missing statement are bridged (change in balance +
 redemptions seen) and marked `rewardsBridged` — an estimate, since a
 redemption printed only on the missing statement goes unseen.
+
+## Payment apps (`kind: 'app'` — PayPal, Mike 2026-10-12)
+Pass-through accounts (PayPal; later Venmo-style apps): the balance counts
+toward the Finance total (normally $0), the Finance row shows paid out in
+the last 12 months, they never appear in Bills & Due Dates or Card
+Balances, and the dashboard is about activity. Card-funded payments are
+matched to the live card templates' `PAYPAL *…` lines in
+`statements/paypalMatch.ts` (same amount, 0–5 days later) — **every new
+card template gets this for free** as long as its dashboard payload goes
+through `cardPaypal()` in router.ts and renders `CardPaypalPanel` +
+`ViaPaypal`. A missing app statement is only flagged (`gap:`) when a card
+proves activity in that month. Details: `paypal.md`.

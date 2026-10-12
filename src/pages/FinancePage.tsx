@@ -66,7 +66,8 @@ export function FinancePage() {
   }, []);
 
   const shown = (accounts ?? []).filter((a) => a.owner === owner);
-  // Balances (529, savings) add up; bills (ADT, utilities) don't — they get
+  // Balances (529, savings — and payment apps like PayPal, whose balance is
+  // usually $0) add up; bills (ADT, utilities) don't — they get
   // their own monthly total instead. Credit card balances are owed, so they
   // stay out of the accounts total and get their own "Card Balances" sum.
   const balances = shown.filter((a) => a.headline?.kind !== 'bill' && a.headline?.kind !== 'card');
@@ -180,6 +181,11 @@ export function FinancePage() {
                               ? `Due ${fmtDate(a.headline.dueDate)}`
                               : 'Statement Balance'}
                       {a.headline.pointsValue !== null ? ` · ${money(a.headline.pointsValue)} in rewards` : ''}
+                    </span>
+                  )}
+                  {a.headline?.kind === 'app' && (
+                    <span className="finance-page__row-sub">
+                      Payment App · {money(a.headline.spent12)} paid out (12 mo)
                     </span>
                   )}
                   {a.headline?.kind === 'balance' &&

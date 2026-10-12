@@ -19698,3 +19698,93 @@ button.fin-dash__stat::after {
   .work-dash__tile:nth-child(2n) { border-right: none; }
   .work-dash__tile { padding: 12px 14px; }
 }
+
+/* PayPal (payment app) dashboard — PaypalDashboard.tsx, CardPaypalPanel.tsx */
+.paypal-dash__bars--wide .fin-dash__year {
+  grid-template-columns: minmax(0, 9.5em) minmax(0, 1fr) 72px 28px;
+}
+.paypal-dash__bars .fin-dash__year-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.paypal-dash__bars:not(.paypal-dash__bars--wide) .fin-dash__year {
+  grid-template-columns: 64px minmax(0, 1fr) 72px 28px;
+}
+.paypal-dash__row {
+  width: 100%;
+  font: inherit;
+  font-size: 13px;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  border: none;
+  padding: 2px 0;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.paypal-dash__row:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+.fin-dash__years .paypal-dash__row:not(:has(.fin-dash__year-track)) {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.paypal-dash__link {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+.paypal-dash__link .ally__recurring-name {
+  min-width: 0;
+}
+.paypal-dash__sub {
+  display: block;
+  font-size: 12px;
+  color: var(--color-muted);
+}
+.paypal-dash__funded {
+  font-size: 12.5px;
+  color: var(--color-muted);
+}
+.paypal-dash__card-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.paypal-dash__via {
+  display: block;
+  font-size: 12px;
+  color: var(--color-muted);
+}
+.ally__recurring li:has(> .paypal-dash__link) {
+  display: block;
+}
+.paypal-dash__link .ally__recurring-name {
+  white-space: normal;
+}
+@media (max-width: 640px) {
+  /* By Year: Year · Stores · Received · Fees on phones (People, Refunds hidden) */
+  .paypal-dash__years-table th:nth-child(3),
+  .paypal-dash__years-table td:nth-child(3),
+  .paypal-dash__years-table th:nth-child(5),
+  .paypal-dash__years-table td:nth-child(5) {
+    display: none;
+  }
+  /* Statements: Month · Paid Out · Received · Math · PDF */
+  .paypal-dash__stmts th:nth-child(2),
+  .paypal-dash__stmts td:nth-child(2),
+  .paypal-dash__stmts th:nth-child(5),
+  .paypal-dash__stmts td:nth-child(5) {
+    display: none;
+  }
+}

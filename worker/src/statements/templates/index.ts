@@ -7,9 +7,10 @@ import { parseAmexBank } from './amexBank';
 import { parseAmexCard } from './amexCard';
 import { parseBofaCard } from './bofaCard';
 import { parseTmobile } from './tmobile';
+import { parsePaypal } from './paypal';
 
 /** Per-folder templates (one per Drive folder, all on the shared base
- * engine). Build order per progress.md: 529 is live; ADT, Ally Bank, Amazon Prime Visa,
+ * engine). Build order per progress.md: 529 is live; ADT, Ally Bank, Amazon Prime Visa, PayPal,
  * American Express Bank, the Amex Blue Cash Everyday card and the Bank of America
  * Customized Cash Rewards card and T-Mobile built; the rest are added one folder at a time. */
 export interface StatementTemplate {
@@ -26,8 +27,10 @@ export interface StatementTemplate {
     /** 'balance' accounts count toward Finance totals; 'bill' accounts
      * (utilities, services) show their latest bill instead; 'card' accounts
      * (credit cards) show the statement balance owed — a liability, kept
-     * out of the Household total and summed as "Card Balances". */
-    kind: 'balance' | 'bill' | 'card';
+     * out of the Household total and summed as "Card Balances"; 'app'
+     * accounts (PayPal) are pass-through payment apps — their balance (usually
+     * $0) counts toward the total, the dashboard is about activity. */
+    kind: 'balance' | 'bill' | 'card' | 'app';
     site?: string;
     phone?: string;
     /** Cards: the network / tier for the Card Type Quick Fact when the
@@ -189,6 +192,24 @@ export const TEMPLATES: StatementTemplate[] = [
     parse: parseTmobile,
     // Monthly bills are "T-Mobile - YYYY.MM.DD.pdf".
     isStatementFile: (name) => /\d{4}\.\d{2}\.\d{2}/.test(name),
+  },
+  {
+    id: 'paypal',
+    name: 'PayPal (Monthly)',
+    folderNames: ['PayPal', 'Paypal'],
+    account: {
+      nickname: 'PayPal',
+      institution: 'PayPal',
+      type: 'Payment App',
+      owner: 'household',
+      cadence: 'monthly',
+      kind: 'app',
+      site: 'https://www.paypal.com',
+      phone: '1-888-221-1161',
+    },
+    parse: parsePaypal,
+    // Monthly statements are "PayPal - YYYY.MM.pdf".
+    isStatementFile: (name) => /\d{4}\.\d{2}/.test(name),
   },
 ];
 

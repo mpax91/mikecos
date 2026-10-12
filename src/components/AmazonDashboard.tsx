@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { CardPaypalPanel, ViaPaypal } from './CardPaypalPanel';
 import { Link } from 'react-router-dom';
 import type { AmazonDashboard as Data } from '../api/types';
 import { FinanceLineChart } from './FinanceLineChart';
@@ -205,6 +206,8 @@ export function AmazonDashboard({ data, onDismissFlag }: { data: Data; onDismiss
           <p className="fin-dash__note">Cash value of points earned in the last 12 statements{s.rewardRate !== null ? ` — ${s.rewardRate.toFixed(2)}% back on ${money(s.last12Net, false)} of spending` : ''}.</p>
         </section>
 
+        <CardPaypalPanel data={data.paypal} />
+
         <section className="fin-dash__card">
           <h3 className="fin-dash__card-title">Top Merchants (12 Mo)</h3>
           <div className="fin-dash__years">
@@ -272,7 +275,10 @@ export function AmazonDashboard({ data, onDismissFlag }: { data: Data; onDismiss
                   <tr key={`${t.date}-${i}`}>
                     <td>{fmtDate(t.date)}</td>
                     <td>{KIND_LABEL[t.kind] ?? t.kind}</td>
-                    <td className="ally__desc">{t.description}</td>
+                    <td className="ally__desc">
+                      {t.description}
+                      <ViaPaypal store={t.paypal} />
+                    </td>
                     <td className={`ally__amt${t.amount < 0 ? ' fin-dash__neg' : ''}`}>{money(t.amount)}</td>
                   </tr>
                 ))}

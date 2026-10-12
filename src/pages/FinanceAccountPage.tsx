@@ -11,6 +11,7 @@ import { AmazonDashboard } from '../components/AmazonDashboard';
 import { AmexBankDashboard } from '../components/AmexBankDashboard';
 import { AmexCardDashboard } from '../components/AmexCardDashboard';
 import { BofaCardDashboard } from '../components/BofaCardDashboard';
+import { PaypalDashboard } from '../components/PaypalDashboard';
 
 export function FinanceAccountPage() {
   const { id } = useParams<{ id: string }>();
@@ -44,6 +45,8 @@ export function FinanceAccountPage() {
               ? [t.institution, t.type, data.account?.accountEnding ? `Card ••${data.account.accountEnding.replace(/\D/g, '').slice(-5)}` : null, data.summary.purchaseApr !== null ? `${data.summary.purchaseApr}% APR${data.summary.onPenaltyApr ? ' (penalty)' : ''}` : null].filter(Boolean).join(' · ')
             : data.kind === 'bofaCard'
               ? [t.institution, t.type, data.account?.accountLast ? `${data.summary.cardType ?? 'Visa'} ••${data.account.accountLast}` : null, data.summary.purchaseApr !== null ? `${data.summary.purchaseApr}% APR${data.summary.onPenaltyApr ? ' (penalty)' : ''}` : null].filter(Boolean).join(' · ')
+            : data.kind === 'paypal'
+              ? [t.institution, t.type, data.summary.balancePrinted ? `Balance ${data.summary.balance.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}` : null, data.summary.lastActivity ? `Last activity ${new Date(`${data.summary.lastActivity}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}` : null].filter(Boolean).join(' · ')
             : data.kind === 'amexBank'
               ? [t.institution, data.summary.label, data.summary.apy !== null ? `${data.summary.apy.toFixed(2)}% APY` : null].filter(Boolean).join(' · ')
           : [
@@ -104,6 +107,8 @@ export function FinanceAccountPage() {
           <AmexCardDashboard data={data} onDismissFlag={dismiss} />
         ) : data.kind === 'bofaCard' ? (
           <BofaCardDashboard data={data} onDismissFlag={dismiss} />
+        ) : data.kind === 'paypal' ? (
+          <PaypalDashboard data={data} onDismissFlag={dismiss} />
         ) : (
           <Ny529Dashboard data={data} onDismissFlag={dismiss} />
         ))}
