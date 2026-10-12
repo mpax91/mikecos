@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { DashTitle } from './dash/InfoTip';
+import { DashTitle, InfoTip } from './dash/InfoTip';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import type { BeeBing, BeeClarity, BeeClarityRow } from '../api/types';
@@ -46,18 +46,19 @@ export const apiError = (e: unknown) => {
   }
 };
 
-export function BeeBingSection() {
+export function BeeBingSection({ range }: { range?: { from: string; to: string } }) {
   const [data, setData] = useState<BeeBing | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const load = () =>
     api
-      .getBeeBing()
+      .getBeeBing(range ? { from: range.from, to: range.to } : undefined)
       .then(setData)
       .catch(() => setData(null));
   useEffect(() => {
     load();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [range?.from, range?.to]);
   if (!data) return null;
   async function sync() {
     setBusy(true);
@@ -105,10 +106,12 @@ export function BeeBingSection() {
     <section className="bee-section">
       <div className="bee-section__head">
         <h2 className="bee-section__title">Bing</h2>
-        <span className="fin-dash__muted">Last 4 weeks Bing reports · history since {fmtDate(data.range.from)} · Bing also powers DuckDuckGo, Yahoo and Copilot</span>
+        <InfoTip label="About Bing">
+          <p>Bing also powers DuckDuckGo, Yahoo and Copilot results. Bing only reports by week, so the range uses the {data.range.last4.length} week{data.range.last4.length === 1 ? '' : 's'} starting inside it, compared with the same number of weeks before. History since {fmtDate(data.range.from)}.</p>
+        </InfoTip>
       </div>
       <div className="fin-dash__stats">
-        <Stat label="Clicks" value={n0(p.now.clicks)} sub={ch === null ? undefined : `${ch >= 0 ? '+' : '−'}${Math.abs(ch * 100).toFixed(0)}% vs prior 4 weeks`} />
+        <Stat label="Clicks" value={n0(p.now.clicks)} sub={ch === null ? `${data.range.last4.length} weeks` : `${ch >= 0 ? '+' : '−'}${Math.abs(ch * 100).toFixed(0)}% vs weeks before`} />
         <Stat label="Impressions" value={n0(p.now.impressions)} />
         <Stat label="Click Rate" value={pct(p.now.ctr)} />
         <Stat label="Crawl Issues" value={n0(data.issues.length)} sub={data.issues.length ? 'see below' : 'none reported'} />

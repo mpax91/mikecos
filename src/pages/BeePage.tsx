@@ -89,8 +89,8 @@ export function BeePage() {
         <BeeReviewSection />
       ) : tab === 'search' ? (
         <>
-          <BeeSearchSection />
-          <BeeBingSection />
+          <BeeSearchSection range={range} setRange={setRange} />
+          <BeeBingSection range={range} />
         </>
       ) : tab === 'website' ? (
         <>

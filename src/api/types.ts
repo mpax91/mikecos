@@ -3421,6 +3421,18 @@ interface BeeGscAgg {
   position: number | null;
   ctr: number;
 }
+export type BeeSearchDetail =
+  | { empty: true }
+  | {
+      empty: false;
+      kind: 'query' | 'page';
+      key: string;
+      range: { current: { from: string; to: string }; previous: { from: string; to: string } };
+      now: { clicks: number; impressions: number; position: number | null; ctr: number };
+      prev: { clicks: number; impressions: number; position: number | null; ctr: number };
+      daily: { date: string; clicks: number; impressions: number; position: number | null }[];
+      breakdown: { key: string; clicks: number; impressions: number; position: number | null }[];
+    };
 export type BeeSearch =
   | { connection: BeeGscConnection; empty: true }
   | {
@@ -3429,6 +3441,7 @@ export type BeeSearch =
       range: { from: string; to: string; current: { from: string; to: string }; previous: { from: string; to: string } };
       period: { now: BeeGscAgg; prev: BeeGscAgg; brandClicks: number; namedClicks: number };
       monthly: { month: string; clicks: number; impressions: number; position: number | null; days: number; brandClicks: number; discoveryClicks: number }[];
+      daily: { date: string; clicks: number; impressions: number; position: number | null }[];
       topQueries: (BeeGscQuery & { brand: boolean; prevClicks: number })[];
       topPages: BeeGscPage[];
       rising: BeeGscMover[];

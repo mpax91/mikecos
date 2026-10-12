@@ -27,7 +27,23 @@ interface Agg {
   position: number | null; // impression-weighted
 }
 
-export async function searchDashboard(env: Env) {
+export interface DayRange {
+  from: string;
+  to: string;
+}
+const dayCount = (a: string, b: string) => Math.round((Date.parse(`${b}T12:00:00Z`) - Date.parse(`${a}T12:00:00Z`)) / 86400000) + 1;
+/** The range a dashboard asked for (or the last `fallbackDays` of data),
+ * clipped to the data, plus the same-length stretch before it. */
+export function pickRanges(asked: DayRange | null, first: string, end: string, fallbackDays = 28) {
+  const to = asked ? (asked.to < end ? asked.to : end) : end;
+  let from = asked ? asked.from : addDays(end, -(fallbackDays - 1));
+  if (from < first) from = first;
+  if (from > to) from = to;
+  const len = dayCount(from, to);
+  return { cur: { from, to }, prev: { from: addDays(from, -len), to: addDays(from, -1) } };
+}
+
+export async function searchDashboard(env: Env, asked: DayRange | null = null) {
   const acct = await loadGsc(env);
   const connection = acct
     ? {
@@ -45,8 +61,7 @@ export async function searchDashboard(env: Env) {
   if (!span?.b) return { connection, empty: true as const };
 
   const end = span.b;
-  const cur = { from: addDays(end, -27), to: end };
-  const prev = { from: addDays(end, -55), to: addDays(end, -28) };
+  const { cur, prev } = pickRanges(asked, span.a ?? end, end);
   const q90 = addDays(end, -89);
   const db = env.DB;
 
@@ -58,6 +73,12 @@ export async function searchDashboard(env: Env) {
     return { clicks: x?.c ?? 0, impressions: x?.i ?? 0, position: x?.p ?? null };
   };
   const [now28, prev28] = await Promise.all([total(cur), total(prev)]);
+
+  // Daily totals in the range (tile drill-downs chart these).
+  const { results: daily } = await db
+    .prepare('SELECT date, clicks, impressions, position FROM bee_gsc_days WHERE date BETWEEN ? AND ? ORDER BY date')
+    .bind(cur.from, cur.to)
+    .all<{ date: string; clicks: number; impressions: number; position: number | null }>();
 
   // Monthly series (whole history) + brand share by month.
   const { results: months } = await db
@@ -102,7 +123,7 @@ export async function searchDashboard(env: Env) {
 
   const topQueries = [...q28]
     .sort((a, b) => b.clicks - a.clicks || b.impressions - a.impressions)
-    .slice(0, 25)
+    .slice(0, 50)
     .map((q) => ({ ...q, ctr: q.impressions ? q.clicks / q.impressions : 0, brand: BRAND_RE.test(q.query), prevClicks: q28prev.get(q.query)?.clicks ?? 0 }));
 
   // Best page per query (90 days) for the action lists.
@@ -178,7 +199,7 @@ export async function searchDashboard(env: Env) {
   const p28prev = new Map((await pageAgg(prev.from, prev.to)).map((p) => [p.page, p]));
   const topPages = [...p28]
     .sort((a, b) => b.clicks - a.clicks || b.impressions - a.impressions)
-    .slice(0, 20)
+    .slice(0, 40)
     .map((p) => ({ ...withCtr(p), prevClicks: p28prev.get(p.page)?.clicks ?? 0 }));
   const movers = [...new Set([...p28.map((p) => p.page), ...p28prev.keys()])]
     .map((page) => {
@@ -225,6 +246,7 @@ export async function searchDashboard(env: Env) {
       namedClicks: named28,
     },
     monthly,
+    daily: daily ?? [],
     topQueries,
     topPages,
     rising,
@@ -239,4 +261,38 @@ export async function searchDashboard(env: Env) {
     years: years ?? [],
     indexing,
   };
+}
+
+/** GET /api/bee/search/detail?kind=query|page&key=…&from&to — one search or
+ * one page: daily trend in the range, totals vs the period before, and the
+ * pages that rank for the search (or the searches that bring people to the
+ * page). Searches Google hides for privacy aren't in the page breakdown. */
+export async function searchDetail(env: Env, kind: 'query' | 'page', key: string, asked: DayRange | null) {
+  const db = env.DB;
+  const span = await db.prepare('SELECT MIN(date) AS a, MAX(date) AS b FROM bee_gsc_days').first<{ a: string | null; b: string | null }>();
+  if (!span?.b) return { empty: true as const };
+  const { cur, prev } = pickRanges(asked, span.a ?? span.b, span.b);
+  const table = kind === 'query' ? 'bee_gsc_rows' : 'bee_gsc_pages';
+  const col = kind === 'query' ? 'query' : 'page';
+  const totals = async (r: DayRange) => {
+    const x = await db
+      .prepare(`SELECT COALESCE(SUM(clicks),0) c, COALESCE(SUM(impressions),0) i, SUM(position * impressions) / NULLIF(SUM(impressions),0) p FROM ${table} WHERE ${col} = ? AND date BETWEEN ? AND ?`)
+      .bind(key, r.from, r.to)
+      .first<{ c: number; i: number; p: number | null }>();
+    return { clicks: x?.c ?? 0, impressions: x?.i ?? 0, position: x?.p ?? null, ctr: x?.i ? (x.c ?? 0) / x.i : 0 };
+  };
+  const [now, before] = await Promise.all([totals(cur), totals(prev)]);
+  const { results: daily } = await db
+    .prepare(`SELECT date, SUM(clicks) clicks, SUM(impressions) impressions, SUM(position * impressions) / NULLIF(SUM(impressions),0) position FROM ${table} WHERE ${col} = ? AND date BETWEEN ? AND ? GROUP BY date ORDER BY date`)
+    .bind(key, cur.from, cur.to)
+    .all<{ date: string; clicks: number; impressions: number; position: number | null }>();
+  const other = kind === 'query' ? 'page' : 'query';
+  const { results: parts } = await db
+    .prepare(
+      `SELECT ${other} AS key, SUM(clicks) clicks, SUM(impressions) impressions, SUM(position * impressions) / NULLIF(SUM(impressions),0) position
+       FROM bee_gsc_rows WHERE ${col} = ? AND date BETWEEN ? AND ? GROUP BY ${other} ORDER BY clicks DESC, impressions DESC LIMIT 25`
+    )
+    .bind(key, cur.from, cur.to)
+    .all<{ key: string; clicks: number; impressions: number; position: number | null }>();
+  return { empty: false as const, kind, key, range: { current: cur, previous: prev }, now, prev: before, daily: daily ?? [], breakdown: parts ?? [] };
 }

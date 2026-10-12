@@ -196,7 +196,7 @@ export async function bingSyncDue(env: Env, scheduledTime: number): Promise<bool
 }
 
 /** GET /api/bee/bing — Bing section of the Google Search tab. */
-export async function bingDashboard(env: Env) {
+export async function bingDashboard(env: Env, asked: { from: string; to: string } | null = null) {
   const row = await loadKeys(env);
   const connection = { connected: !!row.bing_key_enc, site: row.bing_site, lastSyncAt: row.bing_last_sync_at, lastError: row.bing_last_error };
   const db = env.DB;
@@ -206,8 +206,19 @@ export async function bingDashboard(env: Env) {
 
   const { results: weeksList } = await db.prepare('SELECT DISTINCT week FROM bee_bing_queries ORDER BY week DESC LIMIT 8').all<{ week: string }>();
   const recent = (weeksList ?? []).map((w) => w.week);
-  const last4 = recent.slice(0, 4);
-  const prev4 = recent.slice(4, 8);
+  // Bing reports weekly: a range takes the weeks starting inside it, and
+  // the comparison the same number of weeks just before.
+  let last4 = recent.slice(0, 4);
+  let prev4 = recent.slice(4, 8);
+  if (asked) {
+    const { results: inR } = await db.prepare('SELECT DISTINCT week FROM bee_bing_queries WHERE week BETWEEN ? AND ? ORDER BY week DESC').bind(asked.from, asked.to).all<{ week: string }>();
+    last4 = (inR ?? []).map((w) => w.week);
+    const { results: before } = await db
+      .prepare('SELECT DISTINCT week FROM bee_bing_queries WHERE week < ? ORDER BY week DESC LIMIT ?')
+      .bind(asked.from, Math.max(1, last4.length))
+      .all<{ week: string }>();
+    prev4 = (before ?? []).map((w) => w.week);
+  }
   const sumQ = async (weeks: string[]) => {
     if (!weeks.length) return { clicks: 0, impressions: 0 };
     const x = await db

@@ -5,7 +5,7 @@ import { linkBeeContacts } from './contacts';
 import { loadSubscribers, spotlightFor, substackDashboard } from './summary';
 import { isPaidType } from './engagement';
 import { disconnectGsc, gscAuthUrl, syncGscAll } from './gsc';
-import { searchDashboard } from './search';
+import { searchDashboard, searchDetail } from './search';
 import { syncGaAll } from './ga';
 import { analyticsDashboard } from './analytics';
 import { bingDashboard, saveBingKey, syncBing } from './bing';
@@ -20,10 +20,22 @@ import { reviewDashboard } from './review';
  * Console, GA4, Meta) will hang off this router later. */
 export const beeRouter = new Hono<{ Bindings: Env }>();
 
+/** `?from=YYYY-MM-DD&to=YYYY-MM-DD` → a range, else null (route default). */
+function askedRange(from: string | undefined, to: string | undefined): { from: string; to: string } | null {
+  const ok = (d: string | undefined): d is string => !!d && /^\d{4}-\d{2}-\d{2}$/.test(d);
+  return ok(from) && ok(to) && from <= to ? { from, to } : null;
+}
+
 beeRouter.get('/substack', async (c) => c.json(await substackDashboard(c.env)));
 
 // ---- Google Search Console ----
-beeRouter.get('/search', async (c) => c.json(await searchDashboard(c.env)));
+beeRouter.get('/search', async (c) => c.json(await searchDashboard(c.env, askedRange(c.req.query('from'), c.req.query('to')))));
+beeRouter.get('/search/detail', async (c) => {
+  const kind = c.req.query('kind') === 'page' ? 'page' : 'query';
+  const key = c.req.query('key');
+  if (!key) return c.json({ error: 'key required' }, 400);
+  return c.json(await searchDetail(c.env, kind, key, askedRange(c.req.query('from'), c.req.query('to'))));
+});
 
 // Browser navigation → Google consent (callback: /api/cloud/oauth/callback).
 beeRouter.get('/gsc/connect', async (c) => {
@@ -56,7 +68,7 @@ beeRouter.post('/ga/sync', async (c) => {
 
 // ---- Bing Webmaster Tools + Microsoft Clarity (pasted keys) ----
 const fail = (err: unknown) => ({ error: err instanceof Error ? err.message : String(err) });
-beeRouter.get('/bing', async (c) => c.json(await bingDashboard(c.env)));
+beeRouter.get('/bing', async (c) => c.json(await bingDashboard(c.env, askedRange(c.req.query('from'), c.req.query('to')))));
 beeRouter.get('/clarity', async (c) => c.json(await clarityDashboard(c.env)));
 
 beeRouter.put('/bing/key', async (c) => {
