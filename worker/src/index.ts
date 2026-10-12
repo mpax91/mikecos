@@ -70,6 +70,8 @@ import { claritySyncDue, syncClarity } from './bee/clarity';
 import { metaSyncDue, syncMeta } from './bee/meta';
 import { contactsAssistantRouter } from './contactsAssistant';
 import { betsEnrichmentRouter } from './betsEnrichment';
+import { cascadeRealm, inheritRealmFromParent, realmOf, realmSql, stampRealm, createRealm, type RealmFilter } from './work/realm';
+import { workRouter, enrichMeetings, seriesFeedSource, setMeetingLoader } from './work/router';
 import { buildVoterInsight, ELECTION_CODE_RE, titleCaseVoterText, voterDiffs, voterKeyOf, type VoterDiff } from './voterInsight';
 
 const app = new Hono<{ Bindings: Env }>();
@@ -95,6 +97,7 @@ app.route('/api/wallet', walletRouter);
 app.route('/api/rewards', rewardsRouter);
 app.route('/api/payment-cards', paymentCardsRouter);
 app.route('/api/waiting', waitingRouter);
+app.route('/api/work', workRouter);
 app.route('/api/plex', plexRouter);
 app.route('/api/media', mediaCatalogRouter);
 app.route('/api/bar', barRouter);
@@ -431,6 +434,7 @@ async function spawnDueRecurringTasks(db: D1Database, todayIso: string): Promise
         )
         .bind(id, def.title, (maxPos?.m ?? -1) + 1, dueDate, ts, ts, ts)
         .run();
+      if ((def as { realm?: string }).realm === 'work') await db.prepare(`UPDATE entities SET realm = 'work' WHERE id = ?`).bind(id).run();
     }
 
     await db
@@ -558,7 +562,7 @@ function extractAttachmentsAndLinks(contentJson: string | null | undefined): {
 // longest surfaces first, unlike Notes' newest-first ordering).
 app.get('/api/jots', async (c) => {
   const { results } = await c.env.DB.prepare(
-    `SELECT * FROM entities WHERE is_top_level = 1 AND type = 'note' AND is_jot = 1
+    `SELECT * FROM entities WHERE is_top_level = 1 AND type = 'note' AND is_jot = 1${realmSql(realmOf(c))}
      ORDER BY pinned DESC, COALESCE(last_touched, updated_at) ASC`
   ).all<Entity>();
   return c.json(results ?? []);
@@ -581,6 +585,7 @@ app.post('/api/jots', async (c) => {
   )
     .bind(id, body.title ?? '', body.content ?? null, ts, ts, ts, searchText)
     .run();
+  await stampRealm(c.env.DB, c, id);
   const entity = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(id).first<Entity>();
   return c.json(entity, 201);
 });
@@ -680,6 +685,7 @@ app.post('/api/entities/:id/convert', async (c) => {
   }
 
   await touchProjectAncestor(c.env.DB, body.parent_id);
+  if (body.parent_id) await inheritRealmFromParent(c.env.DB, id);
   const entity = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(id).first<Entity>();
   return c.json(entity);
 });
@@ -874,6 +880,7 @@ app.get('/api/contacts', async (c) => {
   if (!includeVoters) {
     sql += " AND source != 'voter_file'";
   }
+  sql += realmSql(realmOf(c), 'contacts');
   if (circle && CIRCLES.includes(circle as ContactCircle)) {
     sql += ' AND circle = ?';
     binds.push(circle);
@@ -962,6 +969,7 @@ app.post('/api/contacts', async (c) => {
       JSON.stringify(cleanLabels(Array.isArray(body.labels) ? (body.labels as unknown[]).filter((l): l is string => typeof l === 'string') : []))
     )
     .run();
+  if (createRealm(c, (body as { realm?: string }).realm) === 'work') await c.env.DB.prepare(`UPDATE contacts SET realm = 'work' WHERE id = ?`).bind(id).run();
   const contact = await c.env.DB.prepare('SELECT * FROM contacts WHERE id = ?').bind(id).first<Contact>();
   return c.json(contact, 201);
 });
@@ -1362,6 +1370,8 @@ app.patch('/api/contacts/:id', async (c) => {
     fields.push(['labels', JSON.stringify(cleanLabels(list.filter((l): l is string => typeof l === 'string')))]);
   }
   if (body.pinned !== undefined) fields.push(['pinned', body.pinned ? 1 : 0]);
+  const realmIn = (body as { realm?: string }).realm;
+  if (realmIn === 'work' || realmIn === 'personal') fields.push(['realm', realmIn]);
 
   if (fields.length > 0) {
     fields.push(['updated_at', now()]);
@@ -3084,8 +3094,8 @@ app.get('/api/projects', async (c) => {
   const archived = c.req.query('archived') === '1';
   const { results } = await c.env.DB.prepare(
     archived
-      ? `SELECT * FROM entities WHERE is_top_level = 1 AND type = 'project' AND is_list = 0 AND status = 'archived' ORDER BY archived_at DESC, title ASC`
-      : `SELECT * FROM entities WHERE is_top_level = 1 AND type = 'project' AND is_list = 0 AND COALESCE(status, 'active') != 'archived' ORDER BY pinned DESC, position ASC, created_at ASC`
+      ? `SELECT * FROM entities WHERE is_top_level = 1 AND type = 'project' AND is_list = 0 AND status = 'archived'${realmSql(realmOf(c))} ORDER BY archived_at DESC, title ASC`
+      : `SELECT * FROM entities WHERE is_top_level = 1 AND type = 'project' AND is_list = 0 AND COALESCE(status, 'active') != 'archived'${realmSql(realmOf(c))} ORDER BY pinned DESC, position ASC, created_at ASC`
   ).all<Entity>();
 
   const withCounts = await Promise.all(
@@ -3112,7 +3122,7 @@ app.get('/api/projects', async (c) => {
 
 // POST /api/projects — create a new top-level project { title, description }
 app.post('/api/projects', async (c) => {
-  const body = await c.req.json<{ title: string; description?: string }>();
+  const body = await c.req.json<{ title: string; description?: string; realm?: string }>();
   if (!body.title || !body.title.trim()) {
     return c.json({ error: 'title is required' }, 400);
   }
@@ -3124,6 +3134,7 @@ app.post('/api/projects', async (c) => {
   )
     .bind(id, body.title.trim(), body.description ?? '', ts, ts, ts)
     .run();
+  await stampRealm(c.env.DB, c, id, body.realm);
   const entity = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(id).first<Entity>();
   return c.json(entity, 201);
 });
@@ -3141,7 +3152,7 @@ app.post('/api/projects', async (c) => {
 // its own collapsed Archived section client-side.
 app.get('/api/lists', async (c) => {
   const { results } = await c.env.DB.prepare(
-    `SELECT * FROM entities WHERE is_top_level = 1 AND type = 'project' AND is_list = 1 ORDER BY pinned DESC, position ASC, created_at ASC`
+    `SELECT * FROM entities WHERE is_top_level = 1 AND type = 'project' AND is_list = 1${realmSql(realmOf(c))} ORDER BY pinned DESC, position ASC, created_at ASC`
   ).all<Entity>();
 
   const withCounts = await Promise.all(
@@ -3180,6 +3191,7 @@ app.post('/api/lists', async (c) => {
   )
     .bind(id, body.title.trim(), ts, ts, ts)
     .run();
+  await stampRealm(c.env.DB, c, id);
   const entity = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(id).first<Entity>();
   return c.json(entity, 201);
 });
@@ -3231,7 +3243,7 @@ app.post('/api/lists/:id/items', async (c) => {
 // default-sorts by manual position so drag-reordering keeps working there.
 app.get('/api/notes', async (c) => {
   const { results } = await c.env.DB.prepare(
-    `SELECT * FROM entities WHERE is_top_level = 1 AND type = 'note' AND is_jot = 0
+    `SELECT * FROM entities WHERE is_top_level = 1 AND type = 'note' AND is_jot = 0${realmSql(realmOf(c))}
      ORDER BY pinned DESC, COALESCE(last_touched, updated_at) DESC`
   ).all<Entity>();
   return c.json(results ?? []);
@@ -3250,6 +3262,7 @@ app.post('/api/notes', async (c) => {
   )
     .bind(id, title, body.content ?? null, ts, ts, ts, searchText)
     .run();
+  await stampRealm(c.env.DB, c, id);
   const entity = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(id).first<Entity>();
   return c.json(entity, 201);
 });
@@ -3372,7 +3385,11 @@ app.post('/api/entities', async (c) => {
 app.patch('/api/entities/:id', async (c) => {
   const id = c.req.param('id');
   const body = await c.req.json<
-    Partial<Pick<Entity, 'title' | 'content' | 'status' | 'parent_id' | 'position' | 'pinned' | 'due_date' | 'due_time' | 'last_touched' | 'expires_at'>>
+    Partial<Pick<Entity, 'title' | 'content' | 'status' | 'parent_id' | 'position' | 'pinned' | 'due_date' | 'due_time' | 'last_touched' | 'expires_at'>> & {
+      realm?: 'personal' | 'work';
+      contact_id?: string | null;
+      blocked_reason?: string | null;
+    }
   >();
 
   const existing = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(id).first<Entity>();
@@ -3390,6 +3407,16 @@ app.patch('/api/entities/:id', async (c) => {
   if (body.expires_at !== undefined) {
     fields.push('expires_at = ?');
     values.push(body.expires_at);
+  }
+  if (body.contact_id !== undefined) {
+    fields.push('contact_id = ?');
+    values.push(body.contact_id || null);
+  }
+  if (body.blocked_reason !== undefined) {
+    // '' = blocked with no reason given; null = not blocked.
+    fields.push('blocked_reason = ?');
+    values.push(body.blocked_reason === null ? null : String(body.blocked_reason));
+    touchesContent = true;
   }
   if (body.content !== undefined) {
     fields.push('content = ?');
@@ -3467,6 +3494,10 @@ app.patch('/api/entities/:id', async (c) => {
     .bind(...values)
     .run();
   if (touchesContent) await touchProjectAncestor(c.env.DB, id);
+  // Work ↔ Personal: an item and everything under it move together.
+  if (body.realm === 'work' || body.realm === 'personal') await cascadeRealm(c.env.DB, id, body.realm);
+  // Moved under a different parent via PATCH → take the new parent's realm.
+  else if (body.parent_id) await inheritRealmFromParent(c.env.DB, id);
 
   // Log completion events for the stats rollups (see migrations/0011) —
   // this is the single place every "check a task off" in the app goes
@@ -3625,6 +3656,7 @@ app.post('/api/entities/:id/move', async (c) => {
   // where it's now standalone and IS the top-level ancestor).
   await touchProjectAncestor(c.env.DB, existing.parent_id);
   await touchProjectAncestor(c.env.DB, id);
+  if (body.parent_id) await inheritRealmFromParent(c.env.DB, id);
 
   const entity = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(id).first<Entity>();
   return c.json(entity);
@@ -3802,7 +3834,7 @@ app.get('/api/link-preview', async (c) => {
 // through /api/entities/:id/convert instead, since that's an existing item
 // being turned into a task rather than a brand new one.
 app.post('/api/tasks', async (c) => {
-  const body = await c.req.json<{ title: string; due_date?: string | null }>();
+  const body = await c.req.json<{ title: string; due_date?: string | null; realm?: string; contact_id?: string | null }>();
   const title = body.title?.trim();
   if (!title) return c.json({ error: 'title is required' }, 400);
 
@@ -3818,6 +3850,8 @@ app.post('/api/tasks', async (c) => {
   )
     .bind(id, title, (maxPos?.m ?? -1) + 1, body.due_date ?? null, ts, ts, ts)
     .run();
+  await stampRealm(c.env.DB, c, id, body.realm);
+  if (body.contact_id) await c.env.DB.prepare('UPDATE entities SET contact_id = ? WHERE id = ?').bind(body.contact_id, id).run();
 
   const entity = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(id).first<Entity>();
   return c.json(entity, 201);
@@ -3883,6 +3917,7 @@ app.post('/api/recurring', async (c) => {
     rrule: string;
     dtstart: string;
     active?: boolean;
+    realm?: string;
   }>();
 
   const title = body.title?.trim();
@@ -3904,6 +3939,7 @@ app.post('/api/recurring', async (c) => {
   )
     .bind(id, title, body.project_id ?? null, body.rrule.trim(), body.dtstart, body.active === false ? 0 : 1, ts, ts)
     .run();
+  if (createRealm(c, body.realm) === 'work') await c.env.DB.prepare(`UPDATE recurring_task_definitions SET realm = 'work' WHERE id = ?`).bind(id).run();
 
   const def = await c.env.DB.prepare('SELECT * FROM recurring_task_definitions WHERE id = ?').bind(id).first();
   return c.json(def, 201);
@@ -3920,6 +3956,7 @@ app.patch('/api/recurring/:id', async (c) => {
     rrule: string;
     dtstart: string;
     active: boolean;
+    realm: string;
   }>>();
 
   const existing = await c.env.DB.prepare('SELECT * FROM recurring_task_definitions WHERE id = ?').bind(id).first();
@@ -3940,6 +3977,7 @@ app.patch('/api/recurring/:id', async (c) => {
   if (body.rrule !== undefined) { fields.push('rrule = ?'); values.push(body.rrule.trim()); }
   if (body.dtstart !== undefined) { fields.push('dtstart = ?'); values.push(body.dtstart); }
   if (body.active !== undefined) { fields.push('active = ?'); values.push(body.active ? 1 : 0); }
+  if (body.realm === 'work' || body.realm === 'personal') { fields.push('realm = ?'); values.push(body.realm); }
 
   if (fields.length > 0) {
     fields.push('updated_at = ?');
@@ -3999,9 +4037,15 @@ function daysSinceEpoch(iso: string): number {
 // picking the same one repeatedly. Browsing to a different day via the
 // prev/next arrows shows what that day's pick would be, same as Overdue
 // already varies with the viewed date.
-async function computeSpotlight(db: D1Database, date: string): Promise<Entity | null> {
+/** task_completions has no realm of its own — judge by the task it logged
+ * (a completion whose task was since deleted only shows under All). */
+function completionRealmSql(realm: RealmFilter): string {
+  return realm === 'all' ? '' : ` AND entity_id IN (SELECT id FROM entities WHERE realm = '${realm}')`;
+}
+
+async function computeSpotlight(db: D1Database, date: string, realm: RealmFilter = 'all'): Promise<Entity | null> {
   const { results } = await db
-    .prepare(`${ARCHIVED_TREE_CTE} SELECT * FROM entities WHERE type = 'task' AND status = 'open' AND ${NOT_ARCHIVED} AND due_date IS NULL ORDER BY COALESCE(last_touched, updated_at) ASC`)
+    .prepare(`${ARCHIVED_TREE_CTE} SELECT * FROM entities WHERE type = 'task' AND status = 'open' AND ${NOT_ARCHIVED} AND due_date IS NULL${realmSql(realm)} ORDER BY COALESCE(last_touched, updated_at) ASC`)
     .all<Entity>();
   if (!results || results.length === 0) return null;
   const index = ((daysSinceEpoch(date) % results.length) + results.length) % results.length;
@@ -4042,7 +4086,7 @@ app.get('/api/today', async (c) => {
   // overdueAsOf is always <= date (it's the earlier of the two), so a
   // single due_date <= date bound covers both buckets below.
   const { results } = await c.env.DB.prepare(
-    `${ARCHIVED_TREE_CTE} SELECT * FROM entities WHERE type = 'task' AND status = 'open' AND ${NOT_ARCHIVED} AND due_date IS NOT NULL AND due_date <= ? ORDER BY due_date ASC, due_position IS NULL, due_position ASC, position ASC`
+    `${ARCHIVED_TREE_CTE} SELECT * FROM entities WHERE type = 'task' AND status = 'open' AND ${NOT_ARCHIVED} AND due_date IS NOT NULL AND due_date <= ?${realmSql(realmOf(c))} ORDER BY due_date ASC, due_position IS NULL, due_position ASC, position ASC`
   )
     .bind(date)
     .all<Entity>();
@@ -4061,7 +4105,7 @@ app.get('/api/today', async (c) => {
   const today = tagRecurring(withProject.filter((t) => t.due_date === date), recurringIds).sort(
     (a, b) => Number(b.is_recurring) - Number(a.is_recurring)
   );
-  const spotlightRaw = await computeSpotlight(c.env.DB, date);
+  const spotlightRaw = await computeSpotlight(c.env.DB, date, realmOf(c));
   const spotlight = spotlightRaw ? { ...spotlightRaw, project: await resolveProject(spotlightRaw.parent_id) } : null;
 
   // Birthdays & Anniversaries for the viewed day — month/day match only
@@ -4082,12 +4126,12 @@ app.get('/api/today', async (c) => {
   // "this came from the voter roll, not a contact I added myself".
   const [dm, dd] = date.split('-').slice(1).map(Number);
   const { results: birthdayContacts } = await c.env.DB.prepare(
-    `SELECT id, name, birthday_year, source FROM contacts WHERE birthday_month = ? AND birthday_day = ? ORDER BY name ASC`
+    `SELECT id, name, birthday_year, source FROM contacts WHERE birthday_month = ? AND birthday_day = ? ${realmSql(realmOf(c))} ORDER BY name ASC`
   )
     .bind(dm, dd)
     .all<{ id: string; name: string; birthday_year: number | null; source: string }>();
   const { results: anniversaryContacts } = await c.env.DB.prepare(
-    `SELECT id, name, anniversary_year, source FROM contacts WHERE anniversary_month = ? AND anniversary_day = ? ORDER BY name ASC`
+    `SELECT id, name, anniversary_year, source FROM contacts WHERE anniversary_month = ? AND anniversary_day = ? ${realmSql(realmOf(c))} ORDER BY name ASC`
   )
     .bind(dm, dd)
     .all<{ id: string; name: string; anniversary_year: number | null; source: string }>();
@@ -4101,7 +4145,7 @@ app.get('/api/today', async (c) => {
   let completed: { id: string; entity_id: string; title: string; completed_at: string; completed_date: string }[] = [];
   if (date <= realToday) {
     const { results: completions } = await c.env.DB.prepare(
-      `SELECT * FROM task_completions WHERE completed_date = ? ORDER BY completed_at ASC`
+      `SELECT * FROM task_completions WHERE completed_date = ?${completionRealmSql(realmOf(c))} ORDER BY completed_at ASC`
     )
       .bind(date)
       .all<{ id: string; entity_id: string; title: string; completed_at: string; completed_date: string }>();
@@ -4117,7 +4161,7 @@ app.get('/api/today', async (c) => {
     anniversaries: anniversaryContacts ?? [],
     completed,
     // Auto-Pay bills due that day (Bills & Due Dates) — shown, not checkable.
-    autopayBills: await billsOnCalendar(c.env.DB, date, date),
+    autopayBills: realmOf(c) === 'work' ? [] : await billsOnCalendar(c.env.DB, date, date),
   });
 });
 
@@ -4159,7 +4203,7 @@ app.get('/api/week', async (c) => {
   await spawnDueRecurringTasks(c.env.DB, today ? maxIso(end, today) : end);
 
   const { results } = await c.env.DB.prepare(
-    `${ARCHIVED_TREE_CTE} SELECT * FROM entities WHERE type = 'task' AND status = 'open' AND ${NOT_ARCHIVED} AND due_date IS NOT NULL AND due_date <= ? ORDER BY due_date ASC, due_position IS NULL, due_position ASC, position ASC`
+    `${ARCHIVED_TREE_CTE} SELECT * FROM entities WHERE type = 'task' AND status = 'open' AND ${NOT_ARCHIVED} AND due_date IS NOT NULL AND due_date <= ?${realmSql(realmOf(c))} ORDER BY due_date ASC, due_position IS NULL, due_position ASC, position ASC`
   )
     .bind(end)
     .all<Entity>();
@@ -4180,7 +4224,7 @@ app.get('/api/week', async (c) => {
   // list. Capped well above what anyone would actually let pile up, purely
   // as a sanity ceiling rather than a real pagination boundary.
   const { results: unscheduledRaw } = await c.env.DB.prepare(
-    `${ARCHIVED_TREE_CTE} SELECT * FROM entities WHERE type = 'task' AND status = 'open' AND ${NOT_ARCHIVED} AND due_date IS NULL ORDER BY COALESCE(last_touched, updated_at) ASC LIMIT 50`
+    `${ARCHIVED_TREE_CTE} SELECT * FROM entities WHERE type = 'task' AND status = 'open' AND ${NOT_ARCHIVED} AND due_date IS NULL${realmSql(realmOf(c))} ORDER BY COALESCE(last_touched, updated_at) ASC LIMIT 50`
   ).all<Entity>();
   const unscheduled = await Promise.all(
     (unscheduledRaw ?? []).map(async (task) => ({ ...task, project: await resolveProject(task.parent_id) }))
@@ -4198,7 +4242,7 @@ app.get('/api/week', async (c) => {
   let completedByDay = new Map<string, { id: string; entity_id: string; title: string; completed_at: string; completed_date: string }[]>();
   if (today) {
     const { results: completions } = await c.env.DB.prepare(
-      `SELECT * FROM task_completions WHERE completed_date >= ? AND completed_date <= ? AND completed_date < ? ORDER BY completed_at ASC`
+      `SELECT * FROM task_completions WHERE completed_date >= ? AND completed_date <= ? AND completed_date < ?${completionRealmSql(realmOf(c))} ORDER BY completed_at ASC`
     )
       .bind(start, end, today)
       .all<{ id: string; entity_id: string; title: string; completed_at: string; completed_date: string }>();
@@ -4210,7 +4254,7 @@ app.get('/api/week', async (c) => {
     }
   }
 
-  const autopayBills = await billsOnCalendar(c.env.DB, start, end);
+  const autopayBills = realmOf(c) === 'work' ? [] : await billsOnCalendar(c.env.DB, start, end);
   const byDay = days.map((date) => ({
     date,
     isToday: date === todayInRange,
@@ -4243,7 +4287,7 @@ app.get('/api/month', async (c) => {
   await spawnDueRecurringTasks(c.env.DB, end);
 
   const { results } = await c.env.DB.prepare(
-    `${ARCHIVED_TREE_CTE} SELECT * FROM entities WHERE type = 'task' AND status = 'open' AND ${NOT_ARCHIVED} AND due_date IS NOT NULL AND due_date >= ? AND due_date <= ? ORDER BY due_date ASC, due_position IS NULL, due_position ASC, position ASC`
+    `${ARCHIVED_TREE_CTE} SELECT * FROM entities WHERE type = 'task' AND status = 'open' AND ${NOT_ARCHIVED} AND due_date IS NOT NULL AND due_date >= ? AND due_date <= ?${realmSql(realmOf(c))} ORDER BY due_date ASC, due_position IS NULL, due_position ASC, position ASC`
   )
     .bind(start, end)
     .all<Entity>();
@@ -4253,7 +4297,7 @@ app.get('/api/month', async (c) => {
     (results ?? []).map(async (task) => ({ ...task, project: await resolveProject(task.parent_id) }))
   );
 
-  return c.json({ start, end, tasks, autopayBills: await billsOnCalendar(c.env.DB, start, end) });
+  return c.json({ start, end, tasks, autopayBills: realmOf(c) === 'work' ? [] : await billsOnCalendar(c.env.DB, start, end) });
 });
 
 // Bedford Hills, NY 10507 — Mike's fixed home location for the Week/Day
@@ -4364,6 +4408,11 @@ const feedTextCache = new Map<string, { ics: string; fetchedAt: number }>();
 const FEED_TEXT_CACHE_TTL_MS = 120_000;
 
 async function fetchFeedSources(db: D1Database): Promise<{ ics: string; calendar: string; calendarId: string }[]> {
+  const [google, manual] = await Promise.all([fetchGoogleFeedSources(db), seriesFeedSource(db)]);
+  return manual ? [...google, manual] : google;
+}
+
+async function fetchGoogleFeedSources(db: D1Database): Promise<{ ics: string; calendar: string; calendarId: string }[]> {
   const { results } = await db.prepare(`SELECT * FROM calendar_feeds WHERE active = 1`).all<CalendarFeedRow>();
   return (
     await Promise.all(
@@ -4434,12 +4483,15 @@ async function tagHasNote<T extends { id: string }>(db: D1Database, meetings: T[
   return meetings.map((m) => ({ ...m, hasNote: withNotes.has(m.id) }));
 }
 
+// Work prep / briefs / person cards load meetings through the same feeds.
+setMeetingLoader(async (db, start, end) => meetingsForRange(await fetchFeedSources(db), start, end));
+
 app.get('/api/meetings', async (c) => {
   const date = c.req.query('date');
   if (!date) return c.json({ error: 'date query param is required (YYYY-MM-DD)' }, 400);
 
   const sources = await fetchFeedSources(c.env.DB);
-  const meetings = await tagHasNote(c.env.DB, meetingsForDate(sources, date));
+  const meetings = await enrichMeetings(c.env.DB, meetingsForDate(sources, date), realmOf(c));
   return c.json({ date, meetings });
 });
 
@@ -4479,7 +4531,7 @@ app.get('/api/meetings/range', async (c) => {
   if (!start || !end) return c.json({ error: 'start and end query params are required (YYYY-MM-DD)' }, 400);
 
   const sources = await fetchFeedSources(c.env.DB);
-  const meetings = await tagHasNote(c.env.DB, meetingsForRange(sources, start, end));
+  const meetings = await enrichMeetings(c.env.DB, meetingsForRange(sources, start, end), realmOf(c));
   return c.json({ start, end, meetings });
 });
 
@@ -4523,7 +4575,7 @@ app.get('/api/meetings/:meetingId/note', async (c) => {
 // note icon was clicked" instead of "only saved once text was typed".
 app.post('/api/meetings/:meetingId/note', async (c) => {
   const meetingId = c.req.param('meetingId');
-  const body = await c.req.json<{ title: string }>();
+  const body = await c.req.json<{ title: string; realm?: string }>();
 
   const existing = await c.env.DB.prepare('SELECT id, note_entity_id FROM meeting_notes WHERE meeting_id = ?')
     .bind(meetingId)
@@ -4542,6 +4594,7 @@ app.post('/api/meetings/:meetingId/note', async (c) => {
   )
     .bind(noteId, title, ts, ts, ts, null)
     .run();
+  await stampRealm(c.env.DB, c, noteId, body.realm);
 
   if (existing) {
     await c.env.DB.prepare('UPDATE meeting_notes SET note_entity_id = ?, text = ?, updated_at = ? WHERE id = ?')
@@ -4583,6 +4636,7 @@ interface CalendarFeedRow {
   label: string;
   url: string;
   active: number;
+  realm?: string;
   created_at: string;
   updated_at: string;
 }
@@ -4604,7 +4658,7 @@ app.get('/api/calendars', async (c) => {
 
   const calendars = await Promise.all(
     (results ?? []).map(async (feed) => {
-      const base = { id: feed.id, label: feed.label, urlPreview: maskUrl(feed.url), active: feed.active === 1 };
+      const base = { id: feed.id, label: feed.label, urlPreview: maskUrl(feed.url), active: feed.active === 1, realm: feed.realm || 'personal' };
       if (feed.active !== 1) return { ...base, ok: false, error: null as string | null, eventCountToday: 0 };
       try {
         const upstream = await fetch(feed.url, { cf: { cacheTtl: 60, cacheEverything: true } });
@@ -4645,7 +4699,7 @@ app.post('/api/calendars', async (c) => {
 
 app.patch('/api/calendars/:id', async (c) => {
   const id = c.req.param('id');
-  const body = await c.req.json<Partial<{ label: string; url: string; active: boolean }>>();
+  const body = await c.req.json<Partial<{ label: string; url: string; active: boolean; realm: string }>>();
   const existing = await c.env.DB.prepare('SELECT * FROM calendar_feeds WHERE id = ?').bind(id).first<CalendarFeedRow>();
   if (!existing) return c.json({ error: 'not found' }, 404);
 
@@ -4658,6 +4712,7 @@ app.patch('/api/calendars/:id', async (c) => {
   if (body.label !== undefined) { fields.push('label = ?'); values.push(body.label.trim()); }
   if (body.url !== undefined) { fields.push('url = ?'); values.push(body.url.trim()); }
   if (body.active !== undefined) { fields.push('active = ?'); values.push(body.active ? 1 : 0); }
+  if (body.realm === 'work' || body.realm === 'personal') { fields.push('realm = ?'); values.push(body.realm); }
 
   if (fields.length > 0) {
     fields.push('updated_at = ?');
@@ -4667,7 +4722,7 @@ app.patch('/api/calendars/:id', async (c) => {
   }
 
   const updated = await c.env.DB.prepare('SELECT * FROM calendar_feeds WHERE id = ?').bind(id).first<CalendarFeedRow>();
-  return c.json({ id: updated!.id, label: updated!.label, urlPreview: maskUrl(updated!.url), active: updated!.active === 1 });
+  return c.json({ id: updated!.id, label: updated!.label, urlPreview: maskUrl(updated!.url), active: updated!.active === 1, realm: updated!.realm || 'personal' });
 });
 
 app.delete('/api/calendars/:id', async (c) => {
@@ -4902,7 +4957,7 @@ app.get('/api/stats/completions', async (c) => {
 app.get('/api/boards', async (c) => {
   const { results } = await c.env.DB.prepare(
     `SELECT b.*, (SELECT COUNT(*) FROM canvas_items i WHERE i.board_id = b.id) as item_count
-     FROM canvas_boards b ORDER BY b.pinned DESC, b.updated_at DESC`
+     FROM canvas_boards b WHERE 1=1${realmSql(realmOf(c), 'b')} ORDER BY b.pinned DESC, b.updated_at DESC`
   ).all<CanvasBoard & { item_count: number }>();
   return c.json(results ?? []);
 });
@@ -4911,8 +4966,8 @@ app.post('/api/boards', async (c) => {
   const body = await c.req.json<{ title?: string }>();
   const id = uid();
   const ts = now();
-  await c.env.DB.prepare(`INSERT INTO canvas_boards (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)`)
-    .bind(id, body.title?.trim() || 'Untitled Board', ts, ts)
+  await c.env.DB.prepare(`INSERT INTO canvas_boards (id, title, realm, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`)
+    .bind(id, body.title?.trim() || 'Untitled Board', createRealm(c), ts, ts)
     .run();
   const board = await c.env.DB.prepare('SELECT * FROM canvas_boards WHERE id = ?').bind(id).first<CanvasBoard>();
   return c.json(board, 201);
@@ -6505,6 +6560,49 @@ interface SearchGroupResultRow {
   results: SearchResult[];
 }
 
+// Work ↔ Personal for the search palette: entity-backed results (notes,
+// jots, lists, projects, Vault, meeting notes) follow their entity's realm,
+// contacts and boards their own; Wallet / Rewards / Journal / Links /
+// Media are personal-only and drop out under Work.
+const PERSONAL_ONLY_SEARCH = new Set<SearchGroup>(['wallet', 'rewards', 'payment_cards', 'journal', 'links', 'media']);
+async function filterSearchByRealm(db: D1Database, groups: SearchGroupResultRow[], realm: RealmFilter): Promise<SearchGroupResultRow[]> {
+  if (realm === 'all') return groups;
+  const realmById = new Map<string, string>();
+  async function load(table: string, ids: string[]) {
+    for (let i = 0; i < ids.length; i += 50) {
+      const chunk = ids.slice(i, i + 50);
+      const { results } = await db
+        .prepare(`SELECT id, realm FROM ${table} WHERE id IN (${chunk.map(() => '?').join(',')})`)
+        .bind(...chunk)
+        .all<{ id: string; realm: string }>();
+      for (const r of results ?? []) realmById.set(r.id, r.realm || 'personal');
+    }
+  }
+  const entityIds: string[] = [];
+  const contactIds: string[] = [];
+  const boardIds: string[] = [];
+  for (const g of groups) {
+    for (const r of g.results) {
+      if (g.key === 'contacts') contactIds.push(r.id);
+      else if (g.key === 'boards') boardIds.push(r.id);
+      else if (!PERSONAL_ONLY_SEARCH.has(g.key)) entityIds.push(r.id, ...(r.openId ? [r.openId] : []));
+    }
+  }
+  await Promise.all([load('entities', [...new Set(entityIds)]), load('contacts', [...new Set(contactIds)]), load('canvas_boards', [...new Set(boardIds)])]);
+  return groups
+    .map((g) => {
+      if (PERSONAL_ONLY_SEARCH.has(g.key)) return realm === 'work' ? { ...g, results: [] } : g;
+      return {
+        ...g,
+        results: g.results.filter((r) => {
+          const own = realmById.get(r.openId ?? '') ?? realmById.get(r.id);
+          return own === undefined || own === realm;
+        }),
+      };
+    })
+    .filter((g) => g.results.length > 0);
+}
+
 // The actual work behind GET /api/search, pulled out into its own function
 // so the Daily Briefing's "anything related to this meeting" matching (see
 // computeBriefing below) can call the exact same scored LIKE-matching
@@ -6971,7 +7069,7 @@ app.get('/api/search', async (c) => {
   const includeMedia = c.req.query('media') === '1';
 
   const groups = await runSearch(c.env.DB, q, scope, includeArchived, includeMedia);
-  return c.json({ groups });
+  return c.json({ groups: await filterSearchByRealm(c.env.DB, groups, realmOf(c)) });
 });
 
 // ---- Daily Briefing (rule-based "chief of staff" — no LLM, just data

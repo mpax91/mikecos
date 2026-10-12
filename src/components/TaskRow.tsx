@@ -5,6 +5,7 @@ import { KebabMenu } from './KebabMenu';
 import { api, normalizeUrl } from '../api/client';
 import { formatRelativeTime } from '../utils/formatRelativeTime';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { RealmChip } from './RealmSwitch';
 
 function parseFileMeta(entity: Entity): FileMeta | null {
   if (!entity.content) return null;
@@ -184,6 +185,8 @@ export function TaskRow({
         <span className={`task-row__title${showDone ? ' is-done' : ''}${!entity.title ? ' is-placeholder' : ''}`}>
           {entity.title || 'Untitled Task'}
         </span>
+        {entity.blocked_reason != null && <span className="task-row__blocked" title={entity.blocked_reason || 'Blocked'}>Blocked</span>}
+        {!entity.parent_id && <RealmChip realm={entity.realm} />}
         {projectTag && (
           <Link
             to={`/projects/${projectTag.id}`}

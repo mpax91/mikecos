@@ -10,6 +10,9 @@ import { WeatherWidget } from '../components/WeatherWidget';
 import { getHolidays } from '../utils/holidays';
 import { fmtBillMoney } from '../utils/bills';
 import { buildMeetingNoteTitle, meetingHasEnded } from '../utils/meetingNotes';
+import { MEETING_CHANGED_EVENT, openMeetingSheet } from '../components/MeetingSheet';
+import { RealmChip } from '../components/RealmSwitch';
+import type { MeetingPrep } from '../api/types';
 import { useReportTabMeta } from '../contexts/TabsContext';
 import { OPEN_BRIEFING_EVENT } from '../components/BriefingModal';
 
@@ -180,6 +183,29 @@ export function TodayPage() {
     loadMeetings();
   }, [loadMeetings]);
 
+  // Morning-of meeting prep (today only): per meeting, what's open with the
+  // people on it and what happened last time — shown under each meeting row.
+  const [preps, setPreps] = useState<Record<string, MeetingPrep>>({});
+  const loadPreps = useCallback(() => {
+    if (!isToday) return setPreps({});
+    api
+      .getDayPrep(date)
+      .then((res) => setPreps(Object.fromEntries(res.preps.map((p) => [p.meeting.id, p]))))
+      .catch(() => setPreps({}));
+  }, [date, isToday]);
+  useEffect(() => {
+    loadPreps();
+  }, [loadPreps]);
+  useEffect(() => {
+    const on = () => {
+      loadMeetings();
+      loadPreps();
+      load();
+    };
+    window.addEventListener(MEETING_CHANGED_EVENT, on);
+    return () => window.removeEventListener(MEETING_CHANGED_EVENT, on);
+  }, [loadMeetings, loadPreps, load]);
+
   // The note icon on a meeting row — opens the real note already linked to
   // this meeting, or (only for a meeting that hasn't happened yet) creates
   // one, titled from the meeting itself, and opens that. A meeting that's
@@ -206,7 +232,7 @@ export function TodayPage() {
       loadMeetings();
     }
     if (meetingHasEnded(m)) return;
-    const { noteEntityId } = await api.createMeetingNote(m.id, buildMeetingNoteTitle(m));
+    const { noteEntityId } = await api.createMeetingNote(m.id, buildMeetingNoteTitle(m), m.realm);
     navigate(`/notes/${noteEntityId}`);
     loadMeetings();
   }
@@ -462,7 +488,12 @@ export function TodayPage() {
               Dates, the task list itself) is a fixed part of the page's
               shape the same way. */}
           <div className="today-page__section">
-            <div className="today-page__section-title">{isToday ? "Today's Meetings" : 'Meetings'}</div>
+            <div className="today-page__section-title today-page__section-title--row">
+              <span>{isToday ? "Today's Meetings" : 'Meetings'}</span>
+              <Link to={`/settings?cat=meetings&new=${date}`} className="today-page__add-meeting" title="Add a meeting (one-off or recurring)">
+                + Add
+              </Link>
+            </div>
             {meetings.length === 0 ? (
               <div className="today-page__meetings card">
                 <div className="empty-state">No meetings {isToday ? 'today' : 'that day'}.</div>
@@ -483,7 +514,12 @@ export function TodayPage() {
                     }
                   >
                     <span className="today-page__meeting-time">{m.allDay ? 'All day' : formatMeetingTime(m.start)}</span>
-                    <span className="today-page__meeting-title">{m.title}</span>
+                    <button type="button" className="today-page__meeting-open" onClick={() => openMeetingSheet({ ...m, date })} title="Prep, notes and next steps">
+                      <span className="today-page__meeting-title">
+                        {m.title} <RealmChip realm={m.realm} />
+                      </span>
+                      <PrepLine m={m} prep={preps[m.id]} />
+                    </button>
                     <span className="today-page__meeting-actions">
                       <a
                         className="today-page__meeting-icon-btn"
@@ -743,5 +779,29 @@ export function TodayPage() {
         />
       )}
     </div>
+  );
+}
+
+/** One quiet line under a meeting row: who's on it and what's open. */
+function PrepLine({ m, prep }: { m: MeetingItem; prep?: MeetingPrep }) {
+  const people = m.people ?? [];
+  const bits: string[] = [];
+  if (prep) {
+    const iOwe = prep.people.reduce((n, p) => n + p.iOwe.length, 0);
+    const theyOwe = prep.people.reduce((n, p) => n + p.theyOwe.length, 0);
+    const open = prep.openActions.filter((a) => a.meetingId !== m.id).length;
+    if (iOwe) bits.push(`You owe ${iOwe}`);
+    if (theyOwe) bits.push(`Waiting on ${theyOwe}`);
+    if (open) bits.push(`${open} open from last time`);
+    const last = prep.past.find((p) => p.summary?.summary);
+    if (last?.summary) bits.push(`Last time: ${last.summary.summary.slice(0, 90)}${last.summary.summary.length > 90 ? '…' : ''}`);
+  }
+  if ((m.pendingActions ?? 0) > 0) bits.push(`${m.pendingActions} next step${m.pendingActions === 1 ? '' : 's'} to sort`);
+  if (!people.length && !bits.length) return null;
+  return (
+    <span className="today-page__meeting-prep">
+      {people.length > 0 && <span className="today-page__meeting-people">{people.map((p) => p.name).join(', ')}</span>}
+      {bits.length > 0 && <span>{bits.join(' · ')}</span>}
+    </span>
   );
 }

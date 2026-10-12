@@ -1,3 +1,4 @@
+import { RealmChip } from './RealmSwitch';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useNavigate } from 'react-router-dom';
@@ -81,6 +82,7 @@ export function ProjectCard({
       <div style={{ minWidth: 0, flex: 1 }}>
         <p className="project-card__title">
           <span className="project-card__title-text">{project.title}</span>
+          <RealmChip realm={project.realm} />
           {isArchived && project.archived_at ? (
             <span className="last-modified-badge" title={new Date(project.archived_at).toLocaleString()}>
               Archived {formatRelativeTime(project.archived_at)}

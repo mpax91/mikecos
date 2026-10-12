@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { Env } from './types';
+import { realmOf, realmSql } from './work/realm';
 
 /** Waiting For (migration 0095). A follow-up is an ordinary standalone
  * task ("Check Back: <task>", parent NULL, is_top_level 1, due N days out)
@@ -21,9 +22,9 @@ const PREFIX = 'Check Back: ';
 // POST /api/waiting { sourceId, days } — create the check-back task.
 waitingRouter.post('/', async (c) => {
   const body = await c.req.json<{ sourceId: string; days?: number; dueDate?: string }>();
-  const source = await c.env.DB.prepare(`SELECT id, title, waiting_source_id, waiting_since FROM entities WHERE id = ? AND type = 'task'`)
+  const source = await c.env.DB.prepare(`SELECT id, title, waiting_source_id, waiting_since, realm, contact_id FROM entities WHERE id = ? AND type = 'task'`)
     .bind(body.sourceId)
-    .first<{ id: string; title: string; waiting_source_id: string | null; waiting_since: string | null }>();
+    .first<{ id: string; title: string; waiting_source_id: string | null; waiting_since: string | null; realm: string | null; contact_id: string | null }>();
   if (!source) return c.json({ error: 'task not found' }, 404);
   const today = easternToday();
   const days = Math.max(1, Math.min(365, Math.round(Number(body.days ?? 7))));
@@ -42,6 +43,11 @@ waitingRouter.post('/', async (c) => {
   )
     .bind(id, title, (maxPos?.m ?? -1) + 1, due, ts, ts, ts, title, originId, since)
     .run();
+  // A check-back belongs where the hand-off did (Work/Personal) and to the
+  // same person.
+  await c.env.DB.prepare('UPDATE entities SET realm = ?, contact_id = ? WHERE id = ?')
+    .bind(source.realm || 'personal', source.contact_id ?? null, id)
+    .run();
   const entity = await c.env.DB.prepare('SELECT * FROM entities WHERE id = ?').bind(id).first();
   return c.json(entity, 201);
 });
@@ -52,12 +58,14 @@ waitingRouter.get('/', async (c) => {
   const cutoff = addDays(easternToday(), -30);
   const rows = await c.env.DB.prepare(
     `SELECT w.id, w.title, w.status, w.due_date, w.waiting_since, w.updated_at, w.waiting_source_id,
-            s.title AS source_title, s.parent_id AS source_parent_id, p.title AS source_parent_title, p.type AS source_parent_type
+            s.title AS source_title, s.parent_id AS source_parent_id, p.title AS source_parent_title, p.type AS source_parent_type,
+            w.realm AS realm, w.contact_id AS contact_id, ct.name AS contact_name
        FROM entities w
+       LEFT JOIN contacts ct ON ct.id = w.contact_id
        LEFT JOIN entities s ON s.id = w.waiting_source_id
        LEFT JOIN entities p ON p.id = s.parent_id
       WHERE w.type = 'task' AND w.waiting_source_id IS NOT NULL
-        AND (w.status != 'done' OR w.updated_at >= ?)
+        AND (w.status != 'done' OR w.updated_at >= ?)${realmSql(realmOf(c), 'w')}
       ORDER BY CASE WHEN w.status = 'done' THEN 1 ELSE 0 END, w.due_date ASC, w.updated_at DESC`
   )
     .bind(cutoff)
@@ -74,6 +82,9 @@ waitingRouter.get('/', async (c) => {
     sourceParentId: r.source_parent_id,
     sourceParentTitle: r.source_parent_title,
     sourceParentType: r.source_parent_type,
+    realm: r.realm,
+    contactId: r.contact_id,
+    contactName: r.contact_name,
   });
   const all = (rows.results ?? []).map(map);
   return c.json({ open: all.filter((r) => r.status !== 'done'), received: all.filter((r) => r.status === 'done') });

@@ -3,6 +3,7 @@ import { api } from '../../api/client';
 import type { CalendarFeedStatus } from '../../api/types';
 import { Modal } from '../../components/Modal';
 import { ConfirmModal } from '../../components/ConfirmModal';
+import { RealmToggle } from '../../components/RealmSwitch';
 
 function todayLocalISO(): string {
   const d = new Date();
@@ -125,7 +126,7 @@ export function CalendarsPanel() {
       <p className="settings-page__section-hint">
         These feed "Today's Meetings" on the Day view. Each is a Google Calendar "secret address" (iCal) URL — from
         Google Calendar, go to Settings for that calendar → "Integrate calendar" → Secret address in iCal format.
-        Click the dot next to one to pause or resume it.
+        Click the dot next to one to pause or resume it. Personal / Work decides which side of the All · Personal · Work switch its events show on.
       </p>
 
       {calendars.length === 0 ? (
@@ -154,6 +155,14 @@ export function CalendarsPanel() {
                 )}
                 {!cal.active && <div className="settings-page__calendar-meta">{cal.urlPreview}</div>}
               </div>
+              <RealmToggle
+                size="sm"
+                value={cal.realm}
+                onChange={(realm) => {
+                  setCalendars((list) => (list ? list.map((x) => (x.id === cal.id ? { ...x, realm } : x)) : list));
+                  api.updateCalendarFeed(cal.id, { realm }).catch(() => load());
+                }}
+              />
               <StatusBadge cal={cal} />
               <button type="button" className="settings-page__recurring-delete" title="Delete" onClick={() => setDeleting(cal)}>
                 ✕

@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { DndContext, DragOverlay, PointerSensor, useDraggable, useDroppable, useSensor, useSensors } from '@dnd-kit/core';
 import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core';
 import { api } from '../api/client';
+import { openMeetingSheet } from '../components/MeetingSheet';
 import type { CompletionItem, Entity, MeetingsRangeResponse, RangeMeetingItem, TodayTask, WeatherDay, WeekResponse } from '../api/types';
 import { TaskDetailModal } from '../components/TaskDetailModal';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -178,20 +179,19 @@ function DayColumn({
         {meetings.map((m) => {
           const isPast = m.allDay ? day.date < realToday : new Date(m.end).getTime() < now;
           return (
-            <a
+            <button
+              type="button"
               key={m.id}
-              className={`week-page__row week-page__row--meeting${isPast ? ' week-page__row--meeting-past' : ''}`}
-              href={m.gcalUrl ?? undefined}
-              target="_blank"
-              rel="noreferrer"
+              className={`week-page__row week-page__row--meeting${isPast ? ' week-page__row--meeting-past' : ''}${m.realm === 'work' ? ' week-page__row--work' : ''}`}
+              title="Prep, notes and next steps"
               onClick={(e) => {
-                if (!m.gcalUrl) e.preventDefault();
                 e.stopPropagation();
+                openMeetingSheet(m);
               }}
             >
               <span className="week-page__meeting-time">{m.allDay ? 'All day' : formatMeetingTime(m.start)}</span>
               <span className="week-page__row-title">{m.title}</span>
-            </a>
+            </button>
           );
         })}
         {/* Auto-Pay bills (Bills & Due Dates): a marker, no checkbox. */}

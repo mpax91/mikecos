@@ -19359,3 +19359,289 @@ button.fin-dash__stat::after {
 .bee-tops__click:hover .bee-tops__title {
   text-decoration: underline;
 }
+
+/* ==== Work ↔ Personal (2026-10-11) ==================================== */
+
+/* The top-bar switch — on every screen. */
+.realm-switch {
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+  flex-shrink: 0;
+  padding: 2px;
+  gap: 2px;
+  border-radius: 999px;
+  border: var(--border-hairline);
+  background: var(--color-card-bg);
+}
+.realm-switch__opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: none;
+  background: transparent;
+  color: var(--color-muted);
+  font-size: 12.5px;
+  font-weight: var(--weight-medium);
+  padding: 4px 11px;
+  border-radius: 999px;
+  cursor: pointer;
+  line-height: 1.2;
+}
+.realm-switch__opt:hover { color: var(--color-ink); }
+.realm-switch__icon { font-size: 12px; }
+.realm-switch__opt.is-active { color: #fff; }
+.realm-switch__opt--all.is-active { background: var(--color-ink); }
+.realm-switch__opt--personal.is-active { background: var(--color-personal); }
+.realm-switch__opt--work.is-active { background: var(--color-work); }
+
+/* A filtered view gets a colored rule under the top bar so it's obvious. */
+.app-shell--work .tabbar { box-shadow: inset 0 -3px 0 var(--color-work); }
+.app-shell--personal .tabbar { box-shadow: inset 0 -3px 0 var(--color-personal); }
+
+.sidebar__nav-item.is-personal-only { opacity: 0.4; }
+.sidebar__nav-item.is-personal-only:hover { opacity: 0.8; }
+
+.realm-chip {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  font-size: 10.5px;
+  font-weight: var(--weight-medium);
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: 5px;
+  vertical-align: 2px;
+  margin-left: 6px;
+  white-space: nowrap;
+}
+.realm-chip--work { color: var(--color-work); background: var(--color-work-bg); border: 1px solid var(--color-work-border); }
+.realm-chip--personal { color: var(--color-personal); background: var(--color-personal-bg); border: 1px solid var(--color-personal-border); }
+
+.realm-toggle {
+  display: inline-flex;
+  border: var(--border-hairline);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--color-card-bg);
+  flex-shrink: 0;
+}
+.realm-toggle__opt {
+  border: none;
+  background: transparent;
+  color: var(--color-muted);
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.realm-toggle--sm .realm-toggle__opt { padding: 3px 9px; font-size: 12px; }
+.realm-toggle__opt + .realm-toggle__opt { border-left: var(--border-hairline); }
+.realm-toggle__opt--work.is-active { background: var(--color-work-bg); color: var(--color-work); font-weight: var(--weight-medium); }
+.realm-toggle__opt--personal.is-active { background: var(--color-personal-bg); color: var(--color-personal); font-weight: var(--weight-medium); }
+
+.project-header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.project-header > :first-child { flex: 1 1 auto; min-width: 0; }
+.contact-detail__realm { margin: 4px 0 10px; }
+.notes-page__detail-header .realm-toggle { align-self: center; }
+
+.task-row__blocked {
+  flex-shrink: 0;
+  font-size: 10.5px;
+  font-weight: var(--weight-medium);
+  color: var(--color-accent-secondary);
+  border: 1px solid currentColor;
+  border-radius: 5px;
+  padding: 1px 5px;
+}
+
+/* Task panel: Personal/Work · With/For · Blocked */
+.task-panel__work { display: flex; flex-direction: column; gap: 10px; }
+.task-panel__work-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.task-panel__work-row > .task-panel__label { min-width: 104px; margin: 0; }
+.task-panel__work-row .contact-picker { flex: 1 1 220px; }
+.task-panel__check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+.task-panel__blocked-reason { flex: 1 1 200px; }
+
+/* Contact picker */
+.contact-picker { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.contact-picker__chips { display: contents; }
+.contact-picker__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 4px 3px 9px;
+  border-radius: 999px;
+  background: var(--color-sidebar);
+  border: var(--border-hairline);
+  font-size: 12.5px;
+}
+.contact-picker__chip button { border: none; background: transparent; cursor: pointer; color: var(--color-muted); font-size: 14px; line-height: 1; padding: 0 4px; }
+.contact-picker__input { flex: 1 1 160px; min-width: 140px; }
+.contact-picker__list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  background: var(--color-card-bg);
+  border: var(--border-hairline);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(46, 42, 34, 0.14);
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 4px;
+}
+.contact-picker__opt { display: block; width: 100%; text-align: left; border: none; background: transparent; padding: 7px 9px; border-radius: 6px; font-size: 13px; cursor: pointer; color: var(--color-ink); }
+.contact-picker__opt:hover { background: var(--color-sidebar); }
+.contact-picker__opt--new { color: var(--color-work); font-weight: var(--weight-medium); }
+
+/* Today: meeting rows open the meeting sheet; prep line underneath. */
+.today-page__meeting-open {
+  border: none;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  white-space: normal;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.today-page__meeting-open:hover .today-page__meeting-title { color: var(--color-accent); }
+.today-page__meeting-open .today-page__meeting-title { max-width: 100%; }
+.today-page__meeting-prep {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--color-muted);
+  line-height: 1.4;
+}
+.today-page__meeting-people { color: var(--color-ink); opacity: 0.75; }
+
+.week-page__row--meeting { border: none; background: transparent; width: 100%; text-align: left; font: inherit; border-bottom: 1px solid var(--color-border); }
+.week-page__row--work .week-page__meeting-time { color: var(--color-work); }
+
+/* ---- Meeting sheet ---- */
+.mtg { display: flex; flex-direction: column; gap: 14px; }
+.mtg-sub { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.mtg__toolbar { display: flex; flex-wrap: wrap; gap: 6px; }
+.mtg__toolbar .btn { text-decoration: none; }
+.mtg-quiet { color: var(--color-muted); }
+.mtg-error { color: var(--color-accent-secondary); font-size: 13px; }
+.mtg-hint { color: var(--color-muted); font-size: 13px; margin: 0; }
+.mtg-section { border-top: var(--border-hairline); padding-top: 12px; }
+.mtg-section__title { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-muted); font-weight: var(--weight-medium); margin-bottom: 8px; }
+.mtg-section__title a { color: inherit; }
+.mtg-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-muted); margin-bottom: 3px; }
+.mtg-paste__box { width: 100%; font-family: var(--font-sans); font-size: 13px; line-height: 1.45; resize: vertical; margin: 8px 0; }
+.mtg-paste__row { display: flex; gap: 8px; flex-wrap: wrap; }
+.mtg-summary__text { margin: 0 0 8px; font-size: 13.5px; line-height: 1.5; white-space: pre-wrap; }
+.mtg-summary--compact .mtg-summary__text { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.mtg-summary__decisions pre { margin: 0 0 8px; font-family: var(--font-sans); font-size: 13px; white-space: pre-wrap; }
+.mtg-link { font-size: 12.5px; color: var(--color-accent); text-decoration: none; background: none; border: none; padding: 0; cursor: pointer; }
+.mtg-link--quiet { color: var(--color-muted); margin-top: 6px; }
+.mtg-own + .mtg-own { border-top: 1px dashed var(--color-border); padding-top: 10px; margin-top: 10px; }
+.mtg-actions { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.mtg-action { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; padding: 8px 10px; border-radius: 8px; border: var(--border-hairline); background: var(--color-card-bg); }
+.mtg-action--dismissed { opacity: 0.55; }
+.mtg-action--dismissed .mtg-action__text span:last-child { text-decoration: line-through; }
+.mtg-action__text { flex: 1 1 260px; font-size: 13.5px; line-height: 1.4; display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
+.mtg-action__btns { display: flex; gap: 4px; flex-wrap: wrap; }
+.mtg-owner { font-size: 11px; font-weight: var(--weight-medium); padding: 1px 6px; border-radius: 5px; background: var(--color-sidebar); color: var(--color-ink); white-space: nowrap; }
+.mtg-owner--me { background: var(--color-work-bg); color: var(--color-work); }
+.mtg-pill { font-size: 11px; font-weight: var(--weight-medium); padding: 2px 7px; border-radius: 999px; background: var(--color-sidebar); color: var(--color-muted); white-space: nowrap; }
+.mtg-pill--task { background: var(--color-work-bg); color: var(--color-work); }
+.mtg-pill--waiting { background: var(--color-postit-ghost); color: #7a5f12; }
+.mtg-pill--blocked { background: transparent; color: var(--color-accent-secondary); border: 1px solid currentColor; }
+.mtg-people { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.mtg-person { border: var(--border-hairline); border-radius: var(--radius-card); padding: 10px 12px; background: var(--color-card-bg); display: flex; flex-direction: column; gap: 8px; }
+.mtg-person__head { display: flex; flex-direction: column; gap: 1px; }
+.mtg-person__name { font-weight: var(--weight-medium); color: var(--color-ink); text-decoration: none; }
+.mtg-person__name:hover { color: var(--color-accent); }
+.mtg-person__role, .mtg-person__last { font-size: 12px; color: var(--color-muted); }
+.mtg-person__note { margin: 0; font-size: 12.5px; line-height: 1.4; color: var(--color-ink); }
+.mtg-tasks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.mtg-task { font-size: 13px; }
+.mtg-task__btn { display: flex; align-items: baseline; gap: 6px; width: 100%; text-align: left; border: none; background: transparent; padding: 4px 0; cursor: pointer; font: inherit; color: var(--color-ink); }
+.mtg-task__btn:hover .mtg-task__title { color: var(--color-accent); }
+.mtg-task__title { flex: 1 1 auto; min-width: 0; }
+.mtg-task__due { font-size: 11.5px; color: var(--color-muted); white-space: nowrap; }
+.mtg-past + .mtg-past { margin-top: 12px; }
+.mtg-past__date { font-size: 12px; font-weight: var(--weight-medium); color: var(--color-ink); margin-bottom: 4px; }
+.mtg-past__note { display: block; font-size: 12.5px; color: var(--color-ink); text-decoration: none; line-height: 1.45; margin-top: 4px; }
+
+/* Settings → Meetings */
+.mtg-settings__names { margin-top: 18px; padding: 12px 14px; }
+.mtg-settings__names-row { display: flex; gap: 8px; }
+.mtg-settings__names-row input { flex: 1; }
+.mtg-form-modal { width: min(620px, 94vw); }
+.mtg-form { display: flex; flex-direction: column; gap: 12px; }
+.mtg-form label { display: flex; flex-direction: column; gap: 4px; }
+.mtg-form label.mtg-form__check { flex-direction: row; align-items: center; gap: 6px; font-size: 13px; }
+.mtg-form__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.mtg-form__days { display: flex; flex-wrap: wrap; gap: 4px; }
+.mtg-form__day { border: var(--border-hairline); background: var(--color-card-bg); border-radius: 999px; padding: 4px 10px; font-size: 12.5px; cursor: pointer; color: var(--color-muted); }
+.mtg-form__day.is-on { background: var(--color-accent); color: var(--color-accent-text); border-color: var(--color-accent); }
+.mtg-form__skips { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* Contact card: Meetings & Open Items */
+.person-work__body { display: flex; flex-direction: column; gap: 14px; }
+.person-work__series { font-size: 12.5px; color: var(--color-muted); }
+
+/* ---- Briefs ---- */
+.brief__top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.brief__title { font-size: 24px; margin: 0; }
+.brief__week { display: flex; align-items: center; gap: 6px; }
+.brief__week-label { font-weight: var(--weight-medium); min-width: 128px; text-align: center; }
+.brief__bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.brief__copy { display: flex; gap: 6px; flex-wrap: wrap; }
+.brief__copy a { text-decoration: none; }
+.brief__realm-note { font-size: 12.5px; padding: 8px 12px; border-radius: 8px; margin-bottom: 12px; background: var(--color-sidebar); color: var(--color-ink); }
+.brief__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; align-items: start; }
+.brief__card { padding: 14px 16px; }
+.brief__card--warn { border-left: 3px solid var(--color-accent-secondary); }
+.brief__card--good { border-left: 3px solid var(--color-vote-yes); }
+.brief__card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.brief__card-head h3 { margin: 0; font-size: 15px; font-family: var(--font-serif); font-weight: var(--weight-regular); display: flex; align-items: center; gap: 8px; }
+.brief__count { font-family: var(--font-sans); font-size: 11.5px; color: var(--color-muted); background: var(--color-sidebar); border-radius: 999px; padding: 1px 8px; }
+.brief__empty { font-size: 13px; color: var(--color-muted); }
+.brief__sub { font-size: 12.5px; color: var(--color-muted); margin-top: 8px; }
+.brief__day + .brief__day { margin-top: 10px; }
+.brief__day-label { font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-muted); margin-bottom: 2px; }
+.brief__list { list-style: none; margin: 0; padding: 0; }
+.brief__item { font-size: 13.5px; border-bottom: 1px solid var(--color-border); }
+.brief__item:last-child { border-bottom: none; }
+.brief__item--done { padding: 5px 0; }
+.brief__item--done::before { content: '✓ '; color: var(--color-vote-yes); }
+.brief__item-btn { display: flex; align-items: baseline; gap: 8px; width: 100%; text-align: left; border: none; background: transparent; padding: 6px 0; cursor: pointer; font: inherit; color: var(--color-ink); }
+.brief__item-btn:hover .brief__item-title { color: var(--color-accent); }
+.brief__item-title { flex: 1 1 auto; min-width: 0; }
+.brief__item-time { font-size: 12px; color: var(--color-muted); min-width: 62px; }
+.brief__item-project { font-size: 11.5px; color: var(--color-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40%; }
+.brief__review + .brief__review { margin-top: 12px; }
+.brief__review-label { font-size: 12px; font-weight: var(--weight-medium); margin-bottom: 4px; }
+.brief__review textarea { width: 100%; font-family: var(--font-sans); font-size: 13px; line-height: 1.45; resize: vertical; }
+.brief__suggest { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.brief__suggest-chip { text-align: left; border: 1px dashed var(--color-border); background: transparent; border-radius: 6px; padding: 5px 8px; font-size: 12px; color: var(--color-muted); cursor: pointer; }
+.brief__suggest-chip:hover { color: var(--color-ink); border-color: var(--color-muted); }
+.brief__foot { margin-top: 18px; font-size: 12.5px; }
+
+@media (max-width: 640px) {
+  .realm-switch__opt { padding: 8px 12px; font-size: 13px; }
+  .brief__grid { grid-template-columns: 1fr; }
+  .brief__week-label { min-width: 0; }
+  .mtg-people { grid-template-columns: 1fr; }
+  .task-panel__work-row > .task-panel__label { min-width: 0; width: 100%; }
+}
+.mtg-form .realm-toggle { align-self: flex-start; }
+.mtg-form__check input[type='checkbox'],
+.task-panel__check input[type='checkbox'] { width: auto; margin: 0; flex: 0 0 auto; }
+.mtg-form label.mtg-form__check { justify-content: flex-start; }
+.today-page__section-title--row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.today-page__add-meeting { font-size: 12px; text-transform: none; letter-spacing: 0; color: var(--color-muted); text-decoration: none; font-weight: var(--weight-medium); }
+.today-page__add-meeting:hover { color: var(--color-accent); }

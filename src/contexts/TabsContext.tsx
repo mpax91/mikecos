@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ContextMenu, type ContextMenuItem } from '../components/ContextMenu';
 
-export type TabKind = 'today' | 'projects-list' | 'notes-list' | 'jots-list' | 'settings' | 'project' | 'folder' | 'note' | 'stats' | 'boards-list' | 'board' | 'contacts-list' | 'contact' | 'journal' | 'dashboard' | 'news' | 'links' | 'lists-list' | 'list' | 'vault-list' | 'vault' | 'vault-rollups' | 'wallet-list' | 'bets' | 'media-list' | 'bar-list' | 'home-list' | 'habits' | 'inbox' | 'cloud' | 'finance' | 'waiting' | 'bee';
+export type TabKind = 'today' | 'projects-list' | 'notes-list' | 'jots-list' | 'settings' | 'project' | 'folder' | 'note' | 'stats' | 'boards-list' | 'board' | 'contacts-list' | 'contact' | 'journal' | 'dashboard' | 'news' | 'links' | 'lists-list' | 'list' | 'vault-list' | 'vault' | 'vault-rollups' | 'wallet-list' | 'bets' | 'media-list' | 'bar-list' | 'home-list' | 'habits' | 'inbox' | 'cloud' | 'finance' | 'waiting' | 'bee' | 'briefs';
 
 export interface Tab {
   id: string;
@@ -28,6 +28,7 @@ function inferTabMeta(path: string): { kind: TabKind; title: string } {
   if (path === '/stats') return { kind: 'stats', title: 'Stats' };
   if (path === '/boards') return { kind: 'boards-list', title: 'Boards' };
   if (path === '/waiting') return { kind: 'waiting', title: 'Waiting' };
+  if (path === '/briefs') return { kind: 'briefs', title: 'Briefs' };
   if (path === '/bee') return { kind: 'bee', title: 'Bee' };
   if (path === '/contacts') return { kind: 'contacts-list', title: 'Contacts' };
   if (path === '/journal' || path.startsWith('/journal/')) return { kind: 'journal', title: 'Journal' };
@@ -308,6 +309,7 @@ export function tabIcon(kind: TabKind): string {
   if (kind === 'cloud') return '☁️';
   if (kind === 'finance') return '💵';
   if (kind === 'waiting') return '⏳';
+  if (kind === 'briefs') return '🧭';
   if (kind === 'bee') return '🐝';
   if (kind === 'lists-list' || kind === 'list') return '☑️';
   if (kind === 'vault-list' || kind === 'vault') return '🗄️';

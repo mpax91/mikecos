@@ -86,6 +86,12 @@ export function WaitingPage() {
                 <div className="waiting-item__main">
                   <div className="waiting-item__title">{label(w)}</div>
                   <div className="waiting-item__meta">
+                    {w.contactName && (
+                      <>
+                        <Link to={`/contacts/${w.contactId}`}>{w.contactName}</Link>
+                        {' · '}
+                      </>
+                    )}
                     {w.since && `Since ${fmt(w.since)}${waited !== null ? ` (${waited === 0 ? 'today' : `${waited} day${waited === 1 ? '' : 's'}`})` : ''}`}
                     {w.sourceParentId && w.sourceParentTitle && w.sourceParentType === 'project' && (
                       <>

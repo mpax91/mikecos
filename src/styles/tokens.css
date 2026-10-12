@@ -19,6 +19,14 @@
 
   --color-card-bg: #FFFFFF;
 
+  /* Work ↔ Personal (2026-10-11) */
+  --color-work: #34558B;
+  --color-work-bg: #E9EEF6;
+  --color-work-border: #B9C7DE;
+  --color-personal: #2F4A3C;
+  --color-personal-bg: #E8EFE9;
+  --color-personal-border: #BACBBE;
+
   /* Voter Insight — party + voted chips (2026-10-10) */
   --color-party-dem: #2F5E9E;
   --color-party-dem-bg: #EAF0F8;

@@ -1,9 +1,10 @@
 import type { AuthenticationResponseJSON, PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON, RegistrationResponseJSON } from '@simplewebauthn/browser';
 import type { CashPlacement, RewardsOverview, FinanceAttention, WaitingList, AuthCredentialSummary, AuthStatus, Bet, BetLeg, BetGameNote, BetOption, BetOptionCategory, BetPromo, BetPromoStatus, BetScheduleGame, BetTransaction, BetTransactionType, VaultEntryDetail, VaultFact, BriefingResponse, CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, CreditScoreEntry, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitDirection, HabitEvent, HabitLog, HabitSummary, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsFeedsResponse, NewsFolder, NewsSavedArticle, NewsSettings, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, VoterFieldsBackfillChunkResponse,
   ContactAskResponse, BetGameEnrichment, VaultFactLabel, VaultRollupGroup, WalletCard, WalletCardFact, WalletCategory, WalletCardIdSecret, RewardsCard, RewardsBonus, RewardsPerk, RewardsImportResult, RewardsMerchant, RewardsOffer, PaymentCard, PaymentCardFact, PaymentCardSecrets, BankAccountSuggestion, PlexLibrary, PlexItem, PlexItemDetail, PlexIssue, PlexMissingEpisode, PlexSyncChunkResult, PlexAiringCheckChunkResult, PlexAiringScanChunkResult, MediaCatalogItem, MediaCatalogFormat, BarItem, BarItemDetail, BarItemType, BarTasting, BarTopTastingEntry, HomeFloor, HomeFloorLayout, HomeRoom, HomePoint, HomeRoomSpecPayload, HomeFixture, HomeFixtureType, HomeWallItem, HomeWallItemType, ElectricalPanel, ElectricalBreaker, ElectricalBreakerWithFixtures, WeatherResponse, WeekResponse, EmailAccount, EmailInboxFeed, EmailPeekResult, EmailSyncResult, BookmarksResponse, BookmarksImportResult, CloudProviderId, CloudProviderInfo, CloudAccount, CloudBrowseResponse, CloudSearchResponse, StatementFolder, StatementDriveAccount, StatementScanResult, FinanceAccount, Ny529Dashboard, FinanceDashboard, StatementFolderStatus, AccountOwner, AccountPayer, AccountPayerMode, CardPaidAccount, Bill, BeeSubstack, BeeSettings, BeeFolderCandidate, BeeSearch,
-  BeeSearchDetail, BeeAnalytics, BeeVisitors, BeeAnalyticsDetail, BeeBing, BeeClarity, BeeSocial, BeeStory, BeeReview, CommsSettings, CommsRunResult, QuietContact } from './types';
+  BeeSearchDetail, BeeAnalytics, BeeVisitors, BeeAnalyticsDetail, BeeBing, BeeClarity, BeeSocial, BeeStory, BeeReview, CommsSettings, CommsRunResult, QuietContact, MeetingSeries, MeetingSeriesInput, MeetingSummary, MeetingAction, MeetingActionStatus, MeetingPrep, PersonWork, WeekBrief, WeekReview } from './types';
 
 import { emitTaskCompleted } from '../utils/taskEvents';
+import { getRealm } from '../utils/realm';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -20,6 +21,9 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     credentials: 'include', // send/receive the mikeos_session cookie cross-origin (Pages <-> Workers)
     headers: {
       'content-type': 'application/json',
+      // Work ↔ Personal switch (top bar) — list routes filter on it and
+      // new top-level items are created in it.
+      'x-realm': getRealm(),
       ...(options?.headers ?? {}),
     },
   });
@@ -71,7 +75,8 @@ function resolveEmailAccount(account: EmailAccount): EmailAccount {
 
 export const api = {
   // Active projects only by default; `archived` = only the archived ones.
-  listProjects: (archived = false) => request<ProjectListItem[]>(`/api/projects${archived ? '?archived=1' : ''}`),
+  listProjects: (archived = false, allRealms = false) =>
+    request<ProjectListItem[]>(`/api/projects?${archived ? 'archived=1&' : ''}${allRealms ? 'realm=all' : ''}`),
 
   createProject: (title: string, description: string) =>
     request<Entity>('/api/projects', {
@@ -140,7 +145,7 @@ export const api = {
   updateEntity: async (
     id: string,
     patch: Partial<
-      Pick<Entity, 'title' | 'content' | 'status' | 'parent_id' | 'position' | 'pinned' | 'due_date' | 'due_time' | 'last_touched' | 'expires_at'>
+      Pick<Entity, 'title' | 'content' | 'status' | 'parent_id' | 'position' | 'pinned' | 'due_date' | 'due_time' | 'last_touched' | 'expires_at' | 'realm' | 'contact_id' | 'blocked_reason'>
     >,
     opts?: { quiet?: boolean }
   ) => {
@@ -262,8 +267,9 @@ export const api = {
 
   // ---- Contacts (personal CRM) ----
 
-  listContacts: (opts?: { q?: string; circle?: ContactCircle; label?: string; remindersOnly?: boolean; includeVoters?: boolean }) => {
+  listContacts: (opts?: { q?: string; circle?: ContactCircle; label?: string; remindersOnly?: boolean; includeVoters?: boolean; allRealms?: boolean }) => {
     const params = new URLSearchParams();
+    if (opts?.allRealms) params.set('realm', 'all');
     if (opts?.q) params.set('q', opts.q);
     if (opts?.circle) params.set('circle', opts.circle);
     if (opts?.label) params.set('label', opts.label);
@@ -273,7 +279,7 @@ export const api = {
     return request<Contact[]>(`/api/contacts${qs ? `?${qs}` : ''}`);
   },
 
-  createContact: (params: { name: string; circle?: ContactCircle }) =>
+  createContact: (params: { name: string; circle?: ContactCircle; realm?: 'personal' | 'work'; title?: string; company?: string }) =>
     request<Contact>('/api/contacts', { method: 'POST', body: JSON.stringify(params) }),
 
   /** Mike's own contact labels (from Google) with counts, most-used first. */
@@ -504,11 +510,39 @@ export const api = {
    * for this meeting, titled `title` — see the worker's POST handler.
    * Nothing is created until this is actually called, i.e. until the note
    * icon is clicked. */
-  createMeetingNote: (meetingId: string, title: string) =>
+  createMeetingNote: (meetingId: string, title: string, realm?: 'personal' | 'work') =>
     request<{ noteEntityId: string }>(`/api/meetings/${encodeURIComponent(meetingId)}/note`, {
       method: 'POST',
-      body: JSON.stringify({ title }),
+      body: JSON.stringify({ title, realm }),
     }),
+
+  // ---- Work: meetings Mike enters by hand, Gemini notes, prep, briefs ----
+  getWorkSettings: () => request<{ myNames: string }>('/api/work/settings'),
+  updateWorkSettings: (patch: { myNames?: string }) => request<{ myNames: string }>('/api/work/settings', { method: 'PUT', body: JSON.stringify(patch) }),
+  listMeetingSeries: () => request<{ series: MeetingSeries[] }>('/api/work/series?realm=all'),
+  createMeetingSeries: (input: MeetingSeriesInput) => request<MeetingSeries>('/api/work/series', { method: 'POST', body: JSON.stringify(input) }),
+  updateMeetingSeries: (id: string, patch: MeetingSeriesInput) =>
+    request<MeetingSeries>(`/api/work/series/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  deleteMeetingSeries: (id: string) => request<{ ok: true }>(`/api/work/series/${id}`, { method: 'DELETE' }),
+  skipMeetingOccurrence: (id: string, date: string, skip = true) =>
+    request<{ ok: true; skipDates: string[] }>(`/api/work/series/${id}/skip`, { method: 'POST', body: JSON.stringify({ date, skip }) }),
+  getMeetingSummaries: (meetingId: string) =>
+    request<{ summaries: MeetingSummary[]; actions: MeetingAction[] }>(`/api/work/meetings/${encodeURIComponent(meetingId)}/summaries`),
+  addMeetingSummary: (meetingId: string, body: { text: string; title: string; start: string; realm?: string; peopleIds?: string[]; source?: string }) =>
+    request<{ summary: MeetingSummary; actions: MeetingAction[] }>(`/api/work/meetings/${encodeURIComponent(meetingId)}/summaries`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  deleteMeetingSummary: (id: string) => request<{ ok: true }>(`/api/work/summaries/${id}`, { method: 'DELETE' }),
+  decideMeetingAction: (id: string, body: { decision: MeetingActionStatus; text?: string; contactId?: string | null; dueDate?: string | null }) =>
+    request<MeetingAction>(`/api/work/actions/${id}`, { method: 'POST', body: JSON.stringify(body) }),
+  getMeetingPrep: (date: string, meetingId: string) =>
+    request<MeetingPrep>(`/api/work/prep?date=${date}&id=${encodeURIComponent(meetingId)}&realm=all`),
+  getDayPrep: (date: string) => request<{ date: string; preps: MeetingPrep[] }>(`/api/work/prep?date=${date}`),
+  getPersonWork: (contactId: string) => request<PersonWork>(`/api/work/person/${contactId}`),
+  getWeekBrief: (week: string) => request<WeekBrief>(`/api/work/brief?week=${week}`),
+  saveWeekReview: (week: string, patch: Partial<WeekReview>) =>
+    request<{ ok: true }>(`/api/work/review?week=${week}`, { method: 'PUT', body: JSON.stringify(patch) }),
 
   /** Completed-task rollups (today/week/month/year + a 14-day trend),
    * anchored on the viewer's own local `date` — see the worker's
@@ -610,7 +644,7 @@ export const api = {
       body: JSON.stringify(params),
     }),
 
-  updateCalendarFeed: (id: string, patch: Partial<{ label: string; url: string; active: boolean }>) =>
+  updateCalendarFeed: (id: string, patch: Partial<{ label: string; url: string; active: boolean; realm: 'personal' | 'work' }>) =>
     request<CalendarFeedStatus>(`/api/calendars/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(patch),

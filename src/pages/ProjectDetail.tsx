@@ -12,6 +12,7 @@ import { TaskDetailModal } from '../components/TaskDetailModal';
 import { NewFolderTile, NewNoteTile, NewFileTile } from '../components/NewItemTiles';
 import { Section } from '../components/Section';
 import { EditableText } from '../components/EditableText';
+import { RealmToggle } from '../components/RealmSwitch';
 import { RenameModal } from '../components/RenameModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { LinkModal } from '../components/LinkModal';
@@ -423,6 +424,15 @@ export function ProjectDetail() {
             onSave={(v) => id && api.updateEntity(id, { title: v })}
             className="project-header__title-input"
             displayClassName="project-header__title"
+          />
+          <RealmToggle
+            size="sm"
+            value={entity.realm}
+            onChange={async (realm) => {
+              if (!id) return;
+              setDetail((d) => (d ? { ...d, entity: { ...d.entity, realm } } : d));
+              await api.updateEntity(id, { realm });
+            }}
           />
         </div>
       ) : (

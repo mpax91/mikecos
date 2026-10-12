@@ -6,6 +6,7 @@ import './styles/global.css'
 import App from './App.tsx'
 import { TabsProvider } from './contexts/TabsContext'
 import { AuthProvider } from './contexts/AuthContext'
+import { RealmProvider } from './contexts/RealmContext'
 
 // `immediate: true` checks for a new service worker as soon as the app
 // loads (not just on the next visit); combined with registerType:
@@ -19,7 +20,9 @@ createRoot(document.getElementById('root')!).render(
     <BrowserRouter>
       <AuthProvider>
         <TabsProvider>
-          <App />
+          <RealmProvider>
+            <App />
+          </RealmProvider>
         </TabsProvider>
       </AuthProvider>
     </BrowserRouter>

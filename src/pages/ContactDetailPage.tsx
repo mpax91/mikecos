@@ -5,6 +5,8 @@ import type { Contact, ContactCircle, ContactConnection, ContactDetail, ContactN
 import { partyTone, VoterDiffBox, VoterInsightSection } from '../components/VoterInsight';
 import { BeeContactSection } from '../components/BeeContactSection';
 import { ContactCommsSection } from '../components/ContactCommsSection';
+import { PersonWorkSection } from '../components/PersonWorkSection';
+import { RealmToggle } from '../components/RealmSwitch';
 import { autoLabelClass, contactLabels, displayLabels, isAutoLabel } from '../utils/contactLabels';
 import { Modal } from '../components/Modal';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -598,6 +600,18 @@ export function ContactDetailPage() {
       </div>
 
       {contact.headline && <div className="contact-detail__headline">{contact.headline}</div>}
+      {contact.source !== 'voter_file' && (
+        <div className="contact-detail__realm">
+          <RealmToggle
+            size="sm"
+            value={contact.realm}
+            onChange={async (realm) => {
+              setContact((c) => (c ? { ...c, realm } : c));
+              await api.updateContact(contact.id, { realm });
+            }}
+          />
+        </div>
+      )}
 
       {(cardLabels.length > 0 || contact.circle !== 'other') && (
         <div className="contact-detail__meta contact-labels">
@@ -708,6 +722,7 @@ export function ContactDetailPage() {
 
       <VoterInsightSection records={contact.voterRecords} household={contact.householdMembers} />
 
+      <PersonWorkSection contactId={contact.id} firstName={contact.name.split(' ')[0]} fullName={contact.name} />
       <ContactCommsSection comms={contact.comms} />
 
       <BeeContactSection bee={contact.bee} />

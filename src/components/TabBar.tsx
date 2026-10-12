@@ -1,5 +1,6 @@
 import { useTabs, tabIcon, type Tab } from '../contexts/TabsContext';
 import type { ContextMenuItem } from './ContextMenu';
+import { RealmSwitch } from './RealmSwitch';
 
 interface TabBarProps {
   onMenuClick?: () => void;
@@ -59,6 +60,7 @@ export function TabBar({ onMenuClick }: TabBarProps) {
       <button className="tabbar__new" title="New tab" onClick={() => openTab('/today')}>
         +
       </button>
+      <RealmSwitch />
     </div>
   );
 }

@@ -32,6 +32,12 @@ export interface TaskMeta {
 
 export interface Entity {
   id: string;
+  /** Work ↔ Personal (migration 0106) — children share their parent's. */
+  realm?: 'personal' | 'work';
+  /** The person a task is with / for (Contacts). */
+  contact_id?: string | null;
+  /** Non-null = blocked ('' = no reason given). */
+  blocked_reason?: string | null;
   type: EntityType;
   title: string;
   content: string | null;
@@ -303,6 +309,16 @@ export interface MeetingItem {
   /** Links pulled out of the invite description (Meet link, a pasted Doc
    * URL, etc.) — see worker/src/ics.ts's ParsedMeeting.links comment. */
   links: string[];
+  /** Work features (worker/src/work/router.ts enrichMeetings). */
+  realm?: 'personal' | 'work';
+  seriesKey?: string;
+  /** Set for meetings Mike entered in Settings → Meetings. */
+  seriesId?: string | null;
+  recurring?: boolean;
+  people?: PersonRef[];
+  summaryCount?: number;
+  pendingActions?: number;
+  projectId?: string | null;
 }
 
 export interface MeetingsResponse {
@@ -363,6 +379,7 @@ export interface CompletionsResponse {
  * a cached value, so a broken feed shows exactly why. */
 export interface CalendarFeedStatus {
   id: string;
+  realm?: 'personal' | 'work';
   label: string;
   urlPreview: string;
   active: boolean;
@@ -873,6 +890,7 @@ export type ContactCircle = 'family' | 'friends' | 'neighbors' | 'community' | '
 
 export interface Contact {
   id: string;
+  realm?: 'personal' | 'work';
   name: string;
   company: string | null;
   title: string | null;
@@ -1330,6 +1348,7 @@ export interface DuplicateCandidatesResponse {
  * spawned instance (null if none has spawned, or the last one is done). */
 export interface RecurringTaskDefinition {
   id: string;
+  realm?: 'personal' | 'work';
   title: string;
   project_id: string | null;
   project_title: string | null;
@@ -3113,6 +3132,9 @@ export interface CardPaidAccount {
 // ---- Waiting For (worker/src/waitingRouter.ts, migration 0095) ----
 export interface WaitingItem {
   id: string; // the check-back task
+  realm?: 'personal' | 'work';
+  contactId?: string | null;
+  contactName?: string | null;
   title: string;
   status: string | null;
   dueDate: string | null;
@@ -3785,4 +3807,148 @@ export interface QuietContact {
   lastTouch: string | null;
   activeMonths: number;
   perMonth: number;
+}
+
+// ---- Work: meetings, prep, briefs (worker/src/work/router.ts) ----
+
+export interface PersonRef {
+  id: string;
+  name: string;
+}
+
+export interface MeetingSeries {
+  id: string;
+  title: string;
+  realm: 'personal' | 'work';
+  startDate: string;
+  startTime: string | null;
+  durationMin: number;
+  rrule: string | null;
+  untilDate: string | null;
+  skipDates: string[];
+  location: string | null;
+  link: string | null;
+  projectId: string | null;
+  projectTitle: string | null;
+  description: string | null;
+  active: boolean;
+  people: { id: string; name: string; title: string | null; company: string | null }[];
+}
+
+export type MeetingSeriesInput = Partial<Omit<MeetingSeries, 'id' | 'people' | 'projectTitle'>> & { peopleIds?: string[] };
+
+export interface MeetingSummary {
+  id: string;
+  meetingId: string;
+  seriesKey: string;
+  start: string;
+  title: string;
+  realm: 'personal' | 'work';
+  noteEntityId: string | null;
+  summary: string;
+  details: string;
+  decisions: string;
+  source: string;
+  createdAt: string;
+}
+
+export type MeetingActionStatus = 'pending' | 'task' | 'waiting' | 'dismissed';
+
+export interface MeetingAction {
+  id: string;
+  summaryId: string;
+  meetingId: string;
+  text: string;
+  ownerName: string | null;
+  contactId: string | null;
+  contactName: string | null;
+  isMine: boolean;
+  status: MeetingActionStatus;
+  entityId: string | null;
+  entityDone: boolean;
+  dueDate: string | null;
+}
+
+export interface WorkTask {
+  id: string;
+  title: string;
+  due_date: string | null;
+  parent_id: string | null;
+  blocked_reason: string | null;
+  waiting_since: string | null;
+  waiting_source_id?: string | null;
+  contact_id?: string | null;
+  realm: string;
+  project?: { id: string; title: string } | null;
+  contactName?: string | null;
+  pushCount?: number;
+  totalPushes?: number;
+  firstDue?: string | null;
+}
+
+export interface PrepPerson {
+  id: string;
+  name: string;
+  title: string | null;
+  company: string | null;
+  headline: string | null;
+  iOwe: WorkTask[];
+  theyOwe: WorkTask[];
+  pendingFromMeetings: number;
+  recentNotes: { contact_id: string; text: string; created_at: string }[];
+  lastMet: string | null;
+}
+
+export interface MeetingPrep {
+  meeting: MeetingItem & { date?: string };
+  agendaNoteId: string | null;
+  past: {
+    meetingId: string;
+    start: string;
+    title: string;
+    summary: MeetingSummary | null;
+    myNote: { id: string; title: string; snippet: string } | null;
+  }[];
+  openActions: MeetingAction[];
+  people: PrepPerson[];
+  project: { id: string; title: string; openTasks: WorkTask[] } | null;
+}
+
+export interface PersonWork {
+  iOwe: WorkTask[];
+  theyOwe: WorkTask[];
+  series: MeetingSeries[];
+  pendingActions: MeetingAction[];
+  recentMeetings: MeetingSummary[];
+  upcoming: { id: string; title: string; start: string; end: string; allDay: boolean; realm: string }[];
+}
+
+export interface WeekReview {
+  priorities: string;
+  highlights: string;
+  start: string;
+  stop: string;
+  continue: string;
+  updatedAt: string | null;
+}
+
+export interface WeekBrief {
+  week: string;
+  weekEnd: string;
+  today: string;
+  realm: 'all' | 'personal' | 'work';
+  review: WeekReview;
+  overdue: WorkTask[];
+  dueThisWeek: WorkTask[];
+  dueNextWeek: WorkTask[];
+  blocked: WorkTask[];
+  waiting: WorkTask[];
+  done: WorkTask[];
+  received: WorkTask[];
+  pushed: WorkTask[];
+  slipped: WorkTask[];
+  meetings: { id: string; title: string; start: string; end: string; allDay: boolean; date: string; realm: string; people: PersonRef[]; summaryCount: number; hasNote: boolean }[];
+  meetingHours: number;
+  pendingActions: number;
+  suggestions: { kind: 'start' | 'stop' | 'continue'; text: string }[];
 }

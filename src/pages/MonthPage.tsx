@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
+import { openMeetingSheet } from '../components/MeetingSheet';
 import type { MeetingsRangeResponse, MonthResponse, RangeMeetingItem } from '../api/types';
 import { getHolidays } from '../utils/holidays';
 import { fmtBillMoney } from '../utils/bills';
@@ -323,7 +324,7 @@ export function MonthPage() {
       loadMeetings(); // stale hasNote — the worker dropped the dangling link
     }
     if (meetingHasEnded(m)) return;
-    const { noteEntityId } = await api.createMeetingNote(m.id, buildMeetingNoteTitle(m));
+    const { noteEntityId } = await api.createMeetingNote(m.id, buildMeetingNoteTitle(m), m.realm);
     navigate(`/notes/${noteEntityId}`);
   }
 
@@ -371,7 +372,7 @@ export function MonthPage() {
           sortTime: m.allDay ? -1 : new Date(m.start).getHours() * 60 + new Date(m.start).getMinutes(),
           label: m.title,
           meeting: m,
-          onClick: () => openDay(m.date),
+          onClick: () => openMeetingSheet(m),
         });
       }
     }

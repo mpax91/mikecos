@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
 import type { Entity } from '../api/types';
 import { NoteEditor } from '../components/NoteEditor';
+import { RealmToggle } from '../components/RealmSwitch';
 import { KebabMenu } from '../components/KebabMenu';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { MoveToProjectModal } from '../components/MoveToProjectModal';
@@ -237,6 +238,14 @@ export function NotesPage() {
                 placeholder="Untitled Note"
                 onChange={(e) => handleTitleChange(e.target.value)}
                 onFocus={(e) => e.target.select()}
+              />
+              <RealmToggle
+                size="sm"
+                value={selected.realm}
+                onChange={(realm) => {
+                  setNotes((prev) => (prev ? prev.map((n) => (n.id === selected.id ? { ...n, realm } : n)) : prev));
+                  api.updateEntity(selected.id, { realm });
+                }}
               />
               <button
                 type="button"

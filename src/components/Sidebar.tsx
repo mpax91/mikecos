@@ -3,6 +3,10 @@ import { NavLink } from 'react-router-dom';
 import { useTabs, tabIcon, type TabKind } from '../contexts/TabsContext';
 import { OPEN_SEARCH_EVENT } from './SearchPalette';
 import { api } from '../api/client';
+import { useRealm } from '../contexts/RealmContext';
+
+// Personal-only areas — dimmed (still clickable) while the switch is on Work.
+const PERSONAL_ONLY = new Set<TabKind>(['news', 'bets', 'habits', 'finance', 'wallet-list', 'cloud', 'links', 'home-list', 'media-list', 'bar-list', 'bee', 'journal']);
 
 // Polled independently of whatever's currently open (the sidebar is
 // mounted the whole time regardless of which page is showing) so the
@@ -64,6 +68,7 @@ const SIDEBAR_SECTIONS: NavSectionDef[] = [
       { path: '/projects', label: 'Projects', kind: 'projects-list' },
       { path: '/boards', label: 'Boards', kind: 'boards-list' },
       { path: '/waiting', label: 'Waiting', kind: 'waiting' },
+      { path: '/briefs', label: 'Briefs', kind: 'briefs' },
     ],
   },
   {
@@ -98,6 +103,7 @@ const SIDEBAR_SECTIONS: NavSectionDef[] = [
 
 export function Sidebar({ open = false, onClose }: SidebarProps) {
   const { openTab, showContextMenu } = useTabs();
+  const { realm } = useRealm();
   // Strictly unread mail across every connected mailbox — the whole point
   // of this badge is noticing something landed in an inbox Mike doesn't
   // check regularly, not tracking "stuff to deal with" (that's what Inbox
@@ -179,7 +185,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
         to={path}
         onClick={(e) => handleClick(e, path)}
         onContextMenu={(e) => handleContextMenu(e, path, label)}
-        className={({ isActive }) => `sidebar__nav-item title-case${isActive ? ' is-active' : ''}`}
+        className={({ isActive }) => `sidebar__nav-item title-case${isActive ? ' is-active' : ''}${realm === 'work' && PERSONAL_ONLY.has(kind) ? ' is-personal-only' : ''}`}
       >
         <span className="sidebar__nav-icon">{tabIcon(kind)}</span>
         {label}

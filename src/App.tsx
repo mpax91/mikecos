@@ -40,10 +40,14 @@ import { SearchPalette } from './components/SearchPalette';
 import { BriefingModal } from './components/BriefingModal';
 import { LockScreen } from './components/LockScreen';
 import { useAuth } from './contexts/AuthContext';
+import { useRealm } from './contexts/RealmContext';
+import { BriefsPage } from './pages/BriefsPage';
+import { MeetingSheetHost } from './components/MeetingSheet';
 
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { phase } = useAuth();
+  const { realm } = useRealm();
 
   // Nothing behind the lock screen ever mounts — no sidebar, no routes, no
   // data fetches — until there's a valid session (or, on very first run,
@@ -54,14 +58,17 @@ export default function App() {
   if (phase === 'setup' || phase === 'locked') return <LockScreen phase={phase} />;
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell app-shell--${realm}`}>
       <SearchPalette />
       <BriefingModal />
       <FollowUpToast />
+      <MeetingSheetHost />
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="main">
         <TabBar onMenuClick={() => setSidebarOpen(true)} />
-        <div className="main__content">
+        {/* Keyed on the All / Personal / Work switch: flipping it remounts the
+            page so every list refetches in the new realm. */}
+        <div className={`main__content main__content--${realm}`} key={realm}>
           <Routes>
             <Route path="/" element={<Navigate to="/today" replace />} />
             <Route path="/today" element={<TodayPage />} />
@@ -72,6 +79,7 @@ export default function App() {
             <Route path="/today/month/:month" element={<MonthPage />} />
             <Route path="/projects" element={<ProjectsList />} />
             <Route path="/waiting" element={<WaitingPage />} />
+            <Route path="/briefs" element={<BriefsPage />} />
             <Route path="/bee" element={<BeePage />} />
             <Route path="/projects/:id" element={<ProjectDetail />} />
             <Route path="/notes" element={<NotesPage />} />

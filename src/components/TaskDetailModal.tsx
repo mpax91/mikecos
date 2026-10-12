@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, normalizeUrl } from '../api/client';
-import type { Entity, FileMeta, LinkMeta, TaskMeta } from '../api/types';
+import type { Entity, FileMeta, LinkMeta, PersonRef, TaskMeta } from '../api/types';
+import { ContactPicker } from './ContactPicker';
+import { RealmToggle } from './RealmSwitch';
 import { RenameModal } from './RenameModal';
 import { LinkModal } from './LinkModal';
 
@@ -62,6 +64,8 @@ export function TaskDetailModal({
   const [dueDate, setDueDate] = useState('');
   const [dueTime, setDueTime] = useState('');
   const [newSubtask, setNewSubtask] = useState('');
+  const [person, setPerson] = useState<PersonRef[]>([]);
+  const [blockedReason, setBlockedReason] = useState('');
   const [addingLink, setAddingLink] = useState(false);
   const [linkUrl, setLinkUrl] = useState('');
   const [editingAttachment, setEditingAttachment] = useState<Entity | null>(null);
@@ -78,6 +82,14 @@ export function TaskDetailModal({
       setDescription(meta.description ?? '');
       setDueDate(d.entity.due_date ?? '');
       setDueTime(d.entity.due_time ?? '');
+      setBlockedReason(d.entity.blocked_reason ?? '');
+      if (d.entity.contact_id) {
+        const cid = d.entity.contact_id;
+        api
+          .getContact(cid)
+          .then((ct) => setPerson([{ id: cid, name: ct.name }]))
+          .catch(() => setPerson([]));
+      } else setPerson([]);
       const parent = d.breadcrumb[d.breadcrumb.length - 1];
       setParentTitle(parent && parent.type === 'task' ? parent.title || 'Untitled Task' : null);
     });
@@ -272,6 +284,69 @@ export function TaskDetailModal({
             )}
           </div>
         </div>
+
+        {entity && (
+          <div className="task-panel__field task-panel__work">
+            <div className="task-panel__work-row">
+              <label className="task-panel__label">{entity.parent_id ? 'Area' : 'Personal / Work'}</label>
+              {entity.parent_id ? (
+                <span className={`realm-chip realm-chip--${entity.realm ?? 'personal'}`} title="Follows its project">
+                  {entity.realm === 'work' ? 'Work' : 'Personal'} · from its project
+                </span>
+              ) : (
+                <RealmToggle
+                  size="sm"
+                  value={entity.realm}
+                  onChange={(realm) => {
+                    setEntity((prev) => (prev ? { ...prev, realm } : prev));
+                    api.updateEntity(taskId, { realm });
+                  }}
+                />
+              )}
+            </div>
+            <div className="task-panel__work-row">
+              <label className="task-panel__label">With / For</label>
+              <ContactPicker
+                multiple={false}
+                value={person}
+                newRealm={entity.realm === 'work' ? 'work' : 'personal'}
+                placeholder="A person (shows in their meeting prep)"
+                onChange={(people) => {
+                  setPerson(people);
+                  api.updateEntity(taskId, { contact_id: people[0]?.id ?? null });
+                }}
+              />
+            </div>
+            <div className="task-panel__work-row">
+              <label className="task-panel__check">
+                <input
+                  type="checkbox"
+                  checked={entity.blocked_reason != null}
+                  onChange={(e) => {
+                    const next = e.target.checked ? blockedReason : null;
+                    setEntity((prev) => (prev ? { ...prev, blocked_reason: next } : prev));
+                    api.updateEntity(taskId, { blocked_reason: next });
+                  }}
+                />{' '}
+                Blocked
+              </label>
+              {entity.blocked_reason != null && (
+                <input
+                  className="task-panel__blocked-reason"
+                  value={blockedReason}
+                  placeholder="Why / on what?"
+                  onChange={(e) => setBlockedReason(e.target.value)}
+                  onBlur={() => {
+                    if (blockedReason !== (entity.blocked_reason ?? '')) {
+                      setEntity((prev) => (prev ? { ...prev, blocked_reason: blockedReason } : prev));
+                      api.updateEntity(taskId, { blocked_reason: blockedReason });
+                    }
+                  }}
+                />
+              )}
+            </div>
+          </div>
+        )}
 
         <div className="task-panel__field">
           <label className="task-panel__label">Description</label>
