@@ -3,6 +3,7 @@ import { api } from '../api/client';
 import type { HomeNetworkConnection, HomeNetworkDevice, HomeNetworkPoint } from '../api/types';
 import { ConfirmModal } from './ConfirmModal';
 import { CONNECTION_LABEL, CONNECTION_ORDER, HomeNetworkDeviceModal, type RoomOption } from './HomeNetworkDeviceModal';
+import { HomeWifiCard } from './HomeWifiCard';
 import { Modal } from './Modal';
 
 type GroupBy = 'point' | 'room' | 'type' | 'connection' | 'none';
@@ -135,6 +136,9 @@ export function HomeInternetPage({ rooms }: { rooms: RoomOption[] }) {
 
   return (
     <div className="home-net">
+      <HomeWifiCard />
+
+      <h3 className="home-net__section-title home-net__devices-title">Devices</h3>
       <div className="home-net__toolbar">
         <input className="home-net__search" type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name, type, MAC, IP…" aria-label="Search devices" />
         <label className="home-net__group">

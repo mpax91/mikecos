@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { decryptField, encryptField } from './cryptoField';
 import type { ElectricalBreakerRow, ElectricalPanelRow, Env, HomeNetworkConnection, HomeNetworkDeviceRow, HomeNetworkPointRow, HomeFixtureRow, HomeFixtureType, HomeRoomRow, HomeFloorRow, HomeWallItemRow, HomeWallItemType } from './types';
 
 const now = () => new Date().toISOString();
@@ -1066,5 +1067,148 @@ homeRouter.patch('/network/devices/:id', async (c) => {
 
 homeRouter.delete('/network/devices/:id', async (c) => {
   await db(c).prepare('DELETE FROM home_network_devices WHERE id = ?').bind(c.req.param('id')).run();
+  return c.json({ ok: true });
+});
+
+// ---- Wi-Fi networks (migration 0112) ----
+// Password encrypted with CLOUD_ACCOUNT_ENC_KEY; the list never carries it —
+// GET /network/wifi/:id/password reveals it (Show / Copy / the join QR code).
+
+const WIFI_ENC = 'CLOUD_ACCOUNT_ENC_KEY';
+const WIFI_SECURITY = ['WPA', 'WEP', 'nopass'] as const;
+type WifiSecurity = (typeof WIFI_SECURITY)[number];
+
+interface WifiRow {
+  id: string;
+  ssid: string;
+  password_enc: string | null;
+  security: WifiSecurity;
+  hidden: number;
+  label: string | null;
+  plan: string | null;
+  download_mbps: number | null;
+  upload_mbps: number | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+function wifiJson(r: WifiRow) {
+  return {
+    id: r.id,
+    ssid: r.ssid,
+    hasPassword: !!r.password_enc,
+    security: r.security,
+    hidden: !!r.hidden,
+    label: r.label,
+    plan: r.plan,
+    downloadMbps: r.download_mbps,
+    uploadMbps: r.upload_mbps,
+    notes: r.notes,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
+}
+
+interface WifiBody {
+  ssid?: string;
+  /** undefined = leave as is; null or '' = clear. */
+  password?: string | null;
+  security?: string;
+  hidden?: boolean;
+  label?: string | null;
+  plan?: string | null;
+  downloadMbps?: number | null;
+  uploadMbps?: number | null;
+  notes?: string | null;
+}
+
+const mbps = (v: unknown) => (v === null || v === undefined || v === '' ? null : Number.isFinite(Number(v)) && Number(v) >= 0 ? Number(v) : NaN);
+
+async function wifiColumns(c: { env: Env }, body: WifiBody): Promise<{ error: string } | Record<string, unknown>> {
+  const cols: Record<string, unknown> = {};
+  if (body.ssid !== undefined) {
+    if (!body.ssid?.trim()) return { error: 'network name is required' };
+    cols.ssid = body.ssid.trim();
+  }
+  if (body.security !== undefined) {
+    if (!WIFI_SECURITY.includes(body.security as WifiSecurity)) return { error: `security must be one of ${WIFI_SECURITY.join(', ')}` };
+    cols.security = body.security;
+  }
+  if (body.password !== undefined) {
+    // Wi-Fi passwords can legitimately start/end with spaces — store as typed.
+    cols.password_enc = body.password ? await encryptField(c.env, body.password, WIFI_ENC) : null;
+  }
+  if (body.hidden !== undefined) cols.hidden = body.hidden ? 1 : 0;
+  if (body.label !== undefined) cols.label = text(body.label);
+  if (body.plan !== undefined) cols.plan = text(body.plan);
+  for (const [k, col] of [['downloadMbps', 'download_mbps'], ['uploadMbps', 'upload_mbps']] as const) {
+    if (body[k] !== undefined) {
+      const v = mbps(body[k]);
+      if (Number.isNaN(v)) return { error: `${k} must be a number` };
+      cols[col] = v;
+    }
+  }
+  if (body.notes !== undefined) cols.notes = text(body.notes);
+  return cols;
+}
+
+homeRouter.get('/network/wifi', async (c) => {
+  const { results } = await db(c).prepare('SELECT * FROM home_wifi_networks ORDER BY created_at ASC').all<WifiRow>();
+  return c.json((results ?? []).map(wifiJson));
+});
+
+homeRouter.post('/network/wifi', async (c) => {
+  const body = await c.req.json<WifiBody>();
+  if (!body.ssid?.trim()) return c.json({ error: 'network name is required' }, 400);
+  let cols;
+  try {
+    cols = await wifiColumns(c, body);
+  } catch (e) {
+    return c.json({ error: String((e as Error).message ?? e) }, 500);
+  }
+  if ('error' in cols) return c.json(cols, 400);
+  const id = uid();
+  const ts = now();
+  const all: Record<string, unknown> = { id, ...cols, created_at: ts, updated_at: ts };
+  const keys = Object.keys(all);
+  await db(c)
+    .prepare(`INSERT INTO home_wifi_networks (${keys.join(', ')}) VALUES (${keys.map(() => '?').join(', ')})`)
+    .bind(...keys.map((k) => all[k]))
+    .run();
+  const row = await db(c).prepare('SELECT * FROM home_wifi_networks WHERE id = ?').bind(id).first<WifiRow>();
+  return c.json(wifiJson(row!), 201);
+});
+
+homeRouter.patch('/network/wifi/:id', async (c) => {
+  const id = c.req.param('id');
+  if (!(await db(c).prepare('SELECT id FROM home_wifi_networks WHERE id = ?').bind(id).first())) return c.json({ error: 'not found' }, 404);
+  let cols;
+  try {
+    cols = await wifiColumns(c, await c.req.json<WifiBody>());
+  } catch (e) {
+    return c.json({ error: String((e as Error).message ?? e) }, 500);
+  }
+  if ('error' in cols) return c.json(cols, 400);
+  const keys = Object.keys(cols);
+  if (keys.length) {
+    await db(c)
+      .prepare(`UPDATE home_wifi_networks SET ${keys.map((k) => `${k} = ?`).join(', ')}, updated_at = ? WHERE id = ?`)
+      .bind(...keys.map((k) => cols[k]), now(), id)
+      .run();
+  }
+  const row = await db(c).prepare('SELECT * FROM home_wifi_networks WHERE id = ?').bind(id).first<WifiRow>();
+  return c.json(wifiJson(row!));
+});
+
+// Reveal: the decrypted password (null when none saved).
+homeRouter.get('/network/wifi/:id/password', async (c) => {
+  const row = await db(c).prepare('SELECT password_enc FROM home_wifi_networks WHERE id = ?').bind(c.req.param('id')).first<{ password_enc: string | null }>();
+  if (!row) return c.json({ error: 'not found' }, 404);
+  return c.json({ password: row.password_enc ? await decryptField(c.env, row.password_enc, WIFI_ENC) : null });
+});
+
+homeRouter.delete('/network/wifi/:id', async (c) => {
+  await db(c).prepare('DELETE FROM home_wifi_networks WHERE id = ?').bind(c.req.param('id')).run();
   return c.json({ ok: true });
 });

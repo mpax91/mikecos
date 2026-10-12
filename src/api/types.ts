@@ -2410,6 +2410,38 @@ export type HomeNetworkDeviceInput = Partial<{
   notes: string | null;
 }>;
 
+// Home → Internet → Wi-Fi (migration 0112). The password never rides the
+// list — getWifiPassword() reveals it.
+export type HomeWifiSecurity = 'WPA' | 'WEP' | 'nopass';
+
+export interface HomeWifiNetwork {
+  id: string;
+  ssid: string;
+  hasPassword: boolean;
+  security: HomeWifiSecurity;
+  hidden: boolean;
+  label: string | null;
+  plan: string | null;
+  downloadMbps: number | null;
+  uploadMbps: number | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type HomeWifiInput = Partial<{
+  ssid: string;
+  /** omit = unchanged; null/'' = clear */
+  password: string | null;
+  security: HomeWifiSecurity;
+  hidden: boolean;
+  label: string | null;
+  plan: string | null;
+  downloadMbps: number | null;
+  uploadMbps: number | null;
+  notes: string | null;
+}>;
+
 export interface ElectricalBreakerWithFixtures extends ElectricalBreaker {
   fixtures: { id: string; label: string; type: HomeFixtureType; roomName: string; floorName: string }[];
 }
