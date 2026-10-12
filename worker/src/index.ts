@@ -707,7 +707,7 @@ const SHELF_TYPES: ShelfItemType[] = ['text', 'image', 'link', 'file'];
 // auto-clear sweep: Mike wants items to sit here until he explicitly
 // deletes them, not vanish on a timer he doesn't control.
 app.get('/api/shelf', async (c) => {
-  const { results } = await c.env.DB.prepare('SELECT * FROM shelf_items ORDER BY pinned DESC, created_at DESC').all<ShelfItem>();
+  const { results } = await c.env.DB.prepare(`SELECT * FROM shelf_items WHERE 1=1${realmSql(realmOf(c))} ORDER BY pinned DESC, created_at DESC`).all<ShelfItem>();
   return c.json(results ?? []);
 });
 
@@ -720,22 +720,27 @@ app.post('/api/shelf', async (c) => {
   if (!SHELF_TYPES.includes(body.type)) return c.json({ error: 'invalid type' }, 400);
   const id = uid();
   const ts = now();
-  await c.env.DB.prepare('INSERT INTO shelf_items (id, type, content, pinned, created_at) VALUES (?, ?, ?, 0, ?)')
-    .bind(id, body.type, JSON.stringify(body.content ?? {}), ts)
+  await c.env.DB.prepare('INSERT INTO shelf_items (id, type, content, pinned, created_at, realm) VALUES (?, ?, ?, 0, ?, ?)')
+    .bind(id, body.type, JSON.stringify(body.content ?? {}), ts, createRealm(c))
     .run();
   const item = await c.env.DB.prepare('SELECT * FROM shelf_items WHERE id = ?').bind(id).first<ShelfItem>();
   return c.json(item, 201);
 });
 
-// PATCH /api/shelf/:id — currently only { pinned: boolean }, i.e. "Pin to
-// top" / "Unpin", matching the same pattern on Jots, Boards, and Projects.
+// PATCH /api/shelf/:id — { pinned?: boolean } ("Pin to top" / "Unpin",
+// same as Jots, Boards, Projects) and/or { realm?: 'personal' | 'work' }
+// (⋯ → Move to Personal / Work).
 app.patch('/api/shelf/:id', async (c) => {
   const id = c.req.param('id');
-  const body = await c.req.json<{ pinned?: boolean }>();
+  const body = await c.req.json<{ pinned?: boolean; realm?: string }>();
+  if (body.realm !== undefined && body.realm !== 'personal' && body.realm !== 'work') return c.json({ error: 'invalid realm' }, 400);
   const existing = await c.env.DB.prepare('SELECT id FROM shelf_items WHERE id = ?').bind(id).first();
   if (!existing) return c.json({ error: 'not found' }, 404);
   if (body.pinned !== undefined) {
     await c.env.DB.prepare('UPDATE shelf_items SET pinned = ? WHERE id = ?').bind(body.pinned ? 1 : 0, id).run();
+  }
+  if (body.realm !== undefined) {
+    await c.env.DB.prepare('UPDATE shelf_items SET realm = ? WHERE id = ?').bind(body.realm, id).run();
   }
   const item = await c.env.DB.prepare('SELECT * FROM shelf_items WHERE id = ?').bind(id).first<ShelfItem>();
   return c.json(item);
@@ -784,10 +789,10 @@ app.post('/api/shelf/:id/graduate', async (c) => {
   const contentJson = JSON.stringify(doc);
   const searchText = extractPlainText(contentJson);
   await c.env.DB.prepare(
-    `INSERT INTO entities (id, type, title, content, parent_id, is_top_level, status, position, last_touched, created_at, updated_at, search_text, is_jot)
-     VALUES (?, 'note', '', ?, NULL, 1, NULL, 0, ?, ?, ?, ?, 1)`
+    `INSERT INTO entities (id, type, title, content, parent_id, is_top_level, status, position, last_touched, created_at, updated_at, search_text, is_jot, realm)
+     VALUES (?, 'note', '', ?, NULL, 1, NULL, 0, ?, ?, ?, ?, 1, ?)`
   )
-    .bind(jotId, contentJson, ts, ts, ts, searchText)
+    .bind(jotId, contentJson, ts, ts, ts, searchText, item.realm === 'work' ? 'work' : 'personal')
     .run();
   await c.env.DB.prepare('DELETE FROM shelf_items WHERE id = ?').bind(id).run();
 

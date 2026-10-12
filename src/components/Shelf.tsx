@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
 import type { FileMeta, ShelfItem, ShelfLinkContent, ShelfTextContent } from '../api/types';
 import { KebabMenu } from './KebabMenu';
+import { RealmChip } from './RealmSwitch';
+import { useRealm } from '../contexts/RealmContext';
 import { Modal } from './Modal';
 import { Toast } from './Toast';
 import { formatRelativeTime } from '../utils/formatRelativeTime';
@@ -90,6 +92,7 @@ function ShelfTile({
   onView,
   onTogglePin,
   onGraduate,
+  onSetRealm,
   onDelete,
 }: {
   item: ShelfItem;
@@ -97,8 +100,10 @@ function ShelfTile({
   onView: (item: ShelfItem) => void;
   onTogglePin: (item: ShelfItem) => void;
   onGraduate: (item: ShelfItem) => void;
+  onSetRealm: (item: ShelfItem, realm: 'personal' | 'work') => void;
   onDelete: (item: ShelfItem) => void;
 }) {
+  const isWork = item.realm === 'work';
   const isPinned = item.pinned === 1;
   const isDownloadable = item.type === 'image' || item.type === 'file';
   const menu = [
@@ -125,6 +130,7 @@ function ShelfTile({
       : []),
     { label: isPinned ? 'Unpin' : 'Pin to top', onClick: () => onTogglePin(item), separatorBefore: isDownloadable },
     { label: 'Save as Jot', onClick: () => onGraduate(item) },
+    isWork ? { label: '🏡 Move to Personal', onClick: () => onSetRealm(item, 'personal') } : { label: '💼 Move to Work', onClick: () => onSetRealm(item, 'work') },
     { label: 'Delete', onClick: () => onDelete(item), danger: true, separatorBefore: true },
   ];
 
@@ -171,6 +177,7 @@ function ShelfTile({
       </div>
       <div className="shelf-tile__foot">
         <span className="shelf-tile__time">{formatRelativeTime(item.created_at)}</span>
+        <RealmChip realm={item.realm} />
         <KebabMenu items={menu} />
       </div>
     </div>
@@ -239,6 +246,7 @@ export function Shelf({ composerOpen, onGraduated }: { composerOpen: boolean; on
   const [items, setItems] = useState<ShelfItem[] | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [viewing, setViewing] = useState<ShelfItem | null>(null);
+  const { realm: filter } = useRealm();
 
   const load = useCallback(() => {
     api.listShelf().then(setItems).catch(() => {});
@@ -343,6 +351,14 @@ export function Shelf({ composerOpen, onGraduated }: { composerOpen: boolean; on
     onGraduated?.();
   }
 
+  async function handleSetRealm(item: ShelfItem, realm: 'personal' | 'work') {
+    // Under a filtered switch the item now belongs to the other side, so it
+    // leaves this view; under All it stays and just changes its chip.
+    setItems((prev) => (prev ? (filter !== 'all' && filter !== realm ? prev.filter((it) => it.id !== item.id) : prev.map((it) => (it.id === item.id ? { ...it, realm } : it))) : prev));
+    await api.setShelfItemRealm(item.id, realm);
+    setToast(realm === 'work' ? 'Moved to Work' : 'Moved to Personal');
+  }
+
   async function handleDelete(item: ShelfItem) {
     setItems((prev) => (prev ? prev.filter((it) => it.id !== item.id) : prev));
     await api.deleteShelfItem(item.id);
@@ -369,6 +385,7 @@ export function Shelf({ composerOpen, onGraduated }: { composerOpen: boolean; on
             onView={setViewing}
             onTogglePin={handleTogglePin}
             onGraduate={handleGraduate}
+            onSetRealm={handleSetRealm}
             onDelete={handleDelete}
           />
         ))}

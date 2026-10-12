@@ -258,6 +258,12 @@ export const api = {
       body: JSON.stringify({ pinned }),
     }),
 
+  setShelfItemRealm: (id: string, realm: 'personal' | 'work') =>
+    request<ShelfItem>(`/api/shelf/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ realm }),
+    }),
+
   deleteShelfItem: (id: string) => request<{ ok: true }>(`/api/shelf/${id}`, { method: 'DELETE' }),
 
   /** Turns a shelf item into an ordinary Jot and removes it from the shelf

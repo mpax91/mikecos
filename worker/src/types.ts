@@ -109,6 +109,7 @@ export interface ShelfItem {
   type: ShelfItemType;
   content: string;
   pinned: number; // 0 | 1 — pin-to-top, same as Entity.pinned
+  realm?: 'personal' | 'work';
   created_at: string;
 }
 

@@ -926,6 +926,7 @@ export interface ShelfItem {
   type: ShelfItemType;
   content: string;
   pinned: number; // 0 | 1 — pin-to-top, same as other Shelf item ordering
+  realm?: 'personal' | 'work';
   created_at: string;
 }
 
