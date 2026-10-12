@@ -5,8 +5,9 @@ import { OPEN_SEARCH_EVENT } from './SearchPalette';
 import { api } from '../api/client';
 import { useRealm } from '../contexts/RealmContext';
 
-// Personal-only areas — dimmed (still clickable) while the switch is on Work.
-const PERSONAL_ONLY = new Set<TabKind>(['news', 'bets', 'habits', 'finance', 'wallet-list', 'cloud', 'links', 'home-list', 'media-list', 'bar-list', 'bee', 'journal']);
+// Work mode shows only these (Mike, 2026-10-11) — everything else is hidden
+// so work time stays focused. Each of these pages filters to Work.
+const WORK_ITEMS = new Set<TabKind>(['today', 'jots-list', 'notes-list', 'lists-list', 'projects-list', 'boards-list', 'waiting', 'vault-list', 'contacts-list', 'links', 'dashboard', 'stats', 'journal']);
 
 // Polled independently of whatever's currently open (the sidebar is
 // mounted the whole time regardless of which page is showing) so the
@@ -68,7 +69,6 @@ const SIDEBAR_SECTIONS: NavSectionDef[] = [
       { path: '/projects', label: 'Projects', kind: 'projects-list' },
       { path: '/boards', label: 'Boards', kind: 'boards-list' },
       { path: '/waiting', label: 'Waiting', kind: 'waiting' },
-      { path: '/briefs', label: 'Briefs', kind: 'briefs' },
     ],
   },
   {
@@ -185,7 +185,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
         to={path}
         onClick={(e) => handleClick(e, path)}
         onContextMenu={(e) => handleContextMenu(e, path, label)}
-        className={({ isActive }) => `sidebar__nav-item title-case${isActive ? ' is-active' : ''}${realm === 'work' && PERSONAL_ONLY.has(kind) ? ' is-personal-only' : ''}`}
+        className={({ isActive }) => `sidebar__nav-item title-case${isActive ? ' is-active' : ''}`}
       >
         <span className="sidebar__nav-icon">{tabIcon(kind)}</span>
         {label}
@@ -221,12 +221,14 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
         </button>
 
         <div className="sidebar__sections">
-          {SIDEBAR_SECTIONS.map((section, i) => (
-            <div className={`sidebar__section${i > 0 ? ' sidebar__section--divider' : ''}`} key={section.label}>
-              <div className="sidebar__section-label">{section.label}</div>
-              <nav className="sidebar__nav">{section.items.map(renderItem)}</nav>
-            </div>
-          ))}
+          {SIDEBAR_SECTIONS.map((section) => ({ ...section, items: realm === 'work' ? section.items.filter((it) => WORK_ITEMS.has(it.kind)) : section.items }))
+            .filter((section) => section.items.length > 0)
+            .map((section, i) => (
+              <div className={`sidebar__section${i > 0 ? ' sidebar__section--divider' : ''}`} key={section.label}>
+                <div className="sidebar__section-label">{section.label}</div>
+                <nav className="sidebar__nav">{section.items.map(renderItem)}</nav>
+              </div>
+            ))}
         </div>
 
         <div className="sidebar__spacer" />

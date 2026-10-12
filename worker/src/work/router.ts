@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import type { Env } from '../types';
 import type { ParsedMeeting } from '../ics';
 import { isMe, parseMeetingSummary } from './gemini';
-import { realmMatches, realmOf, realmSql, type Realm, type RealmFilter } from './realm';
+import { realmMatches, realmOf, realmSql, workLabel, type Realm, type RealmFilter } from './realm';
 
 /** Work features (migration 0106) — mounted at /api/work.
  *
@@ -264,16 +264,15 @@ async function myNames(db: D1Database): Promise<string[]> {
     .filter(Boolean);
 }
 
-workRouter.get('/settings', async (c) => c.json({ myNames: (await myNames(c.env.DB)).join(', ') }));
+workRouter.get('/settings', async (c) => c.json({ myNames: (await myNames(c.env.DB)).join(', '), workLabel: await workLabel(c.env.DB) }));
 
 workRouter.put('/settings', async (c) => {
-  const body = await c.req.json<{ myNames?: string }>();
-  if (typeof body.myNames === 'string') {
-    await c.env.DB.prepare(`INSERT INTO work_settings (key, value) VALUES ('my_names', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
-      .bind(body.myNames.trim())
-      .run();
-  }
-  return c.json({ myNames: (await myNames(c.env.DB)).join(', ') });
+  const body = await c.req.json<{ myNames?: string; workLabel?: string }>();
+  const put = (key: string, value: string) =>
+    c.env.DB.prepare(`INSERT INTO work_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).bind(key, value).run();
+  if (typeof body.myNames === 'string') await put('my_names', body.myNames.trim());
+  if (typeof body.workLabel === 'string' && body.workLabel.trim()) await put('work_label', body.workLabel.trim());
+  return c.json({ myNames: (await myNames(c.env.DB)).join(', '), workLabel: await workLabel(c.env.DB) });
 });
 
 // ---------------------------------------------------------------------------

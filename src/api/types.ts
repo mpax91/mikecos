@@ -28,6 +28,8 @@ export interface LinkMeta {
  * task's JSON. */
 export interface TaskMeta {
   description?: string;
+  /** The Monday / Friday Work tasks open their brief. */
+  action?: 'week-plan' | 'week-review';
 }
 
 export interface Entity {
@@ -1371,6 +1373,8 @@ export interface JournalEntry {
   content: string | null; // Tiptap JSON
   search_text: string | null;
   mood: number | null; // 1 (rough) – 5 (great); null = not logged
+  /** The Work part of the day (migration 0107). */
+  work_content?: string | null;
   created_at: string;
   updated_at: string;
 }

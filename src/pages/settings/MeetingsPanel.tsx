@@ -168,6 +168,7 @@ export function MeetingsPanel() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<MeetingSeries | null>(null);
   const [myNames, setMyNames] = useState('');
+  const [workLabel, setWorkLabel] = useState('');
   const [namesSaved, setNamesSaved] = useState(false);
 
   function load() {
@@ -179,7 +180,7 @@ export function MeetingsPanel() {
   useEffect(() => {
     load();
     api.listProjects(false, true).then(setProjects).catch(() => setProjects([]));
-    api.getWorkSettings().then((s) => setMyNames(s.myNames)).catch(() => undefined);
+    api.getWorkSettings().then((s) => (setMyNames(s.myNames), setWorkLabel(s.workLabel))).catch(() => undefined);
   }, []);
 
   // Deep link from Today's "+ Add" (a one-off on that day).
@@ -237,8 +238,9 @@ export function MeetingsPanel() {
   }
 
   async function saveNames() {
-    const r = await api.updateWorkSettings({ myNames });
+    const r = await api.updateWorkSettings({ myNames, workLabel });
     setMyNames(r.myNames);
+    setWorkLabel(r.workLabel);
     setNamesSaved(true);
     window.setTimeout(() => setNamesSaved(false), 1500);
   }
@@ -309,6 +311,13 @@ export function MeetingsPanel() {
         <p className="settings-page__section-hint">How you appear in Gemini's notes, comma-separated — next steps assigned to any of these become your tasks.</p>
         <div className="mtg-settings__names-row">
           <input value={myNames} onChange={(e) => setMyNames(e.target.value)} placeholder="Mike Palladino, Mike" />
+        </div>
+        <div className="settings-page__field-label" style={{ marginTop: 12 }}>
+          Work Contacts Label
+        </div>
+        <p className="settings-page__section-hint">Contacts with this Google Contacts label count as Work. Contacts you add in Work mode get it automatically.</p>
+        <div className="mtg-settings__names-row">
+          <input value={workLabel} onChange={(e) => setWorkLabel(e.target.value)} placeholder="Birches" />
           <button type="button" className="btn btn--ghost" onClick={saveNames}>
             {namesSaved ? 'Saved' : 'Save'}
           </button>

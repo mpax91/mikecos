@@ -517,8 +517,11 @@ export const api = {
     }),
 
   // ---- Work: meetings Mike enters by hand, Gemini notes, prep, briefs ----
-  getWorkSettings: () => request<{ myNames: string }>('/api/work/settings'),
-  updateWorkSettings: (patch: { myNames?: string }) => request<{ myNames: string }>('/api/work/settings', { method: 'PUT', body: JSON.stringify(patch) }),
+  getWorkSettings: () => request<{ myNames: string; workLabel: string }>('/api/work/settings'),
+  updateWorkSettings: (patch: { myNames?: string; workLabel?: string }) =>
+    request<{ myNames: string; workLabel: string }>('/api/work/settings', { method: 'PUT', body: JSON.stringify(patch) }),
+  updateJournalWorkEntry: (date: string, work_content: string) =>
+    request<JournalEntry>(`/api/journal/${date}`, { method: 'PATCH', body: JSON.stringify({ work_content }) }),
   listMeetingSeries: () => request<{ series: MeetingSeries[] }>('/api/work/series?realm=all'),
   createMeetingSeries: (input: MeetingSeriesInput) => request<MeetingSeries>('/api/work/series', { method: 'POST', body: JSON.stringify(input) }),
   updateMeetingSeries: (id: string, patch: MeetingSeriesInput) =>

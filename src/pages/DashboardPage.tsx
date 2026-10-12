@@ -1,3 +1,5 @@
+import { useRealm } from '../contexts/RealmContext';
+import { WorkDashboard } from '../components/WorkDashboard';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
@@ -497,6 +499,20 @@ function FitnessDashboard() {
 export function DashboardPage() {
   useReportTabMeta('Dashboard', 'dashboard');
   const [area, setArea] = useState<LifeArea>('fitness');
+  const { realm } = useRealm();
+
+  if (realm === 'work') {
+    return (
+      <div>
+        <div className="toolbar-row">
+          <h1 className="heading-serif" style={{ fontSize: 24, margin: 0 }}>
+            Dashboard
+          </h1>
+        </div>
+        <WorkDashboard />
+      </div>
+    );
+  }
 
   return (
     <div>

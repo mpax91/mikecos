@@ -70,7 +70,7 @@ import { claritySyncDue, syncClarity } from './bee/clarity';
 import { metaSyncDue, syncMeta } from './bee/meta';
 import { contactsAssistantRouter } from './contactsAssistant';
 import { betsEnrichmentRouter } from './betsEnrichment';
-import { cascadeRealm, inheritRealmFromParent, realmOf, realmSql, stampRealm, createRealm, type RealmFilter } from './work/realm';
+import { cascadeRealm, contactRealmSql, inheritRealmFromParent, realmOf, realmSql, stampRealm, createRealm, workLabel, type RealmFilter } from './work/realm';
 import { workRouter, enrichMeetings, seriesFeedSource, setMeetingLoader } from './work/router';
 import { buildVoterInsight, ELECTION_CODE_RE, titleCaseVoterText, voterDiffs, voterKeyOf, type VoterDiff } from './voterInsight';
 
@@ -435,6 +435,13 @@ async function spawnDueRecurringTasks(db: D1Database, todayIso: string): Promise
         .bind(id, def.title, (maxPos?.m ?? -1) + 1, dueDate, ts, ts, ts)
         .run();
       if ((def as { realm?: string }).realm === 'work') await db.prepare(`UPDATE entities SET realm = 'work' WHERE id = ?`).bind(id).run();
+      // The Monday / Friday brief tasks open their brief (TaskMeta.action).
+      if (def.id === 'work-week-plan' || def.id === 'work-week-review') {
+        await db
+          .prepare('UPDATE entities SET content = ? WHERE id = ?')
+          .bind(JSON.stringify({ action: def.id === 'work-week-plan' ? 'week-plan' : 'week-review' }), id)
+          .run();
+      }
     }
 
     await db
@@ -880,7 +887,7 @@ app.get('/api/contacts', async (c) => {
   if (!includeVoters) {
     sql += " AND source != 'voter_file'";
   }
-  sql += realmSql(realmOf(c), 'contacts');
+  sql += await contactRealmSql(c.env.DB, realmOf(c), 'contacts');
   if (circle && CIRCLES.includes(circle as ContactCircle)) {
     sql += ' AND circle = ?';
     binds.push(circle);
@@ -969,7 +976,15 @@ app.post('/api/contacts', async (c) => {
       JSON.stringify(cleanLabels(Array.isArray(body.labels) ? (body.labels as unknown[]).filter((l): l is string => typeof l === 'string') : []))
     )
     .run();
-  if (createRealm(c, (body as { realm?: string }).realm) === 'work') await c.env.DB.prepare(`UPDATE contacts SET realm = 'work' WHERE id = ?`).bind(id).run();
+  if (createRealm(c, (body as { realm?: string }).realm) === 'work') {
+    // Work contacts also get the work label (e.g. "Birches") so they match Google.
+    const label = await workLabel(c.env.DB);
+    await c.env.DB.prepare(
+      `UPDATE contacts SET realm = 'work', labels = CASE WHEN EXISTS (SELECT 1 FROM json_each(labels) WHERE lower(value) = lower(?2)) THEN labels ELSE json_insert(labels, '$[#]', ?2) END WHERE id = ?1`
+    )
+      .bind(id, label)
+      .run();
+  }
   const contact = await c.env.DB.prepare('SELECT * FROM contacts WHERE id = ?').bind(id).first<Contact>();
   return c.json(contact, 201);
 });
@@ -4126,12 +4141,12 @@ app.get('/api/today', async (c) => {
   // "this came from the voter roll, not a contact I added myself".
   const [dm, dd] = date.split('-').slice(1).map(Number);
   const { results: birthdayContacts } = await c.env.DB.prepare(
-    `SELECT id, name, birthday_year, source FROM contacts WHERE birthday_month = ? AND birthday_day = ? ${realmSql(realmOf(c))} ORDER BY name ASC`
+    `SELECT id, name, birthday_year, source FROM contacts WHERE birthday_month = ? AND birthday_day = ? ${await contactRealmSql(c.env.DB, realmOf(c), 'contacts')} ORDER BY name ASC`
   )
     .bind(dm, dd)
     .all<{ id: string; name: string; birthday_year: number | null; source: string }>();
   const { results: anniversaryContacts } = await c.env.DB.prepare(
-    `SELECT id, name, anniversary_year, source FROM contacts WHERE anniversary_month = ? AND anniversary_day = ? ${realmSql(realmOf(c))} ORDER BY name ASC`
+    `SELECT id, name, anniversary_year, source FROM contacts WHERE anniversary_month = ? AND anniversary_day = ? ${await contactRealmSql(c.env.DB, realmOf(c), 'contacts')} ORDER BY name ASC`
   )
     .bind(dm, dd)
     .all<{ id: string; name: string; anniversary_year: number | null; source: string }>();
@@ -4765,7 +4780,7 @@ function quickLinkJson(row: QuickLinkRow) {
 // category grouping order on the Links page (each category's tiles are
 // wherever its members' sort_order values put them).
 app.get('/api/quick-links', async (c) => {
-  const { results } = await c.env.DB.prepare('SELECT * FROM quick_links ORDER BY sort_order ASC, created_at ASC').all<QuickLinkRow>();
+  const { results } = await c.env.DB.prepare(`SELECT * FROM quick_links WHERE 1=1${realmSql(realmOf(c))} ORDER BY sort_order ASC, created_at ASC`).all<QuickLinkRow>();
   return c.json({ links: (results ?? []).map(quickLinkJson) });
 });
 
@@ -4789,10 +4804,10 @@ app.post('/api/quick-links', async (c) => {
   const id = uid();
   const ts = now();
   await c.env.DB.prepare(
-    `INSERT INTO quick_links (id, name, url, type, icon, thumbnail_key, category, sort_order, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO quick_links (id, name, url, type, icon, thumbnail_key, category, sort_order, created_at, updated_at, realm)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
-    .bind(id, name, url, type, body.icon ?? null, body.thumbnail_key ?? null, category, (maxPos?.m ?? -1) + 1, ts, ts)
+    .bind(id, name, url, type, body.icon ?? null, body.thumbnail_key ?? null, category, (maxPos?.m ?? -1) + 1, ts, ts, createRealm(c))
     .run();
 
   const row = await c.env.DB.prepare('SELECT * FROM quick_links WHERE id = ?').bind(id).first<QuickLinkRow>();
@@ -4868,18 +4883,18 @@ app.get('/api/stats', async (c) => {
   const trendStart = addDaysStr(date, -13);
 
   const [today, week, month, year, trendRows] = await Promise.all([
-    c.env.DB.prepare(`SELECT COUNT(*) as n FROM task_completions WHERE completed_date = ?`).bind(date).first<{ n: number }>(),
-    c.env.DB.prepare(`SELECT COUNT(*) as n FROM task_completions WHERE completed_date >= ? AND completed_date <= ?`)
+    c.env.DB.prepare(`SELECT COUNT(*) as n FROM task_completions WHERE completed_date = ?${completionRealmSql(realmOf(c))}`).bind(date).first<{ n: number }>(),
+    c.env.DB.prepare(`SELECT COUNT(*) as n FROM task_completions WHERE completed_date >= ? AND completed_date <= ?${completionRealmSql(realmOf(c))}`)
       .bind(weekStart, weekEnd)
       .first<{ n: number }>(),
-    c.env.DB.prepare(`SELECT COUNT(*) as n FROM task_completions WHERE completed_date LIKE ?`)
+    c.env.DB.prepare(`SELECT COUNT(*) as n FROM task_completions WHERE completed_date LIKE ?${completionRealmSql(realmOf(c))}`)
       .bind(`${monthPrefix}-%`)
       .first<{ n: number }>(),
-    c.env.DB.prepare(`SELECT COUNT(*) as n FROM task_completions WHERE completed_date LIKE ?`)
+    c.env.DB.prepare(`SELECT COUNT(*) as n FROM task_completions WHERE completed_date LIKE ?${completionRealmSql(realmOf(c))}`)
       .bind(`${yearPrefix}-%`)
       .first<{ n: number }>(),
     c.env.DB.prepare(
-      `SELECT completed_date, COUNT(*) as n FROM task_completions WHERE completed_date >= ? AND completed_date <= ? GROUP BY completed_date`
+      `SELECT completed_date, COUNT(*) as n FROM task_completions WHERE completed_date >= ? AND completed_date <= ?${completionRealmSql(realmOf(c))} GROUP BY completed_date`
     )
       .bind(trendStart, date)
       .all<{ completed_date: string; n: number }>(),
@@ -4926,6 +4941,8 @@ app.get('/api/stats/completions', async (c) => {
     conditions.push('completed_at < ?');
     params.push(before);
   }
+  const realmFilter = completionRealmSql(realmOf(c));
+  if (realmFilter) conditions.push(realmFilter.replace(/^ AND /, ''));
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
   // Fetch one extra row purely to know whether there's another page
@@ -5466,13 +5483,14 @@ app.get('/api/journal/:date', async (c) => {
 
   const entry = await c.env.DB.prepare('SELECT * FROM journal_entries WHERE date = ?').bind(date).first<JournalEntry>();
 
+  const realm = realmOf(c);
   const { results: completions } = await c.env.DB
-    .prepare('SELECT * FROM task_completions WHERE completed_date = ? ORDER BY completed_at ASC')
+    .prepare(`SELECT * FROM task_completions WHERE completed_date = ?${completionRealmSql(realm)} ORDER BY completed_at ASC`)
     .bind(date)
     .all<{ id: string; entity_id: string; title: string; completed_at: string; completed_date: string }>();
 
   const { results: reschedules } = await c.env.DB
-    .prepare('SELECT * FROM journal_task_reschedules WHERE rescheduled_date = ? ORDER BY rescheduled_at ASC')
+    .prepare(`SELECT * FROM journal_task_reschedules WHERE rescheduled_date = ?${completionRealmSql(realm)} ORDER BY rescheduled_at ASC`)
     .bind(date)
     .all<TaskReschedule>();
 
@@ -5483,7 +5501,7 @@ app.get('/api/journal/:date', async (c) => {
   // note-link logic.
   const { results: noteRows } = await c.env.DB
     .prepare(
-      `SELECT id, title, is_jot, is_top_level, created_at FROM entities WHERE type = 'note' AND created_at >= ? AND created_at <= ? ORDER BY created_at ASC`
+      `SELECT id, title, is_jot, is_top_level, created_at FROM entities WHERE type = 'note' AND created_at >= ? AND created_at <= ?${realmSql(realm)} ORDER BY created_at ASC`
     )
     .bind(windowStart, windowEnd)
     .all<{ id: string; title: string; is_jot: number; is_top_level: number; created_at: string }>();
@@ -5493,13 +5511,14 @@ app.get('/api/journal/:date', async (c) => {
     .prepare(
       `SELECT cn.id, cn.contact_id, cn.text, cn.created_at, c.name as contact_name
        FROM contact_notes cn JOIN contacts c ON c.id = cn.contact_id
-       WHERE cn.created_at >= ? AND cn.created_at <= ? ORDER BY cn.created_at ASC`
+       WHERE cn.created_at >= ? AND cn.created_at <= ?${await contactRealmSql(c.env.DB, realm, 'c')} ORDER BY cn.created_at ASC`
     )
     .bind(windowStart, windowEnd)
     .all<{ id: string; contact_id: string; text: string; created_at: string; contact_name: string }>();
   const contactNotes = (contactNoteRows ?? []).filter((n) => localDateString(n.created_at) === date);
 
-  const { results: habits } = await c.env.DB.prepare('SELECT * FROM journal_habits WHERE active = 1 ORDER BY position ASC').all<Habit>();
+  const { results: habits } =
+    realm === 'work' ? { results: [] as Habit[] } : await c.env.DB.prepare('SELECT * FROM journal_habits WHERE active = 1 ORDER BY position ASC').all<Habit>();
   const { results: habitLogRows } = await c.env.DB.prepare('SELECT * FROM journal_habit_logs WHERE date = ?').bind(date).all<HabitLog>();
   const habitLogsByHabit = new Map((habitLogRows ?? []).map((l) => [l.habit_id, l]));
   const habitsWithLogs = (habits ?? []).map((h) => ({ ...h, log: habitLogsByHabit.get(h.id) ?? null }));
@@ -5507,16 +5526,18 @@ app.get('/api/journal/:date', async (c) => {
   // journal_health_logs (per-day) is dead — Google Health only ever hands
   // us per-week reports (see the 0025 migration), so a viewed day is
   // matched against the weekly-report row whose range contains it instead.
-  const health = await c.env.DB.prepare('SELECT * FROM health_weekly_reports WHERE week_start <= ? AND week_end >= ?')
-    .bind(date, date)
-    .first<HealthWeeklyReport>();
+  const health =
+    realm === 'work'
+      ? null
+      : await c.env.DB.prepare('SELECT * FROM health_weekly_reports WHERE week_start <= ? AND week_end >= ?').bind(date, date).first<HealthWeeklyReport>();
 
   // Bets for the day — count, W-L-Push-Void, net profit, and the bets
   // themselves — computed live from `bets` exactly like everything else on
   // this endpoint, never stored on journal_entries. Legs attached the same
   // one-extra-query way GET /api/bets does (see attachLegs), so the day
   // view can show parlay legs too without an N+1.
-  const { results: dayBets } = await c.env.DB.prepare('SELECT * FROM bets WHERE date = ? ORDER BY created_at ASC').bind(date).all<Bet>();
+  const { results: dayBets } =
+    realm === 'work' ? { results: [] as Bet[] } : await c.env.DB.prepare('SELECT * FROM bets WHERE date = ? ORDER BY created_at ASC').bind(date).all<Bet>();
   const betsWithLegs = await attachLegs(c.env, dayBets ?? []);
   const betStats = betsWithLegs.reduce(
     (acc, bet) => {
@@ -5555,9 +5576,22 @@ app.get('/api/journal/:date', async (c) => {
 app.patch('/api/journal/:date', async (c) => {
   const date = c.req.param('date');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return c.json({ error: 'date must be YYYY-MM-DD' }, 400);
-  const body = await c.req.json<{ content?: string; mood?: number | null }>();
+  const body = await c.req.json<{ content?: string; mood?: number | null; work_content?: string | null }>();
   const ts = now();
 
+  // The Work part of the day (Work mode shows only this).
+  if (body.work_content !== undefined) {
+    const wc = body.work_content;
+    await c.env.DB.prepare(
+      `INSERT INTO journal_entries (date, content, search_text, mood, created_at, updated_at, work_content, work_search_text) VALUES (?, NULL, NULL, NULL, ?, ?, ?, ?)
+       ON CONFLICT(date) DO UPDATE SET work_content = excluded.work_content, work_search_text = excluded.work_search_text, updated_at = excluded.updated_at`
+    )
+      .bind(date, ts, ts, wc, wc ? extractPlainText(wc) : null)
+      .run();
+    if (body.content === undefined && body.mood === undefined) {
+      return c.json(await c.env.DB.prepare('SELECT * FROM journal_entries WHERE date = ?').bind(date).first<JournalEntry>());
+    }
+  }
   const existing = await c.env.DB.prepare('SELECT * FROM journal_entries WHERE date = ?').bind(date).first<JournalEntry>();
   const content = body.content !== undefined ? body.content : (existing?.content ?? null);
   const searchText = content !== null ? extractPlainText(content) : null;
@@ -5756,6 +5790,7 @@ app.delete('/api/habits/:id/events/:eventId', async (c) => {
 // couple of weeks of margin for Stats' trend chart without over-fetching.
 const HABIT_SUMMARY_SERIES_DAYS = 42;
 app.get('/api/habits/summary', async (c) => {
+  if (realmOf(c) === 'work') return c.json([]); // habits are personal
   const { results: habits } = await c.env.DB.prepare('SELECT * FROM journal_habits WHERE active = 1 ORDER BY position ASC').all<Habit>();
   const todayDate = localDateString(now());
   const startDate = addDaysStr(todayDate, -(HABIT_SUMMARY_SERIES_DAYS - 1));
@@ -6564,7 +6599,7 @@ interface SearchGroupResultRow {
 // jots, lists, projects, Vault, meeting notes) follow their entity's realm,
 // contacts and boards their own; Wallet / Rewards / Journal / Links /
 // Media are personal-only and drop out under Work.
-const PERSONAL_ONLY_SEARCH = new Set<SearchGroup>(['wallet', 'rewards', 'payment_cards', 'journal', 'links', 'media']);
+const PERSONAL_ONLY_SEARCH = new Set<SearchGroup>(['wallet', 'rewards', 'payment_cards', 'journal', 'media']);
 async function filterSearchByRealm(db: D1Database, groups: SearchGroupResultRow[], realm: RealmFilter): Promise<SearchGroupResultRow[]> {
   if (realm === 'all') return groups;
   const realmById = new Map<string, string>();
@@ -6578,17 +6613,31 @@ async function filterSearchByRealm(db: D1Database, groups: SearchGroupResultRow[
       for (const r of results ?? []) realmById.set(r.id, r.realm || 'personal');
     }
   }
+  // Contacts: Work = marked Work or carrying the work label.
+  async function loadContacts(ids: string[]) {
+    const cond = await contactRealmSql(db, 'work', 'contacts');
+    for (let i = 0; i < ids.length; i += 50) {
+      const chunk = ids.slice(i, i + 50);
+      const { results } = await db
+        .prepare(`SELECT id, CASE WHEN 1=1${cond} THEN 'work' ELSE 'personal' END AS realm FROM contacts WHERE id IN (${chunk.map(() => '?').join(',')})`)
+        .bind(...chunk)
+        .all<{ id: string; realm: string }>();
+      for (const r of results ?? []) realmById.set(r.id, r.realm);
+    }
+  }
   const entityIds: string[] = [];
   const contactIds: string[] = [];
   const boardIds: string[] = [];
+  const linkIds: string[] = [];
   for (const g of groups) {
     for (const r of g.results) {
       if (g.key === 'contacts') contactIds.push(r.id);
       else if (g.key === 'boards') boardIds.push(r.id);
+      else if (g.key === 'links') linkIds.push(r.id);
       else if (!PERSONAL_ONLY_SEARCH.has(g.key)) entityIds.push(r.id, ...(r.openId ? [r.openId] : []));
     }
   }
-  await Promise.all([load('entities', [...new Set(entityIds)]), load('contacts', [...new Set(contactIds)]), load('canvas_boards', [...new Set(boardIds)])]);
+  await Promise.all([load('entities', [...new Set(entityIds)]), loadContacts([...new Set(contactIds)]), load('canvas_boards', [...new Set(boardIds)]), load('quick_links', [...new Set(linkIds)])]);
   return groups
     .map((g) => {
       if (PERSONAL_ONLY_SEARCH.has(g.key)) return realm === 'work' ? { ...g, results: [] } : g;

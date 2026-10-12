@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api, normalizeUrl } from '../api/client';
 import type { Entity, FileMeta, LinkMeta, PersonRef, TaskMeta } from '../api/types';
 import { ContactPicker } from './ContactPicker';
@@ -284,6 +285,16 @@ export function TaskDetailModal({
             )}
           </div>
         </div>
+
+        {entity && parseTaskMeta(entity.content).action && (
+          <Link
+            className="btn task-panel__brief-btn"
+            to={`/briefs?kind=${parseTaskMeta(entity.content).action === 'week-plan' ? 'ahead' : 'review'}`}
+            onClick={onClose}
+          >
+            {parseTaskMeta(entity.content).action === 'week-plan' ? '🧭 Open Week Ahead' : '🧭 Open Week in Review'}
+          </Link>
+        )}
 
         {entity && (
           <div className="task-panel__field task-panel__work">

@@ -1,3 +1,4 @@
+import { realmOf, realmSql, stampRealm } from './work/realm';
 import { Hono } from 'hono';
 import type { Entity, Env, VaultCredentialRow, VaultFactRow } from './types';
 
@@ -100,7 +101,7 @@ export async function reindexEntry(c: { env: Env }, entryId: string): Promise<vo
 // detail page fetches facts separately.
 vaultRouter.get('/entries', async (c) => {
   const rows = await db(c)
-    .prepare(`SELECT * FROM entities WHERE type = 'vault_entry' ORDER BY pinned DESC, last_touched DESC, created_at DESC`)
+    .prepare(`SELECT * FROM entities WHERE type = 'vault_entry'${realmSql(realmOf(c))} ORDER BY pinned DESC, last_touched DESC, created_at DESC`)
     .all<Entity>();
   return c.json(rows.results ?? []);
 });
@@ -128,6 +129,7 @@ vaultRouter.post('/entries', async (c) => {
     )
     .bind(id, title, ts, ts, ts, title)
     .run();
+  await stampRealm(db(c), c, id);
 
   const entity = await db(c).prepare('SELECT * FROM entities WHERE id = ?').bind(id).first<Entity>();
   return c.json(entity, 201);
@@ -395,7 +397,7 @@ vaultRouter.get('/facts/rollup', async (c) => {
     .prepare(
       `SELECT vf.id as fact_id, vf.label, vf.value, vf.value_type, vf.value_norm, vf.entry_id, e.title as entry_title, e.pinned as entry_pinned
        FROM vault_facts vf
-       JOIN entities e ON e.id = vf.entry_id AND e.type = 'vault_entry'
+       JOIN entities e ON e.id = vf.entry_id AND e.type = 'vault_entry'${realmSql(realmOf(c), 'e')}
        ORDER BY vf.label COLLATE NOCASE, e.title COLLATE NOCASE`
     )
     .all<{

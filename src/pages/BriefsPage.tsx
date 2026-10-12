@@ -195,7 +195,7 @@ function ReviewBox({ label, value, placeholder, onSave, suggestions }: { label: 
 }
 
 export function BriefsPage() {
-  useReportTabMeta('Briefs', 'briefs');
+  useReportTabMeta('Week Brief', 'briefs');
   const { realm } = useRealm();
   const [params, setParams] = useSearchParams();
   const today = todayISO();
@@ -263,7 +263,7 @@ export function BriefsPage() {
   return (
     <div className="brief">
       <div className="brief__top">
-        <h1 className="heading-serif brief__title">Briefs</h1>
+        <h1 className="heading-serif brief__title">{kind === 'ahead' ? 'Plan the Week' : 'Weekly Review'}</h1>
         <div className="brief__week">
           <button type="button" className="btn btn--ghost btn--sm" onClick={() => go({ week: addDays(week, -7) })} aria-label="Previous week">
             ‹

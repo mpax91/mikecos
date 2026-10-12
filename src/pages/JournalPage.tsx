@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
 import type { Entity, Habit, JournalDayResponse, MeetingItem } from '../api/types';
 import { NoteEditor } from '../components/NoteEditor';
+import { useRealm } from '../contexts/RealmContext';
 import { TaskDetailModal } from '../components/TaskDetailModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { useReportTabMeta } from '../contexts/TabsContext';
@@ -179,6 +180,7 @@ export function JournalPage() {
   const [savingMood, setSavingMood] = useState(false);
 
   useReportTabMeta(isToday ? 'Journal' : `Journal — ${formatHeaderDate(date)}`, 'journal');
+  const { realm } = useRealm();
 
   const load = useCallback(() => {
     api.getJournalDay(date).then(setData).catch((e) => setError(String(e)));
@@ -270,6 +272,9 @@ export function JournalPage() {
   async function saveEntry(content: string) {
     await api.updateJournalEntry(date, content);
   }
+  async function saveWorkEntry(content: string) {
+    await api.updateJournalWorkEntry(date, content);
+  }
 
   if (error) {
     return (
@@ -280,6 +285,8 @@ export function JournalPage() {
   }
 
   const health = data?.health;
+  const showPersonal = realm !== 'work';
+  const showWork = realm !== 'personal';
 
   return (
     <div className="journal-page">
@@ -305,6 +312,7 @@ export function JournalPage() {
         </div>
       </div>
 
+      {showPersonal && (
       <div className="journal-page__mood card">
         <div className="journal-page__mood-row">
           <div className="journal-page__mood-picker">
@@ -325,6 +333,7 @@ export function JournalPage() {
           <MoodTrendStrip date={date} moods={moods} onJump={goToDate} />
         </div>
       </div>
+      )}
 
       <div className="journal-page__auto card">
         <div className="journal-page__auto-section">
@@ -496,18 +505,30 @@ export function JournalPage() {
         )}
       </div>
 
-      <div className="journal-page__habits card">
-        <div className="journal-page__auto-label">Habits</div>
-        {(data?.habits ?? []).map((h) => (
-          <HabitRow key={h.id} habit={h} date={date} onLogged={load} />
-        ))}
-        <ManageHabitsLink />
-      </div>
+      {showPersonal && (
+        <div className="journal-page__habits card">
+          <div className="journal-page__auto-label">Habits</div>
+          {(data?.habits ?? []).map((h) => (
+            <HabitRow key={h.id} habit={h} date={date} onLogged={load} />
+          ))}
+          <ManageHabitsLink />
+        </div>
+      )}
 
-      <div className="journal-page__freeform card">
-        <div className="journal-page__auto-label">Notes for the Day</div>
-        {data && <NoteEditor key={date} content={data.entry?.content ?? null} onSave={saveEntry} />}
-      </div>
+      {/* One entry per day, two parts: Personal and Work. Work mode shows
+          only the Work part; All shows both. */}
+      {showPersonal && (
+        <div className="journal-page__freeform card">
+          <div className="journal-page__auto-label">{showWork ? '🏡 Personal' : 'Notes for the Day'}</div>
+          {data && <NoteEditor key={`p-${date}`} content={data.entry?.content ?? null} onSave={saveEntry} />}
+        </div>
+      )}
+      {showWork && (
+        <div className="journal-page__freeform journal-page__freeform--work card">
+          <div className="journal-page__auto-label">💼 Work</div>
+          {data && <NoteEditor key={`w-${date}`} content={data.entry?.work_content ?? null} onSave={saveWorkEntry} />}
+        </div>
+      )}
 
       {taskStack.length > 0 && (
         <TaskDetailModal

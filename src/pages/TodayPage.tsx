@@ -12,6 +12,7 @@ import { fmtBillMoney } from '../utils/bills';
 import { buildMeetingNoteTitle, meetingHasEnded } from '../utils/meetingNotes';
 import { MEETING_CHANGED_EVENT, openMeetingSheet } from '../components/MeetingSheet';
 import { RealmChip } from '../components/RealmSwitch';
+import { useRealm } from '../contexts/RealmContext';
 import type { MeetingPrep } from '../api/types';
 import { useReportTabMeta } from '../contexts/TabsContext';
 import { OPEN_BRIEFING_EVENT } from '../components/BriefingModal';
@@ -96,6 +97,7 @@ export function TodayPage() {
   const navigate = useNavigate();
   const date = dateParam ?? todayLocalISO();
   const isToday = date === todayLocalISO();
+  const { realm } = useRealm();
 
   const [data, setData] = useState<TodayResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -400,7 +402,7 @@ export function TodayPage() {
         <div>
           <h1 className="today-page__heading heading-serif">{formatDayHeading(date, isToday).heading}</h1>
           <div className="today-page__date-line">{formatDayHeading(date, isToday).dateLine}</div>
-          {isToday && (
+          {isToday && realm !== 'work' && (
             <button
               type="button"
               className="today-page__briefing-btn"
@@ -697,7 +699,7 @@ export function TodayPage() {
                   current day (see the topNews fetch effect above). The
                   whole right side of the card, replacing what used to be
                   the Holidays column. */}
-              {isToday && (
+              {isToday && realm !== 'work' && (
                 <div className="today-page__important-dates-news">
                   <div className="today-page__important-dates-group-title">Top Stories</div>
                   {topNews.length === 0 ? (

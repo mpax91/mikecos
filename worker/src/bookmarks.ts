@@ -1,3 +1,4 @@
+import { createRealm, realmOf, realmSql } from './work/realm';
 import { Hono } from 'hono';
 import type { Env } from './types';
 
@@ -56,7 +57,7 @@ function rowsToTree(rows: BookmarkRow[]): BookmarkNode[] {
 // imported (every row from one import shares the same imported_at, so the
 // max across the table doubles as that without a separate metadata row).
 bookmarksRouter.get('/', async (c) => {
-  const { results } = await c.env.DB.prepare('SELECT * FROM bookmarks ORDER BY sort_order ASC').all<BookmarkRow>();
+  const { results } = await c.env.DB.prepare(`SELECT * FROM bookmarks WHERE 1=1${realmSql(realmOf(c))} ORDER BY sort_order ASC`).all<BookmarkRow>();
   const rows = results ?? [];
   const linkCount = rows.filter((r) => r.type === 'link').length;
   const folderCount = rows.filter((r) => r.type === 'folder').length;
@@ -67,7 +68,7 @@ bookmarksRouter.get('/', async (c) => {
 // DELETE /api/bookmarks — clears everything without requiring a fresh
 // file to replace it with (Settings' own "Clear" affordance).
 bookmarksRouter.delete('/', async (c) => {
-  await c.env.DB.prepare('DELETE FROM bookmarks').run();
+  await c.env.DB.prepare(`DELETE FROM bookmarks WHERE 1=1${realmSql(realmOf(c))}`).run();
   return c.json({ ok: true });
 });
 
@@ -190,19 +191,23 @@ bookmarksRouter.post('/import', async (c) => {
   }
   flatten(tree, null);
 
-  await c.env.DB.prepare('DELETE FROM bookmarks').run();
+  // Importing while the switch is on Work replaces only the Work bookmarks
+  // (Birches), and vice versa — the other side is untouched.
+  const realm = createRealm(c);
+  await c.env.DB.prepare('DELETE FROM bookmarks WHERE realm = ?').bind(realm).run();
   for (let i = 0; i < stmts.length; i += INSERT_CHUNK_SIZE) {
     const chunk = stmts.slice(i, i + INSERT_CHUNK_SIZE);
     await c.env.DB.batch(
       chunk.map((s) =>
-        c.env.DB.prepare('INSERT INTO bookmarks (id, parent_id, type, title, url, sort_order, imported_at) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(
+        c.env.DB.prepare('INSERT INTO bookmarks (id, parent_id, type, title, url, sort_order, imported_at, realm) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').bind(
           s.id,
           s.parent_id,
           s.type,
           s.title,
           s.url,
           s.sort_order,
-          ts
+          ts,
+          realm
         )
       )
     );

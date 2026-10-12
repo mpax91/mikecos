@@ -187,6 +187,15 @@ export function TaskRow({
         </span>
         {entity.blocked_reason != null && <span className="task-row__blocked" title={entity.blocked_reason || 'Blocked'}>Blocked</span>}
         {!entity.parent_id && <RealmChip realm={entity.realm} />}
+        {briefAction(entity.content) && (
+          <Link
+            to={`/briefs?kind=${briefAction(entity.content) === 'week-plan' ? 'ahead' : 'review'}`}
+            className="task-row__brief-link"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {briefAction(entity.content) === 'week-plan' ? 'Open Week Ahead →' : 'Open Week in Review →'}
+          </Link>
+        )}
         {projectTag && (
           <Link
             to={`/projects/${projectTag.id}`}
@@ -263,4 +272,15 @@ export function TaskRow({
       )}
     </div>
   );
+}
+
+/** The Monday / Friday Work tasks carry `{ action }` in their TaskMeta. */
+function briefAction(content: string | null): 'week-plan' | 'week-review' | null {
+  if (!content || !content.includes('"action"')) return null;
+  try {
+    const a = (JSON.parse(content) as { action?: string }).action;
+    return a === 'week-plan' || a === 'week-review' ? a : null;
+  } catch {
+    return null;
+  }
 }

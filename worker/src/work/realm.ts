@@ -57,3 +57,19 @@ export async function inheritRealmFromParent(db: D1Database, id: string): Promis
     .first<{ own: string; parent: string }>();
   if (row && row.parent && row.parent !== row.own) await cascadeRealm(db, id, row.parent as Realm);
 }
+
+/** The Google Contacts label that marks a contact as Work (Settings → Meetings;
+ * default "Birches"). */
+export async function workLabel(db: D1Database): Promise<string> {
+  const row = await db.prepare(`SELECT value FROM work_settings WHERE key = 'work_label'`).first<{ value: string }>().catch(() => null);
+  return (row?.value || 'Birches').trim();
+}
+
+/** Contacts are Work when marked Work by hand OR carrying the work label.
+ * Returns ` AND (…)` for the given table alias ('' for 'all'). */
+export async function contactRealmSql(db: D1Database, filter: RealmFilter, alias = 'contacts'): Promise<string> {
+  if (filter === 'all') return '';
+  const label = (await workLabel(db)).replace(/'/g, "''").toLowerCase();
+  const isWork = `(${alias}.realm = 'work' OR EXISTS (SELECT 1 FROM json_each(${alias}.labels) WHERE lower(json_each.value) = '${label}'))`;
+  return filter === 'work' ? ` AND ${isWork}` : ` AND NOT ${isWork}`;
+}
