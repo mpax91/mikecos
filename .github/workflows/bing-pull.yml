@@ -1,0 +1,29 @@
+name: Bing pull
+
+on:
+  schedule:
+    - cron: '23 6 * * *' # ~2:23 AM Eastern
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bing-pull
+  cancel-in-progress: false
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node scripts/bing-pull.mjs
+        env:
+          BING_API_KEY: ${{ secrets.BING_API_KEY }}
+          BEE_IMPORT_KEY: ${{ secrets.BEE_IMPORT_KEY }}
