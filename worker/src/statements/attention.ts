@@ -25,6 +25,7 @@ const ATTENTION = new Set([
   'price_up', // subscription price went up (anomalies.ts)
   'payer', // auto-pay with no payment method / payer card inactive or removed
   'idle', // money left sitting in a payment app (PayPal) — withdraw it
+  'price_lock', // a bill's price guarantee ends within 90 days (Verizon Fios) — call for a new rate
 ]);
 /** Gaps and missed contributions only matter if recent; old history stays on the dashboard. */
 const RECENT_ONLY = new Set(['gap', 'aip_missed']);

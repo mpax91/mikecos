@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
-import type { HomeNetworkConnection, HomeNetworkDevice, HomeNetworkPoint } from '../api/types';
+import type { HomeNetworkConnection, HomeNetworkDevice, HomeNetworkPoint, InternetBill } from '../api/types';
+import { Link } from 'react-router-dom';
 import { ConfirmModal } from './ConfirmModal';
 import { CONNECTION_LABEL, CONNECTION_ORDER, HomeNetworkDeviceModal, type RoomOption } from './HomeNetworkDeviceModal';
 import { HomeWifiCard } from './HomeWifiCard';
@@ -136,6 +137,7 @@ export function HomeInternetPage({ rooms }: { rooms: RoomOption[] }) {
 
   return (
     <div className="home-net">
+      <InternetBillLine />
       <HomeWifiCard />
 
       <h3 className="home-net__section-title home-net__devices-title">Devices</h3>
@@ -407,5 +409,28 @@ function NetworkPointsModal({ points, onChanged, onClose }: { points: HomeNetwor
         />
       )}
     </Modal>
+  );
+}
+
+/** The live home internet bill (Finance → Verizon Fios) in one line, so the
+ * plan and price sit next to the network it pays for. Hidden until a home
+ * internet statement folder is live. */
+function InternetBillLine() {
+  const [bill, setBill] = useState<InternetBill | null>(null);
+  useEffect(() => {
+    api.getInternetBill().then(setBill).catch(() => setBill(null));
+  }, []);
+  if (!bill || bill.monthly === null) return null;
+  const speed = bill.speedMbps === null ? null : bill.speedMbps >= 1000 ? `${bill.speedMbps / 1000} Gig` : `${bill.speedMbps} Mbps`;
+  const month = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+  return (
+    <div className="home-internet__bill">
+      <span>💵 {bill.name}</span>
+      {(bill.plan || speed) && <span>{bill.plan ?? speed}</span>}
+      <strong>${bill.monthly.toFixed(2)}/mo</strong>
+      {bill.autopay && <span>Auto Pay</span>}
+      {bill.priceGuaranteeUntil && <span>Price Locked Through {month(bill.priceGuaranteeUntil)}</span>}
+      <Link to={`/finance/${bill.folderId}`}>Bill Details →</Link>
+    </div>
   );
 }

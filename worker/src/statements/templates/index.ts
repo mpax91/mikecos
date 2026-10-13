@@ -8,11 +8,12 @@ import { parseAmexCard } from './amexCard';
 import { parseBofaCard } from './bofaCard';
 import { parseTmobile } from './tmobile';
 import { parsePaypal } from './paypal';
+import { parseFios } from './fios';
 
 /** Per-folder templates (one per Drive folder, all on the shared base
  * engine). Build order per progress.md: 529 is live; ADT, Ally Bank, Amazon Prime Visa, PayPal,
  * American Express Bank, the Amex Blue Cash Everyday card and the Bank of America
- * Customized Cash Rewards card and T-Mobile built; the rest are added one folder at a time. */
+ * Customized Cash Rewards card, T-Mobile and Verizon Fios built; the rest are added one folder at a time. */
 export interface StatementTemplate {
   id: string;
   name: string;
@@ -191,6 +192,24 @@ export const TEMPLATES: StatementTemplate[] = [
     },
     parse: parseTmobile,
     // Monthly bills are "T-Mobile - YYYY.MM.DD.pdf".
+    isStatementFile: (name) => /\d{4}\.\d{2}\.\d{2}/.test(name),
+  },
+  {
+    id: 'fios',
+    name: 'Verizon Fios Home Internet (Monthly Bill)',
+    folderNames: ['Verizon Fios', 'Fios', 'Verizon Fios Internet'],
+    account: {
+      nickname: 'Verizon Fios',
+      institution: 'Verizon',
+      type: 'Home Internet',
+      owner: 'household',
+      cadence: 'monthly',
+      kind: 'bill',
+      site: 'https://www.verizon.com/home/myverizon/',
+      phone: '1-800-837-4966',
+    },
+    parse: parseFios,
+    // Monthly bills are "Verizon Fios - YYYY.MM.DD.pdf".
     isStatementFile: (name) => /\d{4}\.\d{2}\.\d{2}/.test(name),
   },
   {

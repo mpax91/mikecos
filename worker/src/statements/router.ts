@@ -10,6 +10,8 @@ import { loadAdtData } from './adtDerive';
 import { summarizeAdt } from './adtSummary';
 import { loadTmobileData } from './tmobileDerive';
 import { summarizeTmobile } from './tmobileSummary';
+import { loadFiosData } from './fiosDerive';
+import { summarizeFios } from './fiosSummary';
 import { loadAllyData } from './allyDerive';
 import { accountLabel, summarizeAlly } from './allySummary';
 import { loadAmexBankData } from './amexBankDerive';
@@ -232,6 +234,10 @@ statementsRouter.get('/accounts', async (c) => {
       const { stmts, txns } = await loadTmobileData(c.env, row.id);
       const s = summarizeTmobile(stmts, txns, easternToday());
       if (s.latest) headline = { kind: 'bill', value: s.latest.totalDue, asOf: s.asOf, monthly: s.usualMonthly ?? s.monthly, status: s.status };
+    } else if (row.template_id === 'fios') {
+      const { stmts, txns } = await loadFiosData(c.env, row.id);
+      const s = summarizeFios(stmts, txns, easternToday());
+      if (s.latest) headline = { kind: 'bill', value: s.latest.totalDue, asOf: s.asOf, monthly: s.monthly, status: s.status };
     } else if (row.template_id === 'ally') {
       const { stmts, txns } = await loadAllyData(c.env, row.id);
       const s = summarizeAlly(stmts, txns, easternToday());
@@ -313,6 +319,7 @@ statementsRouter.get('/folders/:id/dashboard', async (c) => {
   if (!row) return c.json({ error: 'not found' }, 404);
   if (row.template_id === 'adt') return c.json(await adtDashboard(c.env, row));
   if (row.template_id === 'tmobile') return c.json(await tmobileDashboard(c.env, row));
+  if (row.template_id === 'fios') return c.json(await fiosDashboard(c.env, row));
   if (row.template_id === 'paypal') return c.json(await paypalDashboard(c.env, row));
   if (row.template_id === 'ally') return c.json(await allyDashboard(c.env, row));
   if (row.template_id === 'amazon') return c.json(await amazonDashboard(c.env, row));
@@ -407,6 +414,46 @@ async function adtDashboard(env: Env, row: FolderRow) {
     payTask,
   };
 }
+
+/** Verizon Fios (monthly home internet bill) dashboard payload. */
+async function fiosDashboard(env: Env, row: FolderRow) {
+  const stats = await folderStats(env);
+  const { stmts, txns, files } = await loadFiosData(env, row.id);
+  const summary = summarizeFios(stmts, txns, easternToday());
+  const last = stmts[stmts.length - 1];
+  return {
+    kind: 'fios' as const,
+    folder: folderJson(row, stats.get(row.id)),
+    template: templateById(row.template_id)?.account ?? null,
+    account: last ? { account: last.values.account } : null,
+    summary,
+    statements: stmts.map((s) => ({ id: s.id, periodEnd: s.periodEnd, fileId: s.fileId, checks: s.checks })),
+    transactions: txns,
+    files: files.map((f) => ({ fileId: f.file_id, name: f.file_name, url: f.web_url, status: f.status, error: f.error })),
+    flags: await openFlags(env, row.id),
+  };
+}
+
+/** Home → Internet: the live home-internet bill (Verizon Fios) in one line —
+ * plan, speed, monthly, price guarantee — or null when none is live. */
+statementsRouter.get('/internet-bill', async (c) => {
+  const row = await c.env.DB.prepare(`SELECT * FROM statement_folders WHERE status = 'live' AND template_id = 'fios' ORDER BY updated_at DESC LIMIT 1`).first<FolderRow>();
+  if (!row) return c.json(null);
+  const { stmts, txns } = await loadFiosData(c.env, row.id);
+  const s = summarizeFios(stmts, txns, easternToday());
+  if (!s.latest) return c.json(null);
+  return c.json({
+    folderId: row.id,
+    name: templateById(row.template_id)?.account.nickname ?? row.folder_name,
+    plan: s.plan,
+    speedMbps: s.speedMbps,
+    monthly: s.monthly,
+    asOf: s.asOf,
+    autopay: s.latest.autopay,
+    priceGuaranteeUntil: s.priceGuaranteeUntil,
+    addOns: s.addOns,
+  });
+});
 
 /** T-Mobile (monthly wireless bill) dashboard payload. */
 async function tmobileDashboard(env: Env, row: FolderRow) {

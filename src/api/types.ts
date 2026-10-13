@@ -2680,6 +2680,95 @@ export interface AdtDashboard {
   payTask: { id: string; title: string; due: string | null; status: string | null } | null;
 }
 
+/** Verizon Fios home internet bill (worker/src/statements/fiosSummary.ts). */
+export interface FiosItem {
+  kind: 'service' | 'equipment' | 'discount' | 'addon' | 'change' | 'tax' | 'fee';
+  description: string;
+  amount: number;
+  start: string | null;
+  end: string | null;
+  change: 'added' | 'removed' | null;
+  changeDate: string | null;
+}
+export interface FiosBill {
+  billDate: string;
+  servicePeriodStart: string | null;
+  servicePeriodEnd: string | null;
+  plan: string | null;
+  speedMbps: number | null;
+  billed: number;
+  regular: number;
+  taxes: number;
+  lateFee: number;
+  proration: number;
+  discounts: number;
+  listPrice: number | null;
+  previousBalance: number;
+  payments: number;
+  totalDue: number;
+  dueDate: string | null;
+  autopay: boolean;
+  autopayDate: string | null;
+  pastDue: boolean;
+  items: FiosItem[];
+  fileId: string;
+  checksOk: boolean;
+  checks: StatementCheckRow[];
+}
+export interface FiosSummary {
+  asOf: string | null;
+  latest: FiosBill | null;
+  plan: string | null;
+  speedMbps: number | null;
+  monthly: number | null;
+  listPrice: number | null;
+  perGig: number | null;
+  planSince: string | null;
+  priceSince: string | null;
+  planHistory: { plan: string; speedMbps: number | null; from: string; to: string; bills: number; listPrice: number | null; regular: number }[];
+  priceHistory: { from: string; to: string; amount: number; bills: number }[];
+  years: { year: number; bills: number; billed: number; paid: number; discounts: number }[];
+  ytdBilled: number;
+  ytdBills: number;
+  lifetimeBilled: number;
+  lifetimePaid: number;
+  lifetimeDiscounts: number;
+  lateFees: number;
+  firstBill: string | null;
+  bills: FiosBill[];
+  gaps: { after: string; before: string; days: number }[];
+  pastDueBills: string[];
+  addOns: string[];
+  equipment: string[];
+  priceGuaranteeUntil: string | null;
+  autopayDiscount: { active: boolean; amount: number | null; lastSeen: string | null; endedOn: string | null; billsWithout: number; extraPaid: number };
+  nextBillExpected: string | null;
+  status: 'paid' | 'autopay' | 'due' | 'past_due' | 'credit' | 'none';
+}
+export interface FiosDashboard {
+  kind: 'fios';
+  folder: StatementFolder;
+  template: { nickname: string; institution: string; type: string; site?: string; phone?: string } | null;
+  account: { account: string } | null;
+  summary: FiosSummary;
+  statements: { id: string; periodEnd: string; fileId: string; checks: StatementCheckRow[] }[];
+  transactions: { date: string; description: string; kind: string; amount: number }[];
+  files: { fileId: string; name: string; url: string | null; status: string; error: string | null }[];
+  flags: { id: string; severity: 'warn' | 'info'; message: string; created_at: string }[];
+}
+/** Home → Internet: the live home internet bill (GET /api/statements/internet-bill). */
+export interface InternetBill {
+  folderId: string;
+  name: string;
+  plan: string | null;
+  speedMbps: number | null;
+  monthly: number | null;
+  asOf: string | null;
+  autopay: boolean;
+  priceGuaranteeUntil: string | null;
+  addOns: string[];
+}
+
 /** T-Mobile wireless bill (worker/src/statements/tmobileSummary.ts). */
 export interface TmobileBill {
   billDate: string;
@@ -3251,7 +3340,7 @@ export interface RewardsOverview {
   cards: { folderId: string; name: string; owner: AccountOwner; rewards: CardRewards; redeemAt: number }[];
 }
 
-export type FinanceDashboard = Ny529Dashboard | AdtDashboard | TmobileDashboard | AllyDashboard | AmazonDashboard | AmexBankDashboard | AmexCardDashboard | BofaCardDashboard | PaypalDashboard;
+export type FinanceDashboard = Ny529Dashboard | AdtDashboard | TmobileDashboard | FiosDashboard | AllyDashboard | AmazonDashboard | AmexBankDashboard | AmexCardDashboard | BofaCardDashboard | PaypalDashboard;
 
 /** PayPal on a card dashboard (worker/src/statements/paypalMatch.ts). */
 export interface CardPaypalPanel {
