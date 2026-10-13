@@ -15,6 +15,8 @@ const toMs = (iso: string) => {
   const [y, m, d] = iso.slice(0, 10).split('-').map(Number);
   return new Date(y, m - 1, d).getTime();
 };
+const STALE_MS = 2 * 24 * 60 * 60 * 1000;
+const when = (iso: string) => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 const fmtDate = (iso: string | null) =>
   iso
     ? new Date(toMs(iso)).toLocaleDateString('en-US', {
@@ -101,6 +103,11 @@ export function BeeBingSection({ range }: { range?: { from: string; to: string }
     );
   }
   const p = data.period;
+  const c = data.connection;
+  // Bing throttles Cloudflare's shared IPs, so a sync can fail for days —
+  // say how fresh the numbers are, and flag it once the last good pull is
+  // more than 2 days old (it should land nightly).
+  const stale = c.lastOkAt ? Date.now() - new Date(c.lastOkAt).getTime() > STALE_MS : !!c.lastError;
   const ch = p.prev.clicks ? (p.now.clicks - p.prev.clicks) / p.prev.clicks : null;
   return (
     <section className="bee-section">
@@ -109,6 +116,7 @@ export function BeeBingSection({ range }: { range?: { from: string; to: string }
         <InfoTip label="About Bing">
           <p>Bing also powers DuckDuckGo, Yahoo and Copilot results. Bing only reports by week, so the range uses the {data.range.last4.length} week{data.range.last4.length === 1 ? '' : 's'} starting inside it, compared with the same number of weeks before. History since {fmtDate(data.range.from)}.</p>
         </InfoTip>
+        {c.dataThrough && <span className={stale ? 'fin-dash__neg' : 'fin-dash__muted'}>Data through {fmtDate(c.dataThrough)}{stale ? ' · Bing hasn’t synced lately' : ''}</span>}
       </div>
       <div className="fin-dash__stats">
         <Stat label="Clicks" value={n0(p.now.clicks)} sub={ch === null ? `${data.range.last4.length} weeks` : `${ch >= 0 ? '+' : '−'}${Math.abs(ch * 100).toFixed(0)}% vs weeks before`} />
@@ -185,10 +193,13 @@ export function BeeBingSection({ range }: { range?: { from: string; to: string }
             </button>
           </div>
           <p className="fin-dash__muted">
-            {data.connection.site} · {data.range.weeks} weeks of searches · syncs nightly
-            {data.connection.lastSyncAt ? `, last ${new Date(data.connection.lastSyncAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}` : ''}.
+            {c.site} · {data.range.weeks} weeks of searches · data through {fmtDate(c.dataThrough)}
           </p>
-          {(msg || data.connection.lastError) && <p className="fin-dash__note">{msg ?? data.connection.lastError}</p>}
+          <p className={stale ? 'fin-dash__neg' : 'fin-dash__muted'}>
+            Last successful sync: {c.lastOkAt ? when(c.lastOkAt) : 'not recorded yet'}
+            {c.lastError && c.lastSyncAt ? ` · last try ${when(c.lastSyncAt)} failed` : ''}
+          </p>
+          {(msg || c.lastError) && <p className="fin-dash__note">{msg ?? c.lastError}</p>}
         </section>
       </div>
     </section>

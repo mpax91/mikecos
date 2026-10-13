@@ -59,7 +59,8 @@ export function MicrosoftKeys() {
       {bing?.connected ? (
         <p>
           {bing.site ?? 'Key saved — waiting for Bing to stop throttling'}
-          {bing.lastSyncAt && <span className="settings-page__section-hint"> · last synced {new Date(bing.lastSyncAt).toLocaleString()}</span>}{' '}
+          {bing.lastOkAt && <span className="settings-page__section-hint"> · last synced {new Date(bing.lastOkAt).toLocaleString()}</span>}
+          {bing.lastError && bing.lastSyncAt && <span className="settings-page__section-hint"> · last try {new Date(bing.lastSyncAt).toLocaleString()} failed</span>}{' '}
           <button className="btn btn--ghost btn--sm" onClick={() => saveBing(null)} disabled={busy === 'bing'}>
             Disconnect
           </button>

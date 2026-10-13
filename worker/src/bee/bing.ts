@@ -19,6 +19,7 @@ export interface BeeKeysRow {
   bing_sites_json: string | null;
   bing_last_sync_at: string | null;
   bing_last_error: string | null;
+  bing_last_ok_at: string | null;
   clarity_token_enc: string | null;
   clarity_last_sync_at: string | null;
   clarity_last_error: string | null;
@@ -157,7 +158,7 @@ export async function syncBing(env: Env): Promise<BingSyncResult> {
     stmts.push(env.DB.prepare('DELETE FROM bee_bing_issues'));
     for (const i of issues ?? []) stmts.push(env.DB.prepare('INSERT OR REPLACE INTO bee_bing_issues (url, issue, http_code, seen_at) VALUES (?, ?, ?, ?)').bind(i.Url, issueText(i.Issues), i.HttpCode ?? null, now()));
     for (let i = 0; i < stmts.length; i += 90) await env.DB.batch(stmts.slice(i, i + 90));
-    await env.DB.prepare('UPDATE bee_keys SET bing_last_sync_at = ?, bing_last_error = NULL WHERE id = 1').bind(now()).run();
+    await env.DB.prepare('UPDATE bee_keys SET bing_last_sync_at = ?, bing_last_ok_at = ?, bing_last_error = NULL WHERE id = 1').bind(now(), now()).run();
     return { weeks: weeks.size, queries: queries?.length ?? 0, pages: pages?.length ?? 0, days, issues: issues?.length ?? 0 };
   } catch (err) {
     await env.DB.prepare('UPDATE bee_keys SET bing_last_sync_at = ?, bing_last_error = ? WHERE id = 1').bind(now(), (err instanceof Error ? err.message : String(err)).slice(0, 500)).run();
@@ -198,10 +199,19 @@ export async function bingSyncDue(env: Env, scheduledTime: number): Promise<bool
 /** GET /api/bee/bing — Bing section of the Google Search tab. */
 export async function bingDashboard(env: Env, asked: { from: string; to: string } | null = null) {
   const row = await loadKeys(env);
-  const connection = { connected: !!row.bing_key_enc, site: row.bing_site, lastSyncAt: row.bing_last_sync_at, lastError: row.bing_last_error };
   const db = env.DB;
   const span = await db.prepare('SELECT MIN(week) a, MAX(week) b, COUNT(DISTINCT week) n FROM bee_bing_queries').first<{ a: string | null; b: string | null; n: number }>();
   const dspan = await db.prepare('SELECT MIN(date) a, MAX(date) b FROM bee_bing_days').first<{ a: string | null; b: string | null }>();
+  // lastSyncAt = last ATTEMPT (throttled ones too); lastOkAt = last pull that
+  // got through; dataThrough = newest day Bing has given us.
+  const connection = {
+    connected: !!row.bing_key_enc,
+    site: row.bing_site,
+    lastSyncAt: row.bing_last_sync_at,
+    lastOkAt: row.bing_last_ok_at,
+    dataThrough: dspan?.b ?? span?.b ?? null,
+    lastError: row.bing_last_error,
+  };
   if (!span?.b && !dspan?.b) return { connection, empty: true as const };
 
   const { results: weeksList } = await db.prepare('SELECT DISTINCT week FROM bee_bing_queries ORDER BY week DESC LIMIT 8').all<{ week: string }>();

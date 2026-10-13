@@ -3883,9 +3883,9 @@ export interface BeeBingRow {
   ctr: number;
 }
 export type BeeBing =
-  | { connection: { connected: boolean; site: string | null; lastSyncAt: string | null; lastError: string | null }; empty: true }
+  | { connection: { connected: boolean; site: string | null; lastSyncAt: string | null; lastOkAt: string | null; dataThrough: string | null; lastError: string | null }; empty: true }
   | {
-      connection: { connected: boolean; site: string | null; lastSyncAt: string | null; lastError: string | null };
+      connection: { connected: boolean; site: string | null; lastSyncAt: string | null; lastOkAt: string | null; dataThrough: string | null; lastError: string | null };
       empty: false;
       range: { from: string | null; to: string | null; weeks: number; last4: string[] };
       period: { now: { clicks: number; impressions: number; ctr: number }; prev: { clicks: number; impressions: number; ctr: number } };
