@@ -455,6 +455,7 @@ export interface QuickLink {
   thumbnailUrl: string | null;
   category: string;
   sortOrder: number;
+  realm: 'personal' | 'work';
 }
 
 export interface QuickLinksResponse {

@@ -5001,6 +5001,7 @@ interface QuickLinkRow {
   sort_order: number;
   created_at: string;
   updated_at: string;
+  realm: string | null;
 }
 
 function quickLinkJson(row: QuickLinkRow) {
@@ -5013,6 +5014,7 @@ function quickLinkJson(row: QuickLinkRow) {
     thumbnailUrl: row.thumbnail_key ? `/api/files/${row.thumbnail_key}` : null,
     category: row.category,
     sortOrder: row.sort_order,
+    realm: row.realm === 'work' ? 'work' : 'personal',
   };
 }
 
@@ -5032,6 +5034,7 @@ app.post('/api/quick-links', async (c) => {
     icon?: string | null;
     thumbnail_key?: string | null;
     category?: string;
+    realm?: string | null;
   }>();
   const name = body.name?.trim();
   const url = body.url?.trim();
@@ -5047,7 +5050,7 @@ app.post('/api/quick-links', async (c) => {
     `INSERT INTO quick_links (id, name, url, type, icon, thumbnail_key, category, sort_order, created_at, updated_at, realm)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
-    .bind(id, name, url, type, body.icon ?? null, body.thumbnail_key ?? null, category, (maxPos?.m ?? -1) + 1, ts, ts, createRealm(c))
+    .bind(id, name, url, type, body.icon ?? null, body.thumbnail_key ?? null, category, (maxPos?.m ?? -1) + 1, ts, ts, createRealm(c, body.realm))
     .run();
 
   const row = await c.env.DB.prepare('SELECT * FROM quick_links WHERE id = ?').bind(id).first<QuickLinkRow>();
@@ -5057,7 +5060,7 @@ app.post('/api/quick-links', async (c) => {
 app.patch('/api/quick-links/:id', async (c) => {
   const id = c.req.param('id');
   const body = await c.req.json<
-    Partial<{ name: string; url: string; type: 'open' | 'copy'; icon: string | null; thumbnail_key: string | null; category: string; sort_order: number }>
+    Partial<{ name: string; url: string; type: 'open' | 'copy'; icon: string | null; thumbnail_key: string | null; category: string; sort_order: number; realm: string }>
   >();
   const existing = await c.env.DB.prepare('SELECT * FROM quick_links WHERE id = ?').bind(id).first<QuickLinkRow>();
   if (!existing) return c.json({ error: 'not found' }, 404);
@@ -5071,6 +5074,11 @@ app.patch('/api/quick-links/:id', async (c) => {
   if (body.thumbnail_key !== undefined) { fields.push('thumbnail_key = ?'); values.push(body.thumbnail_key); }
   if (body.category !== undefined) { fields.push('category = ?'); values.push(body.category.trim() || 'Links'); }
   if (body.sort_order !== undefined) { fields.push('sort_order = ?'); values.push(body.sort_order); }
+  if (body.realm !== undefined) {
+    if (body.realm !== 'work' && body.realm !== 'personal') return c.json({ error: "realm must be 'work' or 'personal'" }, 400);
+    fields.push('realm = ?');
+    values.push(body.realm);
+  }
 
   if (fields.length > 0) {
     fields.push('updated_at = ?');

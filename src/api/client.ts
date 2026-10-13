@@ -687,6 +687,7 @@ export const api = {
     icon?: string | null;
     thumbnail_key?: string | null;
     category?: string;
+    realm?: 'personal' | 'work';
   }) =>
     request<QuickLink>('/api/quick-links', {
       method: 'POST',
@@ -703,6 +704,7 @@ export const api = {
       thumbnail_key: string | null;
       category: string;
       sort_order: number;
+      realm: 'personal' | 'work';
     }>
   ) =>
     request<QuickLink>(`/api/quick-links/${id}`, {

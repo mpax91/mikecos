@@ -4,6 +4,8 @@ import type { QuickLink } from '../../api/types';
 import { Modal } from '../../components/Modal';
 import { ConfirmModal } from '../../components/ConfirmModal';
 import { TrashIcon } from '../../components/icons';
+import { RealmChip, RealmToggle } from '../../components/RealmSwitch';
+import { getRealm } from '../../utils/realm';
 
 interface FormState {
   id: string | null; // null while creating
@@ -14,10 +16,11 @@ interface FormState {
   category: string;
   thumbnailKey: string | null; // already-uploaded key, if any
   thumbnailPreviewUrl: string | null; // local object URL or the existing thumbnailUrl, for the preview square
+  realm: 'personal' | 'work'; // Work links show under Work + All; Personal under Personal + All
 }
 
 function blankForm(): FormState {
-  return { id: null, name: '', url: '', type: 'open', icon: '🔗', category: 'AI Tools', thumbnailKey: null, thumbnailPreviewUrl: null };
+  return { id: null, name: '', url: '', type: 'open', icon: '🔗', category: 'AI Tools', thumbnailKey: null, thumbnailPreviewUrl: null, realm: getRealm() === 'work' ? 'work' : 'personal' };
 }
 
 function formFromLink(link: QuickLink): FormState {
@@ -30,6 +33,7 @@ function formFromLink(link: QuickLink): FormState {
     category: link.category,
     thumbnailKey: null, // only set when Mike uploads a *new* one this edit — an unchanged thumbnail is left alone
     thumbnailPreviewUrl: link.thumbnailUrl,
+    realm: link.realm === 'work' ? 'work' : 'personal',
   };
 }
 
@@ -115,6 +119,7 @@ export function QuickLinksPanel() {
         type: form.type,
         icon: form.icon.trim() || '🔗',
         category: form.category.trim() || 'Links',
+        realm: form.realm,
         // Only send thumbnail_key when it actually changed this edit —
         // undefined means "leave it as-is" on the server; null explicitly
         // clears it (handled by clearThumbnail above setting it to null).
@@ -205,7 +210,8 @@ export function QuickLinksPanel() {
                     {' '}
                     · {link.category}
                     {link.type === 'copy' ? ' · copies to clipboard' : ''}
-                  </span>
+                  </span>{' '}
+                  <RealmChip realm={link.realm} />
                 </div>
               </div>
               <div className="manage-row__actions">
@@ -261,6 +267,10 @@ export function QuickLinksPanel() {
               Copies to clipboard
             </div>
           </div>
+
+          <label className="settings-page__field-label">Shows Under</label>
+          <RealmToggle value={form.realm} onChange={(realm) => setForm({ ...form, realm })} />
+          <div className="thumb-hint">{form.realm === 'work' ? 'Work and All — hidden under Personal.' : 'Personal and All — hidden under Work.'}</div>
 
           {saveError && <div className="settings-page__rrule-error">{saveError}</div>}
 
