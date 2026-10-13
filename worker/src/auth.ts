@@ -201,9 +201,23 @@ function isInternalCronRequest(c: Context<{ Bindings: Env }>): boolean {
   return timingSafeEqual(presented, configured);
 }
 
+/** The nightly GitHub Actions Bing pull (scripts/bing-pull.mjs) posts here
+ * from outside Cloudflare, because Bing throttles Cloudflare's shared IPs.
+ * Its key (BEE_IMPORT_KEY Worker secret, also a GitHub repo secret) opens
+ * exactly ONE route, POST /api/bee/bing/import — nothing else in the app.
+ * No secret configured → no bypass. */
+export const BEE_IMPORT_PATH = '/api/bee/bing/import';
+export function isBeeImportRequest(env: Env, method: string, path: string, presented: string | undefined): boolean {
+  const configured = env.BEE_IMPORT_KEY;
+  if (!configured || configured.length < 32 || !presented) return false;
+  if (method !== 'POST' || path !== BEE_IMPORT_PATH) return false;
+  return timingSafeEqual(presented, configured);
+}
+
 export async function authGate(c: Context<{ Bindings: Env }>, next: () => Promise<void>) {
   if (c.req.path.startsWith('/api/auth/')) return next();
   if (isInternalCronRequest(c)) return next();
+  if (isBeeImportRequest(c.env, c.req.method, c.req.path, c.req.header('x-import-key'))) return next();
   const session = await getValidSession(c);
   if (!session) {
     deleteCookie(c, COOKIE_NAME, { path: '/' });

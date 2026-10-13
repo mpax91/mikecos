@@ -1,0 +1,36 @@
+# Copy of .github/workflows/bing-pull.yml — Mike adds that file himself
+# (cloud sessions can't push workflow files). Keep this copy in sync.
+#
+# Nightly Bing Webmaster pull for the Bedford Bee dashboard. Runs on
+# GitHub's servers because Bing throttles Cloudflare's shared IPs; posts
+# the results to MikeOS (scripts/bing-pull.mjs). The repo is PUBLIC, so
+# the script prints counts only.
+name: Bing pull
+
+on:
+  schedule:
+    - cron: '23 6 * * *' # ~2:23 AM Eastern, before the Worker's own 07 UTC try
+  workflow_dispatch: {} # "Run workflow" button for a manual pull
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bing-pull
+  cancel-in-progress: false
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node scripts/bing-pull.mjs
+        env:
+          BING_API_KEY: ${{ secrets.BING_API_KEY }}
+          BEE_IMPORT_KEY: ${{ secrets.BEE_IMPORT_KEY }}

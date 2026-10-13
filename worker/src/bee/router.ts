@@ -8,7 +8,8 @@ import { disconnectGsc, gscAuthUrl, syncGscAll } from './gsc';
 import { searchDashboard, searchDetail } from './search';
 import { rangeVisitors, syncGaAll } from './ga';
 import { analyticsDashboard, analyticsDetail } from './analytics';
-import { bingDashboard, saveBingKey, syncBing } from './bing';
+import { isBeeImportRequest } from '../auth';
+import { bingDashboard, importBing, saveBingKey, syncBing } from './bing';
 import { clarityDashboard, saveClarityToken, syncClarity } from './clarity';
 import { disconnectMeta, metaAuthUrl, saveMetaApp, syncMeta } from './meta';
 import { socialDashboard } from './social';
@@ -96,6 +97,17 @@ beeRouter.post('/bing/sync', async (c) => {
     return c.json(await syncBing(c.env));
   } catch (err) {
     return c.json(fail(err), 502);
+  }
+});
+// Bing pull posted by the GitHub Actions job (scripts/bing-pull.mjs).
+// authGate lets ONLY this path through with the X-Import-Key header (=
+// BEE_IMPORT_KEY Worker secret); checked again here.
+beeRouter.post('/bing/import', async (c) => {
+  if (!isBeeImportRequest(c.env, c.req.method, c.req.path, c.req.header('x-import-key'))) return c.json({ error: 'unauthorized' }, 401);
+  try {
+    return c.json(await importBing(c.env, await c.req.json()));
+  } catch (err) {
+    return c.json(fail(err), 400);
   }
 });
 beeRouter.put('/clarity/token', async (c) => {

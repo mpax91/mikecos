@@ -20,6 +20,7 @@ export interface BeeKeysRow {
   bing_last_sync_at: string | null;
   bing_last_error: string | null;
   bing_last_ok_at: string | null;
+  bing_last_ok_via: string | null;
   clarity_token_enc: string | null;
   clarity_last_sync_at: string | null;
   clarity_last_error: string | null;
@@ -125,7 +126,28 @@ export async function syncBing(env: Env): Promise<BingSyncResult> {
     const queries = await call<Stat[]>(key, 'GetQueryStats', { siteUrl });
     const pages = await call<Stat[]>(key, 'GetPageStats', { siteUrl });
     const traffic = await call<{ Clicks: number; Impressions: number; Date: string }[]>(key, 'GetRankAndTrafficStats', { siteUrl });
-    const issues = await call<{ Url: string; Issues?: number | string; HttpCode?: number }[]>(key, 'GetCrawlIssues', { siteUrl }).catch(() => []);
+    const issues = await call<BingIssue[]>(key, 'GetCrawlIssues', { siteUrl }).catch(() => []);
+    return await storeBing(env, { queries, pages, traffic, issues }, 'worker');
+  } catch (err) {
+    await env.DB.prepare('UPDATE bee_keys SET bing_last_sync_at = ?, bing_last_error = ? WHERE id = 1').bind(now(), (err instanceof Error ? err.message : String(err)).slice(0, 500)).run();
+    throw err;
+  }
+}
+
+type BingStat = { Query: string; Clicks: number; Impressions: number; AvgClickPosition: number; AvgImpressionPosition: number; Date: string };
+type BingTraffic = { Clicks: number; Impressions: number; Date: string };
+type BingIssue = { Url: string; Issues?: number | string; HttpCode?: number };
+export interface BingPull {
+  queries: BingStat[];
+  pages: BingStat[];
+  traffic: BingTraffic[];
+  issues: BingIssue[];
+}
+
+/** Writes one full Bing pull (the Worker's own, or one posted by the
+ * GitHub Actions job) and marks the sync successful. */
+async function storeBing(env: Env, { queries, pages, traffic, issues }: BingPull, via: 'worker' | 'github'): Promise<BingSyncResult> {
+  {
     const stmts: D1PreparedStatement[] = [];
     const weeks = new Set<string>();
     for (const [table, col, list] of [
@@ -158,12 +180,36 @@ export async function syncBing(env: Env): Promise<BingSyncResult> {
     stmts.push(env.DB.prepare('DELETE FROM bee_bing_issues'));
     for (const i of issues ?? []) stmts.push(env.DB.prepare('INSERT OR REPLACE INTO bee_bing_issues (url, issue, http_code, seen_at) VALUES (?, ?, ?, ?)').bind(i.Url, issueText(i.Issues), i.HttpCode ?? null, now()));
     for (let i = 0; i < stmts.length; i += 90) await env.DB.batch(stmts.slice(i, i + 90));
-    await env.DB.prepare('UPDATE bee_keys SET bing_last_sync_at = ?, bing_last_ok_at = ?, bing_last_error = NULL WHERE id = 1').bind(now(), now()).run();
+    await env.DB.prepare('UPDATE bee_keys SET bing_last_sync_at = ?, bing_last_ok_at = ?, bing_last_ok_via = ?, bing_last_error = NULL WHERE id = 1').bind(now(), now(), via).run();
     return { weeks: weeks.size, queries: queries?.length ?? 0, pages: pages?.length ?? 0, days, issues: issues?.length ?? 0 };
-  } catch (err) {
-    await env.DB.prepare('UPDATE bee_keys SET bing_last_sync_at = ?, bing_last_error = ? WHERE id = 1').bind(now(), (err instanceof Error ? err.message : String(err)).slice(0, 500)).run();
-    throw err;
   }
+}
+
+const MAX_ROWS = 50000;
+/** POST /api/bee/bing/import — a pull made OUTSIDE Cloudflare (the GitHub
+ * Actions job, scripts/bing-pull.mjs), since Bing throttles Cloudflare's
+ * shared IPs. Only the shape is trusted, never anything else: rows are
+ * typed/clamped the same as our own pull. */
+export async function importBing(env: Env, body: unknown): Promise<BingSyncResult> {
+  const b = (body ?? {}) as Record<string, unknown>;
+  const site = typeof b.site === 'string' ? b.site : '';
+  if (!site.toLowerCase().includes(SITE_HINT)) throw new Error(`site must be the ${SITE_HINT} Bing site`);
+  const arr = (v: unknown) => {
+    if (!Array.isArray(v)) throw new Error('queries, pages, traffic and issues must be arrays');
+    if (v.length > MAX_ROWS) throw new Error('too many rows');
+    return v.filter((x) => x && typeof x === 'object');
+  };
+  const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  const stat = (x: any): BingStat => ({ Query: String(x.Query ?? '').slice(0, 2000), Clicks: num(x.Clicks), Impressions: num(x.Impressions), AvgClickPosition: num(x.AvgClickPosition), AvgImpressionPosition: num(x.AvgImpressionPosition), Date: String(x.Date ?? '') });
+  const pull: BingPull = {
+    queries: arr(b.queries).map(stat),
+    pages: arr(b.pages).map(stat),
+    traffic: arr(b.traffic).map((x: any) => ({ Clicks: num(x.Clicks), Impressions: num(x.Impressions), Date: String(x.Date ?? '') })),
+    issues: arr(b.issues).map((x: any) => ({ Url: String(x.Url ?? '').slice(0, 2000), Issues: x.Issues, HttpCode: x.HttpCode == null ? undefined : num(x.HttpCode) })),
+  };
+  await loadKeys(env);
+  await env.DB.prepare('UPDATE bee_keys SET bing_site = ? WHERE id = 1').bind(site).run();
+  return storeBing(env, pull, 'github');
 }
 
 /** Bing's CrawlIssues is a bit flag set. */
@@ -190,6 +236,9 @@ function issueText(v: unknown): string {
 export async function bingSyncDue(env: Env, scheduledTime: number): Promise<boolean> {
   const row = await loadKeys(env);
   if (!row.bing_key_enc) return false;
+  // The GitHub Actions job (or an earlier run) already got through today —
+  // don't spend the day retrying into Bing's throttle.
+  if (row.bing_last_ok_at && row.bing_last_ok_at > new Date(scheduledTime - 20 * 60 * 60 * 1000).toISOString()) return false;
   if (new Date(scheduledTime).getUTCHours() === 7) return true;
   // Still throttled / not finished connecting: try again every couple of hours.
   if (!row.bing_site || row.bing_last_error) return !row.bing_last_sync_at || row.bing_last_sync_at < new Date(scheduledTime - 2 * 60 * 60 * 1000).toISOString();
@@ -209,6 +258,7 @@ export async function bingDashboard(env: Env, asked: { from: string; to: string 
     site: row.bing_site,
     lastSyncAt: row.bing_last_sync_at,
     lastOkAt: row.bing_last_ok_at,
+    lastOkVia: row.bing_last_ok_via,
     dataThrough: dspan?.b ?? span?.b ?? null,
     lastError: row.bing_last_error,
   };

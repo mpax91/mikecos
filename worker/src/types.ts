@@ -373,6 +373,9 @@ export interface Env {
   // hasn't deployed this yet still boots — authGate just requires a real
   // session for everyone, cron included, until it's set.
   CRON_INTERNAL_SECRET?: string;
+  // Opens ONLY POST /api/bee/bing/import for the GitHub Actions Bing pull
+  // (auth.ts isBeeImportRequest). Unset = route closed.
+  BEE_IMPORT_KEY?: string;
   // Service binding to this same Worker (wrangler.toml [[services]]) — how
   // the nightly crons reach their own chunk endpoints without the error
   // 1042 a fetch() to its own workers.dev URL gets.

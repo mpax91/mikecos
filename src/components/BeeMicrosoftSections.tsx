@@ -196,7 +196,7 @@ export function BeeBingSection({ range }: { range?: { from: string; to: string }
             {c.site} · {data.range.weeks} weeks of searches · data through {fmtDate(c.dataThrough)}
           </p>
           <p className={stale ? 'fin-dash__neg' : 'fin-dash__muted'}>
-            Last successful sync: {c.lastOkAt ? when(c.lastOkAt) : 'not recorded yet'}
+            Last successful sync: {c.lastOkAt ? `${when(c.lastOkAt)}${c.lastOkVia === 'github' ? ' (via GitHub)' : ''}` : 'not recorded yet'}
             {c.lastError && c.lastSyncAt ? ` · last try ${when(c.lastSyncAt)} failed` : ''}
           </p>
           {(msg || c.lastError) && <p className="fin-dash__note">{msg ?? c.lastError}</p>}
