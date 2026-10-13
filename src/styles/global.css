@@ -19103,6 +19103,48 @@ td.month-page__upcoming-actions .today-page__meeting-actions {
   border-style: dashed;
   color: var(--color-muted);
 }
+/* Open Grade (Bee subscribers, 2026-10-12) */
+.bee-grade {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 5px;
+  margin-right: 6px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  vertical-align: 1px;
+  border: 1px solid transparent;
+}
+.bee-grade--a { background: #dcefe0; border-color: #a9d3b2; color: #1e6a34; }
+.bee-grade--b { background: #e5f0f8; border-color: #b8d2e8; color: #1d4f80; }
+.bee-grade--c { background: #f6f0dc; border-color: #e3d39d; color: #7a5c06; }
+.bee-grade--d { background: #fbeadc; border-color: #ecc4a0; color: #8a3f06; }
+.bee-grade--f { background: #f8e1e1; border-color: #e6b3b3; color: #9a2222; }
+.bee-grade--new { background: transparent; border: 1px dashed var(--color-border, #ccc); color: var(--color-muted); font-weight: 600; font-size: 11px; }
+.voter-insight__summary .bee-grade { margin-right: 2px; }
+.bee-grades {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 10px;
+}
+.bee-grades__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.bee-grades__letter { font-weight: 700; }
+.bee-grades__n { opacity: 0.8; }
+.bee-grades__chip.is-active { outline: 2px solid currentColor; outline-offset: 1px; }
 .bee-money__strong td {
   font-weight: 600;
 }

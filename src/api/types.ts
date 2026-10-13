@@ -3474,6 +3474,7 @@ export interface BeeEngagement {
   ratio: number | null;
   readShare: number | null;
   score: number;
+  grade: 'A' | 'B' | 'C' | 'D' | 'F' | null; // Open Grade (curved); null = New
   forwarder: 'burst' | 'steady' | null;
   superfan: boolean;
   inflated: 'work' | 'apple' | null;
@@ -3580,6 +3581,8 @@ export interface BeeSubstack {
   postMedians: { openRate: number | null; ratio: number | null; views: number | null; recentOpenRate: number | null };
   spotlight: {
     medianRatio: number;
+    grades: { A: number; B: number; C: number; D: number; F: number; new: number };
+    readers: BeeSpotlightPerson[];
     forwarders: BeeSpotlightPerson[];
     superfans: BeeSpotlightPerson[];
     upgradeCandidates: BeeSpotlightPerson[];

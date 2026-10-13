@@ -35,8 +35,13 @@ export function BeeContactSection({ bee }: { bee: BeeContactInfo | null | undefi
         </span>
         <span className="voter-insight__title">Bedford Bee</span>
         <span className="voter-insight__summary">
+          {e && (
+            <span className={`bee-grade bee-grade--${(e.grade ?? 'new').toLowerCase()}`} title={e.grade ? `Open Grade ${e.grade}` : 'New — fewer than 5 emails received'}>
+              {e.grade ?? 'New'}
+            </span>
+          )}
           <span className={`bee-badge${bee.paid ? ' bee-badge--paid' : ''}`}>{plan}</span>
-          {e?.forwarder && <span className="bee-badge bee-badge--fwd">{e.forwarder === 'burst' ? 'Burst Forwarder' : 'Steady Forwarder'}</span>}
+          {e?.forwarder && <span className="bee-badge bee-badge--fwd">🔁 {e.forwarder === 'burst' ? 'Burst Forwarder' : 'Steady Forwarder'}</span>}
           {e?.superfan && <span className="bee-badge">Superfan</span>}
           {e && e.superfan && !bee.paid && <span className="bee-badge bee-badge--muted">Upgrade Candidate</span>}
         </span>
@@ -59,16 +64,20 @@ export function BeeContactSection({ bee }: { bee: BeeContactInfo | null | undefi
               <>
                 <div className="voter-insight__group-title">Engagement (Last 6 Months)</div>
                 <div className="voter-tiles">
-                  <Tile label="Emails Read" value={`${e.seen6mo ?? 0} of ${e.received6mo ?? 0}`} />
+                  <Tile
+                    label="Open Grade"
+                    value={e.grade ? `${e.grade} · opened ${Math.round((e.readShare ?? 0) * 100)}%` : `New · ${e.received6mo ?? 0} emails so far`}
+                  />
+                  <Tile label="Emails Opened" value={`${e.seen6mo ?? 0} of ${e.received6mo ?? 0}`} />
                   <Tile label="Opens per Email" value={e.ratio === null ? null : `${e.ratio.toFixed(1)}×`} />
                   <Tile label="Engagement Score" value={`${e.score} / 100`} />
                   <Tile label="Clicks" value={e.clicks ?? 0} />
                   <Tile label="Shares · Comments" value={`${e.shares ?? 0} · ${e.comments ?? 0}`} />
                   <Tile label="Last Open" value={fmt(e.lastOpen)} />
                 </div>
-                {e.forwarder && e.inflated && (
+                {e.inflated && (e.forwarder || e.grade === 'A' || e.grade === 'B') && (
                   <p className="fin-dash__note">
-                    {e.inflated === 'work' ? 'Work email — a security scanner can add opens.' : 'Apple Mail — automatic opens and several devices can add opens.'}
+                    {e.inflated === 'work' ? '⚠ Work email — a security scanner can open emails on its own, so the grade may be inflated.' : '⚠ Apple Mail — automatic opens and several devices can inflate the grade.'}
                   </p>
                 )}
               </>

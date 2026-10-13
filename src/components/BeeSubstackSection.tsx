@@ -864,16 +864,21 @@ function Delta({ value, typical, format, band, forward }: { value: number; typic
   );
 }
 
-type SpotTab = 'forwarders' | 'superfans' | 'upgrade';
+type SpotTab = 'readers' | 'forwarders' | 'superfans' | 'upgrade';
+type Grade = 'A' | 'B' | 'C' | 'D' | 'F' | 'new';
+const GRADES: Grade[] = ['A', 'B', 'C', 'D', 'F', 'new'];
 
 function SpotlightCard({ data }: { data: BeeSubstack }) {
-  const [tab, setTab] = useState<SpotTab>('forwarders');
+  const [tab, setTab] = useState<SpotTab>('readers');
+  const [grade, setGrade] = useState<Grade | null>(null);
   const [open, setOpen] = useState<BeeSpotlightPerson | null>(null);
   const s = data.spotlight;
-  const list = tab === 'forwarders' ? s.forwarders : tab === 'superfans' ? s.superfans : s.upgradeCandidates;
+  const readers = grade ? s.readers.filter((p) => (p.grade ?? 'new') === grade) : s.readers;
+  const list = tab === 'readers' ? readers : tab === 'forwarders' ? s.forwarders : tab === 'superfans' ? s.superfans : s.upgradeCandidates;
   const tabs: { key: SpotTab; label: string; n: number }[] = [
+    { key: 'readers', label: 'Graded Readers', n: s.readers.length },
     { key: 'forwarders', label: 'Forwarders', n: s.forwarders.length },
-    { key: 'superfans', label: 'Superfans', n: s.superfans.length },
+    { key: 'superfans', label: 'Superfans (A)', n: s.superfans.length },
     { key: 'upgrade', label: 'Upgrade Candidates', n: s.upgradeCandidates.length },
   ];
   return (
@@ -884,12 +889,14 @@ function SpotlightCard({ data }: { data: BeeSubstack }) {
             <>
               <p>Always the last 6 months — Substack’s subscriber export only tracks engagement that far back, so this card ignores the date range.</p>
               <p>
-                {tab === 'forwarders'
-                  ? `Forwarders open each email well above the list’s typical ${x1(s.medianRatio)}. A forwarded email re-opens the tracking pixel for every reader it reaches. Burst = opens only some emails, many times each — likely passing favorites to a group.`
-                  : tab === 'superfans'
-                    ? 'Superfans: highest engagement — share of emails read, days active, clicks, shares, comments and post views.'
-                    : 'Upgrade candidates: free subscribers among your superfans — the likeliest next paid members.'}
+                Open Grade: the share of emails each subscriber opened (an open is all it takes to read the piece), curved to the list — the top 20% get an A, the next 20% a B, and so on. Ties share the
+                higher grade; anyone who opened nothing gets an F. Fewer than 5 emails received = New. Clicks and shares don’t change the grade.
               </p>
+              <p>
+                Forwarders open each email well above the list’s typical {x1(s.medianRatio)} — a forwarded email re-opens the tracking pixel for every reader it reaches. Burst = opens only some emails, many
+                times each (passing favorites to a group). Work and Apple Mail inboxes can open emails automatically, so their grades are marked “May Be Inflated”.
+              </p>
+              <p>Superfans = A grade; upgrade candidates are the free ones. Score (in each person’s details) is a 0–100 mix weighted mostly on opens.</p>
               <p>
                 {s.dormant.neverOpened} subscriber{s.dormant.neverOpened === 1 ? ' hasn’t' : 's haven’t'} opened an email in 6 months; {s.dormant.quiet30d} opened nothing in the last 30 days.
               </p>
@@ -900,19 +907,36 @@ function SpotlightCard({ data }: { data: BeeSubstack }) {
         </DashTitle>
         <SectionPicker label="Spotlight list" value={tab} onChange={setTab} options={tabs.map((t) => [t.key, `${t.label} (${t.n})`] as const)} />
       </div>
+      <div className="bee-grades" role="group" aria-label="Filter by grade">
+        {GRADES.map((g) => (
+          <button
+            key={g}
+            type="button"
+            className={`bee-grades__chip bee-grade--${g.toLowerCase()}${tab === 'readers' && grade === g ? ' is-active' : ''}`}
+            onClick={() => {
+              setTab('readers');
+              setGrade(tab === 'readers' && grade === g ? null : g);
+            }}
+          >
+            <span className="bee-grades__letter">{g === 'new' ? 'New' : g}</span>
+            <span className="bee-grades__n">{s.grades[g]}</span>
+          </button>
+        ))}
+      </div>
       {list.length ? (
         <ul className="bee-list">
           {list.map((p) => (
             <li key={p.email} className="bee-list__row bee-list__row--click" role="button" tabIndex={0} onClick={() => setOpen(p)} onKeyDown={(e) => e.key === 'Enter' && setOpen(p)}>
               <span>
                 <span className="bee-person">
+                  <GradeBadge grade={p.grade} />
                   {p.name || p.email}
                   {p.name && <span className="bee-person__email">{p.email}</span>}
                 </span>
                 <Badges p={p} />
               </span>
               <span className="bee-list__meta">
-                {x1(p.ratio)} opens/email · read {p.seen6mo ?? 0}/{p.received6mo ?? 0} · score {p.score}
+                opened {p.seen6mo ?? 0}/{p.received6mo ?? 0} ({pct(p.readShare)}) · {x1(p.ratio)} opens/email
               </span>
             </li>
           ))}
@@ -922,12 +946,15 @@ function SpotlightCard({ data }: { data: BeeSubstack }) {
       )}
       {open && (
         <DetailSheet title={open.name || open.email} sub={open.name ? open.email : undefined} onClose={() => setOpen(null)}>
-          <Badges p={open} />
+          <p className="bee-person">
+            <GradeBadge grade={open.grade} /> <Badges p={open} />
+          </p>
           <Split
             items={[
+              ['Open Grade', open.grade ?? 'New', open.grade ? `opened ${pct(open.readShare)} of emails` : `only ${open.received6mo ?? 0} emails so far`],
+              ['Emails Opened', `${open.seen6mo ?? 0}/${open.received6mo ?? 0}`, `${open.opened6mo ?? 0} opens in all`],
               ['Opens / Email', x1(open.ratio), `list typical ${x1(s.medianRatio)}`],
-              ['Emails Read', `${open.seen6mo ?? 0}/${open.received6mo ?? 0}`, `${open.opened6mo ?? 0} opens in all`],
-              ['Score', String(open.score), 'superfan ≥ 70'],
+              ['Score', String(open.score), 'mostly opens · 0–100'],
               ['Clicks', n0(open.clicks ?? 0), ''],
               ['Shares · Comments', `${open.shares ?? 0} · ${open.comments ?? 0}`, ''],
               ['Last Open', open.lastOpen ? fmtShortDate(open.lastOpen) : '—', open.daysActive30d != null ? `${open.daysActive30d} active days (30d)` : ''],
@@ -944,13 +971,22 @@ function SpotlightCard({ data }: { data: BeeSubstack }) {
   );
 }
 
+function GradeBadge({ grade }: { grade: BeeSpotlightPerson['grade'] }) {
+  return (
+    <span className={`bee-grade bee-grade--${(grade ?? 'new').toLowerCase()}`} title={grade ? `Open Grade ${grade}` : 'New — fewer than 5 emails received'}>
+      {grade ?? 'New'}
+    </span>
+  );
+}
+
 function Badges({ p }: { p: BeeSpotlightPerson }) {
+  const gradedHigh = p.grade === 'A' || p.grade === 'B';
   return (
     <span className="bee-badges">
       {p.paid && <span className="bee-badge bee-badge--paid">{p.type?.replace(' Subscriber', '') ?? 'Paid'}</span>}
-      {p.forwarder && <span className="bee-badge bee-badge--fwd">{p.forwarder === 'burst' ? 'Burst Forwarder' : 'Steady Forwarder'}</span>}
+      {p.forwarder && <span className="bee-badge bee-badge--fwd">🔁 {p.forwarder === 'burst' ? 'Burst Forwarder' : 'Steady Forwarder'}</span>}
       {p.superfan && <span className="bee-badge">Superfan</span>}
-      {p.inflated && p.forwarder && <span className="bee-badge bee-badge--muted">{p.inflated === 'work' ? 'Work Email' : 'Apple Mail'} · May Be Inflated</span>}
+      {p.inflated && (p.forwarder || gradedHigh) && <span className="bee-badge bee-badge--muted">⚠ {p.inflated === 'work' ? 'Work Email' : 'Apple Mail'} · May Be Inflated</span>}
     </span>
   );
 }

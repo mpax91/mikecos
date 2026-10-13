@@ -1,5 +1,5 @@
 import type { Env } from '../types';
-import { engagementFor, isPaidType, medianRatio } from './engagement';
+import { assignGrades, engagementFor, GRADE_ORDER, isPaidType, medianRatio } from './engagement';
 import type { Engagement } from './engagement';
 import type { SubscriberStats } from './ingest';
 import { loadBeeSettings } from './ingest';
@@ -121,6 +121,7 @@ export function spotlightFor(subs: SubscriberRow[]): { median: number; people: M
       lastOpen: st.lastOpen,
     });
   }
+  assignGrades([...people.values()]);
   return { median: med, people };
 }
 
@@ -278,7 +279,12 @@ export async function substackDashboard(env: Env) {
   const { median: medRatio, people } = spotlightFor(subsAll);
   const everyone = [...people.values()];
   const forwarders = everyone.filter((p) => p.forwarder).sort((a, b) => (b.ratio ?? 0) - (a.ratio ?? 0));
-  const superfans = everyone.filter((p) => p.superfan).sort((a, b) => b.score - a.score);
+  const byOpens = (a: (typeof everyone)[number], b: (typeof everyone)[number]) =>
+    (GRADE_ORDER[a.grade ?? ''] ?? 9) - (GRADE_ORDER[b.grade ?? ''] ?? 9) || (b.readShare ?? -1) - (a.readShare ?? -1) || (b.ratio ?? 0) - (a.ratio ?? 0) || b.score - a.score;
+  const readers = [...everyone].sort(byOpens);
+  const grades = { A: 0, B: 0, C: 0, D: 0, F: 0, new: 0 };
+  for (const p of everyone) grades[p.grade ?? 'new']++;
+  const superfans = everyone.filter((p) => p.superfan).sort(byOpens);
   const upgradeCandidates = superfans.filter((p) => !p.paid);
   const dormant = {
     neverOpened: everyone.filter((p) => (p.received6mo ?? 0) >= 3 && !p.seen6mo).length,
@@ -389,7 +395,7 @@ export async function substackDashboard(env: Env) {
     sources: { free: tally((s) => s.source_free, active), paid: tally((s) => s.source_paid, paidActive) },
     posts,
     postMedians,
-    spotlight: { medianRatio: medRatio, forwarders, superfans, upgradeCandidates, dormant },
+    spotlight: { medianRatio: medRatio, grades, readers, forwarders, superfans, upgradeCandidates, dormant },
     renewals,
     // Every subscriber ever (incl. people who left) with the dates the
     // dashboard filters by — the page computes any date range from these.
