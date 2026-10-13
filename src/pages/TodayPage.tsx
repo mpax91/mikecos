@@ -549,36 +549,26 @@ export function TodayPage() {
                 </Link>
               </span>
             </div>
-            {/* Wrap Up (2026-10-12): a meeting that ended 15+ minutes ago
-                with next steps still to sort (from its 📝 note or pasted
-                Gemini notes). Tap → the sheet with Add My Tasks; other
-                people's items wait for Mike's own tap. */}
-            {meetings
-              .filter((m) => !m.allDay && Date.parse(m.end) <= Date.now() - 15 * 60_000 && (m.pendingActions ?? 0) > 0)
-              .map((m) => (
-                <button key={`wrap-${m.id}`} type="button" className="today-page__wrapup" onClick={() => openMeetingSheet({ ...m, date })}>
-                  <span className="today-page__wrapup-tag">Wrap Up</span>
-                  <span className="today-page__wrapup-title">{m.title}</span>
-                  <span className="today-page__wrapup-count">
-                    {m.pendingActions} next step{m.pendingActions === 1 ? '' : 's'} to sort ›
-                  </span>
-                </button>
-              ))}
-            {threads.map((t) => (
-              <button key={`thread-${t.id}`} type="button" className="today-page__wrapup today-page__wrapup--thread" onClick={() => openMeetingSheet(t)}>
-                <span className="today-page__wrapup-tag">{t.thread?.label ?? 'Thread'}</span>
-                <span className="today-page__wrapup-title">{t.title}</span>
-                <span className="today-page__wrapup-count">
-                  {t.pendingActions} next step{t.pendingActions === 1 ? '' : 's'} to sort ›
-                </span>
-              </button>
-            ))}
-            {meetings.length === 0 ? (
+            {meetings.length === 0 && threads.length === 0 ? (
               <div className="today-page__meetings card">
                 <div className="empty-state">No meetings {isToday ? 'today' : 'that day'}.</div>
               </div>
             ) : (
               <div className="today-page__meetings card">
+                {/* Pasted Slack / email threads with next steps to sort sit
+                    with the meetings (the Wrap Up banners were dropped
+                    2026-10-13 — the row already says "N next steps to sort"). */}
+                {threads.map((t) => (
+                  <div key={`thread-${t.id}`} className="today-page__meeting-row">
+                    <span className="today-page__meeting-time">{t.thread?.label ?? 'Thread'}</span>
+                    <button type="button" className="today-page__meeting-open" onClick={() => openMeetingSheet(t)} title="Next steps from this thread">
+                      <span className="today-page__meeting-title">{t.title}</span>
+                      <span className="today-page__meeting-people">
+                        {t.pendingActions} next step{t.pendingActions === 1 ? '' : 's'} to sort
+                      </span>
+                    </button>
+                  </div>
+                ))}
                 {meetings.map((m) => (
                   <div
                     key={m.id}
