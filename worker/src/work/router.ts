@@ -3,7 +3,8 @@ import type { Env } from '../types';
 import type { ParsedMeeting } from '../ics';
 import { isMe, parseMeetingSummary, type ParsedAction } from './gemini';
 import { firstName, meetingNoteTemplate, noteLines, scanNoteActions } from './noteScan';
-import { realmMatches, realmOf, realmSql, workLabel, type Realm, type RealmFilter } from './realm';
+import { contactRealmSql, realmMatches, realmOf, realmSql, workLabel, type Realm, type RealmFilter } from './realm';
+import { extractRecord, markdownToPlain, markdownToTiptap, threadSourceLabel, type MeetingRecord } from './record';
 
 /** Work features (migration 0106) — mounted at /api/work.
  *
@@ -607,6 +608,9 @@ interface SummaryRow {
   raw_text: string;
   source: string;
   created_at: string;
+  kind?: string | null;
+  format?: string | null;
+  record_json?: string | null;
 }
 interface ActionRow {
   id: string;
@@ -620,6 +624,10 @@ interface ActionRow {
   status: string;
   entity_id: string | null;
   created_at: string;
+  confidence?: string | null;
+  due_date?: string | null;
+  record_action_id?: string | null;
+  owner_email?: string | null;
 }
 
 async function actionsJson(db: D1Database, rows: ActionRow[]) {
@@ -631,6 +639,10 @@ async function actionsJson(db: D1Database, rows: ActionRow[]) {
   ]);
   const ent = new Map(ents.map((e) => [e.id, e]));
   const ct = new Map(cts.map((x) => [x.id, x.name]));
+  const ids = rows.map((r) => r.id);
+  const withPrompt = new Set(
+    (await inChunks(ids, async (ch, ph) => (await db.prepare(`SELECT DISTINCT action_id FROM meeting_assists WHERE action_id IN (${ph})`).bind(...ch).all<{ action_id: string }>()).results ?? []).catch(() => [])).map((x) => x.action_id)
+  );
   return rows.map((r) => {
     const e = r.entity_id ? ent.get(r.entity_id) : undefined;
     return {
@@ -645,12 +657,24 @@ async function actionsJson(db: D1Database, rows: ActionRow[]) {
       status: r.status,
       entityId: e ? r.entity_id : null,
       entityDone: e ? e.status === 'done' : r.status === 'task' || r.status === 'waiting',
-      dueDate: e?.due_date ?? null,
+      dueDate: e?.due_date ?? (r.status === 'pending' ? r.due_date ?? null : null),
+      confidence: r.confidence === 'implied' ? 'implied' : r.confidence === 'stated' ? 'stated' : null,
+      hasPrompt: withPrompt.has(r.id),
     };
   });
 }
 
+function recordOf(s: SummaryRow): MeetingRecord | null {
+  if (!s.record_json) return null;
+  try {
+    return JSON.parse(s.record_json) as MeetingRecord;
+  } catch {
+    return null;
+  }
+}
+
 function summaryJson(s: SummaryRow) {
+  const rec = recordOf(s);
   return {
     id: s.id,
     meetingId: s.meeting_id,
@@ -664,14 +688,35 @@ function summaryJson(s: SummaryRow) {
     decisions: s.decisions ?? '',
     source: s.source,
     createdAt: s.created_at,
+    kind: s.kind ?? null,
+    tldr: rec?.tldr ?? [],
+    attendeesConfirmed: rec?.meeting?.attendeesConfirmed ?? null,
+    attendees: rec?.meeting?.attendees ?? rec?.thread?.participants ?? [],
+    threadSource: rec?.thread?.source ?? null,
+    threadChannel: rec?.thread?.channel ?? null,
   };
 }
 
 workRouter.get('/meetings/:meetingId/summaries', async (c) => {
   const meetingId = c.req.param('meetingId');
-  const { results } = await c.env.DB.prepare('SELECT * FROM meeting_summaries WHERE meeting_id = ? ORDER BY created_at').bind(meetingId).all<SummaryRow>();
-  const { results: acts } = await c.env.DB.prepare('SELECT * FROM meeting_actions WHERE meeting_id = ? ORDER BY created_at, rowid').bind(meetingId).all<ActionRow>();
-  return c.json({ summaries: (results ?? []).map(summaryJson), actions: await actionsJson(c.env.DB, acts ?? []) });
+  const db = c.env.DB;
+  const { results } = await db.prepare('SELECT * FROM meeting_summaries WHERE meeting_id = ? ORDER BY created_at').bind(meetingId).all<SummaryRow>();
+  const { results: acts } = await db.prepare('SELECT * FROM meeting_actions WHERE meeting_id = ? ORDER BY created_at, rowid').bind(meetingId).all<ActionRow>();
+  const [items, assists] = await Promise.all([
+    db.prepare(`SELECT * FROM meeting_items WHERE meeting_id = ? AND kind != 'ignored_person' ORDER BY created_at, position`).bind(meetingId).all<ItemRow>(),
+    db.prepare('SELECT * FROM meeting_assists WHERE meeting_id = ? ORDER BY created_at, position').bind(meetingId).all<AssistRow>(),
+  ]);
+  const suggestions: { summaryId: string; name: string; email: string | null }[] = [];
+  for (const s of (results ?? []).filter((x) => x.source === 'record')) {
+    for (const p of await unmatchedPeople(db, s)) suggestions.push({ summaryId: s.id, ...p });
+  }
+  return c.json({
+    summaries: (results ?? []).map(summaryJson),
+    actions: await actionsJson(db, acts ?? []),
+    items: (items.results ?? []).map(itemJson),
+    assists: (assists.results ?? []).map(assistJson),
+    suggestions,
+  });
 });
 
 /** TipTap doc for the summary note — headings + paragraphs + bullet lists. */
@@ -838,7 +883,7 @@ async function scanStaleNotes(db: D1Database, meetings: ScanMeeting[]): Promise<
 
 workRouter.post('/meetings/:meetingId/summaries', async (c) => {
   const meetingId = c.req.param('meetingId');
-  const b = await c.req.json<{ text: string; title?: string; start?: string; realm?: string; peopleIds?: string[]; source?: string }>();
+  const b = await c.req.json<{ text: string; title?: string; start?: string; realm?: string; peopleIds?: string[]; source?: string; date?: string; allDay?: boolean }>();
   const raw = (b.text ?? '').trim();
   if (raw.length < 10) return c.json({ error: 'Paste the meeting notes first' }, 400);
   if (raw.length > 400_000) return c.json({ error: 'That text is too long (400K characters max)' }, 400);
@@ -856,6 +901,18 @@ workRouter.post('/meetings/:meetingId/summaries', async (c) => {
   } else if (seriesKey.startsWith('ms-')) {
     people = (await db.prepare(`SELECT c.id, c.name FROM meeting_series_people sp JOIN contacts c ON c.id = sp.contact_id WHERE sp.series_id = ?`).bind(seriesKey.slice(3)).all<PersonRef>()).results ?? [];
   }
+
+  // A brief from Mike's work Claude ends with a meeting-record block —
+  // file it whole instead of reading it like Gemini notes.
+  const ex = extractRecord(raw);
+  if (ex.found) {
+    if (!ex.record) return c.json({ error: ex.error ?? "Record couldn't be read — ask Claude to resend just the meeting-record block." }, 400);
+    if (ex.record.kind === 'weekly' || ex.record.kind === 'thread') return c.json({ error: `This is a ${ex.record.kind} brief, not a meeting — use Paste Brief on Today instead.` }, 400);
+    const date = b.date && DATE_RE.test(b.date) ? b.date : ex.record.meeting?.date ?? localDate(start);
+    const r = await importRecord(db, ex.record, ex.note, raw, { meetingId, seriesKey, title, start, realm, people, date, allDay: b.allDay === true });
+    return c.json(await summaryPayload(db, r.summaryId, r.existing), r.existing ? 200 : 201);
+  }
+
   const mine = await myNames(db);
   const parsed = parseMeetingSummary(raw, [...mine, ...people.map((p) => p.name), ...people.map((p) => p.name.split(/\s+/)[0])]);
 
@@ -898,12 +955,533 @@ workRouter.post('/meetings/:meetingId/summaries', async (c) => {
 
 workRouter.delete('/summaries/:id', async (c) => {
   const id = c.req.param('id');
+  const db = c.env.DB;
+  const row = await db.prepare('SELECT * FROM meeting_summaries WHERE id = ?').bind(id).first<SummaryRow>();
   // Pending suggestions go with it; tasks/Waiting items already made stay.
-  await c.env.DB.batch([
-    c.env.DB.prepare(`DELETE FROM meeting_actions WHERE summary_id = ?`).bind(id),
-    c.env.DB.prepare('DELETE FROM meeting_summaries WHERE id = ?').bind(id),
-  ]);
+  // A pasted brief (record) also takes its note, items, prompts and the
+  // facts it put on contact cards.
+  const stmts = [
+    db.prepare(`DELETE FROM meeting_actions WHERE summary_id = ?`).bind(id),
+    db.prepare(`DELETE FROM meeting_items WHERE summary_id = ?`).bind(id),
+    db.prepare(`DELETE FROM meeting_assists WHERE summary_id = ?`).bind(id),
+    db.prepare(`DELETE FROM contact_context WHERE summary_id = ?`).bind(id),
+    db.prepare('DELETE FROM meeting_summaries WHERE id = ?').bind(id),
+  ];
+  if (row?.source === 'record' && row.note_entity_id) stmts.push(db.prepare(`DELETE FROM entities WHERE id = ? AND type = 'note'`).bind(row.note_entity_id));
+  await db.batch(stmts);
   return c.json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
+// Briefs from Mike's work Claude — "meeting-record" blocks (record.ts,
+// migration 0120). One paste files the brief as a Work note, its next steps
+// as pending items (Mike's: one-tap Add My Tasks; others': never automatic),
+// decisions / open questions / watch-outs / materials as meeting_items, the
+// "Where AI Can Help" prompts, and what was learned about each person onto
+// their contact card.
+// ---------------------------------------------------------------------------
+
+interface ItemRow {
+  id: string;
+  summary_id: string;
+  meeting_id: string;
+  series_key: string;
+  kind: string;
+  text: string;
+  extra: string | null;
+  position: number;
+  resolved_at: string | null;
+  created_at: string;
+}
+interface AssistRow {
+  id: string;
+  summary_id: string;
+  meeting_id: string;
+  action_id: string | null;
+  title: string;
+  prompt: string;
+  position: number;
+  created_at: string;
+}
+
+function itemJson(r: ItemRow) {
+  let extra: { type?: string; takeaway?: string } | null = null;
+  try {
+    extra = r.extra ? JSON.parse(r.extra) : null;
+  } catch {
+    extra = null;
+  }
+  return { id: r.id, summaryId: r.summary_id, meetingId: r.meeting_id, kind: r.kind, text: r.text, materialType: extra?.type ?? null, takeaway: extra?.takeaway ?? null, resolvedAt: r.resolved_at, createdAt: r.created_at };
+}
+function assistJson(r: AssistRow) {
+  return { id: r.id, summaryId: r.summary_id, meetingId: r.meeting_id, actionId: r.action_id, title: r.title, prompt: r.prompt };
+}
+
+const nameKey = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
+type Ref = { name: string; email: string | null };
+
+/** Mike's contacts for the names / emails in a record: email first (any
+ * contact but the voter roll), then a meeting person by name (full, else a
+ * unique first name), then the only non-roll contact with that exact full
+ * name. Keyed by lower-cased name. */
+async function matchRecordPeople(db: D1Database, refs: Ref[], people: PersonRef[]): Promise<Map<string, PersonRef>> {
+  const out = new Map<string, PersonRef>();
+  const emails = [...new Set(refs.map((r) => r.email).filter((x): x is string => !!x))];
+  const byEmail = new Map<string, PersonRef>();
+  if (emails.length) {
+    const rows = await inChunks(emails, async (ch, ph) =>
+      (
+        await db
+          .prepare(`SELECT c.id, c.name, lower(j.value) AS email FROM contacts c, json_each(c.emails) j WHERE c.source != 'voter_file' AND lower(j.value) IN (${ph})`)
+          .bind(...ch)
+          .all<{ id: string; name: string; email: string }>()
+      ).results ?? []
+    );
+    for (const r of rows) if (!byEmail.has(r.email)) byEmail.set(r.email, { id: r.id, name: r.name });
+  }
+  for (const r of refs) {
+    const k = nameKey(r.name);
+    if (!k || out.has(k)) continue;
+    let hit: PersonRef | null | undefined = r.email ? byEmail.get(r.email) : undefined;
+    if (!hit) hit = matchPerson(r.name, people);
+    if (!hit && /\s/.test(r.name.trim())) {
+      const { results } = await db.prepare(`SELECT id, name FROM contacts WHERE source != 'voter_file' AND lower(name) = ? LIMIT 2`).bind(k).all<PersonRef>();
+      if (results?.length === 1) hit = results[0];
+    }
+    if (hit) out.set(k, hit);
+  }
+  return out;
+}
+
+const isMineName = (n: string | null | undefined, mine: string[]) => !!n && (n.trim().toLowerCase() === 'me' || isMe(n, mine));
+
+/** Everyone a record mentions (attendees, participants, people, owners),
+ * minus Mike. */
+function recordRefs(rec: MeetingRecord, mine: string[]): Ref[] {
+  return [
+    ...(rec.meeting?.attendees ?? []),
+    ...(rec.thread?.participants ?? []),
+    ...rec.people.map((p) => ({ name: p.name, email: p.email })),
+    ...rec.actions.filter((a) => a.owner).map((a) => ({ name: a.owner!, email: a.ownerEmail })),
+  ].filter((r) => !isMineName(r.name, mine));
+}
+
+interface RecordTarget {
+  meetingId: string;
+  seriesKey: string;
+  title: string;
+  start: string;
+  realm: Realm;
+  people: PersonRef[];
+  /** The meeting's own calendar date (an all-day start is midnight UTC,
+   * which is the day before in New York). */
+  date: string;
+  /** All-day: store the occurrence at noon New York time so every date
+   * shown from it (prep history, contact cards) lands on the right day. */
+  allDay?: boolean;
+}
+
+const mdY = (iso: string) => `${iso.slice(5, 7)}/${iso.slice(8, 10)}/${iso.slice(0, 4)}`;
+
+async function importRecord(db: D1Database, rec: MeetingRecord, note: string, raw: string, t: RecordTarget): Promise<{ summaryId: string; existing: boolean }> {
+  const json = JSON.stringify(rec);
+  // The same brief pasted twice → the first import, not a copy.
+  const dup = await db.prepare(`SELECT id FROM meeting_summaries WHERE meeting_id = ? AND source = 'record' AND record_json = ?`).bind(t.meetingId, json).first<{ id: string }>();
+  if (dup) return { summaryId: dup.id, existing: true };
+
+  const mine = await myNames(db);
+  const matched = await matchRecordPeople(db, recordRefs(rec, mine), t.people);
+  const withPeople = [...new Map([...t.people, ...matched.values()].map((p) => [p.id, p])).values()];
+  const ts = now();
+  const date = DATE_RE.test(t.date) ? t.date : localDate(t.start);
+  const day = mdY(date);
+  const occurrence = t.allDay ? easternToUtc(date, '12:00').toISOString() : t.start;
+  const noteTitle =
+    rec.kind === 'thread' ? `${threadSourceLabel(rec.thread?.source ?? '')} · ${t.title} · ${day}` : rec.kind === 'prep' ? `Meeting Prep · ${t.title} · ${day}` : `Meeting Notes · ${t.title} · ${day}`;
+  const body = note.trim() || (rec.tldr.length ? `## TL;DR\n${rec.tldr.map((x) => `- ${x}`).join('\n')}` : '');
+
+  const noteId = uid();
+  const id = uid();
+  const stmts: D1PreparedStatement[] = [
+    db
+      .prepare(
+        `INSERT INTO entities (id, type, title, content, parent_id, is_top_level, status, position, last_touched, created_at, updated_at, search_text, realm)
+         VALUES (?, 'note', ?, ?, NULL, 1, NULL, 0, ?, ?, ?, ?, ?)`
+      )
+      .bind(noteId, noteTitle.slice(0, 300), markdownToTiptap(body), ts, ts, ts, markdownToPlain(body).slice(0, 200_000), t.realm),
+    db
+      .prepare(
+        `INSERT INTO meeting_summaries (id, meeting_id, series_key, occurrence_start, meeting_title, realm, note_entity_id, summary, details, decisions, raw_text, source, created_at, kind, format, record_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, 'record', ?, ?, ?, ?)`
+      )
+      .bind(id, t.meetingId, t.seriesKey, occurrence, t.title, t.realm, noteId, rec.tldr.join('\n') || null, rec.decisions.map((d) => `- ${d}`).join('\n') || null, raw.slice(0, 400_000), ts, rec.kind, rec.format, json),
+  ];
+
+  const actionIds = new Map<string, string>();
+  for (const a of rec.actions) {
+    const me = isMineName(a.owner, mine);
+    const person = me ? mineContact(a.text, withPeople) : a.owner ? matched.get(nameKey(a.owner)) ?? null : null;
+    const aid = uid();
+    if (!actionIds.has(a.id)) actionIds.set(a.id, aid);
+    stmts.push(
+      db
+        .prepare(
+          `INSERT INTO meeting_actions (id, summary_id, meeting_id, series_key, text, owner_name, contact_id, is_mine, status, entity_id, created_at, confidence, due_date, record_action_id, owner_email)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, ?, ?, ?, ?, ?)`
+        )
+        .bind(aid, id, t.meetingId, t.seriesKey, a.text, me ? mine[0] ?? 'Me' : a.owner, person?.id ?? null, me ? 1 : 0, ts, a.confidence, a.due, a.id, me ? null : a.ownerEmail)
+    );
+  }
+
+  let pos = 0;
+  const item = (kind: string, text: string, extra: unknown = null) =>
+    stmts.push(
+      db
+        .prepare(`INSERT INTO meeting_items (id, summary_id, meeting_id, series_key, kind, text, extra, position, resolved_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`)
+        .bind(uid(), id, t.meetingId, t.seriesKey, kind, text, extra ? JSON.stringify(extra) : null, pos++, ts)
+    );
+  rec.decisions.forEach((x) => item('decision', x));
+  rec.openQuestions.forEach((x) => item('question', x));
+  rec.watchOuts.forEach((x) => item('watch_out', x));
+  rec.materials.forEach((x) => item('material', x.name, { type: x.type, takeaway: x.takeaway }));
+  rec.goals.forEach((x) => item('goal', x));
+  rec.talkingPoints.forEach((x) => item('talking_point', x));
+  rec.questions.forEach((x) => item('prep_question', x));
+
+  rec.assists.forEach((a, i) =>
+    stmts.push(
+      db
+        .prepare(`INSERT INTO meeting_assists (id, summary_id, meeting_id, action_id, title, prompt, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+        .bind(uid(), id, t.meetingId, a.actionId ? actionIds.get(a.actionId) ?? null : null, a.title, a.prompt, i, ts)
+    )
+  );
+
+  for (const p of rec.people) {
+    if (isMineName(p.name, mine)) continue;
+    const hit = matched.get(nameKey(p.name));
+    if (!hit) continue; // offered as "Add contact?" on the sheet instead
+    for (const fact of p.context) {
+      stmts.push(db.prepare(`INSERT INTO contact_context (id, contact_id, summary_id, meeting_id, date, fact, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`).bind(uid(), hit.id, id, t.meetingId, date, fact, ts));
+    }
+  }
+
+  for (let i = 0; i < stmts.length; i += 50) await db.batch(stmts.slice(i, i + 50));
+  return { summaryId: id, existing: false };
+}
+
+/** People a record names that aren't in Contacts (and Mike hasn't waved
+ * off) → "Add contact?" on the sheet. One-word names only when the record
+ * gave an email (a bare "Zach" is too thin to make a card from). */
+async function unmatchedPeople(db: D1Database, s: SummaryRow): Promise<Ref[]> {
+  const rec = recordOf(s);
+  if (!rec) return [];
+  const mine = await myNames(db);
+  const { results: linked } = await db
+    .prepare(`SELECT DISTINCT lower(a.owner_name) AS n FROM meeting_actions a WHERE a.summary_id = ? AND a.contact_id IS NOT NULL AND a.owner_name IS NOT NULL`)
+    .bind(s.id)
+    .all<{ n: string }>();
+  const { results: ignored } = await db.prepare(`SELECT lower(text) AS n FROM meeting_items WHERE summary_id = ? AND kind = 'ignored_person'`).bind(s.id).all<{ n: string }>();
+  const skip = new Set([...(linked ?? []), ...(ignored ?? [])].map((x) => nameKey(x.n)));
+  const refs = recordRefs(rec, mine).filter((r) => !skip.has(nameKey(r.name)) && (r.email || /\s/.test(r.name.trim())));
+  const matched = await matchRecordPeople(db, refs, []);
+  const seen = new Set<string>();
+  const out: Ref[] = [];
+  for (const r of refs) {
+    const k = nameKey(r.name);
+    if (matched.has(k) || seen.has(k)) continue;
+    seen.add(k);
+    const withEmail = refs.find((x) => nameKey(x.name) === k && x.email);
+    out.push({ name: r.name.trim(), email: withEmail?.email ?? null });
+  }
+  return out;
+}
+
+async function summaryPayload(db: D1Database, summaryId: string, existing = false) {
+  const row = await db.prepare('SELECT * FROM meeting_summaries WHERE id = ?').bind(summaryId).first<SummaryRow>();
+  const [acts, items, assists] = await Promise.all([
+    db.prepare('SELECT * FROM meeting_actions WHERE summary_id = ? ORDER BY created_at, rowid').bind(summaryId).all<ActionRow>(),
+    db.prepare(`SELECT * FROM meeting_items WHERE summary_id = ? AND kind != 'ignored_person' ORDER BY position`).bind(summaryId).all<ItemRow>(),
+    db.prepare('SELECT * FROM meeting_assists WHERE summary_id = ? ORDER BY position').bind(summaryId).all<AssistRow>(),
+  ]);
+  return {
+    existing,
+    summary: row ? summaryJson(row) : null,
+    actions: await actionsJson(db, acts.results ?? []),
+    items: (items.results ?? []).map(itemJson),
+    assists: (assists.results ?? []).map(assistJson),
+    suggestions: row ? (await unmatchedPeople(db, row)).map((p) => ({ summaryId, ...p })) : [],
+  };
+}
+
+const titleKey = (s: string | null | undefined) => (s ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+
+/** The meeting a debrief / prep belongs to: same title (or series name) on
+ * that day, else a loose title match, else a new one-off Work meeting on
+ * that date (all-day — the brief doesn't carry a time). */
+async function meetingForRecord(db: D1Database, rec: MeetingRecord): Promise<{ meeting: EnrichedMeeting; created: boolean }> {
+  const mt = rec.meeting!;
+  const date = mt.date ?? easternToday();
+  const day = await enrichMeetings(db, await loadMeetings(db, date, date), 'all');
+  const wants = [mt.series, mt.title].map(titleKey).filter(Boolean);
+  const exact = day.find((m) => wants.includes(titleKey(m.title)));
+  const loose =
+    exact ??
+    day.find((m) => {
+      const n = titleKey(m.title);
+      return n.length >= 4 && wants.some((w) => w.length >= 4 && (n.includes(w) || w.includes(n)));
+    });
+  if (loose) return { meeting: loose, created: false };
+
+  const id = uid();
+  const ts = now();
+  await db
+    .prepare(
+      `INSERT INTO meeting_series (id, title, realm, start_date, start_time, duration_min, rrule, until_date, skip_dates, location, link, project_id, description, active, created_at, updated_at)
+       VALUES (?, ?, 'work', ?, NULL, 30, NULL, NULL, '[]', NULL, NULL, NULL, ?, 1, ?, ?)`
+    )
+    .bind(id, mt.title.slice(0, 200), date, 'Added from a pasted brief.', ts, ts)
+    .run();
+  // Inferred attendees stay off the meeting until Mike confirms them.
+  if (mt.attendeesConfirmed !== false) {
+    const mine = await myNames(db);
+    const hits = await matchRecordPeople(db, mt.attendees.filter((a) => !isMineName(a.name, mine)), []);
+    if (hits.size) await setSeriesPeople(db, id, [...hits.values()].map((p) => p.id));
+  }
+  const again = await enrichMeetings(db, await loadMeetings(db, date, date), 'all');
+  const m = again.find((x) => x.seriesKey === `ms-${id}`);
+  if (!m) throw new Error('The meeting could not be created');
+  return { meeting: m, created: true };
+}
+
+/** A thread (Slack / email / doc comments) has no meeting — the sheet shows
+ * it under a stand-in meeting id `thread-<uuid>`. */
+function threadMeeting(s: { meeting_id: string; meeting_title: string; occurrence_start: string; record_json?: string | null }, pending: number) {
+  let source = 'other';
+  let channel: string | null = null;
+  try {
+    const r = JSON.parse(s.record_json || '{}') as MeetingRecord;
+    source = r.thread?.source ?? 'other';
+    channel = r.thread?.channel ?? null;
+  } catch {
+    /* keep defaults */
+  }
+  return {
+    id: s.meeting_id,
+    title: s.meeting_title,
+    start: s.occurrence_start,
+    end: s.occurrence_start,
+    allDay: true,
+    calendar: 'thread',
+    gcalUrl: null,
+    hasNote: false,
+    attendees: [],
+    location: channel,
+    links: [],
+    realm: 'work' as const,
+    seriesKey: s.meeting_id,
+    seriesId: null,
+    recurring: false,
+    people: [],
+    summaryCount: 1,
+    pendingActions: pending,
+    projectId: null,
+    docs: [],
+    joinUrl: null,
+    thread: { source, label: threadSourceLabel(source), channel },
+  };
+}
+
+/** Weekly brief → this week's Work review: fills priorities / Start / Stop /
+ * Continue only where they're still empty; highlights are added to. */
+async function applyWeekly(db: D1Database, rec: MeetingRecord) {
+  const week = mondayOf(rec.weekOf ?? easternToday());
+  const cur = await db.prepare(`SELECT * FROM week_reviews WHERE week_start = ? AND realm = 'work'`).bind(week).first<Record<string, string>>();
+  const list = (xs: string[]) => xs.map((x) => `- ${x}`).join('\n');
+  const filled: string[] = [];
+  const kept: string[] = [];
+  const pick = (col: string, xs: string[], label: string) => {
+    const old = cur?.[col] ?? '';
+    if (!xs.length) return old;
+    if (old.trim()) {
+      kept.push(label);
+      return old;
+    }
+    filled.push(label);
+    return list(xs);
+  };
+  const priorities = pick('priorities', rec.priorities, 'Top Priorities');
+  const start = pick('start_text', rec.start, 'Start');
+  const stop = pick('stop_text', rec.stop, 'Stop');
+  const cont = pick('continue_text', rec.continue, 'Continue');
+  let highlights = cur?.highlights ?? '';
+  const fresh = rec.highlights.filter((h) => !highlights.includes(h));
+  if (fresh.length) {
+    highlights = [highlights.trim(), list(fresh)].filter(Boolean).join('\n');
+    filled.push('Highlights');
+  }
+  await db
+    .prepare(
+      `INSERT INTO week_reviews (week_start, realm, start_text, stop_text, continue_text, highlights, priorities, updated_at) VALUES (?, 'work', ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(week_start, realm) DO UPDATE SET start_text = excluded.start_text, stop_text = excluded.stop_text, continue_text = excluded.continue_text,
+         highlights = excluded.highlights, priorities = excluded.priorities, updated_at = excluded.updated_at`
+    )
+    .bind(week, start, stop, cont, highlights, priorities, now())
+    .run();
+  return { kind: 'weekly' as const, week, filled, kept };
+}
+
+/** Paste Brief (Today / Notes, Work mode): Claude's whole response. Debrief
+ * and prep land on their meeting (found by title on that date, else a new
+ * one-off); a thread gets its own entry; a weekly brief fills the week's
+ * Work review. */
+workRouter.post('/import', async (c) => {
+  const b = await c.req.json<{ text?: string }>().catch(() => ({}) as { text?: string });
+  const raw = (b.text ?? '').trim();
+  if (raw.length > 400_000) return c.json({ error: 'That text is too long (400K characters max)' }, 400);
+  const ex = extractRecord(raw);
+  if (!ex.found) return c.json({ error: "No meeting-record block found. Paste Claude's whole response — it ends with a meeting-record block. (Gemini notes go in a meeting's Add Meeting Notes.)" }, 400);
+  if (!ex.record) return c.json({ error: ex.error }, 400);
+  const rec = ex.record;
+  const db = c.env.DB;
+
+  if (rec.kind === 'weekly') return c.json(await applyWeekly(db, rec), 201);
+
+  if (rec.kind === 'thread') {
+    const t = rec.thread!;
+    const date = t.date ?? easternToday();
+    const prior = await db.prepare(`SELECT meeting_id FROM meeting_summaries WHERE source = 'record' AND kind = 'thread' AND record_json = ?`).bind(JSON.stringify(rec)).first<{ meeting_id: string }>();
+    const meetingId = prior?.meeting_id ?? `thread-${uid()}`;
+    const start = easternToUtc(date, '12:00').toISOString();
+    const r = await importRecord(db, rec, ex.note, raw, { meetingId, seriesKey: meetingId, title: t.title, start, realm: 'work', people: [], date });
+    const payload = await summaryPayload(db, r.summaryId, r.existing);
+    const row = (await db.prepare('SELECT * FROM meeting_summaries WHERE id = ?').bind(r.summaryId).first<SummaryRow>())!;
+    return c.json({ kind: 'thread', created: false, meeting: threadMeeting(row, payload.actions.filter((a) => a.status === 'pending').length), ...payload }, r.existing ? 200 : 201);
+  }
+
+  const { meeting, created } = await meetingForRecord(db, rec);
+  const date = (meeting as { date?: string }).date ?? localDate(meeting.start);
+  const r = await importRecord(db, rec, ex.note, raw, { meetingId: meeting.id, seriesKey: meeting.seriesKey, title: meeting.title, start: meeting.start, realm: 'work', people: meeting.people, date, allDay: meeting.allDay });
+  return c.json({ kind: rec.kind, created, meeting: { ...meeting, date }, ...(await summaryPayload(db, r.summaryId, r.existing)) }, r.existing ? 200 : 201);
+});
+
+/** Check off (or reopen) an open question / watch-out. */
+workRouter.patch('/items/:id', async (c) => {
+  const b = await c.req.json<{ resolved?: boolean }>().catch(() => ({}) as { resolved?: boolean });
+  if (typeof b.resolved !== 'boolean') return c.json({ error: 'resolved (true/false) required' }, 400);
+  const id = c.req.param('id');
+  const row = await c.env.DB.prepare('SELECT * FROM meeting_items WHERE id = ?').bind(id).first<ItemRow>();
+  if (!row) return c.json({ error: 'not found' }, 404);
+  await c.env.DB.prepare('UPDATE meeting_items SET resolved_at = ? WHERE id = ?').bind(b.resolved ? now() : null, id).run();
+  return c.json(itemJson({ ...row, resolved_at: b.resolved ? now() : null }));
+});
+
+/** "Add contact?" from a pasted brief: make a Work contact (or reuse one
+ * with that email), point the brief's items for that name at it and copy
+ * what was learned about them onto the card. */
+workRouter.post('/summaries/:id/add-person', async (c) => {
+  const db = c.env.DB;
+  const s = await db.prepare('SELECT * FROM meeting_summaries WHERE id = ?').bind(c.req.param('id')).first<SummaryRow>();
+  if (!s) return c.json({ error: 'not found' }, 404);
+  const b = await c.req.json<{ name?: string; email?: string | null; ignore?: boolean }>().catch(() => ({}) as { name?: string; email?: string | null; ignore?: boolean });
+  const name = (b.name ?? '').trim().slice(0, 200);
+  if (!name) return c.json({ error: 'name required' }, 400);
+  if (b.ignore) {
+    await db
+      .prepare(`INSERT INTO meeting_items (id, summary_id, meeting_id, series_key, kind, text, extra, position, resolved_at, created_at) VALUES (?, ?, ?, ?, 'ignored_person', ?, NULL, 0, NULL, ?)`)
+      .bind(uid(), s.id, s.meeting_id, s.series_key, name, now())
+      .run();
+    return c.json(await summaryPayload(db, s.id));
+  }
+  const email = typeof b.email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(b.email.trim()) ? b.email.trim().toLowerCase() : null;
+  let contact = email
+    ? await db
+        .prepare(`SELECT c.id, c.name FROM contacts c, json_each(c.emails) j WHERE c.source != 'voter_file' AND lower(j.value) = ? LIMIT 1`)
+        .bind(email)
+        .first<PersonRef>()
+    : null;
+  // Already in Contacts under that exact name (e.g. added a moment ago)?
+  if (!contact) {
+    const { results } = await db.prepare(`SELECT id, name FROM contacts WHERE source != 'voter_file' AND lower(name) = ? LIMIT 2`).bind(nameKey(name)).all<PersonRef>();
+    if (results?.length === 1) contact = results[0];
+  }
+  if (!contact) {
+    const id = uid();
+    const ts = now();
+    await db
+      .prepare(`INSERT INTO contacts (id, name, circle, emails, phones, pinned, source, created_at, updated_at, labels, realm) VALUES (?, ?, 'other', ?, '[]', 0, 'manual', ?, ?, ?, 'work')`)
+      .bind(id, name, JSON.stringify(email ? [email] : []), ts, ts, JSON.stringify([await workLabel(db)]))
+      .run();
+    contact = { id, name };
+  }
+  const rec = recordOf(s);
+  const k = nameKey(name);
+  const stmts = [db.prepare(`UPDATE meeting_actions SET contact_id = ? WHERE summary_id = ? AND contact_id IS NULL AND is_mine = 0 AND lower(owner_name) = ?`).bind(contact.id, s.id, k)];
+  const facts = rec?.people.find((p) => nameKey(p.name) === k)?.context ?? [];
+  const have = new Set(
+    ((await db.prepare(`SELECT fact FROM contact_context WHERE summary_id = ? AND contact_id = ?`).bind(s.id, contact.id).all<{ fact: string }>()).results ?? []).map((x) => x.fact)
+  );
+  for (const f of facts) {
+    if (have.has(f)) continue;
+    stmts.push(db.prepare(`INSERT INTO contact_context (id, contact_id, summary_id, meeting_id, date, fact, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`).bind(uid(), contact.id, s.id, s.meeting_id, localDate(s.occurrence_start), f, now()));
+  }
+  await db.batch(stmts);
+  return c.json({ contact, ...(await summaryPayload(db, s.id)) });
+});
+
+/** Threads with next steps still to sort (Today → Wrap Up "From Threads"). */
+workRouter.get('/threads', async (c) => {
+  const db = c.env.DB;
+  const { results } = await db
+    .prepare(
+      `SELECT s.*, (SELECT COUNT(*) FROM meeting_actions a WHERE a.summary_id = s.id AND a.status = 'pending') AS pending
+         FROM meeting_summaries s WHERE s.source = 'record' AND s.kind = 'thread'${realmSql(realmOf(c), 's')}
+        ORDER BY s.occurrence_start DESC LIMIT 60`
+    )
+    .all<SummaryRow & { pending: number }>();
+  const all = c.req.query('all') === '1';
+  return c.json({ threads: (results ?? []).filter((r) => all || r.pending > 0).map((r) => threadMeeting(r, r.pending)) });
+});
+
+/** "Where AI Can Help" prompts tied to a task (made from a next step). */
+workRouter.get('/assists', async (c) => {
+  const entityId = c.req.query('entityId');
+  if (!entityId) return c.json({ error: 'entityId required' }, 400);
+  const { results } = await c.env.DB.prepare(`SELECT a.* FROM meeting_assists a JOIN meeting_actions m ON m.id = a.action_id WHERE m.entity_id = ? ORDER BY a.created_at, a.position`).bind(entityId).all<AssistRow>();
+  return c.json({ assists: (results ?? []).map(assistJson) });
+});
+
+/** Forget one fact on a contact card ("What I've Learned" ✕). */
+workRouter.delete('/context/:id', async (c) => {
+  await c.env.DB.prepare('DELETE FROM contact_context WHERE id = ?').bind(c.req.param('id')).run();
+  return c.json({ ok: true });
+});
+
+/** Work contacts as a markdown table for the work Claude Project's People
+ * knowledge file (Settings → Meetings → Copy People Table). Notes = the
+ * latest things learned from briefs. */
+workRouter.get('/people-table', async (c) => {
+  const db = c.env.DB;
+  const rs = await contactRealmSql(db, 'work', 'c');
+  const { results } = await db
+    .prepare(`SELECT c.id, c.name, c.title, c.company, c.emails FROM contacts c WHERE c.source != 'voter_file'${rs} ORDER BY c.name COLLATE NOCASE LIMIT 500`)
+    .all<{ id: string; name: string; title: string | null; company: string | null; emails: string | null }>();
+  const rows = results ?? [];
+  const facts = await inChunks(
+    rows.map((r) => r.id),
+    async (ch, ph) => (await db.prepare(`SELECT contact_id, fact FROM contact_context WHERE contact_id IN (${ph}) ORDER BY date DESC, created_at DESC`).bind(...ch).all<{ contact_id: string; fact: string }>()).results ?? []
+  );
+  const cell = (s: string | null | undefined) => (s ?? '').replace(/\|/g, '/').replace(/\s+/g, ' ').trim();
+  const lines = ['| Name | Title | Email | Notes |', '|---|---|---|---|'];
+  for (const r of rows) {
+    const email = safeJsonArray(r.emails).find((e) => e.includes('@')) ?? '';
+    const notes = facts
+      .filter((f) => f.contact_id === r.id)
+      .slice(0, 2)
+      .map((f) => f.fact)
+      .join('; ');
+    lines.push(`| ${cell(r.name)} | ${cell(r.title)} | ${cell(email)} | ${cell(notes)} |`);
+  }
+  return c.json({ count: rows.length, markdown: lines.join('\n') });
 });
 
 type Decision = { decision: string; text?: string; contactId?: string | null; dueDate?: string | null };
@@ -923,7 +1501,8 @@ async function decideAction(db: D1Database, a: ActionRow, b: Decision): Promise<
     await db.prepare(`DELETE FROM entities WHERE id = ? AND status != 'done'`).bind(a.entity_id).run();
   }
   let entityId: string | null = null;
-  const due = b.dueDate && DATE_RE.test(b.dueDate) ? b.dueDate : null;
+  // A due date from the decision, else the one the record gave the item.
+  const due = b.dueDate && DATE_RE.test(b.dueDate) ? b.dueDate : b.dueDate === undefined && a.due_date && DATE_RE.test(a.due_date) ? a.due_date : null;
   if (b.decision === 'task') {
     let parentId: string | null = null;
     if (a.series_key.startsWith('ms-')) {
@@ -1029,7 +1608,7 @@ async function buildPrep(db: D1Database, m: EnrichedMeeting, realm: RealmFilter)
       .bind(key, `${key}:%`)
       .all<{ meeting_id: string; entity_id: string; title: string; search_text: string | null; updated_at: string }>(),
     db.prepare(`SELECT * FROM meeting_actions WHERE series_key = ? AND status != 'dismissed' ORDER BY created_at DESC LIMIT 60`).bind(key).all<ActionRow>(),
-    db.prepare(`SELECT mn.note_entity_id FROM meeting_notes mn JOIN entities e ON e.id = mn.note_entity_id WHERE mn.meeting_id = ?`).bind(m.id).first<{ note_entity_id: string }>(),
+    db.prepare(`SELECT mn.note_entity_id, e.search_text FROM meeting_notes mn JOIN entities e ON e.id = mn.note_entity_id WHERE mn.meeting_id = ?`).bind(m.id).first<{ note_entity_id: string; search_text: string | null }>(),
   ]);
 
   // Past occurrences: summaries + Mike's own notes, newest first.
@@ -1059,7 +1638,7 @@ async function buildPrep(db: D1Database, m: EnrichedMeeting, realm: RealmFilter)
   // People: what Mike owes them, what they owe Mike, last time together.
   const pids = m.people.map((p) => p.id);
   const items = await openItemsForPeople(db, pids, 'all');
-  const contactRows = await inChunks(pids, async (ch, ph) => (await db.prepare(`SELECT id, name, title, company, headline FROM contacts WHERE id IN (${ph})`).bind(...ch).all<{ id: string; name: string; title: string | null; company: string | null; headline: string | null }>()).results ?? []);
+  const contactRows = await inChunks(pids, async (ch, ph) => (await db.prepare(`SELECT id, name, title, company, headline, emails FROM contacts WHERE id IN (${ph})`).bind(...ch).all<{ id: string; name: string; title: string | null; company: string | null; headline: string | null; emails: string | null }>()).results ?? []);
   const notesRows = await inChunks(pids, async (ch, ph) =>
     (await db.prepare(`SELECT contact_id, text, created_at FROM contact_notes WHERE contact_id IN (${ph}) ORDER BY created_at DESC LIMIT 60`).bind(...ch).all<{ contact_id: string; text: string; created_at: string }>()).results ?? []
   );
@@ -1080,6 +1659,7 @@ async function buildPrep(db: D1Database, m: EnrichedMeeting, realm: RealmFilter)
     title: p.title,
     company: p.company,
     headline: p.headline,
+    email: safeJsonArray(p.emails).find((e) => e.includes('@')) ?? null,
     iOwe: items.filter((t) => t.contact_id === p.id && !t.waiting_source_id).slice(0, 8),
     theyOwe: items.filter((t) => t.contact_id === p.id && t.waiting_source_id).slice(0, 8),
     pendingFromMeetings: acts.filter((x) => x.status === 'pending' && x.contactId === p.id).length,
@@ -1103,8 +1683,34 @@ async function buildPrep(db: D1Database, m: EnrichedMeeting, realm: RealmFilter)
       project = { ...p, openTasks: results ?? [] };
     }
   }
+  // From pasted briefs: open questions / watch-outs from earlier meetings
+  // in this series (until checked off), and this occurrence's prep.
+  const [openItemRows, prepRows] = await Promise.all([
+    db
+      .prepare(
+        `SELECT i.* FROM meeting_items i JOIN meeting_summaries s ON s.id = i.summary_id
+          WHERE i.series_key = ? AND i.kind IN ('question', 'watch_out') AND i.resolved_at IS NULL AND i.meeting_id != ? AND s.occurrence_start < ?
+          ORDER BY s.occurrence_start DESC, i.position LIMIT 30`
+      )
+      .bind(key, m.id, m.start)
+      .all<ItemRow>(),
+    db
+      .prepare(`SELECT i.* FROM meeting_items i JOIN meeting_summaries s ON s.id = i.summary_id WHERE i.meeting_id = ? AND s.kind = 'prep' AND i.kind != 'ignored_person' ORDER BY s.created_at, i.position`)
+      .bind(m.id)
+      .all<ItemRow>(),
+  ]);
   void realm;
-  return { meeting: m, agendaNoteId: noteRow?.note_entity_id ?? null, past, openActions, people, project };
+  return {
+    meeting: m,
+    agendaNoteId: noteRow?.note_entity_id ?? null,
+    agendaNoteText: noteRow?.search_text ?? null,
+    past,
+    openActions,
+    people,
+    project,
+    stillOpenItems: (openItemRows.results ?? []).map(itemJson),
+    prepItems: (prepRows.results ?? []).map(itemJson),
+  };
 }
 
 workRouter.get('/prep', async (c) => {
@@ -1140,9 +1746,10 @@ workRouter.get('/person/:contactId', async (c) => {
     db
       .prepare(
         `SELECT s.* FROM meeting_summaries s WHERE (s.series_key IN (SELECT 'ms-' || series_id FROM meeting_series_people WHERE contact_id = ?)
-         OR s.id IN (SELECT summary_id FROM meeting_actions WHERE contact_id = ?)) AND s.source != 'own_note' ORDER BY s.occurrence_start DESC LIMIT 6`
+         OR s.id IN (SELECT summary_id FROM meeting_actions WHERE contact_id = ?) OR s.id IN (SELECT summary_id FROM contact_context WHERE contact_id = ?)) AND s.source != 'own_note'
+         ORDER BY s.occurrence_start DESC LIMIT 6`
       )
-      .bind(id, id)
+      .bind(id, id, id)
       .all<SummaryRow>(),
   ]);
   const seriesIds = new Set((series.results ?? []).map((s) => `ms-${s.id}`));
@@ -1158,7 +1765,15 @@ workRouter.get('/person/:contactId', async (c) => {
   } catch {
     upcoming = [];
   }
+  const { results: learned } = await db
+    .prepare(
+      `SELECT cc.id, cc.fact, cc.date, cc.meeting_id, s.meeting_title, s.kind FROM contact_context cc LEFT JOIN meeting_summaries s ON s.id = cc.summary_id
+        WHERE cc.contact_id = ? ORDER BY cc.date DESC, cc.created_at DESC LIMIT 40`
+    )
+    .bind(id)
+    .all<{ id: string; fact: string; date: string; meeting_id: string; meeting_title: string | null; kind: string | null }>();
   return c.json({
+    learned: (learned ?? []).map((l) => ({ id: l.id, fact: l.fact, date: l.date, meetingId: l.meeting_id, title: l.meeting_title, kind: l.kind })),
     iOwe: items.filter((t) => !t.waiting_source_id),
     theyOwe: items.filter((t) => t.waiting_source_id),
     series: await seriesJson(db, series.results ?? []),
@@ -1278,7 +1893,15 @@ workRouter.get('/brief', async (c) => {
 
   const timed = meetings.filter((m) => !m.allDay);
   const meetingMinutes = timed.reduce((sum, m) => sum + Math.max(0, (Date.parse(m.end) - Date.parse(m.start)) / 60000), 0);
-  const meetingsOut = meetings.map((m) => ({ id: m.id, title: m.title, start: m.start, end: m.end, allDay: m.allDay, date: (m as { date?: string }).date ?? localDate(m.start), realm: m.realm, people: m.people, summaryCount: m.summaryCount, hasNote: m.hasNote }));
+  // Each meeting's notes headline (brief TL;DR or Gemini summary) — for
+  // Copy Week for Claude.
+  const sumRows = await inChunks(
+    meetings.filter((m) => m.summaryCount > 0).map((m) => m.id),
+    async (ch, ph) => (await db.prepare(`SELECT meeting_id, summary FROM meeting_summaries WHERE source != 'own_note' AND summary IS NOT NULL AND meeting_id IN (${ph}) ORDER BY created_at`).bind(...ch).all<{ meeting_id: string; summary: string }>()).results ?? []
+  );
+  const headline = new Map<string, string>();
+  for (const r of sumRows) if (!headline.has(r.meeting_id)) headline.set(r.meeting_id, r.summary.slice(0, 1200));
+  const meetingsOut = meetings.map((m) => ({ id: m.id, title: m.title, start: m.start, end: m.end, allDay: m.allDay, date: (m as { date?: string }).date ?? localDate(m.start), realm: m.realm, people: m.people, summaryCount: m.summaryCount, hasNote: m.hasNote, summary: headline.get(m.id) ?? null }));
 
   // Rule-based Start / Stop / Continue suggestions.
   const suggestions: { kind: 'start' | 'stop' | 'continue'; text: string }[] = [];

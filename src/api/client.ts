@@ -1,7 +1,7 @@
 import type { AuthenticationResponseJSON, PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON, RegistrationResponseJSON } from '@simplewebauthn/browser';
 import type { CashPlacement, RewardsOverview, FinanceAttention, WaitingList, AuthCredentialSummary, AuthStatus, Bet, BetLeg, BetGameNote, BetOption, BetOptionCategory, BetPromo, BetPromoStatus, BetScheduleGame, BetTransaction, BetTransactionType, VaultEntryDetail, VaultFact, BriefingResponse, CalendarFeedsResponse, CalendarFeedStatus, CanvasBoard, CanvasBoardDetail, CanvasBoardListItem, CanvasConnector, CanvasItem, CanvasItemType, ClearOrphanedImportsResponse, CompletionsResponse, ConnectorItemContent, Contact, ContactCircle, ContactConnection, ContactDetail, ContactNote, CreditScoreEntry, DeleteImportBatchResponse, DuplicateCandidatesResponse, Entity, EntityDetail, EntityType, Habit, HabitDirection, HabitEvent, HabitLog, HabitSummary, HealthImportResponse, HealthParsePreview, HealthWeeklyReport, ImportBatch, ImportCommitChunkResponse, ImportCommitStartResponse, ImportDecision, ImportPreviewResponse, JournalDayResponse, JournalEntry, ListItem, MeetingsRangeResponse, MeetingsResponse, MonthResponse, NewsArticlesResponse, NewsFeed, NewsFeedsResponse, NewsFolder, NewsSavedArticle, NewsSettings, OrphanedImportsResponse, ProjectListItem, QuickLink, QuickLinksResponse, RecurringTaskDefinition, SearchGroupKey, SearchResponse, ShelfItem, ShelfItemType, StatsResponse, TodayResponse, TopNewsResponse, VoterNamesCleanupChunkResponse, VoterNamesPreviewResponse, VoterFieldsBackfillChunkResponse,
   ContactAskResponse, BetGameEnrichment, VaultFactLabel, VaultRollupGroup, WalletCard, WalletCardFact, WalletCategory, WalletCardIdSecret, RewardsCard, RewardsBonus, RewardsPerk, RewardsImportResult, RewardsMerchant, RewardsOffer, PaymentCard, PaymentCardFact, PaymentCardSecrets, BankAccountSuggestion, PlexLibrary, PlexItem, PlexItemDetail, PlexIssue, PlexMissingEpisode, PlexIgnoredShow, PlexSyncChunkResult, PlexAiringCheckChunkResult, PlexAiringScanChunkResult, MediaCatalogItem, MediaCatalogFormat, BarItem, BarItemDetail, BarItemType, BarTasting, BarTopTastingEntry, HomeFloor, HomeFloorLayout, HomeRoom, HomePoint, HomeRoomSpecPayload, HomeFixture, HomeFixtureType, HomeWallItem, HomeWallItemType, ElectricalPanel, ElectricalBreaker, ElectricalBreakerWithFixtures, HomeNetworkPoint, HomeNetworkDevice, HomeNetworkDeviceInput, HomeWifiNetwork, HomeWifiInput, WeatherResponse, WeekResponse, EmailAccount, EmailInboxFeed, EmailPeekResult, EmailSyncResult, BookmarksResponse, BookmarksImportResult, CloudProviderId, CloudProviderInfo, CloudAccount, CloudBrowseResponse, CloudSearchResponse, StatementFolder, StatementDriveAccount, StatementScanResult, FinanceAccount, Ny529Dashboard, FinanceDashboard, InternetBill, StatementFolderStatus, AccountOwner, AccountPayer, AccountPayerMode, CardPaidAccount, Bill, BeeSubstack, BeeSettings, BeeFolderCandidate, BeeSearch,
-  BeeSearchDetail, BeeAnalytics, BeeVisitors, BeeAnalyticsDetail, BeeBing, BeeClarity, BeeMerch, BeeSocial, BeeStory, BeeReview, CommsSettings, CommsRunResult, QuietContact, MeetingSeries, MeetingSeriesInput, MeetingDoc, MeetingSummary, MeetingAction, MeetingActionStatus, MeetingPrep, PersonWork, WorkSettings, WeekBrief, WeekReview, TaxesResponse, TaxReturnRecord } from './types';
+  BeeSearchDetail, BeeAnalytics, BeeVisitors, BeeAnalyticsDetail, BeeBing, BeeClarity, BeeMerch, BeeSocial, BeeStory, BeeReview, CommsSettings, CommsRunResult, QuietContact, MeetingSeries, MeetingSeriesInput, MeetingDoc, MeetingSummary, MeetingAction, MeetingActionStatus, MeetingSummaryBundle, BriefImportResult, MeetingRecordItem, MeetingAssist, MeetingItem, MeetingPrep, PersonWork, WorkSettings, WeekBrief, WeekReview, TaxesResponse, TaxReturnRecord } from './types';
 
 import { emitTaskCompleted } from '../utils/taskEvents';
 import { getRealm } from '../utils/realm';
@@ -534,13 +534,21 @@ export const api = {
   deleteMeetingSeries: (id: string) => request<{ ok: true }>(`/api/work/series/${id}`, { method: 'DELETE' }),
   skipMeetingOccurrence: (id: string, date: string, skip = true) =>
     request<{ ok: true; skipDates: string[] }>(`/api/work/series/${id}/skip`, { method: 'POST', body: JSON.stringify({ date, skip }) }),
-  getMeetingSummaries: (meetingId: string) =>
-    request<{ summaries: MeetingSummary[]; actions: MeetingAction[] }>(`/api/work/meetings/${encodeURIComponent(meetingId)}/summaries`),
-  addMeetingSummary: (meetingId: string, body: { text: string; title: string; start: string; realm?: string; peopleIds?: string[]; source?: string }) =>
+  getMeetingSummaries: (meetingId: string) => request<MeetingSummaryBundle>(`/api/work/meetings/${encodeURIComponent(meetingId)}/summaries`),
+  addMeetingSummary: (meetingId: string, body: { text: string; title: string; start: string; realm?: string; peopleIds?: string[]; source?: string; date?: string; allDay?: boolean }) =>
     request<{ summary: MeetingSummary; actions: MeetingAction[] }>(`/api/work/meetings/${encodeURIComponent(meetingId)}/summaries`, {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+  /** Paste Brief: Claude's whole response (ends with a meeting-record block). */
+  importBrief: (text: string) => request<BriefImportResult>('/api/work/import', { method: 'POST', body: JSON.stringify({ text }) }),
+  resolveMeetingItem: (id: string, resolved: boolean) => request<MeetingRecordItem>(`/api/work/items/${id}`, { method: 'PATCH', body: JSON.stringify({ resolved }) }),
+  addBriefPerson: (summaryId: string, body: { name: string; email?: string | null; ignore?: boolean }) =>
+    request<MeetingSummaryBundle & { contact?: { id: string; name: string } }>(`/api/work/summaries/${summaryId}/add-person`, { method: 'POST', body: JSON.stringify(body) }),
+  listBriefThreads: () => request<{ threads: (MeetingItem & { date?: string })[] }>('/api/work/threads'),
+  getTaskAssists: (entityId: string) => request<{ assists: MeetingAssist[] }>(`/api/work/assists?entityId=${encodeURIComponent(entityId)}`),
+  deleteContactContext: (id: string) => request<{ ok: true }>(`/api/work/context/${id}`, { method: 'DELETE' }),
+  getWorkPeopleTable: () => request<{ count: number; markdown: string }>('/api/work/people-table'),
   listMeetingDocs: (seriesKey: string) => request<{ docs: MeetingDoc[] }>(`/api/work/docs?seriesKey=${encodeURIComponent(seriesKey)}`),
   addMeetingDoc: (seriesKey: string, url: string, title?: string) =>
     request<MeetingDoc>('/api/work/docs', { method: 'POST', body: JSON.stringify({ seriesKey, url, title }) }),

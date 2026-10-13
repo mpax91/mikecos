@@ -354,6 +354,8 @@ export interface MeetingItem {
   docs?: MeetingDoc[];
   /** Video Link of a hand-entered meeting, else the invite's Meet/Zoom link. */
   joinUrl?: string | null;
+  /** Set when this "meeting" is a pasted Slack / email / doc thread. */
+  thread?: { source: string; label: string; channel: string | null };
 }
 
 /** A link kept on a meeting series — every occurrence shows it
@@ -4166,7 +4168,70 @@ export interface MeetingSummary {
   decisions: string;
   source: string;
   createdAt: string;
+  /** Pasted briefs ("meeting-record" blocks): debrief | prep | thread; null otherwise. */
+  kind?: 'debrief' | 'prep' | 'thread' | null;
+  tldr?: string[];
+  /** false = Claude guessed the attendee list. */
+  attendeesConfirmed?: boolean | null;
+  attendees?: { name: string; email: string | null }[];
+  threadSource?: string | null;
+  threadChannel?: string | null;
 }
+
+/** Decisions, open questions, watch-outs, materials and prep items from a
+ * pasted brief (migration 0120). Questions + watch-outs stay "Still Open" in
+ * the series' next prep until checked off. */
+export interface MeetingRecordItem {
+  id: string;
+  summaryId: string;
+  meetingId: string;
+  kind: 'decision' | 'question' | 'watch_out' | 'material' | 'goal' | 'talking_point' | 'prep_question';
+  text: string;
+  materialType: string | null;
+  takeaway: string | null;
+  resolvedAt: string | null;
+  createdAt: string;
+}
+
+/** A "Where AI Can Help" prompt to copy into the work Claude Project. */
+export interface MeetingAssist {
+  id: string;
+  summaryId: string;
+  meetingId: string;
+  actionId: string | null;
+  title: string;
+  prompt: string;
+}
+
+/** Someone a brief named who isn't in Contacts yet → "Add contact?". */
+export interface BriefPersonSuggestion {
+  summaryId: string;
+  name: string;
+  email: string | null;
+}
+
+export interface MeetingSummaryBundle {
+  summaries: MeetingSummary[];
+  actions: MeetingAction[];
+  items?: MeetingRecordItem[];
+  assists?: MeetingAssist[];
+  suggestions?: BriefPersonSuggestion[];
+}
+
+/** POST /api/work/import — Paste Brief. */
+export type BriefImportResult =
+  | { kind: 'weekly'; week: string; filled: string[]; kept: string[] }
+  | {
+      kind: 'debrief' | 'prep' | 'thread';
+      created: boolean;
+      existing: boolean;
+      meeting: MeetingItem & { date?: string };
+      summary: MeetingSummary;
+      actions: MeetingAction[];
+      items: MeetingRecordItem[];
+      assists: MeetingAssist[];
+      suggestions: BriefPersonSuggestion[];
+    };
 
 export type MeetingActionStatus = 'pending' | 'task' | 'waiting' | 'dismissed';
 
@@ -4192,6 +4257,10 @@ export interface MeetingAction {
   entityId: string | null;
   entityDone: boolean;
   dueDate: string | null;
+  /** From a pasted brief: Claude marked the owner as a guess. */
+  confidence?: 'stated' | 'implied' | null;
+  /** A "Where AI Can Help" prompt is tied to this item. */
+  hasPrompt?: boolean;
 }
 
 export interface WorkTask {
@@ -4217,6 +4286,7 @@ export interface PrepPerson {
   title: string | null;
   company: string | null;
   headline: string | null;
+  email?: string | null;
   iOwe: WorkTask[];
   theyOwe: WorkTask[];
   pendingFromMeetings: number;
@@ -4227,6 +4297,8 @@ export interface PrepPerson {
 export interface MeetingPrep {
   meeting: MeetingItem & { date?: string };
   agendaNoteId: string | null;
+  /** Plain text of this occurrence's 📝 note (for Copy for Claude). */
+  agendaNoteText?: string | null;
   past: {
     meetingId: string;
     start: string;
@@ -4237,9 +4309,15 @@ export interface MeetingPrep {
   openActions: MeetingAction[];
   people: PrepPerson[];
   project: { id: string; title: string; openTasks: WorkTask[] } | null;
+  /** Open questions / watch-outs from earlier briefs in this series. */
+  stillOpenItems?: MeetingRecordItem[];
+  /** A pasted prep brief for this occurrence. */
+  prepItems?: MeetingRecordItem[];
 }
 
 export interface PersonWork {
+  /** What I've Learned — facts from pasted briefs (newest first). */
+  learned?: { id: string; fact: string; date: string; meetingId: string; title: string | null; kind: string | null }[];
   iOwe: WorkTask[];
   theyOwe: WorkTask[];
   series: MeetingSeries[];
@@ -4272,7 +4350,7 @@ export interface WeekBrief {
   received: WorkTask[];
   pushed: WorkTask[];
   slipped: WorkTask[];
-  meetings: { id: string; title: string; start: string; end: string; allDay: boolean; date: string; realm: string; people: PersonRef[]; summaryCount: number; hasNote: boolean }[];
+  meetings: { id: string; title: string; start: string; end: string; allDay: boolean; date: string; realm: string; people: PersonRef[]; summaryCount: number; hasNote: boolean; summary?: string | null }[];
   meetingHours: number;
   pendingActions: number;
   suggestions: { kind: 'start' | 'stop' | 'continue'; text: string }[];

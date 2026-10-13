@@ -20706,3 +20706,44 @@ button.fin-dash__stat::after {
 .home-internet__bill a {
   margin-left: auto;
 }
+
+/* Meeting sheet: pasted briefs (meeting-record, migration 0120) */
+.mtg-owner--none { background: transparent; border: 1px dashed var(--color-border); color: var(--color-muted); }
+.mtg-pill--implied { background: transparent; color: #8a6a12; border: 1px dashed currentColor; }
+.mtg-ai { color: var(--color-accent); }
+.mtg-tldr { margin: 0 0 8px; padding-left: 18px; font-size: 13.5px; line-height: 1.5; }
+.mtg-tldr li + li { margin-top: 3px; }
+.mtg-brief { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.mtg-chip-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mtg-items__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.mtg-item { font-size: 13px; line-height: 1.45; }
+.mtg-item.is-done span { text-decoration: line-through; color: var(--color-muted); }
+.mtg-item__check { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; }
+.mtg-item__check input { margin-top: 3px; flex: none; }
+.mtg-item__material { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-muted); border: var(--border-hairline); border-radius: 4px; padding: 0 4px; }
+.mtg-item__takeaway { color: var(--color-ink); opacity: 0.85; }
+.mtg-assists { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.mtg-assist { display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; border: var(--border-hairline); border-radius: 8px; background: var(--color-card-bg); }
+.mtg-assist details { flex: 1; min-width: 0; }
+.mtg-assist summary { cursor: pointer; font-size: 13.5px; font-weight: var(--weight-medium); }
+.mtg-assist__prompt { margin: 6px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--color-ink); white-space: pre-wrap; }
+.mtg-suggest { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 13.5px; }
+.mtg-suggest__btns { display: flex; gap: 4px; }
+.mtg-items .mtg-label { display: flex; align-items: center; gap: 4px; }
+.paste-brief { width: min(680px, 94vw); }
+.paste-brief__hint { font-size: 13px; line-height: 1.45; color: var(--color-muted); text-transform: none; letter-spacing: 0; margin: 0 0 10px; }
+.modal.paste-brief textarea.paste-brief__box { width: 100%; min-height: 220px; height: 220px; font-family: var(--font-sans); font-size: 13px; line-height: 1.45; resize: vertical; }
+.paste-brief__row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.paste-brief__result { margin-top: 10px; font-size: 13.5px; }
+.today-page__meeting-tools { display: inline-flex; align-items: baseline; gap: 14px; }
+button.today-page__add-meeting { border: none; background: none; padding: 0; cursor: pointer; font-family: inherit; }
+.today-page__wrapup--thread { border-left-color: var(--color-work); }
+.today-page__wrapup--thread .today-page__wrapup-tag { color: var(--color-work); }
+.person-learned { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.person-learned li { display: flex; gap: 8px; align-items: baseline; font-size: 13px; line-height: 1.45; }
+.person-learned__fact { flex: 1; min-width: 0; }
+.person-learned__src { font-size: 11.5px; color: var(--color-muted); white-space: nowrap; }
+.person-learned__x { border: none; background: none; color: var(--color-muted); cursor: pointer; padding: 0 2px; font-size: 12px; }
+.task-panel__ai { display: flex; flex-direction: column; gap: 6px; }
+.task-panel__ai-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
+.notes-page__head-actions { display: inline-flex; gap: 8px; align-items: center; }

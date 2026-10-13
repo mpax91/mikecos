@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, normalizeUrl } from '../api/client';
-import type { Entity, FileMeta, LinkMeta, PersonRef, TaskMeta } from '../api/types';
+import type { Entity, FileMeta, LinkMeta, MeetingAssist, PersonRef, TaskMeta } from '../api/types';
+import { copyText } from '../utils/clipboard';
 import { ContactPicker } from './ContactPicker';
 import { RealmToggle } from './RealmSwitch';
 import { RenameModal } from './RenameModal';
@@ -67,6 +68,15 @@ export function TaskDetailModal({
   const [newSubtask, setNewSubtask] = useState('');
   const [person, setPerson] = useState<PersonRef[]>([]);
   const [blockedReason, setBlockedReason] = useState('');
+  // "Where AI Can Help" prompts from the pasted brief this task came from.
+  const [assists, setAssists] = useState<MeetingAssist[]>([]);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  useEffect(() => {
+    api
+      .getTaskAssists(taskId)
+      .then((r) => setAssists(r.assists))
+      .catch(() => setAssists([]));
+  }, [taskId]);
   const [addingLink, setAddingLink] = useState(false);
   const [linkUrl, setLinkUrl] = useState('');
   const [editingAttachment, setEditingAttachment] = useState<Entity | null>(null);
@@ -356,6 +366,30 @@ export function TaskDetailModal({
                 />
               )}
             </div>
+          </div>
+        )}
+
+        {assists.length > 0 && (
+          <div className="task-panel__field task-panel__ai">
+            <label className="task-panel__label">AI Can Help</label>
+            {assists.map((a) => (
+              <div key={a.id} className="task-panel__ai-row">
+                <span>{a.title}</span>
+                <button
+                  type="button"
+                  className="btn btn--ghost btn--sm mtg-ai"
+                  title={a.prompt}
+                  onClick={async () => {
+                    if (await copyText(a.prompt)) {
+                      setCopiedId(a.id);
+                      window.setTimeout(() => setCopiedId(null), 1800);
+                    }
+                  }}
+                >
+                  {copiedId === a.id ? 'Copied ✓' : '✨ Copy AI Prompt'}
+                </button>
+              </div>
+            ))}
           </div>
         )}
 

@@ -8,6 +8,8 @@ import { SectionPicker } from '../components/dash/SectionPicker';
 import { InfoTip } from '../components/dash/InfoTip';
 import { openMeetingSheet, MEETING_CHANGED_EVENT } from '../components/MeetingSheet';
 import { RealmChip } from '../components/RealmSwitch';
+import { copyText } from '../utils/clipboard';
+import { weekPacket } from '../utils/claudePacket';
 
 /** Briefs: the Monday "Week Ahead" (what to work on) and the Friday "Week in
  * Review" (done, pushed, blocked, waiting, Start / Stop / Continue) — built
@@ -294,6 +296,20 @@ export function BriefsPage() {
           <a className="btn btn--ghost btn--sm" href={mailto}>
             ✉️ Email
           </a>
+          <button
+            type="button"
+            className="btn btn--ghost btn--sm"
+            disabled={!brief}
+            title="Everything this week as plain text for your work Claude Project (Weekly mode)"
+            onClick={async () => {
+              if (brief && (await copyText(weekPacket(brief, kind === 'ahead' ? 'ahead' : 'review')))) {
+                setCopied('claude');
+                window.setTimeout(() => setCopied(null), 1800);
+              }
+            }}
+          >
+            {copied === 'claude' ? 'Copied ✓' : '📋 Copy Week for Claude'}
+          </button>
         </div>
       </div>
       {realm !== 'work' && (

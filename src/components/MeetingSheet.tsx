@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
-import type { MeetingAction, MeetingItem, MeetingPrep, MeetingSummary, WorkTask } from '../api/types';
+import type { BriefPersonSuggestion, MeetingAction, MeetingAssist, MeetingItem, MeetingPrep, MeetingRecordItem, MeetingSummary, MeetingSummaryBundle, WorkTask } from '../api/types';
 import { DetailSheet } from './dash/DetailSheet';
 import { InfoTip } from './dash/InfoTip';
 import { RealmChip } from './RealmSwitch';
 import { meetingPeopleNames, buildMeetingNoteTitle } from '../utils/meetingNotes';
 import { MeetingDocs, seriesKeyFor } from './MeetingDocs';
+import { copyText } from '../utils/clipboard';
+import { meetingPacket } from '../utils/claudePacket';
 
 /** One meeting, everything about it: morning-of prep (people, what's open
  * with them, last time's notes, open next steps), this meeting's own notes,
@@ -68,7 +70,25 @@ function TaskLine({ t, onOpen, person }: { t: WorkTask; onOpen: (t: WorkTask) =>
   );
 }
 
-function ActionRow({ a, onChange }: { a: MeetingAction; onChange: (a: MeetingAction) => void }) {
+function CopyButton({ text, label = 'Copy', className = 'btn btn--ghost btn--sm' }: { text: string; label?: string; className?: string }) {
+  const [done, setDone] = useState(false);
+  return (
+    <button
+      type="button"
+      className={className}
+      onClick={async () => {
+        if (await copyText(text)) {
+          setDone(true);
+          window.setTimeout(() => setDone(false), 1800);
+        }
+      }}
+    >
+      {done ? 'Copied ✓' : label}
+    </button>
+  );
+}
+
+function ActionRow({ a, onChange, assist }: { a: MeetingAction; onChange: (a: MeetingAction) => void; assist?: MeetingAssist }) {
   const [busy, setBusy] = useState(false);
   const who = a.isMine ? 'Me' : a.contactName ?? a.ownerName;
   async function decide(decision: MeetingAction['status']) {
@@ -84,19 +104,26 @@ function ActionRow({ a, onChange }: { a: MeetingAction; onChange: (a: MeetingAct
   return (
     <li className={`mtg-action mtg-action--${a.status}`}>
       <div className="mtg-action__text">
-        {who && <span className={`mtg-owner${a.isMine ? ' mtg-owner--me' : ''}`}>{who}</span>}
+        {who ? <span className={`mtg-owner${a.isMine ? ' mtg-owner--me' : ''}`}>{who}</span> : <span className="mtg-owner mtg-owner--none">Unowned</span>}
         <span>{a.text}</span>
         {a.isMine && a.contactName && <span className="mtg-with">with {a.contactName.split(' ')[0]}</span>}
+        {a.dueDate && a.status === 'pending' && <span className="mtg-with">due {fmtDue(a.dueDate)}</span>}
+        {a.confidence === 'implied' && (
+          <span className="mtg-pill mtg-pill--implied" title="Claude inferred the owner — check it before sorting">
+            implied
+          </span>
+        )}
       </div>
       <div className="mtg-action__btns">
+        {assist && <CopyButton text={assist.prompt} label="✨ Copy AI Prompt" className="btn btn--ghost btn--sm mtg-ai" />}
         {!decided ? (
           <>
             <button type="button" className="btn btn--ghost btn--sm" disabled={busy} onClick={() => decide('task')}>
               ✓ My Task
             </button>
-            {!a.isMine && (
+            {!a.isMine && who && (
               <button type="button" className="btn btn--sm" disabled={busy} onClick={() => decide('waiting')}>
-                ⏳ Waiting On {who?.split(' ')[0] ?? 'Them'}
+                ⏳ Waiting On {who.split(' ')[0]}
               </button>
             )}
             <button type="button" className="btn btn--ghost btn--sm mtg-quiet" disabled={busy} onClick={() => decide('dismissed')}>
@@ -121,7 +148,15 @@ function ActionRow({ a, onChange }: { a: MeetingAction; onChange: (a: MeetingAct
 function SummaryBlock({ s, compact = false }: { s: MeetingSummary; compact?: boolean }) {
   return (
     <div className={`mtg-summary${compact ? ' mtg-summary--compact' : ''}`}>
-      {s.summary && <p className="mtg-summary__text">{s.summary}</p>}
+      {s.tldr && s.tldr.length > 0 ? (
+        <ul className="mtg-tldr">
+          {s.tldr.map((t, i) => (
+            <li key={i}>{t}</li>
+          ))}
+        </ul>
+      ) : (
+        s.summary && <p className="mtg-summary__text">{s.summary}</p>
+      )}
       {s.decisions && (
         <div className="mtg-summary__decisions">
           <div className="mtg-label">Decisions</div>
@@ -130,18 +165,158 @@ function SummaryBlock({ s, compact = false }: { s: MeetingSummary; compact?: boo
       )}
       {s.noteEntityId && (
         <Link className="mtg-link" to={`/notes/${s.noteEntityId}`}>
-          Full notes →
+          {s.source === 'record' ? 'Full brief →' : 'Full notes →'}
         </Link>
       )}
     </div>
   );
 }
 
+const ITEM_TITLES: Record<string, string> = {
+  goal: 'What to Get Out of It',
+  talking_point: 'Talking Points',
+  prep_question: 'Questions to Ask',
+  watch_out: 'Watch-Outs',
+  question: 'Open Questions',
+};
+
+/** Open questions / watch-outs (check off once handled) or prep lists. */
+function ItemList({ items, kind, checkable, onChange }: { items: MeetingRecordItem[]; kind: string; checkable?: boolean; onChange?: (i: MeetingRecordItem) => void }) {
+  const list = items.filter((i) => i.kind === kind);
+  if (!list.length) return null;
+  return (
+    <div className="mtg-items">
+      <div className="mtg-label">{ITEM_TITLES[kind] ?? kind}</div>
+      <ul className="mtg-items__list">
+        {list.map((i) => (
+          <li key={i.id} className={`mtg-item${i.resolvedAt ? ' is-done' : ''}`}>
+            {checkable ? (
+              <label className="mtg-item__check">
+                <input type="checkbox" checked={!!i.resolvedAt} onChange={async (e) => onChange?.(await api.resolveMeetingItem(i.id, e.target.checked))} />
+                <span>{i.text}</span>
+              </label>
+            ) : (
+              <span>{i.text}</span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** What a pasted brief adds beyond the next steps: who was inferred,
+ * materials, open questions / watch-outs, AI prompts, people to add. */
+function BriefExtras({
+  s,
+  items,
+  assists,
+  suggestions,
+  onItem,
+  onChanged,
+}: {
+  s: MeetingSummary;
+  items: MeetingRecordItem[];
+  assists: MeetingAssist[];
+  suggestions: BriefPersonSuggestion[];
+  onItem: (i: MeetingRecordItem) => void;
+  onChanged: () => void;
+}) {
+  const mine = items.filter((i) => i.summaryId === s.id);
+  const prompts = assists.filter((a) => a.summaryId === s.id);
+  const people = suggestions.filter((p) => p.summaryId === s.id);
+  const materials = mine.filter((i) => i.kind === 'material');
+  const [busy, setBusy] = useState<string | null>(null);
+  async function person(p: BriefPersonSuggestion, ignore: boolean) {
+    setBusy(p.name);
+    try {
+      await api.addBriefPerson(s.id, { name: p.name, email: p.email, ignore });
+      window.dispatchEvent(new Event(MEETING_CHANGED_EVENT));
+      onChanged();
+    } finally {
+      setBusy(null);
+    }
+  }
+  return (
+    <div className="mtg-brief">
+      {s.attendeesConfirmed === false && (
+        <div className="mtg-chip-row">
+          <span className="mtg-pill mtg-pill--implied" title="Claude guessed who was there from the notes">
+            Attendees inferred — confirm
+          </span>
+          {(s.attendees ?? []).length > 0 && <span className="mtg-hint">{(s.attendees ?? []).map((a) => a.name).join(', ')}</span>}
+        </div>
+      )}
+      {materials.length > 0 && (
+        <div className="mtg-items">
+          <div className="mtg-label">Materials</div>
+          <ul className="mtg-items__list">
+            {materials.map((m) => (
+              <li key={m.id} className="mtg-item">
+                <span className="mtg-item__material">{m.materialType ?? 'file'}</span> <strong>{m.text}</strong>
+                {m.takeaway && <span className="mtg-item__takeaway"> — {m.takeaway}</span>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <ItemList items={mine} kind="watch_out" checkable onChange={onItem} />
+      <ItemList items={mine} kind="question" checkable onChange={onItem} />
+      {prompts.length > 0 && (
+        <div className="mtg-items">
+          <div className="mtg-label">
+            Where AI Can Help{' '}
+            <InfoTip label="About these prompts">Each prompt carries its own context. Copy it into a new chat in your work Claude Project.</InfoTip>
+          </div>
+          <ul className="mtg-assists">
+            {prompts.map((a) => (
+              <li key={a.id} className="mtg-assist">
+                <details>
+                  <summary>{a.title}</summary>
+                  <p className="mtg-assist__prompt">{a.prompt}</p>
+                </details>
+                <CopyButton text={a.prompt} label="Copy" />
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {people.length > 0 && (
+        <div className="mtg-items">
+          <div className="mtg-label">Not in Contacts Yet</div>
+          <ul className="mtg-items__list">
+            {people.map((p) => (
+              <li key={p.name} className="mtg-suggest">
+                <span>
+                  {p.name}
+                  {p.email && <span className="mtg-hint"> · {p.email}</span>}
+                </span>
+                <span className="mtg-suggest__btns">
+                  <button type="button" className="btn btn--sm" disabled={busy === p.name} onClick={() => person(p, false)}>
+                    + Add Contact
+                  </button>
+                  <button type="button" className="btn btn--ghost btn--sm mtg-quiet" disabled={busy === p.name} onClick={() => person(p, true)} aria-label={`Don't add ${p.name}`}>
+                    ✕
+                  </button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Briefs list next steps Mine → Others → Unowned. */
+const actionRank = (a: MeetingAction) => (a.isMine ? 0 : a.ownerName || a.contactName ? 1 : 2);
+
 function MeetingSheet({ meeting, startPasting, onClose }: { meeting: SheetMeeting; startPasting: boolean; onClose: () => void }) {
   const navigate = useNavigate();
   const date = meeting.date ?? localDate(meeting.start);
   const [prep, setPrep] = useState<MeetingPrep | null>(null);
-  const [own, setOwn] = useState<{ summaries: MeetingSummary[]; actions: MeetingAction[] } | null>(null);
+  const [own, setOwn] = useState<MeetingSummaryBundle | null>(null);
+  const isThread = meeting.id.startsWith('thread-');
   const [error, setError] = useState<string | null>(null);
   const [pasting, setPasting] = useState(startPasting);
   const [text, setText] = useState('');
@@ -152,12 +327,19 @@ function MeetingSheet({ meeting, startPasting, onClose }: { meeting: SheetMeetin
   // Prep first: loading it re-reads this meeting's 📝 note for next steps,
   // so the items list fetched after it is current.
   const load = useCallback(() => {
+    if (isThread) {
+      api
+        .getMeetingSummaries(meeting.id)
+        .then(setOwn)
+        .catch(() => setOwn({ summaries: [], actions: [] }));
+      return;
+    }
     api
       .getMeetingPrep(date, meeting.id)
       .then(setPrep)
       .catch((e) => setError(String(e.message ?? e)))
       .finally(() => api.getMeetingSummaries(meeting.id).then(setOwn).catch(() => setOwn({ summaries: [], actions: [] })));
-  }, [date, meeting.id]);
+  }, [date, meeting.id, isThread]);
   const [accepting, setAccepting] = useState(false);
   const myPending = own?.actions.filter((a) => a.status === 'pending' && a.isMine).length ?? 0;
   const theirPending = own?.actions.filter((a) => a.status === 'pending' && !a.isMine).length ?? 0;
@@ -200,6 +382,8 @@ function MeetingSheet({ meeting, startPasting, onClose }: { meeting: SheetMeetin
         start: meeting.start,
         realm: m.realm,
         peopleIds: (m.people ?? []).map((p) => p.id),
+        date,
+        allDay: meeting.allDay,
       });
       setText('');
       setPasting(false);
@@ -233,7 +417,9 @@ function MeetingSheet({ meeting, startPasting, onClose }: { meeting: SheetMeetin
   async function removeSummary(id: string) {
     if (!window.confirm('Remove these notes? Tasks and Waiting items already made stay.')) return;
     await api.deleteMeetingSummary(id);
-    load();
+    window.dispatchEvent(new Event(MEETING_CHANGED_EVENT));
+    if (isThread) onClose();
+    else load();
   }
 
   function openTask(t: WorkTask) {
@@ -244,9 +430,16 @@ function MeetingSheet({ meeting, startPasting, onClose }: { meeting: SheetMeetin
   }
 
   const updateAction = (list: MeetingAction[], a: MeetingAction) => list.map((x) => (x.id === a.id ? a : x));
+  const updateItem = (i: MeetingRecordItem) => setOwn((o) => (o ? { ...o, items: (o.items ?? []).map((x) => (x.id === i.id ? i : x)) } : o));
+  const assistFor = (a: MeetingAction) => (a.hasPrompt ? (own?.assists ?? []).find((x) => x.actionId === a.id) : undefined);
   const link = m.joinUrl ?? m.links?.find((l) => /meet\.google|zoom\.us|teams\.microsoft|webex/i.test(l)) ?? m.links?.[0];
 
-  const sub = (
+  const sub = isThread ? (
+    <span className="mtg-sub">
+      {meeting.thread?.label ?? 'Thread'}
+      {meeting.thread?.channel && ` · ${meeting.thread.channel}`} · {fmtDay(meeting.start)} <RealmChip realm="work" always />
+    </span>
+  ) : (
     <span className="mtg-sub">
       {fmtDay(meeting.start)} · {meeting.allDay ? 'All Day' : `${fmtTime(meeting.start)} – ${fmtTime(meeting.end)}`}
       {m.recurring && ' · Repeats'}
@@ -257,6 +450,7 @@ function MeetingSheet({ meeting, startPasting, onClose }: { meeting: SheetMeetin
   return (
     <DetailSheet title={meeting.title} sub={sub} onClose={onClose}>
       <div className="mtg">
+        {!isThread && (
         <div className="mtg__toolbar">
           <button type="button" className="btn btn--ghost btn--sm" onClick={openAgenda} disabled={!prep?.agendaNoteId && !meeting.hasNote && ended}>
             📝 {prep?.agendaNoteId || meeting.hasNote ? 'My Notes' : 'Agenda / Notes'}
@@ -268,6 +462,7 @@ function MeetingSheet({ meeting, startPasting, onClose }: { meeting: SheetMeetin
           <button type="button" className="btn btn--ghost btn--sm" onClick={() => setPasting((v) => !v)}>
             ✨ Add Meeting Notes
           </button>
+          <CopyButton text={meetingPacket(meeting, prep, own, ended ? 'debrief' : 'prep')} label={ended ? '📋 Copy for Claude (Debrief)' : '📋 Copy for Claude (Prep)'} />
           {link && (
             <a className="btn btn--ghost btn--sm" href={link} target="_blank" rel="noreferrer">
               🎥 Join
@@ -291,20 +486,25 @@ function MeetingSheet({ meeting, startPasting, onClose }: { meeting: SheetMeetin
             </>
           )}
         </div>
+        )}
 
         {error && <div className="mtg-error">{error}</div>}
 
+        {!isThread && (
         <MeetingDocs
           seriesKey={meeting.seriesKey ?? seriesKeyFor(meeting.id)}
           recurring={!!m.recurring}
           inviteLinks={m.links ?? []}
           onChanged={() => window.dispatchEvent(new Event(MEETING_CHANGED_EVENT))}
         />
+        )}
 
         {pasting && (
           <section className="mtg-section mtg-paste">
             <div className="mtg-section__title">Add Meeting Notes</div>
-            <p className="mtg-hint">Paste "Notes by Gemini" (or any notes). Summary, decisions and next steps are pulled out; you decide what each next step becomes.</p>
+            <p className="mtg-hint">
+              Paste the whole response from your work Claude (it ends with a meeting-record block) — or "Notes by Gemini" / any notes. Next steps are pulled out; you decide what each one becomes.
+            </p>
             <textarea className="mtg-paste__box" rows={9} value={text} onChange={(e) => setText(e.target.value)} placeholder={'Summary\n…\n\nSuggested next steps\n* Mike Palladino will …\n* Sarah Chen will …'} autoFocus />
             <div className="mtg-paste__row">
               <button type="button" className="btn" disabled={saving || text.trim().length < 10} onClick={saveSummary}>
@@ -325,7 +525,7 @@ function MeetingSheet({ meeting, startPasting, onClose }: { meeting: SheetMeetin
         {own && own.summaries.some((s) => s.source !== 'own_note' || own.actions.some((a) => a.summaryId === s.id)) && (
           <section className="mtg-section">
             <div className="mtg-section__title mtg-section__title--row">
-              <span>From This Meeting</span>
+              <span>{isThread ? 'From This Thread' : 'From This Meeting'}</span>
               {myPending > 0 && (
                 <button type="button" className="btn btn--sm" disabled={accepting} onClick={acceptMine}>
                   ✓ Add My {myPending} Task{myPending === 1 ? '' : 's'}
@@ -354,13 +554,17 @@ function MeetingSheet({ meeting, startPasting, onClose }: { meeting: SheetMeetin
                 <ul className="mtg-actions">
                   {own.actions
                     .filter((a) => a.summaryId === s.id)
+                    .sort((x, y) => (s.source === 'record' ? actionRank(x) - actionRank(y) : 0))
                     .map((a) => (
-                      <ActionRow key={a.id} a={a} onChange={(na) => setOwn((o) => (o ? { ...o, actions: updateAction(o.actions, na) } : o))} />
+                      <ActionRow key={a.id} a={a} assist={assistFor(a)} onChange={(na) => setOwn((o) => (o ? { ...o, actions: updateAction(o.actions, na) } : o))} />
                     ))}
                 </ul>
+                {s.source === 'record' && (
+                  <BriefExtras s={s} items={own.items ?? []} assists={own.assists ?? []} suggestions={own.suggestions ?? []} onItem={updateItem} onChanged={load} />
+                )}
                 {s.source !== 'own_note' && (
                   <button type="button" className="mtg-link mtg-link--quiet" onClick={() => removeSummary(s.id)}>
-                    Remove these notes
+                    {s.source === 'record' ? 'Remove this brief' : 'Remove these notes'}
                   </button>
                 )}
               </div>
@@ -368,7 +572,31 @@ function MeetingSheet({ meeting, startPasting, onClose }: { meeting: SheetMeetin
           </section>
         )}
 
-        {!prep && !error && <div className="mtg-hint">Loading prep…</div>}
+        {!prep && !error && !isThread && <div className="mtg-hint">Loading prep…</div>}
+
+        {prep && (prep.prepItems ?? []).length > 0 && (
+          <section className="mtg-section">
+            <div className="mtg-section__title">Your Prep</div>
+            {['goal', 'talking_point', 'prep_question', 'watch_out'].map((k) => (
+              <ItemList key={k} items={prep.prepItems ?? []} kind={k} />
+            ))}
+          </section>
+        )}
+
+        {prep && (prep.stillOpenItems ?? []).length > 0 && (
+          <section className="mtg-section">
+            <div className="mtg-section__title">Open Questions &amp; Watch-Outs From Earlier</div>
+            {['question', 'watch_out'].map((k) => (
+              <ItemList
+                key={k}
+                items={prep.stillOpenItems ?? []}
+                kind={k}
+                checkable
+                onChange={(i) => setPrep((p) => (p ? { ...p, stillOpenItems: (p.stillOpenItems ?? []).filter((x) => x.id !== i.id || !i.resolvedAt) } : p))}
+              />
+            ))}
+          </section>
+        )}
 
         {prep && (
           <>

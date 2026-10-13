@@ -12,6 +12,8 @@ import { useIsCompact } from '../hooks/useIsMobile';
 import { formatRelativeTime } from '../utils/formatRelativeTime';
 import { extractSnippet } from '../lib/snippet';
 import { useTabs, useReportTabMeta } from '../contexts/TabsContext';
+import { PasteBriefButton } from '../components/PasteBriefModal';
+import { useRealm } from '../contexts/RealmContext';
 
 interface ToastState {
   message: string;
@@ -28,6 +30,7 @@ interface ToastState {
  * two-pane split there) this collapses to a full-width list, then a
  * full-width detail with a back control, instead of the side-by-side split. */
 export function NotesPage() {
+  const { realm } = useRealm();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
@@ -146,9 +149,12 @@ export function NotesPage() {
           <h1 className="heading-serif" style={{ fontSize: 24, margin: 0 }}>
             Notes
           </h1>
-          <button className="btn" onClick={createNote}>
-            + New Note
-          </button>
+          <span className="notes-page__head-actions">
+            {realm !== 'personal' && <PasteBriefButton className="btn btn--ghost" />}
+            <button className="btn" onClick={createNote}>
+              + New Note
+            </button>
+          </span>
         </div>
       )}
       <div className={`notes-page${isCompact ? ' notes-page--mobile' : ''}`}>

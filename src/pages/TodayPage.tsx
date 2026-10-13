@@ -11,6 +11,7 @@ import { getHolidays } from '../utils/holidays';
 import { fmtBillMoney } from '../utils/bills';
 import { meetingPeopleNames, buildMeetingNoteTitle, meetingHasEnded } from '../utils/meetingNotes';
 import { MEETING_CHANGED_EVENT, openMeetingSheet } from '../components/MeetingSheet';
+import { PasteBriefButton } from '../components/PasteBriefModal';
 import { DOC_ICON } from '../components/MeetingDocs';
 import { RealmChip } from '../components/RealmSwitch';
 import { useRealm } from '../contexts/RealmContext';
@@ -226,15 +227,28 @@ export function TodayPage() {
   useEffect(() => {
     loadPreps();
   }, [loadPreps]);
+  // Pasted Slack / email threads with next steps still to sort (Work).
+  const [threads, setThreads] = useState<(MeetingItem & { date?: string })[]>([]);
+  const loadThreads = useCallback(() => {
+    if (!isToday || realm === 'personal') return setThreads([]);
+    api
+      .listBriefThreads()
+      .then((r) => setThreads(r.threads))
+      .catch(() => setThreads([]));
+  }, [isToday, realm]);
+  useEffect(() => {
+    loadThreads();
+  }, [loadThreads]);
   useEffect(() => {
     const on = () => {
       loadMeetings();
       loadPreps();
+      loadThreads();
       load();
     };
     window.addEventListener(MEETING_CHANGED_EVENT, on);
     return () => window.removeEventListener(MEETING_CHANGED_EVENT, on);
-  }, [loadMeetings, loadPreps, load]);
+  }, [loadMeetings, loadPreps, loadThreads, load]);
 
   // The note icon on a meeting row — opens the real note already linked to
   // this meeting, or (only for a meeting that hasn't happened yet) creates
@@ -528,9 +542,12 @@ export function TodayPage() {
           <div className="today-page__section">
             <div className="today-page__section-title today-page__section-title--row">
               <span>{isToday ? "Today's Meetings" : 'Meetings'}</span>
-              <Link to={`/settings?cat=meetings&new=${date}`} className="today-page__add-meeting" title="Add a meeting (one-off or recurring)">
-                + Add
-              </Link>
+              <span className="today-page__meeting-tools">
+                {realm !== 'personal' && <PasteBriefButton />}
+                <Link to={`/settings?cat=meetings&new=${date}`} className="today-page__add-meeting" title="Add a meeting (one-off or recurring)">
+                  + Add
+                </Link>
+              </span>
             </div>
             {/* Wrap Up (2026-10-12): a meeting that ended 15+ minutes ago
                 with next steps still to sort (from its 📝 note or pasted
@@ -547,6 +564,15 @@ export function TodayPage() {
                   </span>
                 </button>
               ))}
+            {threads.map((t) => (
+              <button key={`thread-${t.id}`} type="button" className="today-page__wrapup today-page__wrapup--thread" onClick={() => openMeetingSheet(t)}>
+                <span className="today-page__wrapup-tag">{t.thread?.label ?? 'Thread'}</span>
+                <span className="today-page__wrapup-title">{t.title}</span>
+                <span className="today-page__wrapup-count">
+                  {t.pendingActions} next step{t.pendingActions === 1 ? '' : 's'} to sort ›
+                </span>
+              </button>
+            ))}
             {meetings.length === 0 ? (
               <div className="today-page__meetings card">
                 <div className="empty-state">No meetings {isToday ? 'today' : 'that day'}.</div>

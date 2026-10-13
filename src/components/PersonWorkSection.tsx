@@ -13,6 +13,10 @@ import type { MeetingItem } from '../api/types';
 const TZ = 'America/New_York';
 const fmtWhen = (iso: string) => new Date(iso).toLocaleString('en-US', { timeZone: TZ, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 const fmtDay = (iso: string) => new Date(iso).toLocaleDateString('en-US', { timeZone: TZ, month: 'short', day: 'numeric' });
+const fmtYmd = (d: string) => {
+  const [y, m, dd] = d.split('-').map(Number);
+  return new Date(y, m - 1, dd).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+};
 function fmtDue(d: string | null) {
   if (!d) return '';
   const [y, m, dd] = d.split('-').map(Number);
@@ -29,11 +33,17 @@ export function PersonWorkSection({ contactId, firstName, fullName }: { contactI
   }, [contactId]);
 
   if (!data) return null;
-  const empty = !data.iOwe.length && !data.theyOwe.length && !data.pendingActions.length && !data.series.length && !data.recentMeetings.length && !data.upcoming.length;
+  const learned = data.learned ?? [];
+  const empty = !data.iOwe.length && !data.theyOwe.length && !data.pendingActions.length && !data.series.length && !data.recentMeetings.length && !data.upcoming.length && !learned.length;
   if (empty) return null;
 
   const next = data.upcoming[0];
-  const bits = [data.iOwe.length ? `You owe ${data.iOwe.length}` : '', data.theyOwe.length ? `Waiting on ${data.theyOwe.length}` : '', next ? `Next: ${next.title} ${fmtDay(next.start)}` : ''].filter(Boolean);
+  const bits = [
+    data.iOwe.length ? `You owe ${data.iOwe.length}` : '',
+    data.theyOwe.length ? `Waiting on ${data.theyOwe.length}` : '',
+    next ? `Next: ${next.title} ${fmtDay(next.start)}` : '',
+    !data.iOwe.length && !data.theyOwe.length && !next && learned.length ? `${learned.length} thing${learned.length === 1 ? '' : 's'} learned` : '',
+  ].filter(Boolean);
 
   const openTask = (t: WorkTask) => (t.waiting_source_id ? navigate('/waiting') : t.due_date ? navigate(`/today/${t.due_date}`) : navigate('/today'));
   const list = (items: WorkTask[]) => (
@@ -89,6 +99,34 @@ export function PersonWorkSection({ contactId, firstName, fullName }: { contactI
                 </ul>
               </div>
             )}
+            {learned.length > 0 && (
+              <div>
+                <div className="voter-insight__group-title">What I've Learned</div>
+                <ul className="person-learned">
+                  {learned.slice(0, 12).map((l) => (
+                    <li key={l.id}>
+                      <span className="person-learned__fact">{l.fact}</span>
+                      <span className="person-learned__src">
+                        {fmtYmd(l.date)}
+                        {l.title ? ` · ${l.title}` : ''}
+                      </span>
+                      <button
+                        type="button"
+                        className="person-learned__x"
+                        title="Forget this"
+                        aria-label="Forget this"
+                        onClick={async () => {
+                          await api.deleteContactContext(l.id);
+                          setData((d) => (d ? { ...d, learned: (d.learned ?? []).filter((x) => x.id !== l.id) } : d));
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             {data.upcoming.length > 0 && (
               <div>
                 <div className="voter-insight__group-title">Upcoming Meetings</div>
@@ -116,10 +154,18 @@ export function PersonWorkSection({ contactId, firstName, fullName }: { contactI
                     <div className="mtg-past__date">
                       {fmtDay(s.start)} · {s.title}
                     </div>
-                    {s.summary && <p className="mtg-summary__text">{s.summary.length > 260 ? s.summary.slice(0, 260) + '…' : s.summary}</p>}
+                    {s.tldr?.length ? (
+                      <ul className="mtg-tldr">
+                        {s.tldr.slice(0, 3).map((t, i) => (
+                          <li key={i}>{t}</li>
+                        ))}
+                      </ul>
+                    ) : (
+                      s.summary && <p className="mtg-summary__text">{s.summary.length > 260 ? s.summary.slice(0, 260) + '…' : s.summary}</p>
+                    )}
                     {s.noteEntityId && (
                       <Link className="mtg-link" to={`/notes/${s.noteEntityId}`}>
-                        Full notes →
+                        {s.source === 'record' ? 'Full brief →' : 'Full notes →'}
                       </Link>
                     )}
                   </div>

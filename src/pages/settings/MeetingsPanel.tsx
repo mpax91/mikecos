@@ -6,6 +6,7 @@ import { Modal } from '../../components/Modal';
 import { ConfirmModal } from '../../components/ConfirmModal';
 import { ContactPicker } from '../../components/ContactPicker';
 import { RealmChip, RealmToggle } from '../../components/RealmSwitch';
+import { copyText } from '../../utils/clipboard';
 
 /** Settings → Meetings: meetings Mike enters by hand (his Birches calendar
  * can't be connected). Recurring ones are set up once; one-offs too. People
@@ -180,6 +181,7 @@ export function MeetingsPanel() {
   const [deleting, setDeleting] = useState<MeetingSeries | null>(null);
   const [myNames, setMyNames] = useState('');
   const [workLabel, setWorkLabel] = useState('');
+  const [peopleCopied, setPeopleCopied] = useState<string | null>(null);
   const [noteTemplate, setNoteTemplate] = useState(true);
   const [noteTip, setNoteTip] = useState(true);
   const [namesSaved, setNamesSaved] = useState(false);
@@ -391,6 +393,27 @@ export function MeetingsPanel() {
         <label className="mtg-settings__check">
           <input type="checkbox" checked={noteTip} disabled={!noteTemplate} onChange={(e) => saveNoteSetting({ noteTip: e.target.checked })} /> Show the Tip Line at the Top
         </label>
+        <div className="settings-page__field-label" style={{ marginTop: 12 }}>
+          Work Claude Project
+        </div>
+        <p className="settings-page__section-hint">
+          Briefs from your work Claude go in with 📋 Paste Brief on Today (or Add Meeting Notes on a meeting). Copy your Work contacts as a table for the project's People knowledge — Notes holds the latest things learned from briefs.
+        </p>
+        <div className="mtg-settings__names-row">
+          <button
+            type="button"
+            className="btn btn--ghost"
+            onClick={async () => {
+              const r = await api.getWorkPeopleTable();
+              if (await copyText(r.markdown)) {
+                setPeopleCopied(`Copied ${r.count} people ✓`);
+                window.setTimeout(() => setPeopleCopied(null), 2200);
+              }
+            }}
+          >
+            {peopleCopied ?? '📋 Copy People Table'}
+          </button>
+        </div>
       </div>
 
       {form && (
