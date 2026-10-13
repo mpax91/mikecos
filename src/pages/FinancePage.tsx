@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
-import type { AccountOwner, CashPlacement, FinanceAccount, FinanceAttentionItem, RewardsOverview } from '../api/types';
+import type { AccountOwner, CashPlacement, FinanceAccount, FinanceAttentionItem, RewardsOverview, TaxYearSummary } from '../api/types';
 import { CashPlacementCard } from '../components/CashPlacementCard';
 import { FinanceRewardsCard } from '../components/CardRewardsPanel';
 import { useReportTabMeta } from '../contexts/TabsContext';
@@ -22,7 +22,15 @@ export function FinancePage() {
   const [attention, setAttention] = useState<FinanceAttentionItem[]>([]);
   const [cash, setCash] = useState<CashPlacement | null>(null);
   const [rewards, setRewards] = useState<RewardsOverview | null>(null);
+  const [taxYear, setTaxYear] = useState<TaxYearSummary | null>(null);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    api
+      .getTaxes()
+      .then((t) => setTaxYear(t.summary[t.summary.length - 1] ?? null))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     const load = () =>
@@ -200,6 +208,30 @@ export function FinancePage() {
                 <span className="finance-page__chev">›</span>
               </Link>
             ))}
+          </div>
+        </div>
+      )}
+
+      {owner !== 'chase' && (
+        <div className="cloud-meters finance-taxes">
+          <div className="cloud-meters__rows">
+            <Link to="/finance/taxes" className="finance-page__row">
+              <span className="finance-page__row-name">
+                <span className="cloud-meters__label">🧾 Taxes</span>
+                <span className="cloud-meters__provider">{taxYear ? `Every return since 2000 · Latest ${taxYear.year}` : 'Every filed return — income, rates and trends'}</span>
+              </span>
+              <span />
+              <span className="finance-page__row-value">
+                {taxYear?.agi != null ? `AGI $${taxYear.agi.toLocaleString('en-US')}` : ''}
+                {taxYear && (
+                  <span className="finance-page__row-sub">
+                    {taxYear.effTotal != null ? `${(taxYear.effTotal * 100).toFixed(1)}% income tax · ` : ''}
+                    {taxYear.federalBalance == null ? '' : taxYear.federalBalance >= 0 ? `Refund $${taxYear.federalBalance.toLocaleString('en-US')}` : `Owed $${(-taxYear.federalBalance).toLocaleString('en-US')}`}
+                  </span>
+                )}
+              </span>
+              <span className="finance-page__chev">›</span>
+            </Link>
           </div>
         </div>
       )}

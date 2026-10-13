@@ -20331,3 +20331,228 @@ button.fin-dash__stat::after {
     display: none;
   }
 }
+
+/* ── Finance → Taxes (TaxesPage.tsx, 2026-10-12) ───────────────────────── */
+.finance-taxes {
+  margin-top: 16px;
+}
+.taxes-page__span {
+  margin: 4px 0 14px;
+}
+.taxes-bar--neg {
+  background: #c0662e;
+}
+.taxes-insights {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.taxes-insight {
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border-left: 3px solid var(--color-border);
+  background: var(--color-paper);
+}
+.taxes-insight--warn {
+  border-left-color: #c0662e;
+}
+.taxes-insight--info {
+  border-left-color: #2a6fb0;
+}
+.taxes-insight--good {
+  border-left-color: #3d8b5a;
+}
+.taxes-insight__icon {
+  flex: none;
+  width: 18px;
+  text-align: center;
+  color: var(--color-muted);
+}
+.taxes-insight--warn .taxes-insight__icon {
+  color: #c0662e;
+}
+.taxes-insight--good .taxes-insight__icon {
+  color: #3d8b5a;
+}
+.taxes-insight__body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.taxes-insight__title {
+  font-weight: 600;
+  font-size: 14px;
+}
+.taxes-insight__detail {
+  font-size: 13px;
+  color: var(--color-muted);
+  line-height: 1.45;
+}
+.taxes-insight__years {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+.taxes-table td {
+  white-space: nowrap;
+}
+.taxes-table__prep {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--color-muted);
+}
+.taxes-chip {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: var(--color-paper);
+  border: 1px solid var(--color-border);
+  color: var(--color-muted);
+}
+.taxes-warn {
+  color: #c0662e;
+}
+.taxes-year__chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.taxes-year__chip {
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  font-size: 13px;
+}
+.taxes-year__doubts {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border-left: 3px solid #c0662e;
+  background: var(--color-paper);
+  font-size: 13px;
+}
+.taxes-year__doubts p,
+.taxes-year__doubts ul {
+  margin: 4px 0 0;
+}
+.taxes-year__doubts ul {
+  padding-left: 18px;
+  color: var(--color-muted);
+}
+.taxes-year__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px 20px;
+}
+.taxes-year__block h4 {
+  margin: 10px 0 4px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-muted);
+}
+.taxes-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 3px 0;
+  font-size: 13px;
+  border-bottom: 1px solid var(--color-border);
+  font-variant-numeric: tabular-nums;
+}
+.taxes-line--strong {
+  font-weight: 600;
+}
+.taxes-year__detail {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--color-muted);
+}
+.taxes-year__notes,
+.taxes-year__files {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.taxes-import {
+  width: 100%;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+}
+.tax-editor {
+  width: min(860px, 96vw);
+}
+.tax-editor__form {
+  max-height: 68vh;
+  overflow-y: auto;
+  display: grid;
+  gap: 12px;
+}
+.tax-editor__row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+}
+.tax-editor__group {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 8px 12px 12px;
+  margin: 0;
+}
+.tax-editor__group legend {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-muted);
+  padding: 0 4px;
+}
+.tax-editor__check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.tax-editor__num input {
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 640px) {
+  .taxes-year__grid {
+    grid-template-columns: 1fr;
+  }
+  .tax-editor__row,
+  .tax-editor__group {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+.taxes-bars .fin-dash__year {
+  grid-template-columns: 40px minmax(0, 1fr) 84px 62px;
+}
+.taxes-bars .fin-dash__year-bills,
+.taxes-mix .fin-dash__year-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.taxes-mix .fin-dash__year {
+  grid-template-columns: minmax(0, 8.5em) minmax(0, 1fr) 64px 0;
+}
+.taxes-insights__more {
+  margin-top: 8px;
+}

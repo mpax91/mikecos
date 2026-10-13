@@ -4257,3 +4257,38 @@ export interface MerchContactInfo {
   last: string;
   list: { id: string; friendlyId: string | null; day: string; status: string | null; total: number; items: string[] }[];
 }
+
+// ── Finance → Taxes (migration 0116; worker/src/taxes/) ──────────────────
+export type TaxFilingStatus = 'single' | 'mfj' | 'mfs' | 'hoh';
+export type TaxNum = number | null;
+export interface TaxFederal {
+  wages: TaxNum; taxable_interest: TaxNum; tax_exempt_interest: TaxNum; ordinary_dividends: TaxNum; qualified_dividends: TaxNum;
+  ira_taxable: TaxNum; pensions_taxable: TaxNum; social_security_taxable: TaxNum; capital_gain: TaxNum; business_income: TaxNum;
+  unemployment: TaxNum; other_income: TaxNum; total_income: TaxNum; adjustments: TaxNum; agi: TaxNum;
+  deduction_type: 'standard' | 'itemized' | null; deduction: TaxNum; exemptions: TaxNum; qbi_deduction: TaxNum; taxable_income: TaxNum;
+  tax: TaxNum; amt: TaxNum; nonrefundable_credits: TaxNum; credit_detail: string | null; other_taxes: TaxNum; other_taxes_detail: string | null;
+  total_tax: TaxNum; withholding: TaxNum; estimated_payments: TaxNum; refundable_credits: TaxNum; total_payments: TaxNum;
+  refund: TaxNum; amount_owed: TaxNum; penalty: TaxNum; applied_to_next_year: TaxNum;
+}
+export interface TaxItemized { medical: TaxNum; salt_paid: TaxNum; salt_deducted: TaxNum; real_estate_tax: TaxNum; mortgage_interest: TaxNum; charity: TaxNum; other: TaxNum; total: TaxNum }
+export interface TaxStateReturn {
+  federal_agi?: TaxNum; ny_agi?: TaxNum; ct_agi?: TaxNum; ct_source_income?: TaxNum; filer?: string | null; deduction_type?: string | null; deduction?: TaxNum;
+  dependent_exemptions?: TaxNum; taxable_income?: TaxNum; tax: TaxNum; credits: TaxNum; total_tax: TaxNum; withholding: TaxNum; estimated_payments?: TaxNum;
+  refund: TaxNum; amount_owed: TaxNum; notes?: string | null;
+}
+export interface TaxReturnRecord {
+  year: number; filing_status: TaxFilingStatus; prepared_by: string | null; amended: boolean;
+  source_files: { id: string; title: string; what: string }[]; people: { who: string; employer: string; wages: number }[];
+  federal: TaxFederal; itemized: TaxItemized | null; ny: TaxStateReturn | null; ct: TaxStateReturn | null;
+  dependents: TaxNum; checks: Record<string, string>; doubts: string[]; notes: string[];
+}
+export interface TaxYearSummary {
+  year: number; status: TaxFilingStatus; complete: boolean; agi: TaxNum; agiReal: TaxNum; taxableIncome: TaxNum; wages: TaxNum;
+  wagesByWho: Record<string, number>; investmentIncome: TaxNum; otherIncome: TaxNum; federalTax: TaxNum; stateTax: TaxNum; nyTax: TaxNum; ctTax: TaxNum;
+  totalTax: TaxNum; effFederal: TaxNum; effTotal: TaxNum; marginal: { rate: number; roomToNext: TaxNum; nextRate: TaxNum; nextAt: TaxNum } | null;
+  deductionType: 'standard' | 'itemized' | null; deduction: TaxNum; standardDeduction: TaxNum; saltPaid: TaxNum; saltLost: TaxNum; otherTaxes: TaxNum;
+  federalBalance: TaxNum; stateBalance: TaxNum; penalty: number; withholdingCoverage: TaxNum; dependents: number; amended: boolean;
+  preparedBy: string | null; doubtCount: number;
+}
+export interface TaxInsight { key: string; tone: 'warn' | 'info' | 'good'; title: string; detail: string; years: number[] }
+export interface TaxesResponse { returns: TaxReturnRecord[]; summary: TaxYearSummary[]; insights: TaxInsight[]; cpiBaseYear: number }
