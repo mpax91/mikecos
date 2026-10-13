@@ -8104,12 +8104,13 @@ app.post('/api/bet-promos', async (c) => {
   if (!body.sportsbook?.trim()) return c.json({ error: 'sportsbook is required' }, 400);
   if (!body.description?.trim() && !body.sport?.trim()) return c.json({ error: 'a sport or description is required' }, 400);
   if (body.status !== undefined && !BET_PROMO_STATUSES.includes(body.status)) return c.json({ error: `status must be one of ${BET_PROMO_STATUSES.join(', ')}` }, 400);
+  if (body.min_bet != null && !(typeof body.min_bet === 'number' && Number.isFinite(body.min_bet) && body.min_bet >= 0)) return c.json({ error: 'min_bet must be a dollar amount of 0 or more' }, 400);
 
   const id = uid();
   const ts = now();
   await c.env.DB.prepare(
-    `INSERT INTO bet_promos (id, sportsbook, sport, description, promo_type, expires_at, legs, odds, amount, max_bonus, status, notes, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO bet_promos (id, sportsbook, sport, description, promo_type, expires_at, legs, odds, amount, min_bet, max_bonus, status, notes, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
     .bind(
       id,
@@ -8121,6 +8122,7 @@ app.post('/api/bet-promos', async (c) => {
       promoText(body.legs),
       promoText(body.odds),
       promoText(body.amount),
+      body.min_bet ?? null,
       body.max_bonus ?? null,
       body.status ?? 'active',
       body.notes?.trim() || null,
@@ -8138,6 +8140,7 @@ app.patch('/api/bet-promos/:id', async (c) => {
   const existing = await c.env.DB.prepare('SELECT id FROM bet_promos WHERE id = ?').bind(id).first();
   if (!existing) return c.json({ error: 'not found' }, 404);
   if (body.status !== undefined && !BET_PROMO_STATUSES.includes(body.status)) return c.json({ error: `status must be one of ${BET_PROMO_STATUSES.join(', ')}` }, 400);
+  if (body.min_bet != null && !(typeof body.min_bet === 'number' && Number.isFinite(body.min_bet) && body.min_bet >= 0)) return c.json({ error: 'min_bet must be a dollar amount of 0 or more' }, 400);
 
   const fields: [string, unknown][] = [];
   if ('sportsbook' in body) fields.push(['sportsbook', body.sportsbook?.trim()]);
@@ -8148,6 +8151,7 @@ app.patch('/api/bet-promos/:id', async (c) => {
   if ('legs' in body) fields.push(['legs', promoText(body.legs)]);
   if ('odds' in body) fields.push(['odds', promoText(body.odds)]);
   if ('amount' in body) fields.push(['amount', promoText(body.amount)]);
+  if ('min_bet' in body) fields.push(['min_bet', body.min_bet ?? null]);
   if ('max_bonus' in body) fields.push(['max_bonus', body.max_bonus ?? null]);
   if ('status' in body) fields.push(['status', body.status]);
   if ('notes' in body) fields.push(['notes', body.notes?.trim() || null]);

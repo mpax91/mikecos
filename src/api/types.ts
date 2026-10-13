@@ -1917,6 +1917,7 @@ export interface BetPromo {
   legs: string | null;
   odds: string | null;
   amount: string | null;
+  min_bet: number | null; // shown as "Min Bet" — the wager needed to qualify (0119)
   max_bonus: number | null; // shown as "Max Bet" — the max wager the promo applies to
   status: BetPromoStatus;
   notes: string | null;

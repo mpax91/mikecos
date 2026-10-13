@@ -128,7 +128,7 @@ export function PromoFilterPills({ f }: { f: ReturnType<typeof usePromoFilters> 
   );
 }
 
-function maxBetLabel(v: number | null): string | null {
+function dollarLabel(v: number | null): string | null {
   if (v == null) return null;
   return `$${Number.isInteger(v) ? v : v.toFixed(2)}`;
 }
@@ -162,6 +162,7 @@ export function BetsPromosTable({
           <span role="columnheader">Value</span>
           <span role="columnheader">Min Odds</span>
           <span role="columnheader">Legs</span>
+          <span role="columnheader">Min Bet</span>
           <span role="columnheader">Max Bet</span>
           <span role="columnheader" className="bets-promos__right">
             Expires
@@ -171,7 +172,8 @@ export function BetsPromosTable({
         </div>
         {promos.map((p) => {
           const brand = sportsbookBrand(p.sportsbook);
-          const maxBet = maxBetLabel(p.max_bonus);
+          const minBet = dollarLabel(p.min_bet);
+          const maxBet = dollarLabel(p.max_bonus);
           return (
             <div key={p.id} className="bets-promos__row" role="row">
               <span role="cell" className="bets-promos__book">
@@ -202,6 +204,9 @@ export function BetsPromosTable({
               </span>
               <span role="cell" className={p.legs ? 'bets-promos__num' : 'bets-promos__any'}>
                 {p.legs ? `${p.legs} Legs` : 'Any'}
+              </span>
+              <span role="cell" className={minBet ? 'bets-promos__num' : 'bets-promos__any'}>
+                {minBet ? `${minBet}+` : 'Any'}
               </span>
               <span role="cell" className={maxBet ? 'bets-promos__num' : 'bets-promos__any'}>
                 {maxBet ?? '—'}

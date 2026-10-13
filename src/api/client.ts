@@ -1047,6 +1047,7 @@ export const api = {
     legs?: string;
     odds?: string;
     amount?: string;
+    min_bet?: number | null;
     max_bonus?: number | null;
     status?: BetPromoStatus;
     notes?: string;

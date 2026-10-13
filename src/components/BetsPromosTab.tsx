@@ -17,6 +17,14 @@ const STATUS_OPTIONS: { value: BetPromoStatus; label: string }[] = [
   { value: 'expired', label: 'Expired' },
 ];
 
+/** "$10", "10", "10.50" → number; blank → null; anything else → NaN. */
+function dollars(v: string): number | null {
+  const t = v.trim().replace(/^\$/, '').replace(/,/g, '');
+  if (t === '') return null;
+  const n = Number(t);
+  return Number.isFinite(n) && n >= 0 ? n : NaN;
+}
+
 function todayLocalISODash(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -36,6 +44,7 @@ function PromoFormModal({ promo, onClose, onSave }: { promo: BetPromo | null; on
   const [legs, setLegs] = useState(promo?.legs ?? '');
   const [odds, setOdds] = useState(promo?.odds ?? '');
   const [amount, setAmount] = useState(promo?.amount ?? '');
+  const [minBet, setMinBet] = useState(promo?.min_bet != null ? String(promo.min_bet) : '');
   const [maxBonus, setMaxBonus] = useState(promo?.max_bonus != null ? String(promo.max_bonus) : '');
   const [status, setStatus] = useState<BetPromoStatus>(promo?.status ?? 'active');
   const [notes, setNotes] = useState(promo?.notes ?? '');
@@ -45,6 +54,11 @@ function PromoFormModal({ promo, onClose, onSave }: { promo: BetPromo | null; on
   async function handleSave() {
     if (!sportsbook.trim()) return setError('Sportsbook is required.');
     if (!description.trim() && !sport) return setError('Pick a sport or add a short description.');
+    const minBetNum = dollars(minBet);
+    const maxBetNum = dollars(maxBonus);
+    if (Number.isNaN(minBetNum)) return setError('Min Bet should be a dollar amount, like 10.');
+    if (Number.isNaN(maxBetNum)) return setError('Max Bet should be a dollar amount, like 25.');
+    if (minBetNum != null && maxBetNum != null && minBetNum > maxBetNum) return setError('Min Bet is higher than Max Bet.');
     setSaving(true);
     setError(null);
     try {
@@ -57,7 +71,8 @@ function PromoFormModal({ promo, onClose, onSave }: { promo: BetPromo | null; on
         legs: legs.trim() || null,
         odds: odds.trim() || null,
         amount: amount.trim() || null,
-        max_bonus: maxBonus.trim() !== '' ? Number(maxBonus) : null,
+        min_bet: minBetNum,
+        max_bonus: maxBetNum,
         status,
         notes: notes.trim() || undefined,
       });
@@ -125,6 +140,12 @@ function PromoFormModal({ promo, onClose, onSave }: { promo: BetPromo | null; on
           <label className="bets-form__field">
             <span>Value</span>
             <input placeholder="30% or $25" value={amount} onChange={(e) => setAmount(e.target.value)} />
+          </label>
+        </div>
+        <div className="bets-form__row">
+          <label className="bets-form__field">
+            <span>Min Bet ($)</span>
+            <input placeholder="10 (Blank = Any)" inputMode="decimal" value={minBet} onChange={(e) => setMinBet(e.target.value)} />
           </label>
           <label className="bets-form__field">
             <span>Max Bet ($)</span>

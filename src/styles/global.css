@@ -17367,12 +17367,12 @@ td.month-page__upcoming-actions .today-page__meeting-actions {
 }
 
 .bets-promos__table {
-  min-width: 860px;
+  min-width: 940px;
 }
 
 .bets-promos__row {
   display: grid;
-  grid-template-columns: 190px 110px minmax(160px, 1fr) 110px 100px 90px 90px 110px;
+  grid-template-columns: 190px 110px minmax(160px, 1fr) 110px 100px 90px 80px 80px 110px;
   gap: 16px;
   align-items: center;
   padding: 7px 0;
@@ -17381,11 +17381,11 @@ td.month-page__upcoming-actions .today-page__meeting-actions {
 }
 
 .bets-promos__table--managed {
-  min-width: 1000px;
+  min-width: 1080px;
 }
 
 .bets-promos__table--managed .bets-promos__row {
-  grid-template-columns: 190px 110px minmax(160px, 1fr) 110px 100px 90px 90px 110px 80px 32px;
+  grid-template-columns: 190px 110px minmax(160px, 1fr) 110px 100px 90px 80px 80px 110px 80px 32px;
 }
 
 .bets-promos__row:last-child {
