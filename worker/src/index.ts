@@ -73,7 +73,7 @@ import { metaSyncDue, syncMeta } from './bee/meta';
 import { contactsAssistantRouter } from './contactsAssistant';
 import { betsEnrichmentRouter } from './betsEnrichment';
 import { cascadeRealm, contactRealmSql, inheritRealmFromParent, realmOf, realmSql, stampRealm, createRealm, workLabel, type RealmFilter } from './work/realm';
-import { workRouter, enrichMeetings, seriesFeedSource, setMeetingLoader, meetingNoteStart, ensureMeetingPrepTasks } from './work/router';
+import { workRouter, enrichMeetings, seriesFeedSource, setMeetingLoader, meetingNoteStart, ensureMeetingPrepTasks, rehomeBriefs } from './work/router';
 import { cleanDateParts, importantDates, isAnniversaryLabel, normalizeEventLabel, parseYearlessDate, type ContactEvent, type DateParts } from './contactDates';
 import { buildVoterInsight, ELECTION_CODE_RE, splitVoterDiffs, titleCaseVoterText, voterDiffs, voterKeyOf, type VoterDiff } from './voterInsight';
 
@@ -8801,6 +8801,7 @@ export default {
       // (idempotent — one per occurrence; also made when Today loads).
       if (new Date(event.scheduledTime).getUTCMinutes() === MEETING_PREP_MINUTE) {
         try {
+          await rehomeBriefs(env.DB);
           await ensureMeetingPrepTasks(env.DB);
         } catch (err) {
           console.error('Meeting prep tasks failed', err);

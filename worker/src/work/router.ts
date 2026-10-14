@@ -1317,6 +1317,87 @@ async function summaryPayload(db: D1Database, summaryId: string, existing = fals
 }
 
 const titleKey = (s: string | null | undefined) => (s ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+const TITLE_STOP = new Set(['the', 'a', 'an', 'and', 'of', 'with', 'for', 'x', 'w', 'to', 'on', 'in']);
+const titleWords = (s: string | null | undefined) => new Set(titleKey(s).split(' ').filter((w) => w && !TITLE_STOP.has(w)));
+const BRIEF_ONEOFF = 'Added from a pasted brief.';
+
+/** The calendar meeting a brief names: exact title first; else word overlap
+ * — every word of the shorter title in the longer one ("Weekly Growth
+ * Meeting" ⊂ "Weekly Growth Team Lead Meeting"), or ≥ 60% shared words.
+ * Timed meetings beat all-day ones. */
+function bestMeetingMatch<T extends EnrichedMeeting>(day: T[], names: (string | null | undefined)[], skipKey?: string): T | null {
+  const wants = names.map((n) => ({ key: titleKey(n), words: titleWords(n) })).filter((w) => w.key);
+  let best: { m: T; score: number } | null = null;
+  for (const m of day) {
+    if (skipKey && m.seriesKey === skipKey) continue;
+    const key = titleKey(m.title);
+    const words = titleWords(m.title);
+    let score = 0;
+    for (const w of wants) {
+      if (w.key === key) score = Math.max(score, 3);
+      else {
+        const inter = [...w.words].filter((x) => words.has(x)).length;
+        const small = Math.min(w.words.size, words.size);
+        const union = new Set([...w.words, ...words]).size;
+        if (small >= 2 && inter === small) score = Math.max(score, 2 + inter / Math.max(w.words.size, words.size));
+        else if (union && inter / union >= 0.6) score = Math.max(score, 1 + inter / union);
+      }
+    }
+    if (!score) continue;
+    if (!m.allDay) score += 0.1;
+    if (!best || score > best.score) best = { m, score };
+  }
+  return best?.m ?? null;
+}
+
+/** A brief that had to make its own all-day one-off (no calendar match at
+ * the time) moves onto the real meeting once one matches — e.g. the invite
+ * was named a little differently. Runs when Today loads and hourly. */
+export async function rehomeBriefs(db: D1Database): Promise<number> {
+  const since = new Date(Date.now() - 14 * 86_400_000).toISOString();
+  const { results } = await db
+    .prepare(
+      `SELECT s.*, ms.id AS oneoff_id FROM meeting_summaries s JOIN meeting_series ms ON ('ms-' || ms.id) = s.series_key
+        WHERE s.source = 'record' AND s.kind IN ('debrief', 'prep') AND ms.description = ? AND ms.rrule IS NULL AND s.occurrence_start > ?`
+    )
+    .bind(BRIEF_ONEOFF, since)
+    .all<SummaryRow & { oneoff_id: string }>();
+  let moved = 0;
+  for (const s of results ?? []) {
+    const rec = recordOf(s);
+    const date = localDate(s.occurrence_start);
+    const day = await enrichMeetings(db, await loadMeetings(db, date, date), 'all');
+    const m = bestMeetingMatch(day, [rec?.meeting?.series, rec?.meeting?.title, s.meeting_title], s.series_key);
+    if (!m) continue;
+    const occ = m.allDay ? easternToUtc(date, '12:00').toISOString() : m.start;
+    const oldLabel = s.meeting_title;
+    const stmts = [
+      db.prepare(`UPDATE meeting_summaries SET meeting_id = ?, series_key = ?, occurrence_start = ?, meeting_title = ? WHERE id = ?`).bind(m.id, m.seriesKey, occ, m.title, s.id),
+      db.prepare(`UPDATE meeting_actions SET meeting_id = ?, series_key = ? WHERE summary_id = ?`).bind(m.id, m.seriesKey, s.id),
+      db.prepare(`UPDATE meeting_items SET meeting_id = ?, series_key = ? WHERE summary_id = ?`).bind(m.id, m.seriesKey, s.id),
+      db.prepare(`UPDATE meeting_assists SET meeting_id = ? WHERE summary_id = ?`).bind(m.id, s.id),
+      db.prepare(`UPDATE contact_context SET meeting_id = ? WHERE summary_id = ?`).bind(m.id, s.id),
+    ];
+    // Titles follow the real meeting — unless Mike renamed them himself.
+    const prefix = s.kind === 'prep' ? 'Prep · ' : '';
+    if (s.note_entity_id) {
+      stmts.push(db.prepare(`UPDATE entities SET title = ? WHERE id = ? AND title = ?`).bind(briefNoteTitle(date, prefix + m.title), s.note_entity_id, briefNoteTitle(date, prefix + oldLabel)));
+    }
+    if (s.review_task_id) stmts.push(db.prepare(`UPDATE entities SET title = ? WHERE id = ? AND title = ?`).bind(`Review: ${m.title}`, s.review_task_id, `Review: ${oldLabel}`));
+    await db.batch(stmts);
+    // The stand-in meeting goes once nothing else is filed on it.
+    const left = await db.prepare(`SELECT COUNT(*) AS n FROM meeting_summaries WHERE series_key = ?`).bind(`ms-${s.oneoff_id}`).first<{ n: number }>();
+    if (!left?.n) {
+      await db.batch([
+        db.prepare(`DELETE FROM meeting_series_people WHERE series_id = ?`).bind(s.oneoff_id),
+        db.prepare(`DELETE FROM meeting_docs WHERE series_key = ?`).bind(`ms-${s.oneoff_id}`),
+        db.prepare(`DELETE FROM meeting_series WHERE id = ?`).bind(s.oneoff_id),
+      ]);
+    }
+    moved++;
+  }
+  return moved;
+}
 
 /** The meeting a debrief / prep belongs to: same title (or series name) on
  * that day, else a loose title match, else a new one-off Work meeting on
@@ -1325,14 +1406,7 @@ async function meetingForRecord(db: D1Database, rec: MeetingRecord): Promise<{ m
   const mt = rec.meeting!;
   const date = mt.date ?? easternToday();
   const day = await enrichMeetings(db, await loadMeetings(db, date, date), 'all');
-  const wants = [mt.series, mt.title].map(titleKey).filter(Boolean);
-  const exact = day.find((m) => wants.includes(titleKey(m.title)));
-  const loose =
-    exact ??
-    day.find((m) => {
-      const n = titleKey(m.title);
-      return n.length >= 4 && wants.some((w) => w.length >= 4 && (n.includes(w) || w.includes(n)));
-    });
+  const loose = bestMeetingMatch(day, [mt.series, mt.title]);
   if (loose) return { meeting: loose, created: false };
 
   const id = uid();
@@ -2095,7 +2169,10 @@ async function buildPrep(db: D1Database, m: EnrichedMeeting, realm: RealmFilter)
 workRouter.get('/prep', async (c) => {
   const date = c.req.query('date') || easternToday();
   // Today loading its preps also makes sure today's Prep tasks exist.
-  if (date === easternToday() && !c.req.query('id')) await ensureMeetingPrepTasks(c.env.DB).catch((e) => console.error('prep tasks failed', e));
+  if (date === easternToday() && !c.req.query('id')) {
+    await rehomeBriefs(c.env.DB).catch((e) => console.error('rehome briefs failed', e));
+    await ensureMeetingPrepTasks(c.env.DB).catch((e) => console.error('prep tasks failed', e));
+  }
   const realm = realmOf(c);
   const meetings = await enrichMeetings(c.env.DB, await loadMeetings(c.env.DB, date, date), realm);
   const id = c.req.query('id');
