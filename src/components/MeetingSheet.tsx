@@ -466,8 +466,8 @@ function MeetingSheet({ meeting, startPasting, onClose }: { meeting: SheetMeetin
             📝 {prep?.agendaNoteId || meeting.hasNote ? 'My Notes' : 'Agenda / Notes'}
           </button>
           <InfoTip label="How meeting notes work">
-            Your 📝 note starts with Notes / Decisions / Next Steps. Write "Elliott will …", "I'll …", "TODO …", "@Name …" or a checkbox anywhere in it — after the meeting each one shows up here to sort. Your own items become tasks with
-            the person attached (Add My Tasks does them all at once); other people's items wait for you to tap Waiting On or Dismiss.
+            Notes are for reading, not sorting. Paste your work Claude's brief with 📋 Paste Brief (or Add Meeting Notes here); the next day a Review task opens it. In any note, highlight text to make it a Task, Waiting item,
+            Project, List item, Jot, Link — or 👤 something to raise with a person next time.
           </InfoTip>
           <button type="button" className="btn btn--ghost btn--sm" onClick={() => setPasting((v) => !v)}>
             ✨ Add Meeting Notes
@@ -561,7 +561,7 @@ function MeetingSheet({ meeting, startPasting, onClose }: { meeting: SheetMeetin
                 ) : (
                   <SummaryBlock s={s} />
                 )}
-                {s.source === 'record' ? (
+                {s.source === 'record' || s.source === 'gemini' || s.source === 'manual' ? (
                   s.noteEntityId && (
                     <Link className="btn btn--sm mtg-readnotes" to={`/notes/${s.noteEntityId}`} onClick={onClose}>
                       📝 Read the Notes

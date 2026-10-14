@@ -384,8 +384,8 @@ export function MeetingsPanel() {
           Meeting Notes
         </div>
         <p className="settings-page__section-hint">
-          A new 📝 note on a meeting starts with Notes / Decisions / Next Steps and a "Name will …" line per person. After the meeting the whole note is read for next steps — "Name will …", "I'll …", "TODO …", "@Name …", unchecked
-          checkboxes — and they wait in the meeting for you to sort.
+          A new 📝 note on a meeting starts with Notes / Decisions / Next Steps and a "Name will …" line per person. Nothing in it is turned into to-dos automatically — highlight any text to make it a task, waiting item, project,
+          list item, jot, link, or something to raise with a person.
         </p>
         <label className="mtg-settings__check">
           <input type="checkbox" checked={noteTemplate} onChange={(e) => saveNoteSetting({ noteTemplate: e.target.checked })} /> Start Meeting Notes From the Template

@@ -263,9 +263,11 @@ export async function enrichMeetings<T extends ParsedMeeting>(db: D1Database, me
     });
   }
 
-  // Mike's own 📝 notes: read any that changed for next steps, then refresh
-  // those meetings' pending counts. Never lets a scan problem break a list.
+  // Mike's own 📝 notes used to be read for next steps that then waited to
+  // be sorted. Off since 2026-10-13 (notes-first: Mike highlights what he
+  // wants to act on) — kept behind work_settings.note_scan = '1'.
   try {
+    if ((await getSetting(db, 'note_scan', '0')) !== '1') return out;
     const read = await scanStaleNotes(db, out.filter((m) => m.hasNote));
     if (read.length) {
       const counts = await inChunks(read, async (ch, ph) => (await db.prepare(`SELECT meeting_id, COUNT(*) AS n FROM meeting_actions WHERE status = 'pending' AND meeting_id IN (${ph}) GROUP BY meeting_id`).bind(...ch).all<{ meeting_id: string; n: number }>()).results ?? []);
@@ -777,7 +779,17 @@ export function mineContact(text: string, people: PersonRef[]): PersonRef | null
 }
 
 /** Insert the next steps found in a summary/note as pending meeting_actions. */
-function actionInserts(db: D1Database, summaryId: string, meetingId: string, seriesKey: string, actions: ParsedAction[], mine: string[], people: PersonRef[], ts: string): D1PreparedStatement[] {
+function actionInserts(
+  db: D1Database,
+  summaryId: string,
+  meetingId: string,
+  seriesKey: string,
+  actions: ParsedAction[],
+  mine: string[],
+  people: PersonRef[],
+  ts: string,
+  status: 'pending' | 'noted' = 'pending'
+): D1PreparedStatement[] {
   const stmts: D1PreparedStatement[] = [];
   for (const a of actions) {
     const owners = a.owners.length ? a.owners : [''];
@@ -789,9 +801,9 @@ function actionInserts(db: D1Database, summaryId: string, meetingId: string, ser
         db
           .prepare(
             `INSERT INTO meeting_actions (id, summary_id, meeting_id, series_key, text, owner_name, contact_id, is_mine, status, entity_id, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, ?)`
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`
           )
-          .bind(uid(), summaryId, meetingId, seriesKey, a.text.slice(0, 1000), owner || null, person?.id ?? null, me ? 1 : 0, ts)
+          .bind(uid(), summaryId, meetingId, seriesKey, a.text.slice(0, 1000), owner || null, person?.id ?? null, me ? 1 : 0, status, ts)
       );
     }
   }
@@ -943,8 +955,24 @@ workRouter.post('/meetings/:meetingId/summaries', async (c) => {
     .bind(id, meetingId, seriesKey, start, title, realm, noteId, parsed.summary, parsed.details, parsed.decisions, raw, b.source === 'manual' ? 'manual' : 'gemini', ts)
     .run();
 
-  const stmts = actionInserts(db, id, meetingId, seriesKey, parsed.actions, mine, people, ts);
-  if (stmts.length) await db.batch(stmts);
+  // Notes-first here too: next steps are recorded, not waiting to be sorted,
+  // and a Review task comes due the next day.
+  const stmts = actionInserts(db, id, meetingId, seriesKey, parsed.actions, mine, people, ts, 'noted');
+  const date = b.date && DATE_RE.test(b.date) ? b.date : localDate(start);
+  const today = easternToday();
+  const reviewId = uid();
+  const reviewTitle = `Review: ${title}`.slice(0, 300);
+  const pos = await db.prepare(`SELECT COALESCE(MAX(position), -1) + 1 AS n FROM entities WHERE parent_id IS NULL AND type = 'task'`).first<{ n: number }>();
+  stmts.push(
+    db
+      .prepare(
+        `INSERT INTO entities (id, type, title, content, parent_id, is_top_level, status, position, due_date, last_touched, created_at, updated_at, search_text, realm)
+         VALUES (?, 'task', ?, ?, NULL, 1, 'open', ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .bind(reviewId, reviewTitle, JSON.stringify({ action: 'open-note', noteId }), pos?.n ?? 0, addDays(date, 1) > today ? addDays(date, 1) : today, ts, ts, ts, reviewTitle, realm),
+    db.prepare(`UPDATE meeting_summaries SET review_task_id = ? WHERE id = ?`).bind(reviewId, id)
+  );
+  await db.batch(stmts);
 
   const row = await db.prepare('SELECT * FROM meeting_summaries WHERE id = ?').bind(id).first<SummaryRow>();
   const { results: acts } = await db.prepare('SELECT * FROM meeting_actions WHERE summary_id = ? ORDER BY rowid').bind(id).all<ActionRow>();
