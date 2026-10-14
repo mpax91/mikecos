@@ -704,6 +704,7 @@ workRouter.get('/meetings/:meetingId/summaries', async (c) => {
   const meetingId = c.req.param('meetingId');
   const db = c.env.DB;
   const { results } = await db.prepare('SELECT * FROM meeting_summaries WHERE meeting_id = ? ORDER BY created_at').bind(meetingId).all<SummaryRow>();
+  await healBriefNotes(db, results ?? []).catch((e) => console.error('heal brief notes failed', e));
   const { results: acts } = await db.prepare('SELECT * FROM meeting_actions WHERE meeting_id = ? ORDER BY created_at, rowid').bind(meetingId).all<ActionRow>();
   const [items, assists] = await Promise.all([
     db.prepare(`SELECT * FROM meeting_items WHERE meeting_id = ? AND kind != 'ignored_person' ORDER BY created_at, position`).bind(meetingId).all<ItemRow>(),
@@ -936,7 +937,8 @@ workRouter.post('/meetings/:meetingId/summaries', async (c) => {
   ];
   const noteId = uid();
   const ts = now();
-  const noteTitle = briefNoteTitle(b.date && DATE_RE.test(b.date) ? b.date : localDate(start), title);
+  // "· Gemini Notes" keeps it apart from the Claude brief's note for the same meeting.
+  const noteTitle = briefNoteTitle(b.date && DATE_RE.test(b.date) ? b.date : localDate(start), `${title} · Gemini Notes`);
   const plain = sections.filter((s) => s.body).map((s) => `${s.heading}\n${s.body}`).join('\n\n');
   await db
     .prepare(
@@ -1212,6 +1214,16 @@ async function importRecord(db: D1Database, rec: MeetingRecord, note: string, ra
     }
   }
 
+  // An earlier Gemini paste on this meeting keeps its note, renamed so the
+  // two don't look like duplicates.
+  stmts.push(
+    db
+      .prepare(
+        `UPDATE entities SET title = title || ' · Gemini Notes' WHERE type = 'note' AND title = ?
+           AND id IN (SELECT note_entity_id FROM meeting_summaries WHERE meeting_id = ? AND source IN ('gemini', 'manual'))`
+      )
+      .bind(noteTitle, t.meetingId)
+  );
   for (let i = 0; i < stmts.length; i += 50) await db.batch(stmts.slice(i, i + 50));
   await collectKnowledge(db, body, briefNoteTitle(date, label), t.realm).catch((e) => console.error('knowledge collect failed', e));
   return { summaryId: id, existing: false };
@@ -1299,8 +1311,34 @@ async function unmatchedPeople(db: D1Database, s: SummaryRow): Promise<Ref[]> {
   return out;
 }
 
+/** A brief whose note went missing (deleted from Notes, e.g. mistaken for a
+ * duplicate) gets it back — same id, so the Review task's link still works —
+ * rebuilt from the pasted text. Runs when the meeting's notes are opened and
+ * when the same brief is pasted again. */
+async function healBriefNotes(db: D1Database, rows: SummaryRow[]): Promise<void> {
+  for (const s of rows) {
+    if (s.source !== 'record' || !s.note_entity_id) continue;
+    const have = await db.prepare(`SELECT id FROM entities WHERE id = ?`).bind(s.note_entity_id).first();
+    if (have) continue;
+    const ex = extractRecord(s.raw_text ?? '');
+    const rec = recordOf(s);
+    const body = ex.note.trim() || (rec?.tldr.length ? `## TL;DR\n${rec.tldr.map((x) => `- ${x}`).join('\n')}` : '');
+    const date = localDate(s.occurrence_start);
+    const label = s.kind === 'thread' ? `${threadSourceLabel(rec?.thread?.source ?? '')} · ${s.meeting_title}` : s.kind === 'prep' ? `Prep · ${s.meeting_title}` : s.meeting_title;
+    const ts = now();
+    await db
+      .prepare(
+        `INSERT INTO entities (id, type, title, content, parent_id, is_top_level, status, position, last_touched, created_at, updated_at, search_text, realm)
+         VALUES (?, 'note', ?, ?, NULL, 1, NULL, 0, ?, ?, ?, ?, ?)`
+      )
+      .bind(s.note_entity_id, briefNoteTitle(date, label), markdownToTiptap(body), ts, s.created_at, ts, markdownToPlain(body).slice(0, 200_000), s.realm === 'personal' ? 'personal' : 'work')
+      .run();
+  }
+}
+
 async function summaryPayload(db: D1Database, summaryId: string, existing = false) {
   const row = await db.prepare('SELECT * FROM meeting_summaries WHERE id = ?').bind(summaryId).first<SummaryRow>();
+  if (row && existing) await healBriefNotes(db, [row]);
   const [acts, items, assists] = await Promise.all([
     db.prepare('SELECT * FROM meeting_actions WHERE summary_id = ? ORDER BY created_at, rowid').bind(summaryId).all<ActionRow>(),
     db.prepare(`SELECT * FROM meeting_items WHERE summary_id = ? AND kind != 'ignored_person' ORDER BY position`).bind(summaryId).all<ItemRow>(),
