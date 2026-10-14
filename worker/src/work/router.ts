@@ -1937,16 +1937,18 @@ async function buildPrep(db: D1Database, m: EnrichedMeeting, realm: RealmFilter)
       project = { ...p, openTasks: results ?? [] };
     }
   }
+  const sameNameSince = new Date(Date.parse(m.start) - 42 * 86_400_000).toISOString();
   // From pasted briefs: open questions / watch-outs from earlier meetings
   // in this series (until checked off), and this occurrence's prep.
   const [openItemRows, prepRows] = await Promise.all([
     db
       .prepare(
         `SELECT i.* FROM meeting_items i JOIN meeting_summaries s ON s.id = i.summary_id
-          WHERE i.series_key = ? AND i.kind IN ('question', 'watch_out') AND i.resolved_at IS NULL AND i.meeting_id != ? AND s.occurrence_start < ?
+          WHERE (i.series_key = ? OR (s.source = 'record' AND s.meeting_title = ? COLLATE NOCASE AND s.occurrence_start > ?))
+            AND i.kind IN ('question', 'watch_out') AND i.resolved_at IS NULL AND i.meeting_id != ? AND s.occurrence_start < ?
           ORDER BY s.occurrence_start DESC, i.position LIMIT 30`
       )
-      .bind(key, m.id, m.start)
+      .bind(key, m.title, sameNameSince, m.id, m.start)
       .all<ItemRow>(),
     db
       .prepare(`SELECT i.* FROM meeting_items i JOIN meeting_summaries s ON s.id = i.summary_id WHERE i.meeting_id = ? AND s.kind = 'prep' AND i.kind != 'ignored_person' ORDER BY s.created_at, i.position`)
@@ -1965,9 +1967,14 @@ async function buildPrep(db: D1Database, m: EnrichedMeeting, realm: RealmFilter)
     commitments: { text: string; owner: string; isMine: boolean; due: string | null; status: string }[];
     myFollowUps: { id: string; title: string; kind: string; done: boolean; dueDate: string | null }[];
   } = null;
+  // Same series, or simply the same meeting name in the last 6 weeks — so a
+  // meeting Mike never set up as recurring still carries forward.
   const prevRec = await db
-    .prepare(`SELECT * FROM meeting_summaries WHERE series_key = ? AND source = 'record' AND kind = 'debrief' AND occurrence_start < ? AND meeting_id != ? ORDER BY occurrence_start DESC LIMIT 1`)
-    .bind(key, m.start, m.id)
+    .prepare(
+      `SELECT * FROM meeting_summaries WHERE source = 'record' AND kind = 'debrief' AND occurrence_start < ? AND meeting_id != ?
+         AND (series_key = ? OR (meeting_title = ? COLLATE NOCASE AND occurrence_start > ?)) ORDER BY occurrence_start DESC LIMIT 1`
+    )
+    .bind(m.start, m.id, key, m.title, sameNameSince)
     .first<SummaryRow>();
   if (prevRec) {
     const { results: prevActs } = await db.prepare(`SELECT * FROM meeting_actions WHERE summary_id = ? ORDER BY created_at, rowid`).bind(prevRec.id).all<ActionRow>();

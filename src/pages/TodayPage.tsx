@@ -12,6 +12,8 @@ import { fmtBillMoney } from '../utils/bills';
 import { meetingPeopleNames, buildMeetingNoteTitle, meetingHasEnded } from '../utils/meetingNotes';
 import { MEETING_CHANGED_EVENT, openMeetingSheet } from '../components/MeetingSheet';
 import { PasteBriefButton } from '../components/PasteBriefModal';
+import { copyText } from '../utils/clipboard';
+import { meetingPacket } from '../utils/claudePacket';
 import { DOC_ICON } from '../components/MeetingDocs';
 import { RealmChip } from '../components/RealmSwitch';
 import { useRealm } from '../contexts/RealmContext';
@@ -590,6 +592,7 @@ export function TodayPage() {
                       <PrepLine m={m} prep={preps[m.id]} />
                     </button>
                     <span className="today-page__meeting-actions">
+                      {m.realm === 'work' && <ClaudeCopyIcon m={{ ...m, date }} prep={preps[m.id] ?? null} />}
                       {(m.docs ?? []).slice(0, 2).map((d) => (
                         <a key={d.id} className="today-page__meeting-icon-btn" href={d.url} target="_blank" rel="noreferrer" title={`Open ${d.title}`}>
                           {DOC_ICON[d.kind] ?? '🔗'}
@@ -887,5 +890,34 @@ function PrepLine({ m, prep }: { m: MeetingItem; prep?: MeetingPrep }) {
       {people.length > 0 && <span className="today-page__meeting-people">{people.map((p) => p.name).join(', ')}</span>}
       {bits.length > 0 && <span>{bits.join(' · ')}</span>}
     </span>
+  );
+}
+
+/** 📋 on a Work meeting row: one tap copies what to paste into the work
+ * Claude — a Prep packet before the meeting starts, a Debrief packet once
+ * it's over (both carry Since Last Time + who you want to raise things
+ * with). */
+function ClaudeCopyIcon({ m, prep }: { m: MeetingItem & { date?: string }; prep: MeetingPrep | null }) {
+  const [state, setState] = useState<'idle' | 'busy' | 'done'>('idle');
+  const ended = !m.allDay && Date.parse(m.end) <= Date.now();
+  return (
+    <button
+      type="button"
+      className={`today-page__meeting-icon-btn${state === 'done' ? ' today-page__meeting-icon-btn--active' : ''}`}
+      title={ended ? 'Copy Debrief for Claude' : 'Copy Prep for Claude'}
+      aria-label={ended ? 'Copy Debrief for Claude' : 'Copy Prep for Claude'}
+      disabled={state === 'busy'}
+      onClick={async () => {
+        setState('busy');
+        // Use the prep Today already loaded so the copy happens inside the tap
+        // (phones refuse clipboard writes after a network wait).
+        const use = prep ?? (await api.getMeetingPrep(m.date ?? m.start.slice(0, 10), m.id).catch(() => null));
+        const ok = await copyText(meetingPacket(m, use, null, ended ? 'debrief' : 'prep'));
+        setState(ok ? 'done' : 'idle');
+        if (ok) window.setTimeout(() => setState('idle'), 1800);
+      }}
+    >
+      {state === 'done' ? '✓' : '📋'}
+    </button>
   );
 }
