@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
+import { GradeBreakdown, GradeChip, GradeFilter, GradeWhy, gradeRank, matchesGrade } from './BeeGrade';
+import type { BeeGrade, BeeLetter } from '../api/types';
 import type { BeeStory, BeeStoryPart } from '../api/types';
 import { DetailSheet } from './dash/DetailSheet';
 import { inRange, type DateRange } from '../utils/dateRange';
@@ -35,6 +37,7 @@ export function BeeStoriesView({ platform, range }: { platform: 'all' | 'fb' | '
   const [q, setQ] = useState('');
   const [limit, setLimit] = useState(25);
   const [open, setOpen] = useState<string | null>(null);
+  const [gradeF, setGradeF] = useState<BeeLetter | 'pending' | null>(null);
   useEffect(() => {
     api
       .getBeeStories()
@@ -45,21 +48,33 @@ export function BeeStoriesView({ platform, range }: { platform: 'all' | 'fb' | '
 
   const totals = (s: BeeStory) => (withSubstack ? s.total : s.social);
   const score = (s: BeeStory) => (withSubstack ? s.score : s.scoreSocial);
-  const list = stories
+  const gradeOf = (s: BeeStory): BeeGrade | null | undefined => (withSubstack ? s.grade : s.gradeSocial);
+  const base = stories
     .filter((s) => (platform === 'all' ? true : s.parts.some((p) => p.platform === platform)) && (withSubstack || s.parts.some((p) => p.platform !== 'substack')))
     .filter((s) => !range || inRange(s.date, range))
-    .filter((s) => !q.trim() || s.headline.toLowerCase().includes(q.trim().toLowerCase()))
-    .sort((a, b) => (sort === 'date' ? b.createdAt.localeCompare(a.createdAt) : sort === 'score' ? (score(b) ?? -1) - (score(a) ?? -1) : totals(b)[sort] - totals(a)[sort]));
+    .filter((s) => !q.trim() || s.headline.toLowerCase().includes(q.trim().toLowerCase()));
+  const list = base
+    .filter((s) => matchesGrade(gradeOf(s), gradeF))
+    .sort((a, b) =>
+      sort === 'date'
+        ? b.createdAt.localeCompare(a.createdAt)
+        : sort === 'score'
+          ? gradeOf(b) !== undefined
+            ? gradeRank(gradeOf(b)) - gradeRank(gradeOf(a))
+            : (score(b) ?? -1) - (score(a) ?? -1)
+          : totals(b)[sort] - totals(a)[sort],
+    );
   const sel = open ? (stories.find((s) => s.key === open) ?? null) : null;
   const scoreClass = (sc: number | null) => `bee-social__score bee-social__score--${sc == null ? '' : sc >= 90 ? 'top' : sc >= 65 ? 'above' : sc >= 35 ? 'typical' : 'below'}`;
 
   return (
     <>
+      <GradeFilter grades={base.map(gradeOf)} value={gradeF} onChange={setGradeF} />
       <div className="ally__txn-tools dash-card-tools">
         <input placeholder="Search Stories" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search stories" />
         <select value={sort} onChange={(e) => setSort(e.target.value as typeof sort)} aria-label="Sort">
           <option value="date">Sort: Newest</option>
-          <option value="score">Sort: Combined Score</option>
+          <option value="score">Sort: Best Grade</option>
           {KEYS.map((k) => (
             <option key={k} value={k}>
               Sort: Total {LABEL[k]}
@@ -77,7 +92,7 @@ export function BeeStoriesView({ platform, range }: { platform: 'all' | 'fb' | '
               <th>Date</th>
               <th>Story</th>
               <th>On</th>
-              <th className="num">Score</th>
+              <th className="num">Grade</th>
               {KEYS.map((k) => (
                 <th key={k} className="num">
                   {LABEL[k]}
@@ -90,7 +105,7 @@ export function BeeStoriesView({ platform, range }: { platform: 'all' | 'fb' | '
               const isOpen = open === s.key;
               const t = totals(s);
               const sc = score(s);
-              return <StoryRow key={s.key} s={s} onOpen={() => setOpen(isOpen ? null : s.key)} t={t} sc={sc} />;
+              return <StoryRow key={s.key} s={s} onOpen={() => setOpen(isOpen ? null : s.key)} t={t} sc={sc} grade={gradeOf(s)} />;
             })}
           </tbody>
         </table>
@@ -107,9 +122,16 @@ export function BeeStoriesView({ platform, range }: { platform: 'all' | 'fb' | '
                     <span key={p.platform} className={`bee-social__dot bee-social__dot--${p.platform}`} title={PLAT[p.platform]} />
                   ))}
                   {fmtDate(s.date)}
-                  {s.mature ? <span className={scoreClass(sc)}>{sc ?? '—'}</span> : <span className="bee-badge bee-badge--muted">So Far</span>}
+                  {gradeOf(s) !== undefined ? (
+                    <GradeChip grade={gradeOf(s)} />
+                  ) : s.mature ? (
+                    <span className={scoreClass(sc)}>{sc ?? '—'}</span>
+                  ) : (
+                    <span className="bee-badge bee-badge--muted">So Far</span>
+                  )}
                 </div>
                 <div className="post-card__title">{s.headline}</div>
+                <GradeWhy grade={gradeOf(s)} />
                 <div className="post-card__metrics">
                   {KEYS.map((k) => (
                     <span key={k} className="post-card__metric">
@@ -130,7 +152,8 @@ export function BeeStoriesView({ platform, range }: { platform: 'all' | 'fb' | '
         </button>
       )}
       {sel && (
-        <DetailSheet title={sel.headline} sub={`${fmtDate(sel.date)} · score ${score(sel) ?? '—'}`} onClose={() => setOpen(null)}>
+        <DetailSheet title={sel.headline} sub={`${fmtDate(sel.date)}${gradeOf(sel)?.letter ? ` · grade ${gradeOf(sel)!.letter}` : ` · score ${score(sel) ?? '—'}`}`} onClose={() => setOpen(null)}>
+          <GradeBreakdown grade={gradeOf(sel)} title={withSubstack ? 'Story Grade' : 'Story Grade (Facebook + Instagram)'} storyParts />
           <StoryDetail s={sel} t={totals(sel)} withSubstack={withSubstack} />
         </DetailSheet>
       )}
@@ -138,18 +161,23 @@ export function BeeStoriesView({ platform, range }: { platform: 'all' | 'fb' | '
   );
 }
 
-function StoryRow({ s, onOpen, t, sc }: { s: BeeStory; onOpen: () => void; t: BeeStory['total']; sc: number | null }) {
+function StoryRow({ s, onOpen, t, sc, grade }: { s: BeeStory; onOpen: () => void; t: BeeStory['total']; sc: number | null; grade?: BeeGrade | null }) {
   return (
     <tr className="bee-social__row" onClick={onOpen}>
       <td className="bee-posts__date">{fmtDate(s.date)}</td>
-      <td className="bee-posts__title">{s.headline}</td>
+      <td className="bee-posts__title">
+        {s.headline}
+        <GradeWhy grade={grade} />
+      </td>
       <td className="bee-stories__on">
         {s.parts.map((p) => (
           <span key={p.platform} className={`bee-social__dot bee-social__dot--${p.platform}`} title={PLAT[p.platform]} />
         ))}
       </td>
       <td className="num">
-        {s.mature ? (
+        {grade !== undefined ? (
+          <GradeChip grade={grade} />
+        ) : s.mature ? (
           <span className={`bee-social__score bee-social__score--${sc == null ? '' : sc >= 90 ? 'top' : sc >= 65 ? 'above' : sc >= 35 ? 'typical' : 'below'}`}>{sc ?? '—'}</span>
         ) : (
           <span className="bee-badge bee-badge--muted">So Far</span>
@@ -201,6 +229,7 @@ function PartCard({ p, totalViews }: { p: BeeStoryPart; totalViews: number }) {
       <div className="post-card__top">
         <span className={`bee-social__dot bee-social__dot--${p.platform}`} />
         {PLAT[p.platform]}
+        {p.grade && <span className={`bee-grade bee-grade--${p.grade.toLowerCase()}`} style={{ marginLeft: 6 }}>{p.grade}</span>}
         {totalViews ? ` · ${Math.round(((p.views ?? 0) / totalViews) * 100)}% of views` : ''}
         {p.permalink && (
           <a href={p.permalink} target="_blank" rel="noopener noreferrer" style={{ marginLeft: 'auto' }}>

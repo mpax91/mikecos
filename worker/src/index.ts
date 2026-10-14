@@ -72,6 +72,7 @@ import { gaSyncDue, syncGaAll } from './bee/ga';
 import { bingSyncDue, syncBing } from './bee/bing';
 import { claritySyncDue, syncClarity } from './bee/clarity';
 import { metaSyncDue, syncMeta } from './bee/meta';
+import { recordGradeHistory } from './bee/grades';
 import { contactsAssistantRouter } from './contactsAssistant';
 import { betsEnrichmentRouter } from './betsEnrichment';
 import { cascadeRealm, contactRealmSql, inheritRealmFromParent, realmOf, realmSql, stampRealm, createRealm, workLabel, type RealmFilter } from './work/realm';
@@ -8883,6 +8884,8 @@ export default {
         try {
           const due = await metaSyncDue(env, event.scheduledTime);
           if (due) await syncMeta(env, due === 'full');
+          // Grade history for young posts (trend arrows on the Bee dashboard).
+          await recordGradeHistory(env).catch((err) => console.error('Bee grade history failed', err));
         } catch (err) {
           console.error('Meta sync failed', err);
         }

@@ -4,6 +4,7 @@ import { api } from '../../api/client';
 import { MicrosoftKeys } from './BeeMicrosoftKeys';
 import { MetaSettings } from './BeeMetaSettings';
 import { FourthwallSettings } from './BeeFourthwallSettings';
+import { GradeSettings } from './BeeGradeSettings';
 import type { BeeFolderCandidate, BeeGaConnection, BeeGscConnection, BeeSettings } from '../../api/types';
 
 /** Settings → Bedford Bee: which Drive folder holds the Substack / Stripe
@@ -190,6 +191,8 @@ export function BeePanel() {
       <MicrosoftKeys />
 
       <FourthwallSettings />
+
+      <GradeSettings />
 
       <h3 className="settings-page__field-label">Monthly Export Reminder</h3>
       <p className="settings-page__section-hint">

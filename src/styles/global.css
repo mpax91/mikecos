@@ -21047,3 +21047,146 @@ td .hm-chip,
     max-width: 150px;
   }
 }
+
+/* Post grades A–F (Bee, 2026-10-14) — BeeGrade.tsx */
+.bee-grade-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  white-space: nowrap;
+}
+.bee-grade-wrap .bee-grade { margin-right: 0; }
+.post-card__top .bee-grade-wrap,
+.post-card__top > .bee-grade { margin-left: auto; }
+.bee-grade--prov {
+  border-style: dashed;
+  border-width: 1.5px;
+  opacity: 0.85;
+}
+.bee-grade--big {
+  min-width: 40px;
+  height: 36px;
+  font-size: 22px;
+  border-radius: 8px;
+}
+.bee-grade__trend {
+  font-size: 12px;
+  font-weight: 700;
+  margin-left: 2px;
+}
+.bee-grade__trend--up { color: #2c6b3f; }
+.bee-grade__trend--down { color: #9a2222; }
+.bee-grade__why {
+  display: block;
+  font-size: 12px;
+  font-weight: 400;
+  color: #2c6b3f;
+  margin-top: 2px;
+  white-space: normal;
+}
+.bee-grade__why--bad { color: #9a2222; }
+.bee-badge--good {
+  background: rgba(44, 107, 63, 0.1);
+  border-color: rgba(44, 107, 63, 0.3);
+  color: #2c6b3f;
+}
+.bee-badge--bad {
+  background: rgba(154, 34, 34, 0.08);
+  border-color: rgba(154, 34, 34, 0.28);
+  color: #9a2222;
+}
+.bee-gradecard {
+  border: var(--border-hairline);
+  border-radius: 10px;
+  padding: 12px;
+  margin: 8px 0 14px;
+}
+.bee-gradecard__head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 8px;
+}
+.bee-gradecard__drivers {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.bee-gradecard__drivers li {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(60px, 1fr) minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  font-size: 13px;
+}
+.bee-gradecard__bar {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--color-sidebar);
+  overflow: hidden;
+}
+.bee-gradecard__bar > span {
+  display: block;
+  height: 100%;
+  background: #8a8f98;
+  border-radius: 4px;
+}
+.bee-gradecard__bar > span.is-good { background: #3f8f57; }
+.bee-gradecard__bar > span.is-bad { background: #c0504d; }
+.bee-gradecard__val {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.bee-gradecard__history { margin: 8px 0 0; }
+.bee-gradeset {
+  border: var(--border-hairline);
+  border-radius: 10px;
+  padding: 12px;
+  margin: 6px 0 12px;
+}
+.bee-gradeset__title {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 18px 0 6px;
+}
+.bee-gradeset > .bee-gradeset__title:first-child { margin-top: 0; }
+.bee-gradeset .toolbar-row { margin-top: 14px; }
+.bee-gradeset__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 18px;
+}
+.bee-gradeset__full { grid-column: 1 / -1; margin: 2px 0 0; }
+.bee-gradeset__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+}
+.bee-gradeset__num {
+  width: 72px;
+  flex: none;
+  text-align: right;
+}
+@media (max-width: 640px) {
+  .bee-gradeset__grid { grid-template-columns: 1fr; }
+  .bee-gradecard__drivers li { grid-template-columns: minmax(0, 1fr) 70px; }
+  .bee-gradecard__val { grid-column: 1 / -1; text-align: left; margin-top: -4px; }
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .bee-grade__why,
+  :root:not([data-theme='light']) .bee-grade__trend--up,
+  :root:not([data-theme='light']) .bee-badge--good { color: #7cc493; }
+  :root:not([data-theme='light']) .bee-grade__why--bad,
+  :root:not([data-theme='light']) .bee-grade__trend--down,
+  :root:not([data-theme='light']) .bee-badge--bad { color: #ef8a7d; }
+}
+:root[data-theme='dark'] .bee-grade__why,
+:root[data-theme='dark'] .bee-grade__trend--up,
+:root[data-theme='dark'] .bee-badge--good { color: #7cc493; }
+:root[data-theme='dark'] .bee-grade__why--bad,
+:root[data-theme='dark'] .bee-grade__trend--down,
+:root[data-theme='dark'] .bee-badge--bad { color: #ef8a7d; }

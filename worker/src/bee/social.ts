@@ -1,5 +1,6 @@
 import type { Env } from '../types';
 import { loadMeta } from './meta';
+import { gradeAllPosts, gradeMix } from './grades';
 
 /** GET /api/bee/social — the Social tab (Facebook + Instagram).
  *
@@ -119,6 +120,7 @@ export async function socialDashboard(env: Env) {
       .map((k) => new RegExp(`(^|[^a-z0-9])${esc(k)}(s|es)?(?![a-z0-9])`, 'i')),
   }));
   const nowMs = Date.now();
+  const grades = await gradeAllPosts(env, nowMs);
 
   // Baselines per platform.
   const mature = (p: Post) => nowMs - new Date(p.created_at).getTime() >= 7 * DAY;
@@ -250,6 +252,7 @@ export async function socialDashboard(env: Env) {
       })(),
       story,
       siteVisits,
+      grade: grades.posts.get(`${p.platform}:${p.id}`) ?? null,
     };
   });
 
@@ -292,9 +295,11 @@ export async function socialDashboard(env: Env) {
     const t = w[s.platform];
     t.posts++;
     for (const m of METRICS) t[m] += s[m] ?? 0;
-    if (s.score !== null && s.mature) {
-      if (!w.best || (w.best.score ?? 0) < s.score) w.best = s;
-      if (!w.worst || (w.worst.score ?? 100) > s.score) w.worst = s;
+    // Best / worst of the week by grade rank (falls back to the old score).
+    const r = s.grade?.rank ?? s.score;
+    if (r != null && s.mature) {
+      if (!w.best || (w.best.grade?.rank ?? w.best.score ?? 0) < r) w.best = s;
+      if (!w.worst || (w.worst.grade?.rank ?? w.worst.score ?? 100) > r) w.worst = s;
     }
   }
   for (const d of fbNew) {
@@ -320,7 +325,7 @@ export async function socialDashboard(env: Env) {
     e.opened += s.opened ?? 0;
   }
   for (const g of gaDays ?? []) ex(weekStart(`${g.date}T16:00:00Z`)).siteVisits += g.sessions;
-  const slim = (s: (typeof scored)[number] | null) => (s ? { platform: s.platform, id: s.id, text: (s.text ?? '').split('\n')[0].slice(0, 120), score: s.score, permalink: s.permalink } : null);
+  const slim = (s: (typeof scored)[number] | null) => (s ? { platform: s.platform, id: s.id, text: (s.text ?? '').split('\n')[0].slice(0, 120), score: s.score, grade: s.grade?.letter ?? null, permalink: s.permalink } : null);
   const weekly = [...weeks.values()]
     .sort((a, b) => b.week.localeCompare(a.week))
     .slice(0, 12)
@@ -353,7 +358,7 @@ export async function socialDashboard(env: Env) {
           const b = overall[m];
           return a !== null && b ? a / b : null;
         };
-        return { tag, posts: list.length, few: list.length < 8, score: median(list.map((p) => p.score).filter((v): v is number => v != null)), views: ratio('views'), likes: ratio('likes'), comments: ratio('comments'), shares: ratio('shares') };
+        return { tag, posts: list.length, few: list.length < 8, grades: gradeMix(list.map((p) => p.grade)), score: median(list.map((p) => p.score).filter((v): v is number => v != null)), views: ratio('views'), likes: ratio('likes'), comments: ratio('comments'), shares: ratio('shares') };
       })
       .sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
     return { platform: plat, posts: ps.length, rows };
@@ -374,5 +379,6 @@ export async function socialDashboard(env: Env) {
     dayOfWeek,
     tagPerf,
     topicRules: (rules ?? []).map((r) => ({ topic: r.topic, keywords: r.keywords })),
+    gradeConfig: grades.config,
   };
 }

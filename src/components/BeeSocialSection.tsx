@@ -11,6 +11,8 @@ import { clampRange } from './dash/useUrlRange';
 import { RangePicker } from './dash/RangePicker';
 import { InfoTip, DashTitle } from './dash/InfoTip';
 import { DetailSheet } from './dash/DetailSheet';
+import { GradeBreakdown, GradeChip, GradeFilter, GradeWhy, gradeRank, matchesGrade } from './BeeGrade';
+import type { BeeLetter } from '../api/types';
 import { type DateRange, previousRange, inRange, rangeText, nyToday, nyDay, daysBetween, bucketFor, bucketsIn, bucketStart, dayMs, addDays } from '../utils/dateRange';
 
 /** Bedford Bee → Social (Facebook + Instagram). Rules in
@@ -354,7 +356,7 @@ function MetricSheet({
             points: seriesFor(posts),
           },
         ];
-  const top = metric === 'posts' ? [...posts].sort((a, b) => (b.score ?? -1) - (a.score ?? -1)).slice(0, 8) : [...posts].sort((a, b) => (b[metric] ?? -1) - (a[metric] ?? -1)).slice(0, 8);
+  const top = metric === 'posts' ? [...posts].sort((a, b) => gradeRank(b.grade) - gradeRank(a.grade)).slice(0, 8) : [...posts].sort((a, b) => (b[metric] ?? -1) - (a[metric] ?? -1)).slice(0, 8);
   const missing = metric === 'posts' ? 0 : posts.filter((p) => p[metric] == null).length;
   const ch = changeVs(total, prevTotal, prevR?.label ?? null);
   const fmtX = (ms: number) => new Date(ms).toLocaleDateString('en-US', bucket === 'month' ? { month: 'short', year: '2-digit' } : { month: 'short', day: 'numeric' });
@@ -418,7 +420,7 @@ function MetricSheet({
   );
 }
 
-type SortKey = 'date' | 'score' | BeeMetric;
+type SortKey = 'date' | 'grade' | 'score' | BeeMetric;
 
 function PostScorecards({ posts, plat, range, onOpen }: { posts: BeeSocialPost[]; plat: Plat; range: DateRange; onOpen: (p: BeeSocialPost) => void }) {
   const [view, setView] = useState<'posts' | 'stories'>('posts');
@@ -441,7 +443,7 @@ function PostScorecards({ posts, plat, range, onOpen }: { posts: BeeSocialPost[]
             info={
               <>
                 <p>A story = the same headline on Facebook and Instagram within 36 hours, plus the Substack post within 2 days. Totals add every platform; Substack views include email opens.</p>
-                <p>Combined score = how the story ranks on total views, likes, comments and shares against the 60 stories before it.</p>
+                <p>Story grade = the parts’ grades combined (Facebook 40%, Instagram 35%, Substack 25% by default), then ranked against the stories before it — same A–F curve as posts. With Include Substack off, it’s Facebook + Instagram only. A paid Substack conversion is called out.</p>
               </>
             }
           >
@@ -460,10 +462,20 @@ function PostList({ posts, onOpen, toggle }: { posts: BeeSocialPost[]; onOpen: (
   const [tag, setTag] = useState('');
   const [q, setQ] = useState('');
   const [limit, setLimit] = useState(20);
+  const [grade, setGrade] = useState<BeeLetter | 'pending' | null>(null);
   const allTags = [...new Set(posts.flatMap((p) => p.tags))].sort();
-  const list = posts
-    .filter((p) => (!tag || p.tags.includes(tag)) && (!q.trim() || (p.text ?? '').toLowerCase().includes(q.trim().toLowerCase())))
-    .sort((a, b) => (sort === 'date' ? b.createdAt.localeCompare(a.createdAt) : sort === 'score' ? (b.score ?? -1) - (a.score ?? -1) : (b[sort] ?? -1) - (a[sort] ?? -1)));
+  const base = posts.filter((p) => (!tag || p.tags.includes(tag)) && (!q.trim() || (p.text ?? '').toLowerCase().includes(q.trim().toLowerCase())));
+  const list = base
+    .filter((p) => matchesGrade(p.grade, grade))
+    .sort((a, b) =>
+      sort === 'date'
+        ? b.createdAt.localeCompare(a.createdAt)
+        : sort === 'grade'
+          ? gradeRank(b.grade) - gradeRank(a.grade)
+          : sort === 'score'
+            ? (b.score ?? -1) - (a.score ?? -1)
+            : (b[sort] ?? -1) - (a[sort] ?? -1),
+    );
   return (
     <section className="fin-dash__card fin-dash__card--full">
       <div className="fin-dash__card-head bee-posts__head">
@@ -471,10 +483,13 @@ function PostList({ posts, onOpen, toggle }: { posts: BeeSocialPost[]; onOpen: (
           info={
             <>
               <p>
-                Each number’s ×multiple compares it with a typical post at the time: the median of the 60 posts before it on that platform, so older posts are judged against the audience they had.
+                Grade A–F = how the post ranks against the same platform’s posts from the 90 days before it (recent ones count more): A top 10%, B next 20%, C the typical middle, D below, F bottom 15%.
               </p>
-              <p>Score (0–100) = how the post ranks on views, likes, comments and shares (+ saves on Instagram) against those 60. 90+ Top, 65+ Above typical, 35+ Typical.</p>
-              <p>Posts under a week old show numbers so far. Tap a post for its scorecard.</p>
+              <p>
+                It weighs views, likes, comments, shares (+ saves on Instagram), engagement per view and the day’s follows minus unfollows. A dashed grade is provisional: the post is under 3 days old, its numbers are projected from
+                how past posts grew, and it can still move (↑ / ↓ since the last check). Under 3 hours old = too early.
+              </p>
+              <p>Each number’s ×multiple compares it with the median of the 60 posts before it. Weights and cutoffs are in Settings → Bedford Bee → Post Grades. Tap a post for its scorecard.</p>
             </>
           }
         >
@@ -482,6 +497,7 @@ function PostList({ posts, onOpen, toggle }: { posts: BeeSocialPost[]; onOpen: (
         </DashTitle>
         {toggle}
       </div>
+      <GradeFilter grades={base.map((p) => p.grade)} value={grade} onChange={setGrade} />
       <div className="ally__txn-tools dash-card-tools">
         <input placeholder="Search Posts" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search posts" />
         <select value={tag} onChange={(e) => setTag(e.target.value)} aria-label="Filter by tag">
@@ -494,7 +510,7 @@ function PostList({ posts, onOpen, toggle }: { posts: BeeSocialPost[]; onOpen: (
         </select>
         <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)} aria-label="Sort">
           <option value="date">Newest</option>
-          <option value="score">Best Score</option>
+          <option value="grade">Best Grade</option>
           {CORE.map((m) => (
             <option key={m} value={m}>
               Most {LABEL[m]}
@@ -510,7 +526,7 @@ function PostList({ posts, onOpen, toggle }: { posts: BeeSocialPost[]; onOpen: (
                 <tr>
                   <th>Date</th>
                   <th>Post</th>
-                  <th className="num">Score</th>
+                  <th className="num">Grade</th>
                   {CORE.map((m) => (
                     <th key={m} className="num">
                       {LABEL[m]}
@@ -540,6 +556,7 @@ function PostList({ posts, onOpen, toggle }: { posts: BeeSocialPost[]; onOpen: (
 }
 
 function ScoreBadge({ p }: { p: BeeSocialPost }) {
+  if (p.grade) return <GradeChip grade={p.grade} />;
   return p.mature ? (
     <span className={`bee-social__score bee-social__score--${(p.verdict ?? '').split(' ')[0].toLowerCase()}`}>{p.score ?? '—'}</span>
   ) : (
@@ -548,6 +565,10 @@ function ScoreBadge({ p }: { p: BeeSocialPost }) {
     </span>
   );
 }
+const abShare = (m: Record<string, number>) => {
+  const n = ['A', 'B', 'C', 'D', 'F'].reduce((t, l) => t + (m[l] ?? 0), 0);
+  return n ? `${Math.round((((m.A ?? 0) + (m.B ?? 0)) / n) * 100)}%` : '—';
+};
 const ratiosOf = (p: BeeSocialPost) => (p.mature || !p.early ? p.vsTypical : p.early.vsTypical);
 const ratioTone = (p: BeeSocialPost, r: number | null | undefined) => (p.mature || p.early?.baseline === 'same-age' ? tone(r) : '');
 
@@ -560,7 +581,10 @@ function PostRow({ p, onOpen }: { p: BeeSocialPost; onOpen: () => void }) {
         {fmtShort(p.createdAt)}
         <span className="fin-dash__muted"> · {p.day.slice(0, 3)}</span>
       </td>
-      <td className="bee-posts__title">{headline(p.text)}</td>
+      <td className="bee-posts__title">
+        {headline(p.text)}
+        <GradeWhy grade={p.grade} />
+      </td>
       <td className="num">
         <ScoreBadge p={p} />
       </td>
@@ -590,6 +614,7 @@ function PostCardList({ posts, onOpen, alwaysCards }: { posts: BeeSocialPost[]; 
                 <ScoreBadge p={p} />
               </div>
               <div className="post-card__title">{headline(p.text)}</div>
+              <GradeWhy grade={p.grade} />
               <div className="post-card__metrics">
                 {CORE.map((m) => (
                   <span key={m} className="post-card__metric">
@@ -646,7 +671,7 @@ function Scorecard({ p, data, onReload }: { p: BeeSocialPost; data: Loaded; onRe
           )}
         </div>
         <div className="bee-scorecard__verdict">
-          {p.mature ? (
+          {p.grade ? null : p.mature ? (
             <>
               <span className="bee-big">{p.score ?? '—'}</span> <span>{p.verdict}</span>
             </>
@@ -660,6 +685,7 @@ function Scorecard({ p, data, onReload }: { p: BeeSocialPost; data: Loaded; onRe
         </div>
       </div>
       <p className="bee-scorecard__text">{p.text}</p>
+      <GradeBreakdown grade={p.grade} title={`${PLAT[p.platform]} Grade`} />
       <div className="bee-scorecard__grid">
         {metrics.map((m) => {
           const r = p.mature || !p.early ? p.vsTypical[m] : p.early.vsTypical[m];
@@ -762,7 +788,7 @@ function WeeklyCard({ data, plat, range, onOpenWeek }: { data: Loaded; plat: Pla
                     <td className="num bee-hide-sm">{s.newFollowers ? `${s.newFollowers > 0 ? '+' : ''}${n0(s.newFollowers)}` : '—'}</td>
                     <td className="num bee-hide-sm">{n0(w.substack?.opened)}</td>
                     <td className="num bee-hide-sm">{n0(w.substack?.siteVisits)}</td>
-                    <td className="bee-hide-sm bee-web__landing">{w.best ? `${w.best.text} (${w.best.score})` : '—'}</td>
+                    <td className="bee-hide-sm bee-web__landing">{w.best ? `${w.best.text} (${w.best.grade ?? w.best.score})` : '—'}</td>
                   </tr>
                 );
               })}
@@ -884,7 +910,7 @@ function WhatWorksCard({ data, plat, onOpenGroup }: { data: Loaded; plat: Plat; 
                     onClick={() =>
                       onOpenGroup(
                         `${r.tag.replace(/^[^:]+:\s*/, '')} · ${PLAT[s.platform]}`,
-                        data.posts.filter((p) => p.platform === s.platform && p.tags.includes(r.tag) && nyDay(p.createdAt) >= yearAgo).sort((a, b) => (b.score ?? -1) - (a.score ?? -1)),
+                        data.posts.filter((p) => p.platform === s.platform && p.tags.includes(r.tag) && nyDay(p.createdAt) >= yearAgo).sort((a, b) => gradeRank(b.grade) - gradeRank(a.grade)),
                       )
                     }
                   >
@@ -896,7 +922,7 @@ function WhatWorksCard({ data, plat, onOpenGroup }: { data: Loaded; plat: Plat; 
                       </span>
                     </span>
                     <span className="bee-list__meta">
-                      score {r.score ?? '—'} · <span className={tone(r.views)}>views {x1(r.views)}</span> · <span className={tone(r.shares)}>shares {x1(r.shares)}</span> ·{' '}
+                      {r.grades ? `${abShare(r.grades)} A–B` : `score ${r.score ?? '—'}`} · <span className={tone(r.views)}>views {x1(r.views)}</span> · <span className={tone(r.shares)}>shares {x1(r.shares)}</span> ·{' '}
                       <span className={tone(r.comments)}>comments {x1(r.comments)}</span>
                     </span>
                   </li>

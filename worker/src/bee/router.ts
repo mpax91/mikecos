@@ -14,6 +14,7 @@ import { clarityDashboard, saveClarityToken, syncClarity } from './clarity';
 import { disconnectMeta, metaAuthUrl, saveMetaApp, syncMeta } from './meta';
 import { socialDashboard } from './social';
 import { buildStories } from './stories';
+import { gradeAllPosts, gradeStories, loadGradeConfig, saveGradeConfig, DEFAULT_GRADE_CONFIG, METRIC_LABELS } from './grades';
 import { reviewDashboard } from './review';
 import { deriveMerch, linkMerchContacts, merchDashboard, saveFourthwall, syncFourthwall } from './merch';
 
@@ -131,7 +132,35 @@ beeRouter.post('/clarity/sync', async (c) => {
 // ---- Meta (Facebook Page + Instagram) ----
 beeRouter.get('/social', async (c) => c.json(await socialDashboard(c.env)));
 // Same post across Facebook + Instagram + Substack, combined (stories.ts).
-beeRouter.get('/stories', async (c) => c.json({ stories: await buildStories(c.env) }));
+beeRouter.get('/stories', async (c) => {
+  const stories = await buildStories(c.env);
+  const all = await gradeAllPosts(c.env);
+  const input = stories.map((s) => ({ key: s.key, createdAt: s.createdAt, partKeys: s.parts.map((p) => ({ platform: p.platform, key: `${p.platform}:${p.id}` })) }));
+  const g = gradeStories(input, all);
+  // "Include Substack" off → the same story graded on Facebook + Instagram only.
+  const gs = gradeStories(
+    input.map((s) => ({ ...s, partKeys: s.partKeys.filter((p) => p.platform !== 'substack') })).filter((s) => s.partKeys.length),
+    all,
+    Date.now(),
+    { socialOnly: true }
+  );
+  return c.json({ stories: stories.map((s) => ({ ...s, grade: g.get(s.key) ?? null, gradeSocial: gs.get(s.key) ?? null, parts: s.parts.map((p) => ({ ...p, grade: all.posts.get(`${p.platform}:${p.id}`)?.letter ?? null })) })) });
+});
+// Post grades A–F (grades.ts): weights, cutoffs, windows — editable.
+beeRouter.get('/grades/settings', async (c) => {
+  const { config, custom } = await loadGradeConfig(c.env);
+  return c.json({ config, custom, defaults: DEFAULT_GRADE_CONFIG, labels: METRIC_LABELS });
+});
+beeRouter.put('/grades/settings', async (c) => {
+  const body = await c.req.json<{ config: unknown | null }>().catch(() => ({ config: undefined }));
+  if (body.config === undefined) return c.json({ error: 'config required (null resets to defaults)' }, 400);
+  try {
+    const { config, custom } = await saveGradeConfig(c.env, body.config);
+    return c.json({ config, custom, defaults: DEFAULT_GRADE_CONFIG, labels: METRIC_LABELS });
+  } catch (err) {
+    return c.json(fail(err), 400);
+  }
+});
 // Year in Review across every source (review.ts).
 beeRouter.get('/review', async (c) => {
   const y = Number(c.req.query('year')) || Number(new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' }).slice(0, 4));

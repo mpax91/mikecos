@@ -7,6 +7,8 @@ import { SectionPicker } from './dash/SectionPicker';
 import { RangePicker } from './dash/RangePicker';
 import { DashTitle, InfoTip } from './dash/InfoTip';
 import { DetailSheet } from './dash/DetailSheet';
+import { GradeBreakdown, GradeChip, GradeFilter, GradeWhy, gradeRank, matchesGrade } from './BeeGrade';
+import type { BeeLetter } from '../api/types';
 import { clampRange } from './dash/useUrlRange';
 import { type DateRange, addDays, bucketFor, bucketStart, bucketsIn, dayMs, inRange, previousRange, rangeText } from '../utils/dateRange';
 
@@ -429,6 +431,7 @@ function SubstackSheet({
   const med = data.postMedians;
   return (
     <DetailSheet title={p.title} sub={`${fmtDate(p.date)}${p.emailed ? '' : ' · web only'}`} onClose={onClose}>
+      <GradeBreakdown grade={p.grade} title="Substack Grade" />
       <Split
         items={[
           ['Open Rate', pct(p.openRate), med.openRate != null ? `typical ${pct(med.openRate)}` : ''],
@@ -709,9 +712,10 @@ function RenewalsCard({ data }: { data: BeeSubstack }) {
   );
 }
 
-type SortKey = 'date' | 'openRate' | 'ratio' | 'views' | 'engagement' | 'paid';
+type SortKey = 'date' | 'grade' | 'openRate' | 'ratio' | 'views' | 'engagement' | 'paid';
 const SORTS: { key: SortKey; label: string }[] = [
   { key: 'date', label: 'Newest' },
+  { key: 'grade', label: 'Grade' },
   { key: 'openRate', label: 'Open Rate' },
   { key: 'ratio', label: 'Opens per Reader' },
   { key: 'views', label: 'Views' },
@@ -723,9 +727,12 @@ function PostsCard({ data, posts, onOpen }: { data: BeeSubstack; posts: BeePost[
   const [sort, setSort] = useState<SortKey>('date');
   const [q, setQ] = useState('');
   const [limit, setLimit] = useState(25);
+  const [grade, setGrade] = useState<BeeLetter | 'pending' | null>(null);
   const med = data.postMedians;
   const score = (p: BeePost): number =>
-    sort === 'openRate'
+    sort === 'grade'
+      ? gradeRank(p.grade)
+      : sort === 'openRate'
       ? (p.openRate ?? -1)
       : sort === 'ratio'
         ? (p.ratio ?? -1)
@@ -736,9 +743,10 @@ function PostsCard({ data, posts, onOpen }: { data: BeeSubstack; posts: BeePost[
             : sort === 'paid'
               ? p.signups + p.paid * 10
               : toMs(p.date);
-  const list = posts
-    .filter((p) => !q.trim() || p.title.toLowerCase().includes(q.trim().toLowerCase()))
-    .filter((p) => sort === 'date' || sort === 'views' || sort === 'engagement' || sort === 'paid' || (p.emailed && p.delivered >= 20))
+  const searched = posts.filter((p) => !q.trim() || p.title.toLowerCase().includes(q.trim().toLowerCase()));
+  const list = searched
+    .filter((p) => matchesGrade(p.grade, grade))
+    .filter((p) => sort === 'date' || sort === 'grade' || sort === 'views' || sort === 'engagement' || sort === 'paid' || (p.emailed && p.delivered >= 20))
     .sort((a, b) => score(b) - score(a));
   const shown = list.slice(0, limit);
   return (
@@ -747,6 +755,11 @@ function PostsCard({ data, posts, onOpen }: { data: BeeSubstack; posts: BeePost[
         <DashTitle
           info={
             <>
+              <p>
+                Grade A–F = how the email ranks against the 90 days of emails before it (recent ones count more) on open rate, opens per reader, clicks, likes/comments/restacks, web views, free signups,
+                paid conversions (weighted most with open rate) and unsubscribes (count against). A top 10%, B next 20%, C typical, D below, F bottom 15%. Numbers are as of the last export, so an email under
+                a week old at export time gets a dashed, provisional grade. Weights live in Settings → Bedford Bee → Post Grades.
+              </p>
               <p>
                 Typical post: {pct(med.openRate)} open rate, {x1(med.ratio)} opens per reader. ▲ / ▼ mark posts well above or below that; 🔁 = likely forwarded (opens per reader at least twice typical).
               </p>
@@ -757,6 +770,7 @@ function PostsCard({ data, posts, onOpen }: { data: BeeSubstack; posts: BeePost[
           Posts ({list.length})
         </DashTitle>
       </div>
+      <GradeFilter grades={searched.map((p) => p.grade)} value={grade} onChange={setGrade} />
       <div className="ally__txn-tools dash-card-tools">
         <input placeholder="Search Titles" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search post titles" />
         <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)} aria-label="Sort posts by">
@@ -775,6 +789,7 @@ function PostsCard({ data, posts, onOpen }: { data: BeeSubstack; posts: BeePost[
                 <tr>
                   <th>Date</th>
                   <th>Title</th>
+                  <th className="num">Grade</th>
                   <th className="num">Open Rate</th>
                   <th className="num">Opens / Reader</th>
                   <th className="num">Views</th>
@@ -788,6 +803,10 @@ function PostsCard({ data, posts, onOpen }: { data: BeeSubstack; posts: BeePost[
                     <td className="bee-posts__date">{fmtShortDate(p.date)}</td>
                     <td className="bee-posts__title" title={p.title}>
                       {p.title}
+                      <GradeWhy grade={p.grade} />
+                    </td>
+                    <td className="num">
+                      <GradeChip grade={p.grade} />
                     </td>
                     <td className="num">{p.openRate === null ? <span className="fin-dash__muted">Web only</span> : <Delta value={p.openRate} typical={med.openRate} format={(v) => pct(v)} band={0.05} />}</td>
                     <td className="num">{p.ratio === null ? '—' : <Delta value={p.ratio} typical={med.ratio} format={x1} band={0.5} forward />}</td>
@@ -824,8 +843,10 @@ function PostList({ posts, med, onOpen, phoneOnly }: { posts: BeePost[]; med: Be
             <div className="post-card__top">
               {fmtShortDate(p.date)}
               {!p.emailed && ' · web only'}
+              <GradeChip grade={p.grade} />
             </div>
             <div className="post-card__title">{p.title}</div>
+            <GradeWhy grade={p.grade} />
             <div className="post-card__metrics">
               <span className="post-card__metric">
                 <span className="post-card__metric-label">Open Rate</span>

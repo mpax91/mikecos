@@ -3666,6 +3666,7 @@ export interface BeePost {
   signups: number;
   paid: number;
   unsubscribes: number;
+  grade?: BeeGrade | null;
 }
 export interface BeeEngagement {
   ratio: number | null;
@@ -4046,6 +4047,53 @@ export interface BeeSocialConnection {
   lastError: string | null;
 }
 export type BeeMetric = 'views' | 'likes' | 'comments' | 'shares' | 'saves';
+// ---- Bedford Bee: post grades A–F (worker/src/bee/grades.ts) ----
+export type BeeLetter = 'A' | 'B' | 'C' | 'D' | 'F';
+export interface BeeGradeDriver {
+  key: string;
+  label: string;
+  weight: number;
+  pct: number;
+  value: number | null;
+  typical: number | null;
+  ratio: number | null;
+}
+export interface BeeGrade {
+  letter: BeeLetter | null;
+  score: number | null;
+  rank: number | null;
+  provisional: boolean;
+  tooEarly: boolean;
+  ageHours: number;
+  confidence: 'low' | 'medium' | 'high';
+  baselineN: number;
+  projected: boolean;
+  drivers: BeeGradeDriver[];
+  best: string | null;
+  worst: string | null;
+  trend: 'up' | 'down' | 'flat' | null;
+  prevLetter: BeeLetter | null;
+  history?: { at: string; letter: BeeLetter | null; rank: number | null }[];
+  note?: string;
+}
+export type BeeGradeKind = 'fb' | 'ig' | 'substack';
+export interface BeeGradeConfig {
+  baselineDays: number;
+  halfLifeDays: number;
+  minAgeHours: number;
+  matureHours: { social: number; substack: number };
+  cutoffs: { A: number; B: number; C: number; D: number };
+  weights: Record<BeeGradeKind, Record<string, number>>;
+  storyWeights: { fb: number; ig: number; substack: number };
+}
+export interface BeeGradeSettings {
+  config: BeeGradeConfig;
+  custom: boolean;
+  defaults: BeeGradeConfig;
+  labels: Record<BeeGradeKind, Record<string, string>>;
+}
+export type BeeGradeMix = Record<BeeLetter | 'pending', number>;
+
 export interface BeeSocialPost {
   platform: 'fb' | 'ig';
   id: string;
@@ -4071,6 +4119,7 @@ export interface BeeSocialPost {
   manualTags: string[];
   story: { title: string; date: string; sent: number | null; opened: number | null; views: number | null } | null;
   siteVisits: number | null;
+  grade?: BeeGrade | null;
 }
 export interface BeeSocialPeriod {
   posts: number;
@@ -4103,13 +4152,14 @@ export type BeeSocial =
         week: string;
         fb: BeeSocialWeekSide;
         ig: BeeSocialWeekSide;
-        best: { platform: string; id: string; text: string; score: number | null; permalink: string | null } | null;
-        worst: { platform: string; id: string; text: string; score: number | null; permalink: string | null } | null;
+        best: { platform: string; id: string; text: string; score: number | null; grade?: BeeLetter | null; permalink: string | null } | null;
+        worst: { platform: string; id: string; text: string; score: number | null; grade?: BeeLetter | null; permalink: string | null } | null;
         substack: { emails: number; opened: number; siteVisits: number } | null;
       }[];
       dayOfWeek: { platform: 'fb' | 'ig'; days: { day: string; posts: number; views: number | null; likes: number | null; comments: number | null; shares: number | null; score: number | null }[] }[];
-      tagPerf: { platform: 'fb' | 'ig'; posts: number; rows: { tag: string; posts: number; few: boolean; score: number | null; views: number | null; likes: number | null; comments: number | null; shares: number | null }[] }[];
+      tagPerf: { platform: 'fb' | 'ig'; posts: number; rows: { tag: string; posts: number; few: boolean; grades?: BeeGradeMix; score: number | null; views: number | null; likes: number | null; comments: number | null; shares: number | null }[] }[];
       topicRules: { topic: string; keywords: string }[];
+      gradeConfig?: BeeGradeConfig;
     };
 
 // ---- Bedford Bee: Stories + Year in Review (worker/src/bee/stories.ts, review.ts) ----
@@ -4125,6 +4175,7 @@ export interface BeeStoryPart {
   shares: number | null;
   saves: number | null;
   extra?: Record<string, number | null>;
+  grade?: BeeLetter | null;
 }
 export interface BeeStoryTotals {
   views: number;
@@ -4144,6 +4195,8 @@ export interface BeeStory {
   score: number | null;
   scoreSocial: number | null;
   mature: boolean;
+  grade?: BeeGrade | null;
+  gradeSocial?: BeeGrade | null;
 }
 export interface BeeReviewTotals {
   range: { from: string; to: string };

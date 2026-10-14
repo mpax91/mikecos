@@ -1,4 +1,5 @@
 import type { Env } from '../types';
+import { gradeAllPosts } from './grades';
 import { assignGrades, engagementFor, GRADE_ORDER, isPaidType, medianRatio } from './engagement';
 import type { Engagement } from './engagement';
 import type { SubscriberStats } from './ingest';
@@ -161,6 +162,7 @@ export async function substackDashboard(env: Env) {
 
   // ---- Posts
   const { results: postRows } = await env.DB.prepare('SELECT * FROM bee_posts ORDER BY post_date DESC').all<PostRow>();
+  const postGrades = await gradeAllPosts(env);
   const posts = (postRows ?? []).map((p) => {
     const emailed = (p.sent ?? 0) > 0;
     return {
@@ -184,6 +186,7 @@ export async function substackDashboard(env: Env) {
       signups: p.signups ?? 0,
       paid: (p.subscribes ?? 0) + (p.upgrades ?? 0),
       unsubscribes: p.unsubscribes ?? 0,
+      grade: postGrades.posts.get(`substack:${p.post_date}`) ?? null,
     };
   });
   const emailed = posts.filter((p) => p.emailed && p.delivered >= 10);
