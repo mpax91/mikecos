@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
 import type { PersonRef } from '../api/types';
+import { getRealm } from '../utils/realm';
 
-/** Search Contacts (all of them, whatever the Work/Personal switch says) and
- * pick one or many. Typing a name nobody has offers "Add <name>" — a new
+/** Search Contacts and pick one or many. In Work (the switch is on Work, or
+ * the caller says scope="work" — e.g. a Work meeting) only Work / Birches
+ * contacts come up; otherwise everyone. Typing a name nobody has offers "Add <name>" — a new
  * Work contact by default, since this is mostly for coworkers. */
 export function ContactPicker({
   value,
@@ -11,13 +13,17 @@ export function ContactPicker({
   multiple = true,
   placeholder = 'Add a person…',
   newRealm = 'work',
+  scope,
 }: {
   value: PersonRef[];
   onChange: (people: PersonRef[]) => void;
   multiple?: boolean;
   placeholder?: string;
   newRealm?: 'personal' | 'work';
+  /** Which contacts to search; defaults to Work when the switch is on Work. */
+  scope?: 'work' | 'all';
 }) {
+  const searchScope = scope ?? (getRealm() === 'work' ? 'work' : 'all');
   const [q, setQ] = useState('');
   const [results, setResults] = useState<PersonRef[]>([]);
   const [open, setOpen] = useState(false);
@@ -32,12 +38,12 @@ export function ContactPicker({
     }
     const t = window.setTimeout(() => {
       api
-        .listContacts({ q: term, allRealms: true })
+        .listContacts({ q: term, realm: searchScope })
         .then((list) => setResults(list.slice(0, 8).map((c) => ({ id: c.id, name: c.name }))))
         .catch(() => setResults([]));
     }, 180);
     return () => window.clearTimeout(t);
-  }, [q]);
+  }, [q, searchScope]);
 
   useEffect(() => {
     const onDoc = (e: MouseEvent) => {

@@ -273,9 +273,10 @@ export const api = {
 
   // ---- Contacts (personal CRM) ----
 
-  listContacts: (opts?: { q?: string; circle?: ContactCircle; label?: string; remindersOnly?: boolean; includeVoters?: boolean; allRealms?: boolean }) => {
+  listContacts: (opts?: { q?: string; circle?: ContactCircle; label?: string; remindersOnly?: boolean; includeVoters?: boolean; allRealms?: boolean; realm?: 'work' | 'personal' | 'all' }) => {
     const params = new URLSearchParams();
-    if (opts?.allRealms) params.set('realm', 'all');
+    if (opts?.realm) params.set('realm', opts.realm);
+    else if (opts?.allRealms) params.set('realm', 'all');
     if (opts?.q) params.set('q', opts.q);
     if (opts?.circle) params.set('circle', opts.circle);
     if (opts?.label) params.set('label', opts.label);

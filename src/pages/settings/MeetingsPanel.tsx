@@ -499,7 +499,7 @@ export function MeetingsPanel() {
 
             <div>
               <span className="settings-page__field-label">People</span>
-              <ContactPicker value={form.people} onChange={(people) => set({ people })} newRealm={form.realm} placeholder="Search Contacts or type a new name…" />
+              <ContactPicker value={form.people} onChange={(people) => set({ people })} newRealm={form.realm} scope={form.realm === 'work' ? 'work' : 'all'} placeholder="Search Contacts or type a new name…" />
             </div>
 
             <label>
