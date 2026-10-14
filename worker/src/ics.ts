@@ -393,15 +393,27 @@ export function meetingsForRange(sources: FeedSource[], startIso: string, endIso
           .filter((d) => (base.allDay ? isoDateOnly(d) >= startIso && isoDateOnly(d) <= endIso : d >= rangeStart && d < rangeEnd));
         const dateOf = (d: Date) => (base.allDay ? isoDateOnly(d) : localDateOf(d, HOME_TZ));
 
+        // A RECURRENCE-ID override replaces its original slot — and may have
+        // been MOVED to another day (Mike moved the Oct 14 2026 Veterans
+        // meeting to Oct 29; it kept showing on the 14th, with the 29th's
+        // times, and not on the 29th). So: rule-generated occurrences that
+        // have an override are dropped here, and every override is placed
+        // below by its OWN start, whether or not its original slot is in
+        // the window.
+        const overridden = new Set(overrides.map((o) => o.recurrenceId!.getTime()));
         for (const occStart of occurrences) {
-          const override = overrides.find((o) => o.recurrenceId!.getTime() === occStart.getTime());
-          if (override) {
-            if (override.status === 'CANCELLED') continue;
-            results.push({ ...toMeeting(override, occStart), date: dateOf(occStart) });
-          } else {
-            const occMeeting = toMeeting({ ...base, start: occStart, end: new Date(occStart.getTime() + duration) }, occStart);
-            results.push({ ...occMeeting, date: dateOf(occStart) });
-          }
+          if (overridden.has(occStart.getTime())) continue;
+          const occMeeting = toMeeting({ ...base, start: occStart, end: new Date(occStart.getTime() + duration) }, occStart);
+          results.push({ ...occMeeting, date: dateOf(occStart) });
+        }
+        for (const ov of overrides) {
+          if (ov.status === 'CANCELLED') continue;
+          const ovDate = ov.allDay ? isoDateOnly(ov.start) : localDateOf(ov.start, HOME_TZ);
+          const inRange = ov.allDay ? ovDate >= startIso && ovDate <= endIso : ov.start >= rangeStart && ov.start < rangeEnd;
+          if (!inRange) continue;
+          // id stays keyed on the ORIGINAL slot so existing meeting notes
+          // (meeting_notes by id) still attach to it.
+          results.push({ ...toMeeting(ov, ov.recurrenceId!), date: ovDate });
         }
       } else if (base.allDay) {
         const d = isoDateOnly(base.start);
