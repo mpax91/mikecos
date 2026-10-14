@@ -3126,6 +3126,102 @@ export interface AmexBankDashboard {
   cashPlacement?: { bank: CashBankPlacement | null; suggestions: CashSuggestion[]; rules: CashPlacement['rules'] };
 }
 
+export type UsaaCategory =
+  | 'Paychecks'
+  | 'Unemployment'
+  | 'Card Payments'
+  | 'Transfers'
+  | 'Sportsbooks'
+  | 'Venmo, Zelle & PayPal'
+  | 'Checks'
+  | 'Cash & ATM'
+  | 'Deposits'
+  | 'Debit Card'
+  | 'Bedford Bee (Stripe)'
+  | 'Interest'
+  | 'Fees'
+  | 'Bills & Other';
+
+export interface UsaaFlow {
+  date: string;
+  start: string;
+  moneyIn: number;
+  moneyOut: number;
+  transfersIn: number;
+  transfersOut: number;
+  interest: number;
+  net: number;
+  byCategory: Partial<Record<UsaaCategory, number>>;
+}
+
+export interface UsaaSummary {
+  asOf: string | null;
+  last4: string | null;
+  label: string;
+  product: string | null;
+  holder: string | null;
+  balance: number;
+  apy: number | null;
+  avgDailyBalance: number | null;
+  interestYtd: number;
+  interestLifetime: number;
+  interestYears: { year: number; total: number; statements: number; december: boolean }[];
+  series: { date: string; start: string; balance: number; avg: number | null; low: number | null; lowDate: string | null; apy: number | null }[];
+  flows: UsaaFlow[];
+  issuers: { issuer: string; count: number; total: number; lastDate: string; lastAmount: number }[];
+  recurring: { payee: string; category: UsaaCategory; lastAmount: number; lastDate: string; typicalDay: number; months: number }[];
+  events: { date: string; kind: 'fee' | 'overdrawn' | 'returned'; description: string; amount: number }[];
+  checksWritten: { year: number; count: number; total: number }[];
+  gaps: string[];
+  firstStatement: string | null;
+  nextExpected: string | null;
+  overdrawnDays12: number;
+}
+
+export interface UsaaStatementRow {
+  id: string;
+  periodStart: string;
+  periodEnd: string;
+  fileId: string;
+  /** Full list for the last 24 statements; older ones carry failures only. */
+  checks: StatementCheckRow[];
+  checkCount: number;
+  checkOk: number;
+  era: 'classic' | 'modern';
+  beginning: number;
+  credits: number;
+  debits: number;
+  interest: number;
+  ending: number;
+  avgDailyBalance: number | null;
+  lowBalance: number | null;
+  lowDate: string | null;
+  apy: number | null;
+}
+
+export interface UsaaTxn {
+  date: string;
+  description: string;
+  kind: string;
+  amount: number;
+  category: UsaaCategory;
+}
+
+export interface UsaaDashboard {
+  kind: 'usaa';
+  folder: StatementFolder;
+  template: { nickname: string; institution: string; type: string; site?: string; phone?: string } | null;
+  summary: UsaaSummary;
+  categories: UsaaCategory[];
+  statements: UsaaStatementRow[];
+  /** Last 24 statements only (transactionsSince = exclusive start). */
+  transactions: UsaaTxn[];
+  transactionsSince: string | null;
+  files: { fileId: string; name: string; url: string | null; status: string; error: string | null }[];
+  flags: { id: string; severity: 'warn' | 'info'; message: string; created_at: string }[];
+  cashPlacement?: { bank: CashBankPlacement | null; suggestions: CashSuggestion[]; rules: CashPlacement['rules'] };
+}
+
 export interface AmexCardStatementRow {
   closingDate: string;
   openingDate: string;
@@ -3349,7 +3445,7 @@ export interface RewardsOverview {
   cards: { folderId: string; name: string; owner: AccountOwner; rewards: CardRewards; redeemAt: number }[];
 }
 
-export type FinanceDashboard = Ny529Dashboard | AdtDashboard | TmobileDashboard | FiosDashboard | AllyDashboard | AmazonDashboard | AmexBankDashboard | AmexCardDashboard | BofaCardDashboard | PaypalDashboard;
+export type FinanceDashboard = Ny529Dashboard | AdtDashboard | TmobileDashboard | FiosDashboard | AllyDashboard | AmazonDashboard | AmexBankDashboard | UsaaDashboard | AmexCardDashboard | BofaCardDashboard | PaypalDashboard;
 
 /** PayPal on a card dashboard (worker/src/statements/paypalMatch.ts). */
 export interface CardPaypalPanel {
@@ -3489,7 +3585,8 @@ export interface FinanceAttention {
 export interface CashIdleCalc {
   asOf: string;
   checking: { last4: string; label: string; apy: number | null };
-  savings: { last4: string; label: string; apy: number | null; balance: number } | null;
+  /** bank/folderId set when the target is another bank's savings (a checking-only bank like USAA). */
+  savings: { last4: string; label: string; apy: number | null; balance: number; folderId?: string; bank?: string } | null;
   months: number;
   medianOutflow: number;
   largestOutflow: number;

@@ -141,7 +141,7 @@ export function CashPlacementDetail({
           <dd>{money0(c.idle)}</dd>
           <dt>APY Earned</dt>
           <dd>
-            {c.savings ? `${c.savings.label} ${pct(c.savings.apy)} · ` : ''}
+            {c.savings ? `${c.savings.bank ? `${c.savings.bank} ` : ''}${c.savings.label} ${pct(c.savings.apy)} · ` : ''}
             {c.checking.label} {pct(c.checking.apy)}
           </dd>
           <dt>Estimated Gain</dt>

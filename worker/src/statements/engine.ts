@@ -13,6 +13,7 @@ import { deriveTmobile } from './tmobileDerive';
 import { deriveFios } from './fiosDerive';
 import { deriveAlly } from './allyDerive';
 import { deriveAmexBank } from './amexBankDerive';
+import { deriveUsaa } from './usaaDerive';
 import { deriveAmazon } from './amazonDerive';
 import { deriveAmexCard } from './amexCardDerive';
 import { deriveBofaCard } from './bofaCardDerive';
@@ -192,6 +193,7 @@ export async function derive(env: Env, folder: FolderRow): Promise<void> {
   else if (folder.template_id === 'ally') await deriveAlly(env, fresh);
   else if (folder.template_id === 'amazon') await deriveAmazon(env, fresh);
   else if (folder.template_id === 'amexBank') await deriveAmexBank(env, fresh);
+  else if (folder.template_id === 'usaa') await deriveUsaa(env, fresh);
   else if (folder.template_id === 'amexCard') await deriveAmexCard(env, fresh);
   else if (folder.template_id === 'bofaCard') await deriveBofaCard(env, fresh);
   else if (folder.template_id === 'tmobile') await deriveTmobile(env, fresh);

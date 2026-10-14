@@ -9,11 +9,12 @@ import { parseBofaCard } from './bofaCard';
 import { parseTmobile } from './tmobile';
 import { parsePaypal } from './paypal';
 import { parseFios } from './fios';
+import { parseUsaa } from './usaa';
 
 /** Per-folder templates (one per Drive folder, all on the shared base
  * engine). Build order per progress.md: 529 is live; ADT, Ally Bank, Amazon Prime Visa, PayPal,
  * American Express Bank, the Amex Blue Cash Everyday card and the Bank of America
- * Customized Cash Rewards card, T-Mobile and Verizon Fios built; the rest are added one folder at a time. */
+ * Customized Cash Rewards card, T-Mobile, Verizon Fios and USAA Checking built; the rest are added one folder at a time. */
 export interface StatementTemplate {
   id: string;
   name: string;
@@ -211,6 +212,25 @@ export const TEMPLATES: StatementTemplate[] = [
     parse: parseFios,
     // Monthly bills are "Verizon Fios - YYYY.MM.DD.pdf".
     isStatementFile: (name) => /\d{4}\.\d{2}\.\d{2}/.test(name),
+  },
+  {
+    id: 'usaa',
+    name: 'USAA Classic Checking (Monthly)',
+    folderNames: ['USAA Checking Account', 'USAA Checking', 'USAA'],
+    account: {
+      nickname: 'USAA Checking',
+      institution: 'USAA Federal Savings Bank',
+      type: 'Checking',
+      owner: 'household',
+      cadence: 'monthly',
+      kind: 'balance',
+      site: 'https://www.usaa.com',
+      phone: '1-800-531-8722',
+    },
+    parse: parseUsaa,
+    // Monthly statements are "USAA FSB - YYYY.MM.DD.pdf"; a 1099 or other
+    // document dropped in the folder is skipped.
+    isStatementFile: (name) => /\d{4}\.\d{2}\.\d{2}/.test(name) && !/1099/.test(name),
   },
   {
     id: 'paypal',

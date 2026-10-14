@@ -20775,3 +20775,20 @@ button.today-page__add-meeting { border: none; background: none; padding: 0; cur
 .person-agenda__add input { flex: 1; min-width: 0; font-size: 13px; }
 button.task-row__brief-link { border: none; background: none; padding: 0; cursor: pointer; font-family: inherit; }
 button.task-row__brief-link:disabled { opacity: 0.5; cursor: default; }
+
+/* ---- USAA checking dashboard (UsaaDashboard.tsx) ---- */
+.usaa-dash__sheet-head {
+  margin: 16px 0 2px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-muted);
+}
+.usaa-dash__cats td:first-child {
+  white-space: nowrap;
+}
+@media (max-width: 640px) {
+  .usaa-dash__cats .ally__flow-cell {
+    display: none;
+  }
+}

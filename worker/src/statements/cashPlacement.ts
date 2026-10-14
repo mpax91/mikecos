@@ -7,6 +7,8 @@ import { loadAllyData } from './allyDerive';
 import { allyCashStatements } from './allySummary';
 import { loadAmexBankData } from './amexBankDerive';
 import { amexCashStatements } from './amexBankSummary';
+import { loadUsaaData } from './usaaDerive';
+import { usaaCashStatements } from './usaaSummary';
 
 /** Cash Placement (Mike, 2026-10-08) — rule-based, no AI, recomputed from
  * the statements every time they change. Two rules:
@@ -17,6 +19,8 @@ import { amexCashStatements } from './amexBankSummary';
  *     stay conservative). Idle = average checking balance over the last 3
  *     statements − buffer. Gain = idle × (savings APY − checking APY), both
  *     the "APY earned" on the latest statement. Suggest when ≥ $50/yr.
+ *     A checking-only bank (USAA, 2026-10-14) uses the best savings
+ *     account at another bank of the same owner as the target.
  *  2. Cross-bank savings (needs 2+ banks — Ally and American Express
  *     Bank). Suggest moving a savings balance to a bank whose savings APY
  *     is higher when it gains ≥ $25/yr — never above $250K at the target
@@ -78,6 +82,12 @@ const CASH_SOURCES: Record<string, Loader> = {
     const { stmts, txns } = await loadAmexBankData(env, folder.id);
     return amexCashStatements(stmts, txns);
   },
+  // Checking only: idle cash is compared with the best savings account at
+  // another bank of the same owner (externalSavings below).
+  usaa: async (env, folder) => {
+    const { stmts, txns } = await loadUsaaData(env, folder.id);
+    return usaaCashStatements(stmts, txns);
+  },
 };
 export const isCashTemplate = (templateId: string | null) => !!templateId && templateId in CASH_SOURCES;
 
@@ -97,7 +107,7 @@ export async function loadCashSources(env: Env): Promise<BankCashSource[]> {
 export interface IdleCalc {
   asOf: string;
   checking: { last4: string; label: string; apy: number | null };
-  savings: { last4: string; label: string; apy: number | null; balance: number } | null;
+  savings: { last4: string; label: string; apy: number | null; balance: number; folderId?: string; bank?: string } | null;
   months: number; // statements in the buffer window
   medianOutflow: number;
   largestOutflow: number;
@@ -118,13 +128,16 @@ const floor100 = (n: number) => Math.floor(n / 100) * 100;
 
 /** Rule 1 evaluated on statements[0..end] (inclusive). Null when there's
  * no checking + savings pair or not enough history. */
-export function idleCalc(statements: CashStatement[], end = statements.length - 1): IdleCalc | null {
+export function idleCalc(statements: CashStatement[], end = statements.length - 1, external: ExternalSavings | null = null): IdleCalc | null {
   if (end < 0) return null;
   const cur = statements[end];
   const checking = cur.accounts.find((a) => a.kind === 'checking');
   if (!checking) return null;
   // Best-paying savings account at this bank on this statement.
-  const savings = cur.accounts.filter((a) => a.kind === 'savings').sort((a, b) => (b.apy ?? 0) - (a.apy ?? 0))[0] ?? null;
+  const own = cur.accounts.filter((a) => a.kind === 'savings').sort((a, b) => (b.apy ?? 0) - (a.apy ?? 0))[0] ?? null;
+  // A checking-only bank (USAA) parks idle cash in the best savings account
+  // at another bank of the same owner.
+  const savings = own ? { ...own, folderId: undefined as string | undefined, bank: undefined as string | undefined } : external ? { ...external.acct, folderId: external.folderId, bank: external.bank } : null;
   const window = statements.slice(Math.max(0, end - BUFFER_MONTHS + 1), end + 1);
   const months = window.map((s) => ({ date: s.date, acct: s.accounts.find((a) => a.last4 === checking.last4) })).filter((m) => m.acct);
   if (months.length < MIN_HISTORY_MONTHS) return null;
@@ -142,7 +155,7 @@ export function idleCalc(statements: CashStatement[], end = statements.length - 
   return {
     asOf: cur.date,
     checking: { last4: checking.last4, label: checking.label, apy: checking.apy },
-    savings: savings ? { last4: savings.last4, label: savings.label, apy: savings.apy, balance: savings.balance } : null,
+    savings: savings ? { last4: savings.last4, label: savings.label, apy: savings.apy, balance: savings.balance, ...(savings.folderId ? { folderId: savings.folderId, bank: savings.bank } : {}) } : null,
     months: months.length,
     medianOutflow,
     largestOutflow: round2(largest.v),
@@ -193,6 +206,26 @@ export interface CashPlacement {
   suggestions: CashSuggestion[];
 }
 
+/** Best-paying savings account at another fresh bank of the same owner,
+ * `back` statements before that bank's latest — the target for a
+ * checking-only bank's idle cash. */
+export interface ExternalSavings {
+  folderId: string;
+  bank: string;
+  acct: CashAccount;
+}
+function externalSavings(sources: BankCashSource[], src: BankCashSource, back: number, today: string): ExternalSavings | null {
+  let best: ExternalSavings | null = null;
+  for (const o of sources) {
+    if (o === src || o.owner !== src.owner || !o.statements.length) continue;
+    if (daysBetween(o.statements[o.statements.length - 1].date, today) > STALE_DAYS) continue;
+    const st = o.statements[o.statements.length - 1 - back];
+    const acct = st?.accounts.filter((a) => a.kind === 'savings' && a.apy !== null).sort((a, b) => b.apy! - a.apy!)[0];
+    if (acct && (!best || acct.apy! > best.acct.apy!)) best = { folderId: o.folderId, bank: o.bank, acct };
+  }
+  return best;
+}
+
 const pct = (n: number | null) => (n === null ? '—' : `${n.toFixed(2)}%`);
 const daysBetween = (a: string, b: string) => Math.round((Date.parse(`${b}T12:00:00Z`) - Date.parse(`${a}T12:00:00Z`)) / 86400000);
 const money0 = (n: number) => `$${Math.round(n).toLocaleString('en-US')}`;
@@ -204,8 +237,9 @@ export function computeCashPlacement(sources: BankCashSource[], today: string): 
 
   for (const src of sources) {
     const n = src.statements.length;
-    const current = idleCalc(src.statements, n - 1);
-    const previous = idleCalc(src.statements, n - 2);
+    const ownSavings = src.statements[n - 1]?.accounts.some((a) => a.kind === 'savings');
+    const current = idleCalc(src.statements, n - 1, ownSavings ? null : externalSavings(sources, src, 0, today));
+    const previous = idleCalc(src.statements, n - 2, ownSavings ? null : externalSavings(sources, src, 1, today));
     let status: IdleStatus;
     if (!current || !previous) status = 'insufficient_history';
     else if (daysBetween(current.asOf, today) > STALE_DAYS) status = 'stale';
@@ -220,14 +254,15 @@ export function computeCashPlacement(sources: BankCashSource[], today: string): 
       const amount = Math.min(current.idle, previous.idle);
       const spread = current.savings.apy! - (current.checking.apy ?? 0);
       const gain = round2((amount * spread) / 100);
+      const toBank = current.savings.bank ?? src.bank;
       suggestions.push({
         id: `idle:${src.folderId}:${current.asOf}`,
         kind: 'idle',
         owner: src.owner,
         folderId: src.folderId,
-        toFolderId: src.folderId,
+        toFolderId: current.savings.folderId ?? src.folderId,
         bank: src.bank,
-        toBank: src.bank,
+        toBank,
         fromLabel: current.checking.label,
         toLabel: current.savings.label,
         fromApy: current.checking.apy ?? 0,
@@ -238,8 +273,8 @@ export function computeCashPlacement(sources: BankCashSource[], today: string): 
         heldSince: previous.asOf,
         buffer: current.buffer,
         message:
-          `About ${money0(amount)} in ${src.bank} ${current.checking.label} has sat above its ${money0(current.buffer)} buffer for 2 statements — ` +
-          `moving it to ${current.savings.label} (${pct(current.savings.apy)} vs ${pct(current.checking.apy)}) would earn about ${money0(gain)}/yr more.`,
+          `About ${money0(amount)} in ${`${src.bank} ${current.checking.label}`.replace(/\b(\w+) \1\b/, '$1')} has sat above its ${money0(current.buffer)} buffer for 2 statements — ` +
+          `moving it to ${current.savings.bank ? `${toBank} ` : ''}${current.savings.label} (${pct(current.savings.apy)} vs ${pct(current.checking.apy)}) would earn about ${money0(gain)}/yr more.`,
       });
     }
   }

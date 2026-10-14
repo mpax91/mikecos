@@ -16,6 +16,8 @@ import { loadAllyData } from './allyDerive';
 import { accountLabel, summarizeAlly } from './allySummary';
 import { loadAmexBankData } from './amexBankDerive';
 import { summarizeAmexBank } from './amexBankSummary';
+import { loadUsaaData } from './usaaDerive';
+import { categoryOf, summarizeUsaa, USAA_CATEGORIES } from './usaaSummary';
 import { loadAmazonData } from './amazonDerive';
 import { loadAmexCardData } from './amexCardDerive';
 import { loadBofaCardData } from './bofaCardDerive';
@@ -242,6 +244,10 @@ statementsRouter.get('/accounts', async (c) => {
       const { stmts, txns } = await loadAllyData(c.env, row.id);
       const s = summarizeAlly(stmts, txns, easternToday());
       if (s.asOf) headline = { kind: 'balance', value: s.total, asOf: s.asOf, parts: s.accounts.filter((a) => a.open).map((a) => ({ label: accountLabel(a.kind, a.last4), value: a.balance })) };
+    } else if (row.template_id === 'usaa') {
+      const { stmts, txns } = await loadUsaaData(c.env, row.id);
+      const s = summarizeUsaa(stmts, txns, easternToday());
+      if (s.asOf) headline = { kind: 'balance', value: s.balance, asOf: s.asOf };
     } else if (row.template_id === 'amexBank') {
       const { stmts, txns } = await loadAmexBankData(c.env, row.id);
       const s = summarizeAmexBank(stmts, txns, easternToday());
@@ -324,6 +330,7 @@ statementsRouter.get('/folders/:id/dashboard', async (c) => {
   if (row.template_id === 'ally') return c.json(await allyDashboard(c.env, row));
   if (row.template_id === 'amazon') return c.json(await amazonDashboard(c.env, row));
   if (row.template_id === 'amexBank') return c.json(await amexBankDashboard(c.env, row));
+  if (row.template_id === 'usaa') return c.json(await usaaDashboard(c.env, row));
   if (row.template_id === 'amexCard') return c.json(await amexCardDashboard(c.env, row));
   if (row.template_id === 'bofaCard') return c.json(await bofaCardDashboard(c.env, row));
   if (row.template_id !== 'ny529') return c.json({ error: 'No dashboard for this template yet' }, 400);
@@ -502,6 +509,54 @@ async function allyDashboard(env: Env, row: FolderRow) {
       accounts: s.values.accounts.map((a) => ({ last4: a.last4, beginning: a.beginning, ending: a.ending, deposits: a.deposits, withdrawals: a.withdrawals, interest: a.interest, apy: a.apy })),
     })),
     transactions: txns.filter((t) => t.date > since),
+    transactionsSince: since || null,
+    files: files.map((f) => ({ fileId: f.file_id, name: f.file_name, url: f.web_url, status: f.status, error: f.error })),
+    flags: await openFlags(env, row.id),
+  };
+}
+
+/** USAA checking dashboard payload. Every statement's flows (by category)
+ * go out so ranges work back to 2007; individual transactions are capped to
+ * the last 24 statements (~1,000 rows) — the full history stays in D1. */
+async function usaaDashboard(env: Env, row: FolderRow) {
+  const stats = await folderStats(env);
+  const { stmts, txns, files } = await loadUsaaData(env, row.id);
+  const summary = summarizeUsaa(stmts, txns, easternToday());
+  const since = stmts.length > 24 ? stmts[stmts.length - 25].periodEnd : '';
+  const placement = await getCashPlacement(env);
+  return {
+    kind: 'usaa' as const,
+    cashPlacement: {
+      bank: placement.banks.find((b) => b.folderId === row.id) ?? null,
+      suggestions: placement.suggestions.filter((x) => x.folderId === row.id || x.toFolderId === row.id),
+      rules: placement.rules,
+    },
+    folder: folderJson(row, stats.get(row.id)),
+    template: templateById(row.template_id)?.account ?? null,
+    summary,
+    categories: USAA_CATEGORIES,
+    // Full check details for the last 24 statements (and any failure);
+    // older ones carry counts only — the payload stays small.
+    statements: stmts.map((s) => ({
+      id: s.id,
+      periodStart: s.values.periodStart,
+      periodEnd: s.periodEnd,
+      fileId: s.fileId,
+      checks: s.periodEnd > since ? s.checks : s.checks.filter((x) => !x.ok),
+      checkCount: s.checks.length,
+      checkOk: s.checks.filter((x) => x.ok).length,
+      era: s.values.era,
+      beginning: s.values.beginning,
+      credits: s.values.credits,
+      debits: s.values.debits,
+      interest: s.values.interest,
+      ending: s.values.ending,
+      avgDailyBalance: s.values.avgDailyBalance,
+      lowBalance: s.values.lowBalance,
+      lowDate: s.values.lowDate,
+      apy: s.values.apy,
+    })),
+    transactions: txns.filter((t) => t.date > since).map((t) => ({ ...t, category: categoryOf(t) })),
     transactionsSince: since || null,
     files: files.map((f) => ({ fileId: f.file_id, name: f.file_name, url: f.web_url, status: f.status, error: f.error })),
     flags: await openFlags(env, row.id),

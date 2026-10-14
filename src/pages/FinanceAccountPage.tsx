@@ -10,6 +10,7 @@ import { FiosDashboard } from '../components/FiosDashboard';
 import { AllyDashboard } from '../components/AllyDashboard';
 import { AmazonDashboard } from '../components/AmazonDashboard';
 import { AmexBankDashboard } from '../components/AmexBankDashboard';
+import { UsaaDashboard } from '../components/UsaaDashboard';
 import { AmexCardDashboard } from '../components/AmexCardDashboard';
 import { BofaCardDashboard } from '../components/BofaCardDashboard';
 import { PaypalDashboard } from '../components/PaypalDashboard';
@@ -52,6 +53,8 @@ export function FinanceAccountPage() {
               ? [t.institution, t.type, data.summary.balancePrinted ? `Balance ${data.summary.balance.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}` : null, data.summary.lastActivity ? `Last activity ${new Date(`${data.summary.lastActivity}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}` : null].filter(Boolean).join(' · ')
             : data.kind === 'amexBank'
               ? [t.institution, data.summary.label, data.summary.apy !== null ? `${data.summary.apy.toFixed(2)}% APY` : null].filter(Boolean).join(' · ')
+            : data.kind === 'usaa'
+              ? [t.institution, data.summary.product ?? t.type, data.summary.last4 ? `••${data.summary.last4}` : null].filter(Boolean).join(' · ')
           : [
             t.institution,
             data.account?.accountType,
@@ -108,6 +111,8 @@ export function FinanceAccountPage() {
           <AmazonDashboard data={data} onDismissFlag={dismiss} />
         ) : data.kind === 'amexBank' ? (
           <AmexBankDashboard data={data} onDismissFlag={dismiss} />
+        ) : data.kind === 'usaa' ? (
+          <UsaaDashboard data={data} onDismissFlag={dismiss} />
         ) : data.kind === 'amexCard' ? (
           <AmexCardDashboard data={data} onDismissFlag={dismiss} />
         ) : data.kind === 'bofaCard' ? (
