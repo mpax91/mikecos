@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import type { CompletionItem, Entity, ImportantDate, MeetingItem, StatsResponse, TodayResponse, TodayTask, TopNewsItem, WeatherDay } from '../api/types';
-import { TaskRow } from '../components/TaskRow';
+import { TaskRow, formatDueTime } from '../components/TaskRow';
 import { TaskDetailModal } from '../components/TaskDetailModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { BlankLine } from '../components/BlankLine';
@@ -111,6 +111,11 @@ function formatMeetingTime(iso: string): string {
  * Deliberately NOT in this first pass: recurring tasks, habit tracking, the
  * stale-item "Revisit" tickler, and Google Calendar — each is its own
  * follow-up phase once this core loop is solid. */
+function currentHHMM(): string {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
 export function TodayPage() {
   const { date: dateParam } = useParams<{ date: string }>();
   const navigate = useNavigate();
@@ -121,6 +126,31 @@ export function TodayPage() {
   const [data, setData] = useState<TodayResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [taskStack, setTaskStack] = useState<string[]>([]);
+
+  // A reminder notification opens /today?task=<id> → open that task, then
+  // drop the param so a reload doesn't reopen it.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const taskParam = searchParams.get('task');
+  useEffect(() => {
+    if (!taskParam) return;
+    setTaskStack([taskParam]);
+    const next = new URLSearchParams(searchParams);
+    next.delete('task');
+    setSearchParams(next, { replace: true });
+  }, [taskParam]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Timed tasks (due today with a time) stay folded under "Later Today"
+  // until their time comes (Mike, 2026-10-14) — the clock ticks every 30s
+  // so they unfold on their own while the page sits open.
+  const [nowHHMM, setNowHHMM] = useState(currentHHMM);
+  const [showLater, setShowLater] = useState(false);
+  useEffect(() => {
+    if (!isToday) return;
+    const tick = () => setNowHHMM(currentHHMM());
+    const t = window.setInterval(tick, 30_000);
+    document.addEventListener('visibilitychange', tick);
+    return () => (window.clearInterval(t), document.removeEventListener('visibilitychange', tick));
+  }, [isToday]);
   const [deleting, setDeleting] = useState<Entity | null>(null);
   const [weather, setWeather] = useState<WeatherDay | undefined>(undefined);
   const [topNews, setTopNews] = useState<TopNewsItem[]>([]);
@@ -414,11 +444,16 @@ export function TodayPage() {
 
   const overdue = data?.overdue ?? [];
   const dueToday = data?.today ?? [];
+  // Only the real today hides timed tasks — browsing a future day shows the
+  // whole plan. due_time is zero-padded 'HH:MM', so strings compare in order.
+  const isLater = (t: TodayTask) => isToday && !!t.due_time && t.due_time > nowHHMM;
+  const dueNow = dueToday.filter((t) => !isLater(t));
+  const laterToday = dueToday.filter(isLater).sort((a, b) => a.due_time!.localeCompare(b.due_time!));
   const spotlight = data?.spotlight ?? null;
   const completed = data?.completed ?? [];
 
   const holidays = getHolidays(date);
-  const blankCount = Math.max(0, DEFAULT_ROWS + extraRows - dueToday.length - completed.length - (data?.autopayBills?.length ?? 0));
+  const blankCount = Math.max(0, DEFAULT_ROWS + extraRows - dueNow.length - (laterToday.length ? 1 : 0) - completed.length - (data?.autopayBills?.length ?? 0));
 
   // Birthdays and anniversaries for the viewed day, combined into one list
   // (sorted by name) for the Important Dates panel — see /api/today.
@@ -641,7 +676,23 @@ export function TodayPage() {
                   </span>
                 </Link>
               ))}
-              {dueToday.map((task) => renderRow(task, true))}
+              {dueNow.map((task) => renderRow(task, true))}
+              {laterToday.length > 0 && (
+                <button
+                  type="button"
+                  className="task-row later-today-row"
+                  onClick={() => setShowLater((v) => !v)}
+                  aria-expanded={showLater}
+                  title="Timed tasks show up here until their time — then they move into the list (and ping you if notifications are on)"
+                >
+                  <span className="later-today-row__icon">⏰</span>
+                  <span className="task-row__title">
+                    Later Today · {laterToday.length} at {laterToday.map((t) => formatDueTime(t.due_time!)).join(', ')}
+                  </span>
+                  <span className="later-today-row__chev">{showLater ? '▾' : '▸'}</span>
+                </button>
+              )}
+              {showLater && laterToday.map((task) => <div key={task.id} className="later-today-item">{renderRow(task)}</div>)}
               {/* What got checked off that day, shown struck through at the
                   bottom of the same list rather than just vanishing (or
                   living in a separate section below) — matches how Week

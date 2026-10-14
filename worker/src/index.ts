@@ -41,6 +41,7 @@ import { describeRrule, isValidRrule, nextDueOccurrenceDate, type RecurringTaskD
 import { HealthParseError, parseHealthWeek } from './health';
 import { FeedParseError, parseFeed } from './news';
 import { authGate, authRouter, resolveOrigin } from './auth';
+import { pushRouter, sendDueTaskPushes } from './push';
 import { vaultRouter } from './vault';
 import { walletRouter } from './wallet';
 import { rewardsRouter } from './rewards';
@@ -100,6 +101,7 @@ app.route('/api/wallet', walletRouter);
 app.route('/api/rewards', rewardsRouter);
 app.route('/api/payment-cards', paymentCardsRouter);
 app.route('/api/waiting', waitingRouter);
+app.route('/api/push', pushRouter);
 app.route('/api/work', workRouter);
 app.route('/api/plex', plexRouter);
 app.route('/api/media', mediaCatalogRouter);
@@ -8767,6 +8769,16 @@ export default {
   fetch: app.fetch,
   async scheduled(event: ScheduledController, env: Env) {
     if (event.cron === EMAIL_SYNC_CRON) {
+      // Timed task reminders first, so a slow inbox sync can't delay them.
+      // Recurring tasks are spawned for today first — otherwise a recurring
+      // task with a time only exists once a page has been opened.
+      try {
+        const nowEt = localDateString(new Date(event.scheduledTime).toISOString());
+        await spawnDueRecurringTasks(env.DB, nowEt);
+        await sendDueTaskPushes(env, new Date(event.scheduledTime));
+      } catch (err) {
+        console.error('Task reminder push failed', err);
+      }
       try {
         await syncAllAccounts(env);
       } catch (err) {

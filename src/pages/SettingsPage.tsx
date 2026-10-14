@@ -16,6 +16,7 @@ import { CommsPanel } from './settings/CommsPanel';
 import { WalletCategoriesPanel } from './settings/WalletCategoriesPanel';
 import { MediaCatalogPanel } from './settings/MediaCatalogPanel';
 import { IgnoredShowsPanel } from './settings/IgnoredShowsPanel';
+import { NotificationsPanel } from './settings/NotificationsPanel';
 import { SecurityPanel } from './settings/SecurityPanel';
 import { NewsFeedsPanel } from './settings/NewsFeedsPanel';
 import { HabitsPanel } from './settings/HabitsPanel';
@@ -42,6 +43,7 @@ interface Category {
 const CATEGORIES: Category[] = [
   { id: 'upload', label: 'Upload', icon: '📤' },
   { id: 'recurring', label: 'Recurring Tasks', icon: '🔁' },
+  { id: 'notifications', label: 'Notifications', icon: '🔔' },
   { id: 'meetings', label: 'Meetings', icon: '🗓️' },
   { id: 'calendars', label: 'Calendar Integrations', icon: '📅' },
   { id: 'links', label: 'Links', icon: '🔗' },
@@ -102,6 +104,7 @@ export function SettingsPage() {
         <div className="settings-page__panel">
           {active === 'upload' && <UploadPanel />}
           {active === 'recurring' && <RecurringTasksPanel />}
+          {active === 'notifications' && <NotificationsPanel />}
           {active === 'meetings' && <MeetingsPanel />}
           {active === 'calendars' && <CalendarsPanel />}
           {active === 'links' && (

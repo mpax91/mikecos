@@ -35,6 +35,9 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,ico}'],
+        // Push + notification-click handlers for task reminders
+        // (public/push-sw.js, worker/src/push.ts).
+        importScripts: ['push-sw.js'],
         // New worker takes over immediately instead of waiting for every
         // open tab to close, and stale precache entries from the previous
         // deploy get swept instead of accumulating in Cache Storage.

@@ -4595,3 +4595,17 @@ export interface TaxYearSummary {
 }
 export interface TaxInsight { key: string; tone: 'warn' | 'info' | 'good'; title: string; detail: string; years: number[] }
 export interface TaxesResponse { returns: TaxReturnRecord[]; summary: TaxYearSummary[]; insights: TaxInsight[]; cpiBaseYear: number }
+
+/** A browser/device that turned on task-reminder notifications (migration 0128). */
+export interface PushDevice {
+  id: string;
+  endpoint: string;
+  label: string | null;
+  created_at: string;
+  last_ok_at: string | null;
+  last_error: string | null;
+}
+export interface PushDevicesResponse {
+  devices: PushDevice[];
+  recent: { entity_id: string; fire_key: string; sent_at: string; devices: number; title: string | null }[];
+}
