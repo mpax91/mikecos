@@ -1457,18 +1457,22 @@ function bestMeetingMatch<T extends EnrichedMeeting>(day: T[], names: (string | 
   return best?.m ?? null;
 }
 
-/** A brief that had to make its own all-day one-off (no calendar match at
- * the time) moves onto the real meeting once one matches — e.g. the invite
- * was named a little differently. Runs when Today loads and hourly. */
+/** A brief with no calendar match is filed on a stand-in `brief-<uuid>`
+ * (never a calendar event — nothing shows on Today / Week / Month). Older
+ * briefs made an all-day one-off meeting_series row ("Added from a pasted
+ * brief."); migration 0131 turned those into stand-ins too. Either way the
+ * brief moves onto the real meeting once one matches that day — e.g. the
+ * invite was named a little differently or added later. Runs when Today
+ * loads and hourly. */
 export async function rehomeBriefs(db: D1Database): Promise<number> {
   const since = new Date(Date.now() - 14 * 86_400_000).toISOString();
   const { results } = await db
     .prepare(
-      `SELECT s.*, ms.id AS oneoff_id FROM meeting_summaries s JOIN meeting_series ms ON ('ms-' || ms.id) = s.series_key
-        WHERE s.source = 'record' AND s.kind IN ('debrief', 'prep') AND ms.description = ? AND ms.rrule IS NULL AND s.occurrence_start > ?`
+      `SELECT s.*, ms.id AS oneoff_id FROM meeting_summaries s LEFT JOIN meeting_series ms ON ('ms-' || ms.id) = s.series_key AND ms.description = ? AND ms.rrule IS NULL
+        WHERE s.source = 'record' AND s.kind IN ('debrief', 'prep') AND s.occurrence_start > ? AND (s.series_key LIKE 'brief-%' OR ms.id IS NOT NULL)`
     )
     .bind(BRIEF_ONEOFF, since)
-    .all<SummaryRow & { oneoff_id: string }>();
+    .all<SummaryRow & { oneoff_id: string | null }>();
   let moved = 0;
   for (const s of results ?? []) {
     const rec = recordOf(s);
@@ -1478,12 +1482,19 @@ export async function rehomeBriefs(db: D1Database): Promise<number> {
     if (!m) continue;
     const occ = m.allDay ? easternToUtc(date, '12:00').toISOString() : m.start;
     const oldLabel = s.meeting_title;
+    const oldKey = s.series_key;
     const stmts = [
       db.prepare(`UPDATE meeting_summaries SET meeting_id = ?, series_key = ?, occurrence_start = ?, meeting_title = ? WHERE id = ?`).bind(m.id, m.seriesKey, occ, m.title, s.id),
       db.prepare(`UPDATE meeting_actions SET meeting_id = ?, series_key = ? WHERE summary_id = ?`).bind(m.id, m.seriesKey, s.id),
       db.prepare(`UPDATE meeting_items SET meeting_id = ?, series_key = ? WHERE summary_id = ?`).bind(m.id, m.seriesKey, s.id),
       db.prepare(`UPDATE meeting_assists SET meeting_id = ? WHERE summary_id = ?`).bind(m.id, s.id),
       db.prepare(`UPDATE contact_context SET meeting_id = ? WHERE summary_id = ?`).bind(m.id, s.id),
+      // Links the brief attached follow it (skipping ones the meeting has).
+      db
+        .prepare(`UPDATE meeting_docs SET series_key = ? WHERE series_key = ? AND url NOT IN (SELECT url FROM meeting_docs WHERE series_key = ?)`)
+        .bind(m.seriesKey, oldKey, m.seriesKey),
+      // My Notes on the stand-in, unless the real meeting already has some.
+      db.prepare(`UPDATE meeting_notes SET meeting_id = ? WHERE meeting_id = ? AND NOT EXISTS (SELECT 1 FROM meeting_notes WHERE meeting_id = ?)`).bind(m.id, s.meeting_id, m.id),
     ];
     // Titles follow the real meeting — unless Mike renamed them himself.
     const prefix = s.kind === 'prep' ? 'Prep · ' : '';
@@ -1492,49 +1503,32 @@ export async function rehomeBriefs(db: D1Database): Promise<number> {
     }
     if (s.review_task_id) stmts.push(db.prepare(`UPDATE entities SET title = ? WHERE id = ? AND title = ?`).bind(`Review: ${m.title}`, s.review_task_id, `Review: ${oldLabel}`));
     await db.batch(stmts);
-    // The stand-in meeting goes once nothing else is filed on it.
-    const left = await db.prepare(`SELECT COUNT(*) AS n FROM meeting_summaries WHERE series_key = ?`).bind(`ms-${s.oneoff_id}`).first<{ n: number }>();
+    // The stand-in goes once nothing else is filed on it.
+    const left = await db.prepare(`SELECT COUNT(*) AS n FROM meeting_summaries WHERE series_key = ?`).bind(oldKey).first<{ n: number }>();
     if (!left?.n) {
-      await db.batch([
-        db.prepare(`DELETE FROM meeting_series_people WHERE series_id = ?`).bind(s.oneoff_id),
-        db.prepare(`DELETE FROM meeting_docs WHERE series_key = ?`).bind(`ms-${s.oneoff_id}`),
-        db.prepare(`DELETE FROM meeting_series WHERE id = ?`).bind(s.oneoff_id),
-      ]);
+      const clean = [db.prepare(`DELETE FROM meeting_docs WHERE series_key = ?`).bind(oldKey)];
+      if (s.oneoff_id) {
+        clean.push(
+          db.prepare(`DELETE FROM meeting_series_people WHERE series_id = ?`).bind(s.oneoff_id),
+          db.prepare(`DELETE FROM meeting_series WHERE id = ?`).bind(s.oneoff_id)
+        );
+      }
+      await db.batch(clean);
     }
     moved++;
   }
   return moved;
 }
 
-/** The meeting a debrief / prep belongs to: same title (or series name) on
- * that day, else a loose title match, else a new one-off Work meeting on
- * that date (all-day — the brief doesn't carry a time). */
-async function meetingForRecord(db: D1Database, rec: MeetingRecord): Promise<{ meeting: EnrichedMeeting; created: boolean }> {
+/** The calendar meeting a debrief / prep belongs to: same title (or series
+ * name) on that day, else a loose title / people match. null → no match;
+ * the brief is filed on a stand-in and NO meeting is created (Mike: pasting
+ * a brief should never put something on the calendar). */
+async function meetingForRecord(db: D1Database, rec: MeetingRecord): Promise<EnrichedMeeting | null> {
   const mt = rec.meeting!;
   const date = mt.date ?? easternToday();
   const day = await enrichMeetings(db, await loadMeetings(db, date, date), 'all');
-  const loose = bestMeetingMatch(day, [mt.series, mt.title], undefined, mt.attendees.map((a) => a.name));
-  if (loose) return { meeting: loose, created: false };
-
-  const id = uid();
-  const ts = now();
-  await db
-    .prepare(
-      `INSERT INTO meeting_series (id, title, realm, start_date, start_time, duration_min, rrule, until_date, skip_dates, location, link, project_id, description, active, created_at, updated_at)
-       VALUES (?, ?, 'work', ?, NULL, 30, NULL, NULL, '[]', NULL, NULL, NULL, ?, 1, ?, ?)`
-    )
-    .bind(id, mt.title.slice(0, 200), date, 'Added from a pasted brief.', ts, ts)
-    .run();
-  // Inferred attendees stay off the meeting until Mike confirms them.
-  if (mt.attendeesConfirmed !== false) {
-    const mine = await myNames(db);
-    const hits = await matchRecordPeople(db, mt.attendees.filter((a) => !isMineName(a.name, mine)), []);
-    if (hits.size) await setSeriesPeople(db, id, [...hits.values()].map((p) => p.id));
-  }
-  const again = await enrichMeetings(db, await loadMeetings(db, date, date), 'all');
-  const m = again.find((x) => x.seriesKey === `ms-${id}`);
-  if (!m) throw new Error('The meeting could not be created');
-  return { meeting: m, created: true };
+  return bestMeetingMatch(day, [mt.series, mt.title], undefined, mt.attendees.map((a) => a.name));
 }
 
 /** A thread (Slack / email / doc comments) has no meeting — the sheet shows
@@ -1548,6 +1542,11 @@ function threadMeeting(s: { meeting_id: string; meeting_title: string; occurrenc
     channel = r.thread?.channel ?? null;
   } catch {
     /* keep defaults */
+  }
+  // A brief with no calendar match (see rehomeBriefs).
+  if (s.meeting_id.startsWith('brief-')) {
+    source = 'brief';
+    channel = null;
   }
   return {
     id: s.meeting_id,
@@ -1571,7 +1570,7 @@ function threadMeeting(s: { meeting_id: string; meeting_title: string; occurrenc
     projectId: null,
     docs: [],
     joinUrl: null,
-    thread: { source, label: threadSourceLabel(source), channel },
+    thread: { source, label: source === 'brief' ? 'Not On Calendar' : threadSourceLabel(source), channel },
   };
 }
 
@@ -1615,8 +1614,8 @@ async function applyWeekly(db: D1Database, rec: MeetingRecord) {
 }
 
 /** Paste Brief (Today / Notes, Work mode): Claude's whole response. Debrief
- * and prep land on their meeting (found by title on that date, else a new
- * one-off); a thread gets its own entry; a weekly brief fills the week's
+ * and prep land on their meeting (found by title on that date; else a
+ * `brief-` stand-in that never shows on the calendar); a thread gets its own entry; a weekly brief fills the week's
  * Work review. */
 workRouter.post('/import', async (c) => {
   const b = await c.req.json<{ text?: string }>().catch(() => ({}) as { text?: string });
@@ -1642,10 +1641,23 @@ workRouter.post('/import', async (c) => {
     return c.json({ kind: 'thread', created: false, meeting: threadMeeting(row, payload.actions.filter((a) => a.status === 'pending').length), ...payload }, r.existing ? 200 : 201);
   }
 
-  const { meeting, created } = await meetingForRecord(db, rec);
+  const meeting = await meetingForRecord(db, rec);
+  if (!meeting) {
+    // No calendar match: file it on a stand-in, never a new meeting.
+    const mt = rec.meeting!;
+    const date = mt.date ?? easternToday();
+    const json = JSON.stringify(rec);
+    const prior = await db.prepare(`SELECT meeting_id FROM meeting_summaries WHERE source = 'record' AND meeting_id LIKE 'brief-%' AND record_json = ?`).bind(json).first<{ meeting_id: string }>();
+    const meetingId = prior?.meeting_id ?? `brief-${uid()}`;
+    const start = easternToUtc(date, '12:00').toISOString();
+    const r = await importRecord(db, rec, ex.note, raw, { meetingId, seriesKey: meetingId, title: mt.title.slice(0, 200), start, realm: 'work', people: [], date, allDay: true });
+    const payload = await summaryPayload(db, r.summaryId, r.existing);
+    const row = (await db.prepare('SELECT * FROM meeting_summaries WHERE id = ?').bind(r.summaryId).first<SummaryRow>())!;
+    return c.json({ kind: rec.kind, created: false, unmatched: true, meeting: { ...threadMeeting(row, payload.actions.filter((a) => a.status === 'pending').length), date }, ...payload }, r.existing ? 200 : 201);
+  }
   const date = (meeting as { date?: string }).date ?? localDate(meeting.start);
   const r = await importRecord(db, rec, ex.note, raw, { meetingId: meeting.id, seriesKey: meeting.seriesKey, title: meeting.title, start: meeting.start, realm: 'work', people: meeting.people, date, allDay: meeting.allDay });
-  return c.json({ kind: rec.kind, created, meeting: { ...meeting, date }, ...(await summaryPayload(db, r.summaryId, r.existing)) }, r.existing ? 200 : 201);
+  return c.json({ kind: rec.kind, created: false, meeting: { ...meeting, date }, ...(await summaryPayload(db, r.summaryId, r.existing)) }, r.existing ? 200 : 201);
 });
 
 /** Check off (or reopen) an open question / watch-out. */

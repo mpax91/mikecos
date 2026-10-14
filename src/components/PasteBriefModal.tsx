@@ -80,7 +80,7 @@ export function PasteBriefModal({ onClose }: { onClose: () => void }) {
       ) : (
         <>
           <div className="paste-brief__hint">
-            Paste the whole response from your work Claude — use the copy button under it. A meeting debrief or prep lands on that meeting (or a new one on its date), a Slack / email thread gets its own entry, and a weekly brief fills
+            Paste the whole response from your work Claude — use the copy button under it. A meeting debrief or prep lands on that meeting (if it isn't on your calendar, it's filed on its own and moves onto the meeting once it shows up — no calendar event is made), a Slack / email thread gets its own entry, and a weekly brief fills
             this week's review.
           </div>
           <textarea className="paste-brief__box" value={text} onChange={(e) => setText(e.target.value)} placeholder="## TL;DR …&#10;&#10;```meeting-record&#10;{ &quot;format&quot;: &quot;meeting-record/1&quot;, … }&#10;```" autoFocus />

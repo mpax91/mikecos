@@ -4332,6 +4332,8 @@ export type BriefImportResult =
   | {
       kind: 'debrief' | 'prep' | 'thread';
       created: boolean;
+      /** No calendar meeting matched: filed on a `brief-` stand-in. */
+      unmatched?: boolean;
       existing: boolean;
       meeting: MeetingItem & { date?: string };
       summary: MeetingSummary;

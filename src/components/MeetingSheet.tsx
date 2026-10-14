@@ -327,7 +327,8 @@ function MeetingSheet({ meeting, startPasting, onClose }: { meeting: SheetMeetin
   const date = meeting.date ?? localDate(meeting.start);
   const [prep, setPrep] = useState<MeetingPrep | null>(null);
   const [own, setOwn] = useState<MeetingSummaryBundle | null>(null);
-  const isThread = meeting.id.startsWith('thread-');
+  // Threads and briefs with no calendar match have no meeting behind them.
+  const isThread = meeting.id.startsWith('thread-') || meeting.id.startsWith('brief-');
   const [error, setError] = useState<string | null>(null);
   const [pasting, setPasting] = useState(startPasting);
   const [text, setText] = useState('');
