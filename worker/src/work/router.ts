@@ -975,6 +975,7 @@ workRouter.post('/meetings/:meetingId/summaries', async (c) => {
     db.prepare(`UPDATE meeting_summaries SET review_task_id = ? WHERE id = ?`).bind(reviewId, id)
   );
   await db.batch(stmts);
+  await closeDebriefTask(db, meetingId).catch((e) => console.error('close debrief failed', e));
 
   const row = await db.prepare('SELECT * FROM meeting_summaries WHERE id = ?').bind(id).first<SummaryRow>();
   const { results: acts } = await db.prepare('SELECT * FROM meeting_actions WHERE summary_id = ? ORDER BY rowid').bind(id).all<ActionRow>();
@@ -1113,6 +1114,7 @@ interface RecordTarget {
 /** Day lists sort by due_position first: Prep tasks, then Review tasks, sit
  * at the top of their day (Mike, 2026-10-13). */
 export const PREP_DUE_POSITION = -200;
+export const DEBRIEF_DUE_POSITION = -150;
 export const REVIEW_DUE_POSITION = -100;
 
 /** "2026.10.13 | Weekly Growth Team Lead Meeting" (Mike, 2026-10-13). */
@@ -1232,6 +1234,7 @@ async function importRecord(db: D1Database, rec: MeetingRecord, note: string, ra
   for (let i = 0; i < stmts.length; i += 50) await db.batch(stmts.slice(i, i + 50));
   await collectKnowledge(db, body, briefNoteTitle(date, label), t.realm).catch((e) => console.error('knowledge collect failed', e));
   if (rec.kind !== 'thread') await attachBriefDocs(db, t.seriesKey, rec, body).catch((e) => console.error('brief docs failed', e));
+  if (rec.kind === 'debrief') await closeDebriefTask(db, t.meetingId).catch((e) => console.error('close debrief failed', e));
   return { summaryId: id, existing: false };
 }
 
@@ -2037,6 +2040,61 @@ export async function ensureMeetingPrepTasks(db: D1Database): Promise<number> {
   return made;
 }
 
+
+// ---------------------------------------------------------------------------
+// Next-day debrief tasks (migration 0127): a Work meeting from the last two
+// days that ended with nothing filed (no brief, no pasted Gemini notes) gets
+// "Debrief: <title>" due today. Filing a brief for it checks the task off.
+// ---------------------------------------------------------------------------
+
+export const DEBRIEF_STEPS =
+  'Tap 📋 Copy Debrief for Claude, paste it into your work Claude Project with the Gemini notes or your own notes (and any deck), then paste the response into MikeOS with 📋 Paste Brief. Nothing worth filing? Just check this off.';
+
+export async function ensureMeetingDebriefTasks(db: D1Database): Promise<number> {
+  const today = easternToday();
+  const from = addDays(today, -2);
+  const meetings = await enrichMeetings(db, await loadMeetings(db, from, addDays(today, -1)), 'work');
+  if (!meetings.length) return 0;
+  const filed = new Set(
+    (
+      await inChunks(
+        meetings.map((m) => m.id),
+        async (ch, ph) => (await db.prepare(`SELECT DISTINCT meeting_id FROM meeting_summaries WHERE source != 'own_note' AND meeting_id IN (${ph})`).bind(...ch).all<{ meeting_id: string }>()).results ?? []
+      )
+    ).map((r) => r.meeting_id)
+  );
+  const nowIso = now();
+  let made = 0;
+  for (const m of meetings) {
+    if (m.allDay || filed.has(m.id) || m.end > nowIso) continue;
+    const have = await db.prepare(`SELECT entity_id FROM meeting_debrief_tasks WHERE meeting_id = ?`).bind(m.id).first();
+    if (have) continue;
+    const date = (m as { date?: string }).date ?? localDate(m.start);
+    const id = uid();
+    const title = `Debrief: ${m.title}`.slice(0, 300);
+    const pos = await db.prepare(`SELECT COALESCE(MAX(position), -1) + 1 AS n FROM entities WHERE parent_id IS NULL AND type = 'task'`).first<{ n: number }>();
+    await db.batch([
+      db
+        .prepare(
+          `INSERT INTO entities (id, type, title, content, parent_id, is_top_level, status, position, due_date, due_position, last_touched, created_at, updated_at, search_text, realm)
+           VALUES (?, 'task', ?, ?, NULL, 1, 'open', ?, ?, ${DEBRIEF_DUE_POSITION}, ?, ?, ?, ?, 'work')`
+        )
+        .bind(id, title, JSON.stringify({ action: 'meeting-debrief', meetingId: m.id, date, description: DEBRIEF_STEPS }), pos?.n ?? 0, today, nowIso, nowIso, nowIso, title),
+      db.prepare(`INSERT INTO meeting_debrief_tasks (meeting_id, entity_id, created_at) VALUES (?, ?, ?)`).bind(m.id, id, nowIso),
+    ]);
+    made++;
+  }
+  return made;
+}
+
+/** Filing notes for a meeting closes its Debrief task. */
+async function closeDebriefTask(db: D1Database, meetingId: string): Promise<void> {
+  await db
+    .prepare(`UPDATE entities SET status = 'done', updated_at = ? WHERE status = 'open' AND id IN (SELECT entity_id FROM meeting_debrief_tasks WHERE meeting_id = ?)`)
+    .bind(now(), meetingId)
+    .run();
+}
+
 // ---------------------------------------------------------------------------
 // Prep: one meeting, or every meeting on a day (morning-of)
 // ---------------------------------------------------------------------------
@@ -2243,6 +2301,7 @@ workRouter.get('/prep', async (c) => {
   if (date === easternToday() && !c.req.query('id')) {
     await rehomeBriefs(c.env.DB).catch((e) => console.error('rehome briefs failed', e));
     await ensureMeetingPrepTasks(c.env.DB).catch((e) => console.error('prep tasks failed', e));
+    await ensureMeetingDebriefTasks(c.env.DB).catch((e) => console.error('debrief tasks failed', e));
   }
   const realm = realmOf(c);
   const meetings = await enrichMeetings(c.env.DB, await loadMeetings(c.env.DB, date, date), realm);

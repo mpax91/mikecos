@@ -188,7 +188,9 @@ export function TaskRow({
         </span>
         {entity.blocked_reason != null && <span className="task-row__blocked" title={entity.blocked_reason || 'Blocked'}>Blocked</span>}
         {!entity.parent_id && <RealmChip realm={entity.realm} />}
-        {prepAction(entity.content) && !showDone && <MeetingPrepCopyButton meetingId={prepAction(entity.content)!.meetingId} date={prepAction(entity.content)!.date} />}
+        {prepAction(entity.content) && !showDone && (
+          <MeetingPrepCopyButton meetingId={prepAction(entity.content)!.meetingId} date={prepAction(entity.content)!.date} mode={prepAction(entity.content)!.mode} />
+        )}
         {noteAction(entity.content) && (
           <Link to={`/notes/${noteAction(entity.content)}`} className="task-row__brief-link" onClick={(e) => e.stopPropagation()}>
             Open Notes →
@@ -282,11 +284,12 @@ export function TaskRow({
 }
 
 /** A day-of Prep task carries `{ action: 'meeting-prep', meetingId, date }`. */
-function prepAction(content: string | null): { meetingId: string; date: string } | null {
-  if (!content || !content.includes('meeting-prep')) return null;
+function prepAction(content: string | null): { meetingId: string; date: string; mode: 'prep' | 'debrief' } | null {
+  if (!content || !content.includes('"meeting-')) return null;
   try {
     const m = JSON.parse(content) as { action?: string; meetingId?: string; date?: string };
-    return m.action === 'meeting-prep' && m.meetingId && m.date ? { meetingId: m.meetingId, date: m.date } : null;
+    if (!m.meetingId || !m.date) return null;
+    return m.action === 'meeting-prep' ? { meetingId: m.meetingId, date: m.date, mode: 'prep' } : m.action === 'meeting-debrief' ? { meetingId: m.meetingId, date: m.date, mode: 'debrief' } : null;
   } catch {
     return null;
   }

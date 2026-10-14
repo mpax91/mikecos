@@ -297,8 +297,13 @@ export function TaskDetailModal({
           </div>
         </div>
 
-        {entity && parseTaskMeta(entity.content).action === 'meeting-prep' && parseTaskMeta(entity.content).meetingId && (
-          <MeetingPrepCopyButton meetingId={parseTaskMeta(entity.content).meetingId!} date={parseTaskMeta(entity.content).date ?? ''} className="btn task-panel__brief-btn" />
+        {entity && (parseTaskMeta(entity.content).action === 'meeting-prep' || parseTaskMeta(entity.content).action === 'meeting-debrief') && parseTaskMeta(entity.content).meetingId && (
+          <MeetingPrepCopyButton
+            meetingId={parseTaskMeta(entity.content).meetingId!}
+            date={parseTaskMeta(entity.content).date ?? ''}
+            mode={parseTaskMeta(entity.content).action === 'meeting-debrief' ? 'debrief' : 'prep'}
+            className="btn task-panel__brief-btn"
+          />
         )}
         {entity && parseTaskMeta(entity.content).action === 'open-note' && parseTaskMeta(entity.content).noteId && (
           <Link className="btn task-panel__brief-btn" to={`/notes/${parseTaskMeta(entity.content).noteId}`} onClick={onClose}>

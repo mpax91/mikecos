@@ -7,7 +7,17 @@ import { meetingPacket } from '../utils/claudePacket';
 /** "📋 Copy Prep for Claude" on a day-of Prep task. The prep loads when the
  * button appears, so the copy happens right inside the tap (phones refuse
  * clipboard writes after a network wait). */
-export function MeetingPrepCopyButton({ meetingId, date, className = 'task-row__brief-link' }: { meetingId: string; date: string; className?: string }) {
+export function MeetingPrepCopyButton({
+  meetingId,
+  date,
+  mode = 'prep',
+  className = 'task-row__brief-link',
+}: {
+  meetingId: string;
+  date: string;
+  mode?: 'prep' | 'debrief';
+  className?: string;
+}) {
   const [prep, setPrep] = useState<MeetingPrep | null>(null);
   const [state, setState] = useState<'idle' | 'done' | 'missing'>('idle');
   useEffect(() => {
@@ -25,13 +35,13 @@ export function MeetingPrepCopyButton({ meetingId, date, className = 'task-row__
       onClick={async (e) => {
         e.stopPropagation();
         if (!prep) return;
-        if (await copyText(meetingPacket(prep.meeting, prep, null, 'prep'))) {
+        if (await copyText(meetingPacket(prep.meeting, prep, null, mode))) {
           setState('done');
           window.setTimeout(() => setState('idle'), 4000);
         }
       }}
     >
-      {state === 'done' ? 'Copied ✓ — paste into Claude' : '📋 Copy Prep for Claude'}
+      {state === 'done' ? 'Copied ✓ — paste into Claude' : mode === 'debrief' ? '📋 Copy Debrief for Claude' : '📋 Copy Prep for Claude'}
     </button>
   );
 }
