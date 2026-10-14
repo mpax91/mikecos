@@ -1394,13 +1394,41 @@ const titleKey = (s: string | null | undefined) => (s ?? '').toLowerCase().repla
 const TITLE_STOP = new Set(['the', 'a', 'an', 'and', 'of', 'with', 'for', 'x', 'w', 'to', 'on', 'in']);
 const titleWords = (s: string | null | undefined) => new Set(titleKey(s).split(' ').filter((w) => w && !TITLE_STOP.has(w)));
 const BRIEF_ONEOFF = 'Added from a pasted brief.';
+/** Words too common in meeting names to tie two meetings together alone. */
+const GENERIC_TITLE_WORDS = new Set(['weekly', 'monthly', 'daily', 'biweekly', 'quarterly', 'sync', 'meeting', 'call', 'check', 'checkin', '1', 'review', 'team', 'standup', 'update', 'catch', 'catchup', 'up', 'chat', 'touch', 'base']);
 
 /** The calendar meeting a brief names: exact title first; else word overlap
  * — every word of the shorter title in the longer one ("Weekly Growth
  * Meeting" ⊂ "Weekly Growth Team Lead Meeting"), or ≥ 60% shared words.
  * Timed meetings beat all-day ones. */
-function bestMeetingMatch<T extends EnrichedMeeting>(day: T[], names: (string | null | undefined)[], skipKey?: string): T | null {
+/** One-letter typos count as the same word ("Alec" / "Alex") for words of
+ * 4+ letters. */
+function sameWord(a: string, b: string): boolean {
+  if (a === b) return true;
+  if (a.length < 4 || b.length < 4 || Math.abs(a.length - b.length) > 1) return false;
+  let i = 0;
+  let j = 0;
+  let edits = 0;
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) {
+      i++;
+      j++;
+      continue;
+    }
+    if (++edits > 1) return false;
+    if (a.length > b.length) i++;
+    else if (b.length > a.length) j++;
+    else {
+      i++;
+      j++;
+    }
+  }
+  return edits + (a.length - i) + (b.length - j) <= 1;
+}
+
+function bestMeetingMatch<T extends EnrichedMeeting>(day: T[], names: (string | null | undefined)[], skipKey?: string, attendees: string[] = []): T | null {
   const wants = names.map((n) => ({ key: titleKey(n), words: titleWords(n) })).filter((w) => w.key);
+  const who = new Set(attendees.map((a) => a.trim().toLowerCase()).filter(Boolean));
   let best: { m: T; score: number } | null = null;
   for (const m of day) {
     if (skipKey && m.seriesKey === skipKey) continue;
@@ -1410,14 +1438,19 @@ function bestMeetingMatch<T extends EnrichedMeeting>(day: T[], names: (string | 
     for (const w of wants) {
       if (w.key === key) score = Math.max(score, 3);
       else {
-        const inter = [...w.words].filter((x) => words.has(x)).length;
+        const inter = [...w.words].filter((x) => [...words].some((y) => sameWord(x, y))).length;
         const small = Math.min(w.words.size, words.size);
         const union = new Set([...w.words, ...words]).size;
         if (small >= 2 && inter === small) score = Math.max(score, 2 + inter / Math.max(w.words.size, words.size));
         else if (union && inter / union >= 0.6) score = Math.max(score, 1 + inter / union);
       }
     }
+    // The same people on it: a tie-breaker, and enough on its own when the
+    // titles share at least one word.
+    const shared = m.people.filter((p) => who.has(p.name.trim().toLowerCase())).length;
+    if (!score && shared && wants.some((w) => [...w.words].some((x) => !GENERIC_TITLE_WORDS.has(x) && [...words].some((y) => sameWord(x, y))))) score = 1;
     if (!score) continue;
+    if (shared) score += 0.3 * Math.min(1, shared / Math.max(1, Math.min(who.size, m.people.length)));
     if (!m.allDay) score += 0.1;
     if (!best || score > best.score) best = { m, score };
   }
@@ -1441,7 +1474,7 @@ export async function rehomeBriefs(db: D1Database): Promise<number> {
     const rec = recordOf(s);
     const date = localDate(s.occurrence_start);
     const day = await enrichMeetings(db, await loadMeetings(db, date, date), 'all');
-    const m = bestMeetingMatch(day, [rec?.meeting?.series, rec?.meeting?.title, s.meeting_title], s.series_key);
+    const m = bestMeetingMatch(day, [rec?.meeting?.series, rec?.meeting?.title, s.meeting_title], s.series_key, (rec?.meeting?.attendees ?? []).map((a) => a.name));
     if (!m) continue;
     const occ = m.allDay ? easternToUtc(date, '12:00').toISOString() : m.start;
     const oldLabel = s.meeting_title;
@@ -1480,7 +1513,7 @@ async function meetingForRecord(db: D1Database, rec: MeetingRecord): Promise<{ m
   const mt = rec.meeting!;
   const date = mt.date ?? easternToday();
   const day = await enrichMeetings(db, await loadMeetings(db, date, date), 'all');
-  const loose = bestMeetingMatch(day, [mt.series, mt.title]);
+  const loose = bestMeetingMatch(day, [mt.series, mt.title], undefined, mt.attendees.map((a) => a.name));
   if (loose) return { meeting: loose, created: false };
 
   const id = uid();
