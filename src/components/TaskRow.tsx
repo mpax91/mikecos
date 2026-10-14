@@ -187,6 +187,11 @@ export function TaskRow({
         </span>
         {entity.blocked_reason != null && <span className="task-row__blocked" title={entity.blocked_reason || 'Blocked'}>Blocked</span>}
         {!entity.parent_id && <RealmChip realm={entity.realm} />}
+        {noteAction(entity.content) && (
+          <Link to={`/notes/${noteAction(entity.content)}`} className="task-row__brief-link" onClick={(e) => e.stopPropagation()}>
+            Open Notes →
+          </Link>
+        )}
         {briefAction(entity.content) && (
           <Link
             to={`/briefs?kind=${briefAction(entity.content) === 'week-plan' ? 'ahead' : 'review'}`}
@@ -272,6 +277,17 @@ export function TaskRow({
       )}
     </div>
   );
+}
+
+/** A brief's Review task carries `{ action: 'open-note', noteId }`. */
+function noteAction(content: string | null): string | null {
+  if (!content || !content.includes('open-note')) return null;
+  try {
+    const m = JSON.parse(content) as { action?: string; noteId?: string };
+    return m.action === 'open-note' && m.noteId ? m.noteId : null;
+  } catch {
+    return null;
+  }
 }
 
 /** The Monday / Friday Work tasks carry `{ action }` in their TaskMeta. */

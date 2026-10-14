@@ -163,7 +163,7 @@ function SummaryBlock({ s, compact = false }: { s: MeetingSummary; compact?: boo
           <pre>{s.decisions}</pre>
         </div>
       )}
-      {s.noteEntityId && (
+      {s.noteEntityId && !(s.source === 'record' && !compact) && (
         <Link className="mtg-link" to={`/notes/${s.noteEntityId}`}>
           {s.source === 'record' ? 'Full brief →' : 'Full notes →'}
         </Link>
@@ -171,6 +171,8 @@ function SummaryBlock({ s, compact = false }: { s: MeetingSummary; compact?: boo
     </div>
   );
 }
+
+const FT_LABEL: Record<string, string> = { done: 'Done', in_progress: 'In Progress', open: 'Not Done', unclear: 'No Update' };
 
 const ITEM_TITLES: Record<string, string> = {
   goal: 'What to Get Out of It',
@@ -212,14 +214,12 @@ function BriefExtras({
   items,
   assists,
   suggestions,
-  onItem,
   onChanged,
 }: {
   s: MeetingSummary;
   items: MeetingRecordItem[];
   assists: MeetingAssist[];
   suggestions: BriefPersonSuggestion[];
-  onItem: (i: MeetingRecordItem) => void;
   onChanged: () => void;
 }) {
   const mine = items.filter((i) => i.summaryId === s.id);
@@ -260,8 +260,22 @@ function BriefExtras({
           </ul>
         </div>
       )}
-      <ItemList items={mine} kind="watch_out" checkable onChange={onItem} />
-      <ItemList items={mine} kind="question" checkable onChange={onItem} />
+      {mine.some((i) => i.kind === 'follow_through') && (
+        <div className="mtg-items">
+          <div className="mtg-label">Follow-Through From Last Time</div>
+          <ul className="mtg-items__list">
+            {mine
+              .filter((i) => i.kind === 'follow_through')
+              .map((i) => (
+                <li key={i.id} className="mtg-item">
+                  <span className={`mtg-ft mtg-ft--${i.status ?? 'unclear'}`}>{FT_LABEL[i.status ?? 'unclear'] ?? 'Unclear'}</span> {i.owner && <strong>{i.owner}: </strong>}
+                  {i.text}
+                  {i.note && <span className="mtg-item__takeaway"> — {i.note}</span>}
+                </li>
+              ))}
+          </ul>
+        </div>
+      )}
       {prompts.length > 0 && (
         <div className="mtg-items">
           <div className="mtg-label">
@@ -307,9 +321,6 @@ function BriefExtras({
     </div>
   );
 }
-
-/** Briefs list next steps Mine → Others → Unowned. */
-const actionRank = (a: MeetingAction) => (a.isMine ? 0 : a.ownerName || a.contactName ? 1 : 2);
 
 function MeetingSheet({ meeting, startPasting, onClose }: { meeting: SheetMeeting; startPasting: boolean; onClose: () => void }) {
   const navigate = useNavigate();
@@ -430,7 +441,6 @@ function MeetingSheet({ meeting, startPasting, onClose }: { meeting: SheetMeetin
   }
 
   const updateAction = (list: MeetingAction[], a: MeetingAction) => list.map((x) => (x.id === a.id ? a : x));
-  const updateItem = (i: MeetingRecordItem) => setOwn((o) => (o ? { ...o, items: (o.items ?? []).map((x) => (x.id === i.id ? i : x)) } : o));
   const assistFor = (a: MeetingAction) => (a.hasPrompt ? (own?.assists ?? []).find((x) => x.actionId === a.id) : undefined);
   const link = m.joinUrl ?? m.links?.find((l) => /meet\.google|zoom\.us|teams\.microsoft|webex/i.test(l)) ?? m.links?.[0];
 
@@ -551,16 +561,23 @@ function MeetingSheet({ meeting, startPasting, onClose }: { meeting: SheetMeetin
                 ) : (
                   <SummaryBlock s={s} />
                 )}
-                <ul className="mtg-actions">
-                  {own.actions
-                    .filter((a) => a.summaryId === s.id)
-                    .sort((x, y) => (s.source === 'record' ? actionRank(x) - actionRank(y) : 0))
-                    .map((a) => (
-                      <ActionRow key={a.id} a={a} assist={assistFor(a)} onChange={(na) => setOwn((o) => (o ? { ...o, actions: updateAction(o.actions, na) } : o))} />
-                    ))}
-                </ul>
+                {s.source === 'record' ? (
+                  s.noteEntityId && (
+                    <Link className="btn btn--sm mtg-readnotes" to={`/notes/${s.noteEntityId}`} onClick={onClose}>
+                      📝 Read the Notes
+                    </Link>
+                  )
+                ) : (
+                  <ul className="mtg-actions">
+                    {own.actions
+                      .filter((a) => a.summaryId === s.id)
+                      .map((a) => (
+                        <ActionRow key={a.id} a={a} assist={assistFor(a)} onChange={(na) => setOwn((o) => (o ? { ...o, actions: updateAction(o.actions, na) } : o))} />
+                      ))}
+                  </ul>
+                )}
                 {s.source === 'record' && (
-                  <BriefExtras s={s} items={own.items ?? []} assists={own.assists ?? []} suggestions={own.suggestions ?? []} onItem={updateItem} onChanged={load} />
+                  <BriefExtras s={s} items={own.items ?? []} assists={own.assists ?? []} suggestions={own.suggestions ?? []} onChanged={load} />
                 )}
                 {s.source !== 'own_note' && (
                   <button type="button" className="mtg-link mtg-link--quiet" onClick={() => removeSummary(s.id)}>
@@ -573,6 +590,62 @@ function MeetingSheet({ meeting, startPasting, onClose }: { meeting: SheetMeetin
         )}
 
         {!prep && !error && !isThread && <div className="mtg-hint">Loading prep…</div>}
+
+        {prep?.carryForward && (
+          <section className="mtg-section">
+            <div className="mtg-section__title mtg-section__title--row">
+              <span>Since Last Time · {fmtDay(prep.carryForward.start)}</span>
+              {prep.carryForward.noteId && (
+                <Link className="mtg-link" to={`/notes/${prep.carryForward.noteId}`} onClick={onClose}>
+                  Last time's notes →
+                </Link>
+              )}
+            </div>
+            {prep.carryForward.myFollowUps.length > 0 && (
+              <div className="mtg-items">
+                <div className="mtg-label">What You Did From Those Notes</div>
+                <ul className="mtg-items__list">
+                  {prep.carryForward.myFollowUps.map((f) => (
+                    <li key={f.id} className={`mtg-item${f.done ? ' is-done' : ''}`}>
+                      <span className={`mtg-ft mtg-ft--${f.done ? 'done' : 'open'}`}>{f.done ? 'Done' : 'Open'}</span> <span>{f.title.replace(/^Check Back: /, '')}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {prep.carryForward.commitments.some((x) => x.isMine) && (
+              <div className="mtg-items">
+                <div className="mtg-label">Yours From Last Time</div>
+                <ul className="mtg-items__list">
+                  {prep.carryForward.commitments
+                    .filter((x) => x.isMine)
+                    .map((x, i) => (
+                      <li key={i} className="mtg-item">
+                        {x.text}
+                        {x.status === 'task' && <span className="mtg-with"> · made a task</span>}
+                      </li>
+                    ))}
+                </ul>
+              </div>
+            )}
+            {prep.carryForward.commitments.some((x) => !x.isMine) && (
+              <details className="mtg-carry">
+                <summary>Everyone Else's Next Steps ({prep.carryForward.commitments.filter((x) => !x.isMine).length})</summary>
+                <ul className="mtg-items__list">
+                  {prep.carryForward.commitments
+                    .filter((x) => !x.isMine)
+                    .map((x, i) => (
+                      <li key={i} className="mtg-item">
+                        <strong>{x.owner}:</strong> {x.text}
+                        {x.due && <span className="mtg-with"> · due {fmtDue(x.due)}</span>}
+                      </li>
+                    ))}
+                </ul>
+              </details>
+            )}
+            <p className="mtg-hint">Copy for Claude includes all of this, so the next brief reports what got done.</p>
+          </section>
+        )}
 
         {prep && (prep.prepItems ?? []).length > 0 && (
           <section className="mtg-section">

@@ -17,6 +17,7 @@ import { LinkPreview } from './LinkPreviewNode';
 import { AutoUpdatedAttr } from './AutoUpdatedAttr';
 import { LinkModal } from './LinkModal';
 import { api } from '../api/client';
+import { NoteSelectionMenu } from './NoteSelectionMenu';
 import { useIsMobile } from '../hooks/useIsMobile';
 
 const AUTOSAVE_DEBOUNCE_MS = 800;
@@ -507,6 +508,7 @@ export function NoteEditor({
   autoFocus,
   compact,
   highlightQuery,
+  noteId,
 }: {
   content: string | null;
   onSave: (json: string) => void;
@@ -536,7 +538,11 @@ export function NoteEditor({
    * `key={note.id}` remount, already get that for free); a value that
    * doesn't match anything is silently ignored. */
   highlightQuery?: string;
+  /** The note being edited — turns on the highlight-to-act menu (select
+   * text → Task / Waiting / Project / List / Jot / Link). */
+  noteId?: string;
 }) {
+  const contentAreaRef = useRef<HTMLDivElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingJson = useRef<string | null>(null);
   const [, forceRerender] = useState(0);
@@ -1004,8 +1010,9 @@ export function NoteEditor({
           }}
         />
       </div>
-      <div className="note-editor__content-area" onClick={handleContentAreaClick}>
+      <div className="note-editor__content-area" ref={contentAreaRef} onClick={handleContentAreaClick}>
         <EditorContent editor={editor} />
+        {noteId && editor && <NoteSelectionMenu editor={editor} noteId={noteId} container={contentAreaRef.current} />}
       </div>
       {linkModalOpen && <LinkModal onSave={handleAddLink} onClose={() => setLinkModalOpen(false)} />}
       {linkPreviewModalOpen && (

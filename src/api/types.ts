@@ -28,8 +28,10 @@ export interface LinkMeta {
  * task's JSON. */
 export interface TaskMeta {
   description?: string;
-  /** The Monday / Friday Work tasks open their brief. */
-  action?: 'week-plan' | 'week-review';
+  /** The Monday / Friday Work tasks open their brief; a brief's next-day
+   * Review task opens its note. */
+  action?: 'week-plan' | 'week-review' | 'open-note';
+  noteId?: string;
 }
 
 export interface Entity {
@@ -4185,10 +4187,14 @@ export interface MeetingRecordItem {
   id: string;
   summaryId: string;
   meetingId: string;
-  kind: 'decision' | 'question' | 'watch_out' | 'material' | 'goal' | 'talking_point' | 'prep_question';
+  kind: 'decision' | 'question' | 'watch_out' | 'material' | 'goal' | 'talking_point' | 'prep_question' | 'follow_through';
   text: string;
   materialType: string | null;
   takeaway: string | null;
+  /** follow_through: done | in_progress | open | unclear */
+  status?: string | null;
+  owner?: string | null;
+  note?: string | null;
   resolvedAt: string | null;
   createdAt: string;
 }
@@ -4233,7 +4239,9 @@ export type BriefImportResult =
       suggestions: BriefPersonSuggestion[];
     };
 
-export type MeetingActionStatus = 'pending' | 'task' | 'waiting' | 'dismissed';
+/** 'noted' = a next step recorded from a pasted brief — kept for
+ * carry-forward, never asks to be sorted. */
+export type MeetingActionStatus = 'pending' | 'task' | 'waiting' | 'dismissed' | 'noted';
 
 export interface WorkSettings {
   myNames: string;
@@ -4313,6 +4321,16 @@ export interface MeetingPrep {
   stillOpenItems?: MeetingRecordItem[];
   /** A pasted prep brief for this occurrence. */
   prepItems?: MeetingRecordItem[];
+  /** Since Last Time: the previous brief in this series. */
+  carryForward?: {
+    meetingId: string;
+    start: string;
+    title: string;
+    noteId: string | null;
+    tldr: string[];
+    commitments: { text: string; owner: string; isMine: boolean; due: string | null; status: string }[];
+    myFollowUps: { id: string; title: string; kind: string; done: boolean; dueDate: string | null }[];
+  } | null;
 }
 
 export interface PersonWork {

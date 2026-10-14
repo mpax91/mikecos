@@ -20747,3 +20747,21 @@ button.today-page__add-meeting { border: none; background: none; padding: 0; cur
 .task-panel__ai { display: flex; flex-direction: column; gap: 6px; }
 .task-panel__ai-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
 .notes-page__head-actions { display: inline-flex; gap: 8px; align-items: center; }
+
+/* Notes: highlight-to-act menu (NoteSelectionMenu, 2026-10-13) */
+.note-editor__content-area { position: relative; }
+.note-sel { position: absolute; z-index: 30; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; max-width: min(340px, calc(100% - 8px)); padding: 6px; border: 1px solid var(--color-border); border-radius: 10px; background: var(--color-card-bg); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12); cursor: default; }
+.note-sel__btn { border: 1px solid var(--color-border); background: var(--color-paper); border-radius: 7px; padding: 4px 8px; font: inherit; font-size: 12.5px; color: var(--color-ink); cursor: pointer; white-space: nowrap; }
+.note-sel__btn:hover:not(:disabled) { border-color: var(--color-accent); color: var(--color-accent); }
+.note-sel__btn--quiet { border-color: transparent; background: transparent; color: var(--color-muted); }
+.note-sel__lists { display: flex; flex-wrap: wrap; gap: 4px; }
+.note-sel__hint { font-size: 12.5px; color: var(--color-muted); padding: 4px; }
+.note-sel__error { font-size: 12px; color: var(--color-accent-secondary); flex-basis: 100%; }
+.note-sel__done { display: flex; gap: 10px; align-items: center; font-size: 13px; padding: 2px 4px; }
+.note-sel__open { color: var(--color-accent); text-decoration: none; font-weight: var(--weight-medium); white-space: nowrap; }
+.mtg-readnotes { align-self: flex-start; margin-top: 4px; text-decoration: none; }
+.mtg-ft { font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; padding: 1px 6px; border-radius: 999px; background: var(--color-sidebar); color: var(--color-muted); white-space: nowrap; }
+.mtg-ft--done { background: var(--color-work-bg); color: var(--color-work); }
+.mtg-ft--in_progress { background: var(--color-postit-ghost); color: #7a5f12; }
+.mtg-ft--open { background: transparent; color: var(--color-accent-secondary); border: 1px solid currentColor; }
+.mtg-carry summary { cursor: pointer; font-size: 12.5px; color: var(--color-muted); margin: 6px 0; }

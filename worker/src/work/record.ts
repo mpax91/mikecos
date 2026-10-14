@@ -44,6 +44,14 @@ export interface RecordMaterial {
   type: string;
   takeaway: string;
 }
+/** How last time's next steps went (Claude compares the carry-forward in
+ * Mike's Copy for Claude packet with this meeting's notes). */
+export interface RecordFollowThrough {
+  text: string;
+  owner: string | null;
+  status: 'done' | 'in_progress' | 'open' | 'unclear';
+  note: string | null;
+}
 export interface MeetingRecord {
   format: string;
   kind: RecordKind;
@@ -59,6 +67,7 @@ export interface MeetingRecord {
   assists: RecordAssist[];
   materials: RecordMaterial[];
   projects: string[];
+  followThrough: RecordFollowThrough[];
   goals: string[];
   talkingPoints: string[];
   questions: string[];
@@ -95,6 +104,10 @@ export const SECTION_NAMES = [
   'Where AI Can Help',
   'Update Project Knowledge',
   'Suggested Reply',
+  'Follow-Through',
+  'Follow-Through From Last Time',
+  'Your Update',
+  'Marketing Lens',
   'The Meeting in One Line',
   'What Mike Should Get Out of It',
   'Open Items With These People',
@@ -302,9 +315,28 @@ export function normalizeRecord(raw: unknown): MeetingRecord | string {
     }
   }
 
+  const followThrough: RecordFollowThrough[] = [];
+  const ftRaw = o.follow_through ?? o.followThrough;
+  if (Array.isArray(ftRaw)) {
+    for (const f of ftRaw) {
+      if (!f || typeof f !== 'object') continue;
+      const x = f as Record<string, unknown>;
+      const text = str(x.text, 1000);
+      if (!text) continue;
+      const st = str(x.status, 20).toLowerCase().replace(/[\s-]+/g, '_');
+      followThrough.push({
+        text,
+        owner: strOrNull(x.owner, 200),
+        status: st === 'done' || st === 'in_progress' || st === 'open' ? st : 'unclear',
+        note: strOrNull(x.note, 600),
+      });
+    }
+  }
+
   return {
     format,
     kind,
+    followThrough: followThrough.slice(0, 60),
     meeting,
     thread,
     weekOf: dateOrNull(o.week_of ?? o.weekOf),

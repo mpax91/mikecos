@@ -611,6 +611,7 @@ interface SummaryRow {
   kind?: string | null;
   format?: string | null;
   record_json?: string | null;
+  review_task_id?: string | null;
 }
 interface ActionRow {
   id: string;
@@ -657,7 +658,7 @@ async function actionsJson(db: D1Database, rows: ActionRow[]) {
       status: r.status,
       entityId: e ? r.entity_id : null,
       entityDone: e ? e.status === 'done' : r.status === 'task' || r.status === 'waiting',
-      dueDate: e?.due_date ?? (r.status === 'pending' ? r.due_date ?? null : null),
+      dueDate: e?.due_date ?? (r.status === 'pending' || r.status === 'noted' ? r.due_date ?? null : null),
       confidence: r.confidence === 'implied' ? 'implied' : r.confidence === 'stated' ? 'stated' : null,
       hasPrompt: withPrompt.has(r.id),
     };
@@ -749,9 +750,6 @@ function tiptapFromSections(sections: { heading: string; body: string }[]): stri
   return JSON.stringify({ type: 'doc', content: content.length ? content : [{ type: 'paragraph', attrs: { textAlign: null } }] });
 }
 
-function shortDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-US', { timeZone: HOME_TZ, month: '2-digit', day: '2-digit', year: 'numeric' });
-}
 
 /** Match an owner name to one of the meeting's people, else to a single
  * contact with that exact name. */
@@ -926,7 +924,7 @@ workRouter.post('/meetings/:meetingId/summaries', async (c) => {
   ];
   const noteId = uid();
   const ts = now();
-  const noteTitle = `Meeting Notes · ${title} · ${shortDate(start)}`;
+  const noteTitle = briefNoteTitle(b.date && DATE_RE.test(b.date) ? b.date : localDate(start), title);
   const plain = sections.filter((s) => s.body).map((s) => `${s.heading}\n${s.body}`).join('\n\n');
   await db
     .prepare(
@@ -968,6 +966,7 @@ workRouter.delete('/summaries/:id', async (c) => {
     db.prepare('DELETE FROM meeting_summaries WHERE id = ?').bind(id),
   ];
   if (row?.source === 'record' && row.note_entity_id) stmts.push(db.prepare(`DELETE FROM entities WHERE id = ? AND type = 'note'`).bind(row.note_entity_id));
+  if (row?.review_task_id) stmts.push(db.prepare(`DELETE FROM entities WHERE id = ? AND type = 'task' AND status != 'done'`).bind(row.review_task_id));
   await db.batch(stmts);
   return c.json({ ok: true });
 });
@@ -1005,13 +1004,13 @@ interface AssistRow {
 }
 
 function itemJson(r: ItemRow) {
-  let extra: { type?: string; takeaway?: string } | null = null;
+  let extra: { type?: string; takeaway?: string; status?: string; owner?: string | null; note?: string | null } | null = null;
   try {
     extra = r.extra ? JSON.parse(r.extra) : null;
   } catch {
     extra = null;
   }
-  return { id: r.id, summaryId: r.summary_id, meetingId: r.meeting_id, kind: r.kind, text: r.text, materialType: extra?.type ?? null, takeaway: extra?.takeaway ?? null, resolvedAt: r.resolved_at, createdAt: r.created_at };
+  return { id: r.id, summaryId: r.summary_id, meetingId: r.meeting_id, kind: r.kind, text: r.text, materialType: extra?.type ?? null, takeaway: extra?.takeaway ?? null, status: extra?.status ?? null, owner: extra?.owner ?? null, note: extra?.note ?? null, resolvedAt: r.resolved_at, createdAt: r.created_at };
 }
 function assistJson(r: AssistRow) {
   return { id: r.id, summaryId: r.summary_id, meetingId: r.meeting_id, actionId: r.action_id, title: r.title, prompt: r.prompt };
@@ -1081,7 +1080,8 @@ interface RecordTarget {
   allDay?: boolean;
 }
 
-const mdY = (iso: string) => `${iso.slice(5, 7)}/${iso.slice(8, 10)}/${iso.slice(0, 4)}`;
+/** "2026.10.13 | Weekly Growth Team Lead Meeting" (Mike, 2026-10-13). */
+export const briefNoteTitle = (ymd: string, name: string) => `${ymd.replace(/-/g, '.')} | ${name}`.slice(0, 300);
 
 async function importRecord(db: D1Database, rec: MeetingRecord, note: string, raw: string, t: RecordTarget): Promise<{ summaryId: string; existing: boolean }> {
   const json = JSON.stringify(rec);
@@ -1094,14 +1094,18 @@ async function importRecord(db: D1Database, rec: MeetingRecord, note: string, ra
   const withPeople = [...new Map([...t.people, ...matched.values()].map((p) => [p.id, p])).values()];
   const ts = now();
   const date = DATE_RE.test(t.date) ? t.date : localDate(t.start);
-  const day = mdY(date);
   const occurrence = t.allDay ? easternToUtc(date, '12:00').toISOString() : t.start;
-  const noteTitle =
-    rec.kind === 'thread' ? `${threadSourceLabel(rec.thread?.source ?? '')} · ${t.title} · ${day}` : rec.kind === 'prep' ? `Meeting Prep · ${t.title} · ${day}` : `Meeting Notes · ${t.title} · ${day}`;
+  // Mike's title format: "YYYY.MM.DD | Meeting Name".
+  const label = rec.kind === 'thread' ? `${threadSourceLabel(rec.thread?.source ?? '')} · ${t.title}` : rec.kind === 'prep' ? `Prep · ${t.title}` : t.title;
+  const noteTitle = briefNoteTitle(date, label);
   const body = note.trim() || (rec.tldr.length ? `## TL;DR\n${rec.tldr.map((x) => `- ${x}`).join('\n')}` : '');
 
   const noteId = uid();
   const id = uid();
+  // Notes-first: the next day, a Work task asks Mike to read the brief and
+  // act on it (highlight → task / waiting / project / list). Nothing waits
+  // to be sorted in the meantime.
+  const reviewId = rec.kind === 'debrief' || rec.kind === 'thread' ? uid() : null;
   const stmts: D1PreparedStatement[] = [
     db
       .prepare(
@@ -1111,11 +1115,25 @@ async function importRecord(db: D1Database, rec: MeetingRecord, note: string, ra
       .bind(noteId, noteTitle.slice(0, 300), markdownToTiptap(body), ts, ts, ts, markdownToPlain(body).slice(0, 200_000), t.realm),
     db
       .prepare(
-        `INSERT INTO meeting_summaries (id, meeting_id, series_key, occurrence_start, meeting_title, realm, note_entity_id, summary, details, decisions, raw_text, source, created_at, kind, format, record_json)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, 'record', ?, ?, ?, ?)`
+        `INSERT INTO meeting_summaries (id, meeting_id, series_key, occurrence_start, meeting_title, realm, note_entity_id, summary, details, decisions, raw_text, source, created_at, kind, format, record_json, review_task_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, 'record', ?, ?, ?, ?, ?)`
       )
-      .bind(id, t.meetingId, t.seriesKey, occurrence, t.title, t.realm, noteId, rec.tldr.join('\n') || null, rec.decisions.map((d) => `- ${d}`).join('\n') || null, raw.slice(0, 400_000), ts, rec.kind, rec.format, json),
+      .bind(id, t.meetingId, t.seriesKey, occurrence, t.title, t.realm, noteId, rec.tldr.join('\n') || null, rec.decisions.map((d) => `- ${d}`).join('\n') || null, raw.slice(0, 400_000), ts, rec.kind, rec.format, json, reviewId),
   ];
+  if (reviewId) {
+    const today = easternToday();
+    const due = addDays(date, 1) > today ? addDays(date, 1) : today;
+    const title = `Review: ${label}`;
+    const pos = await db.prepare(`SELECT COALESCE(MAX(position), -1) + 1 AS n FROM entities WHERE parent_id IS NULL AND type = 'task'`).first<{ n: number }>();
+    stmts.push(
+      db
+        .prepare(
+          `INSERT INTO entities (id, type, title, content, parent_id, is_top_level, status, position, due_date, last_touched, created_at, updated_at, search_text, realm)
+           VALUES (?, 'task', ?, ?, NULL, 1, 'open', ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .bind(reviewId, title.slice(0, 300), JSON.stringify({ action: 'open-note', noteId }), pos?.n ?? 0, due, ts, ts, ts, title, t.realm)
+    );
+  }
 
   const actionIds = new Map<string, string>();
   for (const a of rec.actions) {
@@ -1127,7 +1145,7 @@ async function importRecord(db: D1Database, rec: MeetingRecord, note: string, ra
       db
         .prepare(
           `INSERT INTO meeting_actions (id, summary_id, meeting_id, series_key, text, owner_name, contact_id, is_mine, status, entity_id, created_at, confidence, due_date, record_action_id, owner_email)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, ?, ?, ?, ?, ?)`
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'noted', NULL, ?, ?, ?, ?, ?)`
         )
         .bind(aid, id, t.meetingId, t.seriesKey, a.text, me ? mine[0] ?? 'Me' : a.owner, person?.id ?? null, me ? 1 : 0, ts, a.confidence, a.due, a.id, me ? null : a.ownerEmail)
     );
@@ -1144,6 +1162,7 @@ async function importRecord(db: D1Database, rec: MeetingRecord, note: string, ra
   rec.openQuestions.forEach((x) => item('question', x));
   rec.watchOuts.forEach((x) => item('watch_out', x));
   rec.materials.forEach((x) => item('material', x.name, { type: x.type, takeaway: x.takeaway }));
+  rec.followThrough.forEach((x) => item('follow_through', x.text, { status: x.status, owner: x.owner, note: x.note }));
   rec.goals.forEach((x) => item('goal', x));
   rec.talkingPoints.forEach((x) => item('talking_point', x));
   rec.questions.forEach((x) => item('prep_question', x));
@@ -1484,6 +1503,116 @@ workRouter.get('/people-table', async (c) => {
   return c.json({ count: rows.length, markdown: lines.join('\n') });
 });
 
+
+// ---------------------------------------------------------------------------
+// Act on highlighted text in a note (NoteEditor's selection menu): a task due
+// tomorrow, a Waiting check-back, a project, a list item, a jot or a link —
+// in the note's realm, remembering the note it came from (source_note_id,
+// migration 0121) so the next meeting's prep can show what came of it.
+// ---------------------------------------------------------------------------
+
+const URL_RE = /https?:\/\/[^\s<>"')]+/i;
+
+workRouter.post('/from-note', async (c) => {
+  const b = await c.req.json<{ noteId?: string; text?: string; kind?: string; listId?: string }>().catch(() => ({}) as { noteId?: string; text?: string; kind?: string; listId?: string });
+  const db = c.env.DB;
+  const text = (b.text ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^(?:[-*•▪◦]|\d+[.)])\s+/, '');
+  if (!text) return c.json({ error: 'Select some text first' }, 400);
+  const note = b.noteId ? await db.prepare(`SELECT id, realm FROM entities WHERE id = ?`).bind(b.noteId).first<{ id: string; realm: string | null }>() : null;
+  const realm: Realm = note ? (note.realm === 'work' ? 'work' : 'personal') : realmOf(c) === 'work' ? 'work' : 'personal';
+  const src = note?.id ?? null;
+  const ts = now();
+  const id = uid();
+  const today = easternToday();
+  const tomorrow = addDays(today, 1);
+  const title = text.slice(0, 300);
+  const topPos = async () => (await db.prepare(`SELECT COALESCE(MAX(position), -1) + 1 AS n FROM entities WHERE parent_id IS NULL AND type = 'task'`).first<{ n: number }>())?.n ?? 0;
+
+  switch (b.kind) {
+    case 'task': {
+      await db
+        .prepare(
+          `INSERT INTO entities (id, type, title, parent_id, is_top_level, status, position, due_date, last_touched, created_at, updated_at, search_text, realm, source_note_id)
+           VALUES (?, 'task', ?, NULL, 1, 'open', ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .bind(id, title, await topPos(), tomorrow, ts, ts, ts, title, realm, src)
+        .run();
+      return c.json({ kind: 'task', id, title, dueDate: tomorrow, path: `/today/${tomorrow}` }, 201);
+    }
+    case 'waiting': {
+      const t = `Check Back: ${title}`.slice(0, 300);
+      const due = addDays(today, 7);
+      await db
+        .prepare(
+          `INSERT INTO entities (id, type, title, parent_id, is_top_level, status, position, due_date, last_touched, created_at, updated_at, search_text, waiting_source_id, waiting_since, realm, source_note_id)
+           VALUES (?, 'task', ?, NULL, 1, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .bind(id, t, await topPos(), due, ts, ts, ts, t, id, today, realm, src)
+        .run();
+      return c.json({ kind: 'waiting', id, title: t, dueDate: due, path: '/waiting' }, 201);
+    }
+    case 'project': {
+      await db
+        .prepare(
+          `INSERT INTO entities (id, type, title, content, parent_id, is_top_level, status, position, last_touched, created_at, updated_at, search_text, realm, source_note_id)
+           VALUES (?, 'project', ?, '', NULL, 1, 'active', 0, ?, ?, ?, ?, ?, ?)`
+        )
+        .bind(id, title, ts, ts, ts, title, realm, src)
+        .run();
+      return c.json({ kind: 'project', id, title, dueDate: null, path: `/projects/${id}` }, 201);
+    }
+    case 'list': {
+      const list = b.listId ? await db.prepare(`SELECT id, title FROM entities WHERE id = ? AND type = 'project' AND is_list = 1`).bind(b.listId).first<{ id: string; title: string }>() : null;
+      if (!list) return c.json({ error: 'Pick a list' }, 400);
+      const pos = await db.prepare(`SELECT COALESCE(MAX(position), -1) + 1 AS n FROM entities WHERE parent_id = ?`).bind(list.id).first<{ n: number }>();
+      await db
+        .prepare(
+          `INSERT INTO entities (id, type, title, parent_id, is_top_level, status, position, last_touched, created_at, updated_at, search_text, source_note_id)
+           VALUES (?, 'task', ?, ?, 0, 'open', ?, ?, ?, ?, ?, ?)`
+        )
+        .bind(id, title, list.id, pos?.n ?? 0, ts, ts, ts, title, src)
+        .run();
+      return c.json({ kind: 'list', id, title, dueDate: null, listTitle: list.title, path: `/lists/${list.id}` }, 201);
+    }
+    case 'jot': {
+      const content = JSON.stringify({ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: title }] }] });
+      await db
+        .prepare(
+          `INSERT INTO entities (id, type, title, content, parent_id, is_top_level, status, position, last_touched, created_at, updated_at, search_text, is_jot, realm, source_note_id)
+           VALUES (?, 'note', '', ?, NULL, 1, NULL, 0, ?, ?, ?, ?, 1, ?, ?)`
+        )
+        .bind(id, content, ts, ts, ts, title, realm, src)
+        .run();
+      return c.json({ kind: 'jot', id, title, dueDate: null, path: '/jots' }, 201);
+    }
+    case 'link': {
+      const url = URL_RE.exec(text)?.[0]?.replace(/[.,;:]+$/, '');
+      if (!url) return c.json({ error: 'No link in the selection' }, 400);
+      let name = text.replace(url, '').replace(/[\s:–—-]+$/, '').trim();
+      if (!name) {
+        try {
+          name = new URL(url).hostname.replace(/^www\./, '');
+        } catch {
+          name = url;
+        }
+      }
+      const maxPos = await db.prepare('SELECT COALESCE(MAX(sort_order), -1) + 1 AS n FROM quick_links').first<{ n: number }>();
+      await db
+        .prepare(
+          `INSERT INTO quick_links (id, name, url, type, icon, thumbnail_key, category, sort_order, created_at, updated_at, realm)
+           VALUES (?, ?, ?, 'open', NULL, NULL, 'Links', ?, ?, ?, ?)`
+        )
+        .bind(id, name.slice(0, 200), url.slice(0, 2000), maxPos?.n ?? 0, ts, ts, realm)
+        .run();
+      return c.json({ kind: 'link', id, title: name, dueDate: null, path: '/links' }, 201);
+    }
+  }
+  return c.json({ error: 'kind must be task, waiting, project, list, jot or link' }, 400);
+});
+
 type Decision = { decision: string; text?: string; contactId?: string | null; dueDate?: string | null };
 
 /** Turn one next step into a task / Waiting item / dismissal (or undo). */
@@ -1502,7 +1631,14 @@ async function decideAction(db: D1Database, a: ActionRow, b: Decision): Promise<
   }
   let entityId: string | null = null;
   // A due date from the decision, else the one the record gave the item.
-  const due = b.dueDate && DATE_RE.test(b.dueDate) ? b.dueDate : b.dueDate === undefined && a.due_date && DATE_RE.test(a.due_date) ? a.due_date : null;
+  const due =
+    b.dueDate && DATE_RE.test(b.dueDate)
+      ? b.dueDate
+      : b.dueDate === undefined && a.due_date && DATE_RE.test(a.due_date)
+        ? a.due_date
+        : b.decision === 'task' && b.dueDate === undefined
+          ? addDays(easternToday(), 1) // Mike's default: tomorrow
+          : null;
   if (b.decision === 'task') {
     let parentId: string | null = null;
     if (a.series_key.startsWith('ms-')) {
@@ -1699,8 +1835,53 @@ async function buildPrep(db: D1Database, m: EnrichedMeeting, realm: RealmFilter)
       .bind(m.id)
       .all<ItemRow>(),
   ]);
+  // Since Last Time: the previous brief in this series — every next step it
+  // recorded (anyone's) and what Mike made from those notes by highlighting
+  // (with done / open), for the update he gives this time.
+  let carryForward: null | {
+    meetingId: string;
+    start: string;
+    title: string;
+    noteId: string | null;
+    tldr: string[];
+    commitments: { text: string; owner: string; isMine: boolean; due: string | null; status: string }[];
+    myFollowUps: { id: string; title: string; kind: string; done: boolean; dueDate: string | null }[];
+  } = null;
+  const prevRec = await db
+    .prepare(`SELECT * FROM meeting_summaries WHERE series_key = ? AND source = 'record' AND kind = 'debrief' AND occurrence_start < ? AND meeting_id != ? ORDER BY occurrence_start DESC LIMIT 1`)
+    .bind(key, m.start, m.id)
+    .first<SummaryRow>();
+  if (prevRec) {
+    const { results: prevActs } = await db.prepare(`SELECT * FROM meeting_actions WHERE summary_id = ? ORDER BY created_at, rowid`).bind(prevRec.id).all<ActionRow>();
+    const { results: ownNotes } = await db.prepare(`SELECT note_entity_id FROM meeting_notes WHERE meeting_id = ?`).bind(prevRec.meeting_id).all<{ note_entity_id: string }>();
+    const noteIds = [prevRec.note_entity_id, ...(ownNotes ?? []).map((n) => n.note_entity_id)].filter((x): x is string => !!x);
+    const made = await inChunks(noteIds, async (ch, ph) =>
+      (
+        await db
+          .prepare(`SELECT id, title, status, due_date, type, is_list, is_jot, waiting_source_id FROM entities WHERE source_note_id IN (${ph}) ORDER BY created_at`)
+          .bind(...ch)
+          .all<{ id: string; title: string; status: string | null; due_date: string | null; type: string; is_list: number; is_jot: number; waiting_source_id: string | null }>()
+      ).results ?? []
+    );
+    carryForward = {
+      meetingId: prevRec.meeting_id,
+      start: prevRec.occurrence_start,
+      title: prevRec.meeting_title,
+      noteId: prevRec.note_entity_id,
+      tldr: recordOf(prevRec)?.tldr ?? [],
+      commitments: (prevActs ?? []).map((a) => ({ text: a.text, owner: a.is_mine ? 'Me' : a.owner_name ?? 'Unowned', isMine: a.is_mine === 1, due: a.due_date ?? null, status: a.status })),
+      myFollowUps: made.map((e) => ({
+        id: e.id,
+        title: e.title,
+        kind: e.waiting_source_id ? 'waiting' : e.type === 'project' ? (e.is_list ? 'list' : 'project') : e.is_jot ? 'jot' : 'task',
+        done: e.status === 'done',
+        dueDate: e.due_date,
+      })),
+    };
+  }
   void realm;
   return {
+    carryForward,
     meeting: m,
     agendaNoteId: noteRow?.note_entity_id ?? null,
     agendaNoteText: noteRow?.search_text ?? null,

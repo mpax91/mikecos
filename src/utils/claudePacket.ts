@@ -54,6 +54,14 @@ export function meetingPacket(meeting: MeetingItem & { date?: string }, prep: Me
     }
   }
 
+  const cf = prep?.carryForward;
+  if (cf) {
+    out.push('', `Since last time (${day(cf.start)}) — report follow-through on these:`);
+    if (cf.tldr.length) out.push('Last time in short:', bullet(cf.tldr));
+    if (cf.myFollowUps.length) out.push('What I did from those notes:', bullet(cf.myFollowUps.map((f) => `[${f.done ? 'done' : 'open'}] ${f.title.replace(/^Check Back: /, 'Waiting on: ')}`)));
+    if (cf.commitments.length) out.push('Next steps recorded last time:', bullet(cf.commitments.slice(0, 40).map((x) => `[${x.owner}] ${x.text}${x.due ? ` (due ${x.due})` : ''}`)));
+  }
+
   const earlier = (prep?.openActions ?? []).filter((a) => a.meetingId !== meeting.id);
   if (earlier.length) out.push('', 'Still open from earlier meetings:', bullet(earlier.slice(0, 25).map(actionLine)));
   const stillOpen = prep?.stillOpenItems ?? [];

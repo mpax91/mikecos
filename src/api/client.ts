@@ -548,6 +548,9 @@ export const api = {
   listBriefThreads: () => request<{ threads: (MeetingItem & { date?: string })[] }>('/api/work/threads'),
   getTaskAssists: (entityId: string) => request<{ assists: MeetingAssist[] }>(`/api/work/assists?entityId=${encodeURIComponent(entityId)}`),
   deleteContactContext: (id: string) => request<{ ok: true }>(`/api/work/context/${id}`, { method: 'DELETE' }),
+  /** Highlighted text in a note → a task (due tomorrow) / waiting / project / list item / jot / link. */
+  noteSelectionAction: (body: { noteId: string; text: string; kind: string; listId?: string }) =>
+    request<{ kind: string; id: string; title: string; dueDate: string | null; path: string; listTitle?: string }>('/api/work/from-note', { method: 'POST', body: JSON.stringify(body) }),
   getWorkPeopleTable: () => request<{ count: number; markdown: string }>('/api/work/people-table'),
   listMeetingDocs: (seriesKey: string) => request<{ docs: MeetingDoc[] }>(`/api/work/docs?seriesKey=${encodeURIComponent(seriesKey)}`),
   addMeetingDoc: (seriesKey: string, url: string, title?: string) =>

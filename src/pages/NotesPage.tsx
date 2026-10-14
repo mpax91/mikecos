@@ -267,6 +267,7 @@ export function NotesPage() {
               content={selected.content}
               onSave={handleContentSave}
               highlightQuery={(location.state as { highlight?: string } | null)?.highlight}
+              noteId={selected.id}
             />
           </div>
         )}
