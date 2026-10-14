@@ -7,6 +7,7 @@ import { ConfirmModal } from '../components/ConfirmModal';
 import { KebabMenu } from '../components/KebabMenu';
 import { useTabs, useReportTabMeta } from '../contexts/TabsContext';
 import { ContactsAskPanel } from './ContactsAskPanel';
+import { useRealm } from '../contexts/RealmContext';
 import { autoLabelClass, displayLabels, VOTER_LABEL } from '../utils/contactLabels';
 
 const CIRCLES: { value: ContactCircle; label: string }[] = [
@@ -111,6 +112,9 @@ export function ContactsListPage() {
   // for. This toggle is the escape hatch when he does want to look someone
   // up in the roll itself.
   const [includeVoters, setIncludeVoters] = useState(false);
+  // Work mode = Birches contacts only: no voter roll, no personal chips.
+  const { realm } = useRealm();
+  const isWork = realm === 'work';
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [deleting, setDeleting] = useState<Contact | null>(null);
@@ -123,11 +127,11 @@ export function ContactsListPage() {
         circle: circleFilter ?? undefined,
         label: labelFilter ?? undefined,
         remindersOnly: remindersOnly || undefined,
-        includeVoters: includeVoters || undefined,
+        includeVoters: (includeVoters && !isWork) || undefined,
       })
       .then(setContacts)
       .catch((e) => setError(String(e)));
-  }, [query, circleFilter, labelFilter, remindersOnly, includeVoters]);
+  }, [query, circleFilter, labelFilter, remindersOnly, includeVoters, isWork]);
 
   useEffect(() => {
     load();
@@ -251,7 +255,7 @@ export function ContactsListPage() {
             🔔 {reminderCount} need{reminderCount === 1 ? 's' : ''} a check-in
           </button>
         )}
-        {quiet.length > 0 && (
+        {quiet.length > 0 && !isWork && (
           <button
             type="button"
             className={`chip${quietOnly ? ' is-active' : ''}`}
@@ -261,6 +265,7 @@ export function ContactsListPage() {
             📞 {quiet.length} gone quiet
           </button>
         )}
+        {!isWork && (
         <button
           type="button"
           className={`chip contacts-filters__voters${includeVoters ? ' is-active' : ''}`}
@@ -269,6 +274,7 @@ export function ContactsListPage() {
         >
           🗳️ Voter Roll {includeVoters ? 'Shown' : 'Hidden'}
         </button>
+        )}
       </div>
 
       {backupStaleSince !== null && (

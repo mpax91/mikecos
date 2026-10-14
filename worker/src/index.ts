@@ -1050,13 +1050,19 @@ const MERCH_SQL = "m.contact_id = contacts.id AND upper(COALESCE(m.status, '')) 
 // entries have none) with how many people carry it, A–Z. Drives
 // the Contacts filter bar and the label picker. Registered before :id.
 app.get('/api/contacts/labels', async (c) => {
+  const realm = realmOf(c);
   const { results } = await c.env.DB.prepare(
     `SELECT j.value AS label, COUNT(*) AS n FROM contacts, json_each(contacts.labels) j
-     WHERE contacts.source != 'voter_file' GROUP BY lower(j.value) ORDER BY label COLLATE NOCASE`
+     WHERE contacts.source != 'voter_file'${await contactRealmSql(c.env.DB, realm, 'contacts')} GROUP BY lower(j.value) ORDER BY label COLLATE NOCASE`
   ).all<{ label: string; n: number }>();
   const labels = (results ?? [])
     .filter((r) => ![VOTER_LABEL, BEE_LABEL, MERCH_LABEL].some((a) => a.toLowerCase() === r.label.toLowerCase()))
     .map((r) => ({ label: r.label, count: r.n }));
+  // Work mode: only labels Birches contacts carry — no Voter / Bee / Merch.
+  if (realm === 'work') {
+    labels.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base', numeric: true }));
+    return c.json({ labels });
+  }
   // Automatic "Voter" label: everyone with a voter record (the roll plus
   // Mike's merged contacts). Picking it in the dropdown turns the Voter
   // Roll on, so the count matches what the list then shows.
