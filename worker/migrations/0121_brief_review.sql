@@ -25,14 +25,16 @@ UPDATE entities
    SET title =
      substr(title, -4) || '.' || substr(title, -10, 2) || '.' || substr(title, -7, 2) || ' | ' ||
      CASE
-       WHEN title LIKE 'Meeting Notes · %' THEN ''
-       WHEN title LIKE 'Meeting Prep · %' THEN 'Prep · '
+       WHEN substr(title, 1, 16) = 'Meeting Notes · ' THEN ''
+       WHEN substr(title, 1, 15) = 'Meeting Prep · ' THEN 'Prep · '
        ELSE substr(title, 1, instr(title, ' · ') - 1) || ' · '
      END ||
      substr(title, instr(title, ' · ') + 3, length(title) - (instr(title, ' · ') + 2) - 13)
  WHERE type = 'note'
    AND id IN (SELECT note_entity_id FROM meeting_summaries WHERE note_entity_id IS NOT NULL AND source != 'own_note')
-   AND title GLOB '* · * · [0-9][0-9]/[0-9][0-9]/[0-9][0-9][0-9][0-9]';
+   AND instr(title, ' · ') > 0
+   AND substr(title, -13, 3) = ' · '
+   AND substr(title, -8, 1) = '/' AND substr(title, -5, 1) = '/';
 
 -- A Review task for briefs already filed (due the day after the meeting).
 INSERT INTO entities (id, type, title, content, parent_id, is_top_level, status, position, due_date, last_touched, created_at, updated_at, search_text, realm)
