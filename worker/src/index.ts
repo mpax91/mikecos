@@ -73,7 +73,7 @@ import { metaSyncDue, syncMeta } from './bee/meta';
 import { contactsAssistantRouter } from './contactsAssistant';
 import { betsEnrichmentRouter } from './betsEnrichment';
 import { cascadeRealm, contactRealmSql, inheritRealmFromParent, realmOf, realmSql, stampRealm, createRealm, workLabel, type RealmFilter } from './work/realm';
-import { workRouter, enrichMeetings, seriesFeedSource, setMeetingLoader, meetingNoteStart } from './work/router';
+import { workRouter, enrichMeetings, seriesFeedSource, setMeetingLoader, meetingNoteStart, ensureMeetingPrepTasks } from './work/router';
 import { cleanDateParts, importantDates, isAnniversaryLabel, normalizeEventLabel, parseYearlessDate, type ContactEvent, type DateParts } from './contactDates';
 import { buildVoterInsight, ELECTION_CODE_RE, splitVoterDiffs, titleCaseVoterText, voterDiffs, voterKeyOf, type VoterDiff } from './voterInsight';
 
@@ -8692,6 +8692,7 @@ const BET_PROMO_PURGE_MINUTE = 10; // even, same reason
 const CLOUD_KEEPALIVE_MINUTE = 30; // even, same reason
 const STATEMENTS_SCAN_MINUTE = 20; // even, same reason
 const COMMS_SCAN_MINUTE = 40; // even, same reason — Calls & Texts (phone backup)
+const MEETING_PREP_MINUTE = 4; // even, same reason — day-of Prep tasks for recurring Work meetings
 
 /** Retries the Airing check if nothing has succeeded since today's
  * scheduled 09:30 UTC run. Waits until 10:30 UTC before treating "no row
@@ -8794,6 +8795,15 @@ export default {
           await keepCloudTokensAlive(env);
         } catch (err) {
           console.error('Cloud token keep-alive failed', err);
+        }
+      }
+      // Hourly: today's "Prep: <meeting>" tasks for recurring Work meetings
+      // (idempotent — one per occurrence; also made when Today loads).
+      if (new Date(event.scheduledTime).getUTCMinutes() === MEETING_PREP_MINUTE) {
+        try {
+          await ensureMeetingPrepTasks(env.DB);
+        } catch (err) {
+          console.error('Meeting prep tasks failed', err);
         }
       }
       // Calls & Texts: hourly when a newer phone backup landed in Drive, or

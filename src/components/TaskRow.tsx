@@ -6,6 +6,7 @@ import { api, normalizeUrl } from '../api/client';
 import { formatRelativeTime } from '../utils/formatRelativeTime';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { RealmChip } from './RealmSwitch';
+import { MeetingPrepCopyButton } from './MeetingPrepCopyButton';
 
 function parseFileMeta(entity: Entity): FileMeta | null {
   if (!entity.content) return null;
@@ -187,6 +188,7 @@ export function TaskRow({
         </span>
         {entity.blocked_reason != null && <span className="task-row__blocked" title={entity.blocked_reason || 'Blocked'}>Blocked</span>}
         {!entity.parent_id && <RealmChip realm={entity.realm} />}
+        {prepAction(entity.content) && !showDone && <MeetingPrepCopyButton meetingId={prepAction(entity.content)!.meetingId} date={prepAction(entity.content)!.date} />}
         {noteAction(entity.content) && (
           <Link to={`/notes/${noteAction(entity.content)}`} className="task-row__brief-link" onClick={(e) => e.stopPropagation()}>
             Open Notes →
@@ -277,6 +279,17 @@ export function TaskRow({
       )}
     </div>
   );
+}
+
+/** A day-of Prep task carries `{ action: 'meeting-prep', meetingId, date }`. */
+function prepAction(content: string | null): { meetingId: string; date: string } | null {
+  if (!content || !content.includes('meeting-prep')) return null;
+  try {
+    const m = JSON.parse(content) as { action?: string; meetingId?: string; date?: string };
+    return m.action === 'meeting-prep' && m.meetingId && m.date ? { meetingId: m.meetingId, date: m.date } : null;
+  } catch {
+    return null;
+  }
 }
 
 /** A brief's Review task carries `{ action: 'open-note', noteId }`. */

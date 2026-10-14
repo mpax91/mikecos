@@ -30,8 +30,11 @@ export interface TaskMeta {
   description?: string;
   /** The Monday / Friday Work tasks open their brief; a brief's next-day
    * Review task opens its note. */
-  action?: 'week-plan' | 'week-review' | 'open-note';
+  action?: 'week-plan' | 'week-review' | 'open-note' | 'meeting-prep';
   noteId?: string;
+  /** meeting-prep: the meeting occurrence + its date. */
+  meetingId?: string;
+  date?: string;
 }
 
 export interface Entity {

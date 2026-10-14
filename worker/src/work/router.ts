@@ -1819,6 +1819,51 @@ workRouter.post('/meetings/:meetingId/accept-mine', async (c) => {
   return c.json({ accepted: (results ?? []).length, actions: await actionsJson(db, acts ?? []) });
 });
 
+
+// ---------------------------------------------------------------------------
+// Day-of prep tasks (migration 0123): every recurring Work meeting today —
+// a hand-entered series with a repeat, a recurring invite, or a meeting with
+// an earlier brief under the same name — gets "Prep: <title>" due today.
+// The task row's button copies the Prep packet for the work Claude.
+// ---------------------------------------------------------------------------
+
+export const PREP_STEPS = 'Tap 📋 Copy Prep for Claude, paste it into your work Claude Project, and read "Your Update" before the meeting.';
+
+export async function ensureMeetingPrepTasks(db: D1Database): Promise<number> {
+  const today = easternToday();
+  const meetings = await enrichMeetings(db, await loadMeetings(db, today, today), 'work');
+  const nowIso = now();
+  let made = 0;
+  for (const m of meetings) {
+    if (m.allDay || m.end <= nowIso) continue;
+    const have = await db.prepare(`SELECT entity_id FROM meeting_prep_tasks WHERE meeting_id = ?`).bind(m.id).first();
+    if (have) continue;
+    let recurring = m.recurring;
+    if (!recurring) {
+      const since = new Date(Date.parse(m.start) - 42 * 86_400_000).toISOString();
+      recurring = !!(await db
+        .prepare(`SELECT 1 FROM meeting_summaries WHERE source = 'record' AND meeting_title = ? COLLATE NOCASE AND occurrence_start < ? AND occurrence_start > ? LIMIT 1`)
+        .bind(m.title, m.start, since)
+        .first());
+    }
+    if (!recurring) continue;
+    const id = uid();
+    const title = `Prep: ${m.title}`.slice(0, 300);
+    const pos = await db.prepare(`SELECT COALESCE(MAX(position), -1) + 1 AS n FROM entities WHERE parent_id IS NULL AND type = 'task'`).first<{ n: number }>();
+    await db.batch([
+      db
+        .prepare(
+          `INSERT INTO entities (id, type, title, content, parent_id, is_top_level, status, position, due_date, last_touched, created_at, updated_at, search_text, realm)
+           VALUES (?, 'task', ?, ?, NULL, 1, 'open', ?, ?, ?, ?, ?, ?, 'work')`
+        )
+        .bind(id, title, JSON.stringify({ action: 'meeting-prep', meetingId: m.id, date: today, description: PREP_STEPS }), pos?.n ?? 0, today, nowIso, nowIso, nowIso, title),
+      db.prepare(`INSERT INTO meeting_prep_tasks (meeting_id, entity_id, created_at) VALUES (?, ?, ?)`).bind(m.id, id, nowIso),
+    ]);
+    made++;
+  }
+  return made;
+}
+
 // ---------------------------------------------------------------------------
 // Prep: one meeting, or every meeting on a day (morning-of)
 // ---------------------------------------------------------------------------
@@ -2021,6 +2066,8 @@ async function buildPrep(db: D1Database, m: EnrichedMeeting, realm: RealmFilter)
 
 workRouter.get('/prep', async (c) => {
   const date = c.req.query('date') || easternToday();
+  // Today loading its preps also makes sure today's Prep tasks exist.
+  if (date === easternToday() && !c.req.query('id')) await ensureMeetingPrepTasks(c.env.DB).catch((e) => console.error('prep tasks failed', e));
   const realm = realmOf(c);
   const meetings = await enrichMeetings(c.env.DB, await loadMeetings(c.env.DB, date, date), realm);
   const id = c.req.query('id');

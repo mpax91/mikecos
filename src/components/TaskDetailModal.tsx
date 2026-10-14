@@ -7,6 +7,7 @@ import { ContactPicker } from './ContactPicker';
 import { RealmToggle } from './RealmSwitch';
 import { RenameModal } from './RenameModal';
 import { LinkModal } from './LinkModal';
+import { MeetingPrepCopyButton } from './MeetingPrepCopyButton';
 
 const DESCRIPTION_DEBOUNCE_MS = 800;
 const TITLE_DEBOUNCE_MS = 500;
@@ -296,6 +297,9 @@ export function TaskDetailModal({
           </div>
         </div>
 
+        {entity && parseTaskMeta(entity.content).action === 'meeting-prep' && parseTaskMeta(entity.content).meetingId && (
+          <MeetingPrepCopyButton meetingId={parseTaskMeta(entity.content).meetingId!} date={parseTaskMeta(entity.content).date ?? ''} className="btn task-panel__brief-btn" />
+        )}
         {entity && parseTaskMeta(entity.content).action === 'open-note' && parseTaskMeta(entity.content).noteId && (
           <Link className="btn task-panel__brief-btn" to={`/notes/${parseTaskMeta(entity.content).noteId}`} onClick={onClose}>
             📝 Open the Notes
