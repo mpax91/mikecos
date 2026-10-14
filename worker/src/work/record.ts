@@ -43,6 +43,7 @@ export interface RecordMaterial {
   name: string;
   type: string;
   takeaway: string;
+  url: string | null;
 }
 /** How last time's next steps went (Claude compares the carry-forward in
  * Mike's Copy for Claude packet with this meeting's notes). */
@@ -311,7 +312,8 @@ export function normalizeRecord(raw: unknown): MeetingRecord | string {
       const x = m as Record<string, unknown>;
       const name = str(x.name, 300);
       if (!name) continue;
-      materials.push({ name, type: str(x.type, 20).toLowerCase() || 'other', takeaway: str(x.takeaway, 1000) });
+      const url = str(x.url ?? x.link, 2000);
+      materials.push({ name, type: str(x.type, 20).toLowerCase() || 'other', takeaway: str(x.takeaway, 1000), url: /^https?:\/\//i.test(url) ? url : null });
     }
   }
 
@@ -428,19 +430,23 @@ export function extractRecord(text: string): Extracted {
 // Markdown → TipTap (the note body) and → plain text (search)
 // ---------------------------------------------------------------------------
 
-type Mark = { type: 'bold' } | { type: 'italic' } | { type: 'code' };
+type Mark = { type: 'bold' } | { type: 'italic' } | { type: 'code' } | { type: 'link'; attrs: { href: string; target: string; rel: string } };
+const linkMark = (href: string): Mark => ({ type: 'link', attrs: { href, target: '_blank', rel: 'noopener noreferrer nofollow' } });
 type TextNode = { type: 'text'; text: string; marks?: Mark[] };
 
-/** **bold**, *italic*, `code` — enough for Claude's briefs. */
+/** **bold**, *italic*, `code`, [text](url) and bare https:// links. */
 function inline(s: string): TextNode[] {
   const out: TextNode[] = [];
-  const re = /(\*\*[^*]+\*\*|__[^_]+__|`[^`]+`|\*[^*\s][^*]*\*)/g;
+  const re = /(\[[^\]]+\]\(https?:\/\/[^)\s]+\)|https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"]|\*\*[^*]+\*\*|__[^_]+__|`[^`]+`|\*[^*\s][^*]*\*)/g;
   let last = 0;
   let mm: RegExpExecArray | null;
   while ((mm = re.exec(s))) {
     if (mm.index > last) out.push({ type: 'text', text: s.slice(last, mm.index) });
     const t = mm[0];
-    if (t.startsWith('**') || t.startsWith('__')) out.push({ type: 'text', text: t.slice(2, -2), marks: [{ type: 'bold' }] });
+    const md = /^\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)$/.exec(t);
+    if (md) out.push({ type: 'text', text: md[1], marks: [linkMark(md[2])] });
+    else if (/^https?:\/\//i.test(t)) out.push({ type: 'text', text: t, marks: [linkMark(t)] });
+    else if (t.startsWith('**') || t.startsWith('__')) out.push({ type: 'text', text: t.slice(2, -2), marks: [{ type: 'bold' }] });
     else if (t.startsWith('`')) out.push({ type: 'text', text: t.slice(1, -1), marks: [{ type: 'code' }] });
     else out.push({ type: 'text', text: t.slice(1, -1), marks: [{ type: 'italic' }] });
     last = mm.index + t.length;
@@ -509,6 +515,14 @@ export function markdownToTiptap(md: string): string {
   if (inFence && fence.length) content.push({ type: 'codeBlock', attrs: { language: null }, content: [{ type: 'text', text: fence.join('\n') }] });
   flush();
   return JSON.stringify({ type: 'doc', content: content.length ? content : [para('')] });
+}
+
+/** Every link in a brief: [text](url) (text kept as the name) and bare URLs. */
+export function briefLinks(md: string): { url: string; name: string | null }[] {
+  const out = new Map<string, string | null>();
+  for (const m of md.matchAll(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g)) out.set(m[2], m[1].trim());
+  for (const m of md.replace(/\[[^\]]+\]\([^)]*\)/g, ' ').matchAll(/https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"]/g)) if (!out.has(m[0])) out.set(m[0], null);
+  return [...out].map(([url, name]) => ({ url, name }));
 }
 
 export function markdownToPlain(md: string): string {

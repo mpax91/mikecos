@@ -4,7 +4,7 @@ import type { ParsedMeeting } from '../ics';
 import { isMe, parseMeetingSummary, type ParsedAction } from './gemini';
 import { firstName, meetingNoteTemplate, noteLines, scanNoteActions } from './noteScan';
 import { contactRealmSql, realmMatches, realmOf, realmSql, workLabel, type Realm, type RealmFilter } from './realm';
-import { extractRecord, markdownToPlain, markdownToTiptap, threadSourceLabel, type MeetingRecord } from './record';
+import { briefLinks, extractRecord, markdownToPlain, markdownToTiptap, threadSourceLabel, type MeetingRecord } from './record';
 
 /** Work features (migration 0106) — mounted at /api/work.
  *
@@ -968,8 +968,8 @@ workRouter.post('/meetings/:meetingId/summaries', async (c) => {
   stmts.push(
     db
       .prepare(
-        `INSERT INTO entities (id, type, title, content, parent_id, is_top_level, status, position, due_date, last_touched, created_at, updated_at, search_text, realm)
-         VALUES (?, 'task', ?, ?, NULL, 1, 'open', ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO entities (id, type, title, content, parent_id, is_top_level, status, position, due_date, due_position, last_touched, created_at, updated_at, search_text, realm)
+         VALUES (?, 'task', ?, ?, NULL, 1, 'open', ?, ?, ${REVIEW_DUE_POSITION}, ?, ?, ?, ?, ?)`
       )
       .bind(reviewId, reviewTitle, JSON.stringify({ action: 'open-note', noteId }), pos?.n ?? 0, addDays(date, 1) > today ? addDays(date, 1) : today, ts, ts, ts, reviewTitle, realm),
     db.prepare(`UPDATE meeting_summaries SET review_task_id = ? WHERE id = ?`).bind(reviewId, id)
@@ -1110,6 +1110,11 @@ interface RecordTarget {
   allDay?: boolean;
 }
 
+/** Day lists sort by due_position first: Prep tasks, then Review tasks, sit
+ * at the top of their day (Mike, 2026-10-13). */
+export const PREP_DUE_POSITION = -200;
+export const REVIEW_DUE_POSITION = -100;
+
 /** "2026.10.13 | Weekly Growth Team Lead Meeting" (Mike, 2026-10-13). */
 export const briefNoteTitle = (ymd: string, name: string) => `${ymd.replace(/-/g, '.')} | ${name}`.slice(0, 300);
 
@@ -1158,8 +1163,8 @@ async function importRecord(db: D1Database, rec: MeetingRecord, note: string, ra
     stmts.push(
       db
         .prepare(
-          `INSERT INTO entities (id, type, title, content, parent_id, is_top_level, status, position, due_date, last_touched, created_at, updated_at, search_text, realm)
-           VALUES (?, 'task', ?, ?, NULL, 1, 'open', ?, ?, ?, ?, ?, ?, ?)`
+          `INSERT INTO entities (id, type, title, content, parent_id, is_top_level, status, position, due_date, due_position, last_touched, created_at, updated_at, search_text, realm)
+           VALUES (?, 'task', ?, ?, NULL, 1, 'open', ?, ?, ${REVIEW_DUE_POSITION}, ?, ?, ?, ?, ?)`
         )
         .bind(reviewId, title.slice(0, 300), JSON.stringify({ action: 'open-note', noteId }), pos?.n ?? 0, due, ts, ts, ts, title, t.realm)
     );
@@ -1226,7 +1231,35 @@ async function importRecord(db: D1Database, rec: MeetingRecord, note: string, ra
   );
   for (let i = 0; i < stmts.length; i += 50) await db.batch(stmts.slice(i, i + 50));
   await collectKnowledge(db, body, briefNoteTitle(date, label), t.realm).catch((e) => console.error('knowledge collect failed', e));
+  if (rec.kind !== 'thread') await attachBriefDocs(db, t.seriesKey, rec, body).catch((e) => console.error('brief docs failed', e));
   return { summaryId: id, existing: false };
+}
+
+/** Links from a brief land in the meeting's Documents (every occurrence
+ * shows them): each material's url, plus any Google Doc / Sheet / Slides /
+ * Drive link in the text. Already-saved links are skipped. */
+async function attachBriefDocs(db: D1Database, seriesKey: string, rec: MeetingRecord, md: string): Promise<void> {
+  const wanted = new Map<string, string>();
+  for (const m of rec.materials) {
+    const u = m.url ? cleanDocUrl(m.url) : null;
+    if (u) wanted.set(u, m.name);
+  }
+  for (const l of briefLinks(md)) {
+    const u = cleanDocUrl(l.url);
+    if (u && docKind(u) !== 'link' && !wanted.has(u)) wanted.set(u, l.name ?? '');
+  }
+  if (!wanted.size) return;
+  const { results } = await db.prepare(`SELECT url FROM meeting_docs WHERE series_key = ?`).bind(seriesKey).all<{ url: string }>();
+  const have = new Set((results ?? []).map((r) => r.url));
+  const pos = (await db.prepare('SELECT COALESCE(MAX(position), -1) + 1 AS n FROM meeting_docs WHERE series_key = ?').bind(seriesKey).first<{ n: number }>())?.n ?? 0;
+  const ts = now();
+  const stmts = [...wanted]
+    .filter(([u]) => !have.has(u))
+    .slice(0, 10)
+    .map(([u, name], i) =>
+      db.prepare('INSERT INTO meeting_docs (id, series_key, title, url, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(uid(), seriesKey, name.slice(0, 200), u, pos + i, ts, ts)
+    );
+  if (stmts.length) await db.batch(stmts);
 }
 
 /** The brief's "Update Project Knowledge" section, if any. */
@@ -1993,8 +2026,8 @@ export async function ensureMeetingPrepTasks(db: D1Database): Promise<number> {
     await db.batch([
       db
         .prepare(
-          `INSERT INTO entities (id, type, title, content, parent_id, is_top_level, status, position, due_date, last_touched, created_at, updated_at, search_text, realm)
-           VALUES (?, 'task', ?, ?, NULL, 1, 'open', ?, ?, ?, ?, ?, ?, 'work')`
+          `INSERT INTO entities (id, type, title, content, parent_id, is_top_level, status, position, due_date, due_position, last_touched, created_at, updated_at, search_text, realm)
+           VALUES (?, 'task', ?, ?, NULL, 1, 'open', ?, ?, ${PREP_DUE_POSITION}, ?, ?, ?, ?, 'work')`
         )
         .bind(id, title, JSON.stringify({ action: 'meeting-prep', meetingId: m.id, date: today, description: PREP_STEPS }), pos?.n ?? 0, today, nowIso, nowIso, nowIso, title),
       db.prepare(`INSERT INTO meeting_prep_tasks (meeting_id, entity_id, created_at) VALUES (?, ?, ?)`).bind(m.id, id, nowIso),
