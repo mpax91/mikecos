@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { Editor } from '@tiptap/react';
 import { api } from '../api/client';
-import type { ListItem } from '../api/types';
+import type { ListItem, PersonRef } from '../api/types';
+import { ContactPicker } from './ContactPicker';
 
 /** Highlight text in a note → do something with it (Mike, 2026-10-13):
  * a task due tomorrow, a Waiting check-back, a project, a list item, a jot,
@@ -10,10 +11,10 @@ import type { ListItem } from '../api/types';
  * meeting's prep can show what came of last time's notes), and the text is
  * highlighted in the note so it reads as handled. */
 
-type Kind = 'task' | 'waiting' | 'project' | 'list' | 'jot' | 'link';
-type Done = { kind: Kind; title: string; path: string; dueDate: string | null; listTitle?: string };
+type Kind = 'task' | 'waiting' | 'project' | 'list' | 'person' | 'jot' | 'link';
+type Done = { kind: Kind; title: string; path: string; dueDate: string | null; listTitle?: string; contactName?: string };
 
-const LABEL: Record<Kind, string> = { task: '✓ Task', waiting: '⏳ Waiting', project: '📁 Project', list: '☑️ List', jot: '🗒️ Jot', link: '🔗 Link' };
+const LABEL: Record<Kind, string> = { task: '✓ Task', waiting: '⏳ Waiting', project: '📁 Project', list: '☑️ List', person: '👤 Person', jot: '🗒️ Jot', link: '🔗 Link' };
 const fmtDue = (d: string) => {
   const [y, m, dd] = d.split('-').map(Number);
   return new Date(y, m - 1, dd).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
@@ -23,6 +24,7 @@ const URL_RE = /https?:\/\/\S+/i;
 export function NoteSelectionMenu({ editor, noteId, container }: { editor: Editor; noteId: string; container: HTMLElement | null }) {
   const [lists, setLists] = useState<ListItem[] | null>(null);
   const [picking, setPicking] = useState(false);
+  const [pickingPerson, setPickingPerson] = useState(false);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<Done | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -35,6 +37,7 @@ export function NoteSelectionMenu({ editor, noteId, container }: { editor: Edito
     if (lastSel.current !== selKey) {
       lastSel.current = selKey;
       setPicking(false);
+      if (text) setPickingPerson(false);
       setError(null);
       if (text) setDone(null);
     }
@@ -47,7 +50,8 @@ export function NoteSelectionMenu({ editor, noteId, container }: { editor: Edito
     return () => window.clearTimeout(t);
   }, [done]);
 
-  const show = (text.length >= 2 && editor.isFocused) || !!done;
+  // The person picker takes focus from the editor; the selection stays.
+  const show = (text.length >= 2 && (editor.isFocused || pickingPerson)) || !!done;
   if (!show || !container) return null;
 
   // Place under the end of the selection, inside the content area.
@@ -62,15 +66,16 @@ export function NoteSelectionMenu({ editor, noteId, container }: { editor: Edito
     return null;
   }
 
-  async function act(kind: Kind, listId?: string) {
+  async function act(kind: Kind, listId?: string, contactId?: string) {
     setBusy(true);
     setError(null);
     try {
-      const r = await api.noteSelectionAction({ noteId, text, kind, listId });
+      const r = await api.noteSelectionAction({ noteId, text, kind, listId, contactId });
       // Mark it handled in the note, then drop the selection.
       editor.chain().setTextSelection({ from, to }).setHighlight().setTextSelection(to).run();
-      setDone({ kind, title: r.title, path: r.path, dueDate: r.dueDate, listTitle: r.listTitle });
+      setDone({ kind, title: r.title, path: r.path, dueDate: r.dueDate, listTitle: r.listTitle, contactName: r.contactName });
       setPicking(false);
+      setPickingPerson(false);
     } catch (e) {
       const msg = e instanceof Error ? e.message.replace(/^API \d+: /, '') : String(e);
       try {
@@ -98,12 +103,27 @@ export function NoteSelectionMenu({ editor, noteId, container }: { editor: Edito
             {done.kind === 'waiting' && `Waiting · check back ${done.dueDate ? fmtDue(done.dueDate) : 'in a week'}`}
             {done.kind === 'project' && 'Project created'}
             {done.kind === 'list' && `Added to ${done.listTitle ?? 'list'}`}
+            {done.kind === 'person' && `On ${done.contactName?.split(' ')[0] ?? 'their'}'s card for next time`}
             {done.kind === 'jot' && 'Saved as a jot'}
             {done.kind === 'link' && 'Link saved'}
           </span>
           <Link to={done.path} className="note-sel__open">
             Open →
           </Link>
+        </div>
+      ) : pickingPerson ? (
+        <div className="note-sel__person" onMouseDown={(e) => e.stopPropagation()}>
+          <ContactPicker
+            multiple={false}
+            value={[] as PersonRef[]}
+            placeholder="Raise with… (type a name)"
+            onChange={(people) => {
+              if (people[0]) void act('person', undefined, people[0].id);
+            }}
+          />
+          <button type="button" className="note-sel__btn note-sel__btn--quiet" onMouseDown={keep} onClick={() => setPickingPerson(false)}>
+            ‹ Back
+          </button>
         </div>
       ) : picking ? (
         <div className="note-sel__lists">
@@ -131,6 +151,9 @@ export function NoteSelectionMenu({ editor, noteId, container }: { editor: Edito
           ))}
           <button type="button" className="note-sel__btn" disabled={busy} onClick={openLists}>
             {LABEL.list}
+          </button>
+          <button type="button" className="note-sel__btn" disabled={busy} onClick={() => setPickingPerson(true)} title="Raise it with someone next time — goes on their card">
+            {LABEL.person}
           </button>
           <button type="button" className="note-sel__btn" disabled={busy} onClick={() => act('jot')}>
             {LABEL.jot}

@@ -4295,6 +4295,7 @@ export interface PrepPerson {
   company: string | null;
   headline: string | null;
   email?: string | null;
+  agenda?: PersonAgendaItem[];
   iOwe: WorkTask[];
   theyOwe: WorkTask[];
   pendingFromMeetings: number;
@@ -4333,7 +4334,19 @@ export interface MeetingPrep {
   } | null;
 }
 
+/** To raise with someone next time (migration 0122). */
+export interface PersonAgendaItem {
+  id: string;
+  contactId: string;
+  text: string;
+  noteId: string | null;
+  createdAt: string;
+  doneAt: string | null;
+}
+
 export interface PersonWork {
+  /** To Raise Next Time — open first, then ones checked off in the last week. */
+  agenda?: PersonAgendaItem[];
   /** What I've Learned — facts from pasted briefs (newest first). */
   learned?: { id: string; fact: string; date: string; meetingId: string; title: string | null; kind: string | null }[];
   iOwe: WorkTask[];

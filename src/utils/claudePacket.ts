@@ -45,6 +45,12 @@ export function meetingPacket(meeting: MeetingItem & { date?: string }, prep: Me
   const note = (prep?.agendaNoteText ?? '').trim();
   if (note) out.push('', 'My notes:', note.slice(0, 6000));
 
+  const raise = people.filter((p) => (p.agenda ?? []).some((a) => !a.doneAt));
+  if (raise.length) {
+    out.push('', 'I want to raise:');
+    for (const p of raise) out.push(`- With ${p.name}: ${(p.agenda ?? []).filter((a) => !a.doneAt).map((a) => a.text).join('; ')}`);
+  }
+
   const owed = people.filter((p) => p.iOwe.length || p.theyOwe.length);
   if (owed.length) {
     out.push('', 'Open with these people:');

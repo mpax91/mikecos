@@ -758,7 +758,12 @@ export function ContactDetailPage() {
 
       <VoterInsightSection records={contact.voterRecords} household={contact.householdMembers} />
 
-      <PersonWorkSection contactId={contact.id} firstName={contact.name.split(' ')[0]} fullName={contact.name} />
+      <PersonWorkSection
+        contactId={contact.id}
+        firstName={contact.name.split(' ')[0]}
+        fullName={contact.name}
+        alwaysShow={contact.realm === 'work' || /\bbirches\b/i.test(typeof contact.labels === 'string' ? contact.labels : JSON.stringify(contact.labels ?? []))}
+      />
       <ContactCommsSection comms={contact.comms} />
 
       <BeeContactSection bee={contact.bee} />

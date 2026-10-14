@@ -686,6 +686,28 @@ function MeetingSheet({ meeting, startPasting, onClose }: { meeting: SheetMeetin
                         {(p.title || p.company) && <span className="mtg-person__role">{[p.title, p.company].filter(Boolean).join(' · ')}</span>}
                         {p.lastMet && <span className="mtg-person__last">Last met {ago(p.lastMet)}</span>}
                       </div>
+                      {(p.agenda ?? []).length > 0 && (
+                        <div className="mtg-person__block">
+                          <div className="mtg-label">To Raise</div>
+                          <ul className="person-agenda">
+                            {(p.agenda ?? []).map((a) => (
+                              <li key={a.id} className={a.doneAt ? 'is-done' : ''}>
+                                <input
+                                  type="checkbox"
+                                  checked={!!a.doneAt}
+                                  title="Discussed"
+                                  aria-label="Discussed"
+                                  onChange={async (e) => {
+                                    const r = await api.updatePersonAgenda(a.id, { done: e.target.checked });
+                                    setPrep((pp) => (pp ? { ...pp, people: pp.people.map((x) => (x.id === p.id ? { ...x, agenda: (x.agenda ?? []).map((y) => (y.id === a.id ? r : y)) } : x)) } : pp));
+                                  }}
+                                />
+                                <span>{a.text}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
                       {p.iOwe.length > 0 && (
                         <div className="mtg-person__block">
                           <div className="mtg-label">You Owe</div>
@@ -708,7 +730,7 @@ function MeetingSheet({ meeting, startPasting, onClose }: { meeting: SheetMeetin
                           ))}
                         </div>
                       )}
-                      {p.iOwe.length === 0 && p.theyOwe.length === 0 && p.recentNotes.length === 0 && <div className="mtg-hint">Nothing open with {p.name.split(' ')[0]}.</div>}
+                      {!(p.agenda ?? []).length && p.iOwe.length === 0 && p.theyOwe.length === 0 && p.recentNotes.length === 0 && <div className="mtg-hint">Nothing open with {p.name.split(' ')[0]}.</div>}
                     </div>
                   ))}
                 </div>

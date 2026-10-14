@@ -20765,3 +20765,11 @@ button.today-page__add-meeting { border: none; background: none; padding: 0; cur
 .mtg-ft--in_progress { background: var(--color-postit-ghost); color: #7a5f12; }
 .mtg-ft--open { background: transparent; color: var(--color-accent-secondary); border: 1px solid currentColor; }
 .mtg-carry summary { cursor: pointer; font-size: 12.5px; color: var(--color-muted); margin: 6px 0; }
+.note-sel__person { display: flex; gap: 4px; align-items: flex-start; width: 100%; min-width: 260px; }
+.note-sel__person > *:first-child { flex: 1; min-width: 0; }
+.person-agenda { list-style: none; margin: 0 0 6px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.person-agenda li { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; line-height: 1.45; }
+.person-agenda li.is-done span { text-decoration: line-through; color: var(--color-muted); }
+.person-agenda input[type='checkbox'] { margin-top: 3px; flex: none; }
+.person-agenda__add { display: flex; gap: 6px; }
+.person-agenda__add input { flex: 1; min-width: 0; font-size: 13px; }

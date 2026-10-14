@@ -1185,7 +1185,63 @@ async function importRecord(db: D1Database, rec: MeetingRecord, note: string, ra
   }
 
   for (let i = 0; i < stmts.length; i += 50) await db.batch(stmts.slice(i, i + 50));
+  await collectKnowledge(db, body, briefNoteTitle(date, label), t.realm).catch((e) => console.error('knowledge collect failed', e));
   return { summaryId: id, existing: false };
+}
+
+/** The brief's "Update Project Knowledge" section, if any. */
+export function knowledgeSection(md: string): string | null {
+  const lines = md.split('\n');
+  const i = lines.findIndex((l) => /^#{1,6}\s*update project knowledge\s*:?\s*$/i.test(l.trim()));
+  if (i < 0) return null;
+  const out: string[] = [];
+  for (let j = i + 1; j < lines.length && !/^\s{0,3}#{1,6}\s/.test(lines[j]); j++) out.push(lines[j]);
+  const body = out.join('\n').trim();
+  return body || null;
+}
+
+export const KNOWLEDGE_NOTE_TITLE = 'Claude Project · Knowledge Updates';
+
+/** Every brief's "Update Project Knowledge" lines pile up in ONE Work note,
+ * so updating the work Claude Project's knowledge file is a weekly copy
+ * (or a "merge these" prompt), not a per-meeting chore. */
+async function collectKnowledge(db: D1Database, md: string, source: string, realm: Realm): Promise<void> {
+  const body = knowledgeSection(md);
+  if (!body) return;
+  const add = (JSON.parse(markdownToTiptap(`### ${source}\n${body}`)) as { content: unknown[] }).content;
+  const plain = markdownToPlain(`${source}\n${body}`);
+  const ts = now();
+  const id = await getSetting(db, 'knowledge_note_id', '');
+  const row = id ? await db.prepare(`SELECT id, content, search_text FROM entities WHERE id = ? AND type = 'note'`).bind(id).first<{ id: string; content: string | null; search_text: string | null }>() : null;
+  if (row) {
+    let doc: { type: string; content: unknown[] };
+    try {
+      doc = JSON.parse(row.content || '{"type":"doc","content":[]}');
+      if (!Array.isArray(doc.content)) doc.content = [];
+    } catch {
+      doc = { type: 'doc', content: [] };
+    }
+    doc.content.push(...add);
+    await db
+      .prepare(`UPDATE entities SET content = ?, search_text = ?, updated_at = ?, last_touched = ? WHERE id = ?`)
+      .bind(JSON.stringify(doc), `${row.search_text ?? ''}\n${plain}`.slice(-200_000), ts, ts, row.id)
+      .run();
+    return;
+  }
+  const intro = JSON.parse(
+    markdownToTiptap(
+      "New facts your briefs flagged for the work Claude Project. Once a week, paste this into the project with: \"Merge these updates into the knowledge file and give me the whole updated file\" — then replace the file and clear this note."
+    )
+  ) as { content: unknown[] };
+  const newId = uid();
+  await db
+    .prepare(
+      `INSERT INTO entities (id, type, title, content, parent_id, is_top_level, status, position, last_touched, created_at, updated_at, search_text, realm)
+       VALUES (?, 'note', ?, ?, NULL, 1, NULL, 0, ?, ?, ?, ?, ?)`
+    )
+    .bind(newId, KNOWLEDGE_NOTE_TITLE, JSON.stringify({ type: 'doc', content: [...intro.content, ...add] }), ts, ts, ts, plain, realm)
+    .run();
+  await db.prepare(`INSERT INTO work_settings (key, value) VALUES ('knowledge_note_id', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).bind(newId).run();
 }
 
 /** People a record names that aren't in Contacts (and Mike hasn't waved
@@ -1514,7 +1570,9 @@ workRouter.get('/people-table', async (c) => {
 const URL_RE = /https?:\/\/[^\s<>"')]+/i;
 
 workRouter.post('/from-note', async (c) => {
-  const b = await c.req.json<{ noteId?: string; text?: string; kind?: string; listId?: string }>().catch(() => ({}) as { noteId?: string; text?: string; kind?: string; listId?: string });
+  const b = await c.req
+    .json<{ noteId?: string; text?: string; kind?: string; listId?: string; contactId?: string }>()
+    .catch(() => ({}) as { noteId?: string; text?: string; kind?: string; listId?: string; contactId?: string });
   const db = c.env.DB;
   const text = (b.text ?? '')
     .replace(/\s+/g, ' ')
@@ -1577,6 +1635,15 @@ workRouter.post('/from-note', async (c) => {
         .run();
       return c.json({ kind: 'list', id, title, dueDate: null, listTitle: list.title, path: `/lists/${list.id}` }, 201);
     }
+    case 'person': {
+      const ct = b.contactId ? await db.prepare(`SELECT id, name FROM contacts WHERE id = ?`).bind(b.contactId).first<PersonRef>() : null;
+      if (!ct) return c.json({ error: 'Pick a person' }, 400);
+      await db
+        .prepare(`INSERT INTO person_agenda (id, contact_id, text, source_note_id, realm, created_at, done_at) VALUES (?, ?, ?, ?, ?, ?, NULL)`)
+        .bind(id, ct.id, title, src, realm, ts)
+        .run();
+      return c.json({ kind: 'person', id, title, dueDate: null, contactName: ct.name, path: `/contacts/${ct.id}` }, 201);
+    }
     case 'jot': {
       const content = JSON.stringify({ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: title }] }] });
       await db
@@ -1610,7 +1677,56 @@ workRouter.post('/from-note', async (c) => {
       return c.json({ kind: 'link', id, title: name, dueDate: null, path: '/links' }, 201);
     }
   }
-  return c.json({ error: 'kind must be task, waiting, project, list, jot or link' }, 400);
+  return c.json({ error: 'kind must be task, waiting, project, list, person, jot or link' }, 400);
+});
+
+// ---------------------------------------------------------------------------
+// To raise with a person next time (migration 0122) — from a note highlight
+// or typed on their card; open until checked off as discussed.
+// ---------------------------------------------------------------------------
+
+interface AgendaRow {
+  id: string;
+  contact_id: string;
+  text: string;
+  source_note_id: string | null;
+  realm: string;
+  created_at: string;
+  done_at: string | null;
+}
+const agendaJson = (r: AgendaRow) => ({ id: r.id, contactId: r.contact_id, text: r.text, noteId: r.source_note_id, createdAt: r.created_at, doneAt: r.done_at });
+
+async function agendaFor(db: D1Database, contactIds: string[]): Promise<AgendaRow[]> {
+  return inChunks(contactIds, async (ch, ph) => (await db.prepare(`SELECT * FROM person_agenda WHERE done_at IS NULL AND contact_id IN (${ph}) ORDER BY created_at`).bind(...ch).all<AgendaRow>()).results ?? []);
+}
+
+workRouter.post('/agenda', async (c) => {
+  const b = await c.req.json<{ contactId?: string; text?: string }>().catch(() => ({}) as { contactId?: string; text?: string });
+  const text = (b.text ?? '').replace(/\s+/g, ' ').trim().slice(0, 300);
+  if (!b.contactId || !text) return c.json({ error: 'contactId and text required' }, 400);
+  const ct = await c.env.DB.prepare(`SELECT id, realm FROM contacts WHERE id = ?`).bind(b.contactId).first<{ id: string; realm: string | null }>();
+  if (!ct) return c.json({ error: 'not found' }, 404);
+  const row: AgendaRow = { id: uid(), contact_id: ct.id, text, source_note_id: null, realm: realmOf(c) === 'personal' ? 'personal' : 'work', created_at: now(), done_at: null };
+  await c.env.DB.prepare(`INSERT INTO person_agenda (id, contact_id, text, source_note_id, realm, created_at, done_at) VALUES (?, ?, ?, NULL, ?, ?, NULL)`)
+    .bind(row.id, row.contact_id, row.text, row.realm, row.created_at)
+    .run();
+  return c.json(agendaJson(row), 201);
+});
+
+workRouter.patch('/agenda/:id', async (c) => {
+  const b = await c.req.json<{ done?: boolean; text?: string }>().catch(() => ({}) as { done?: boolean; text?: string });
+  const row = await c.env.DB.prepare(`SELECT * FROM person_agenda WHERE id = ?`).bind(c.req.param('id')).first<AgendaRow>();
+  if (!row) return c.json({ error: 'not found' }, 404);
+  const next = { ...row };
+  if (typeof b.done === 'boolean') next.done_at = b.done ? now() : null;
+  if (typeof b.text === 'string' && b.text.trim()) next.text = b.text.trim().slice(0, 300);
+  await c.env.DB.prepare(`UPDATE person_agenda SET done_at = ?, text = ? WHERE id = ?`).bind(next.done_at, next.text, row.id).run();
+  return c.json(agendaJson(next));
+});
+
+workRouter.delete('/agenda/:id', async (c) => {
+  await c.env.DB.prepare(`DELETE FROM person_agenda WHERE id = ?`).bind(c.req.param('id')).run();
+  return c.json({ ok: true });
 });
 
 type Decision = { decision: string; text?: string; contactId?: string | null; dueDate?: string | null };
@@ -1789,7 +1905,9 @@ async function buildPrep(db: D1Database, m: EnrichedMeeting, realm: RealmFilter)
         .all<{ contact_id: string; last: string }>()
     ).results ?? []
   );
+  const agendaRows = await agendaFor(db, pids);
   const people = contactRows.map((p) => ({
+    agenda: agendaRows.filter((a) => a.contact_id === p.id).map(agendaJson),
     id: p.id,
     name: p.name,
     title: p.title,
@@ -1953,7 +2071,12 @@ workRouter.get('/person/:contactId', async (c) => {
     )
     .bind(id)
     .all<{ id: string; fact: string; date: string; meeting_id: string; meeting_title: string | null; kind: string | null }>();
+  const { results: agendaRows } = await db
+    .prepare(`SELECT * FROM person_agenda WHERE contact_id = ? AND (done_at IS NULL OR done_at > ?) ORDER BY done_at IS NOT NULL, created_at`)
+    .bind(id, new Date(Date.now() - 7 * 86_400_000).toISOString())
+    .all<AgendaRow>();
   return c.json({
+    agenda: (agendaRows ?? []).map(agendaJson),
     learned: (learned ?? []).map((l) => ({ id: l.id, fact: l.fact, date: l.date, meetingId: l.meeting_id, title: l.meeting_title, kind: l.kind })),
     iOwe: items.filter((t) => !t.waiting_source_id),
     theyOwe: items.filter((t) => t.waiting_source_id),

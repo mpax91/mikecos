@@ -23,10 +23,11 @@ function fmtDue(d: string | null) {
   return new Date(y, m - 1, dd).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-export function PersonWorkSection({ contactId, firstName, fullName }: { contactId: string; firstName: string; fullName?: string }) {
+export function PersonWorkSection({ contactId, firstName, fullName, alwaysShow = false }: { contactId: string; firstName: string; fullName?: string; alwaysShow?: boolean }) {
   const navigate = useNavigate();
   const [data, setData] = useState<PersonWork | null>(null);
   const [open, setOpen] = useState(false);
+  const [newAgenda, setNewAgenda] = useState('');
 
   useEffect(() => {
     api.getPersonWork(contactId).then(setData).catch(() => setData(null));
@@ -34,11 +35,27 @@ export function PersonWorkSection({ contactId, firstName, fullName }: { contactI
 
   if (!data) return null;
   const learned = data.learned ?? [];
-  const empty = !data.iOwe.length && !data.theyOwe.length && !data.pendingActions.length && !data.series.length && !data.recentMeetings.length && !data.upcoming.length && !learned.length;
-  if (empty) return null;
+  const agenda = data.agenda ?? [];
+  const openAgenda = agenda.filter((a) => !a.doneAt);
+  async function toggleAgenda(id: string, done: boolean) {
+    const r = await api.updatePersonAgenda(id, { done });
+    setData((d) => (d ? { ...d, agenda: (d.agenda ?? []).map((x) => (x.id === id ? r : x)) } : d));
+  }
+  async function addAgenda() {
+    const t = newAgenda.trim();
+    if (!t) return;
+    const r = await api.addPersonAgenda(contactId, t);
+    setNewAgenda('');
+    setData((d) => (d ? { ...d, agenda: [...(d.agenda ?? []), r] } : d));
+  }
+  const empty = !data.iOwe.length && !data.theyOwe.length && !data.pendingActions.length && !data.series.length && !data.recentMeetings.length && !data.upcoming.length && !learned.length && !agenda.length;
+  // Work contacts always get the bar (so there's somewhere to add "To Raise
+  // Next Time"); everyone else only when there's something on it.
+  if (empty && !alwaysShow) return null;
 
   const next = data.upcoming[0];
   const bits = [
+    openAgenda.length ? `${openAgenda.length} to raise` : '',
     data.iOwe.length ? `You owe ${data.iOwe.length}` : '',
     data.theyOwe.length ? `Waiting on ${data.theyOwe.length}` : '',
     next ? `Next: ${next.title} ${fmtDay(next.start)}` : '',
@@ -75,6 +92,35 @@ export function PersonWorkSection({ contactId, firstName, fullName }: { contactI
       {open && (
         <div className="voter-insight__card">
           <div className="voter-insight__body person-work__body">
+            <div>
+              <div className="voter-insight__group-title">To Raise Next Time</div>
+              {agenda.length > 0 && (
+                <ul className="person-agenda">
+                  {agenda.map((a) => (
+                    <li key={a.id} className={a.doneAt ? 'is-done' : ''}>
+                      <input type="checkbox" checked={!!a.doneAt} onChange={(e) => toggleAgenda(a.id, e.target.checked)} title="Discussed" aria-label="Discussed" />
+                      <span>
+                        {a.text}
+                        {a.noteId && (
+                          <>
+                            {' '}
+                            <Link className="mtg-link" to={`/notes/${a.noteId}`}>
+                              from notes
+                            </Link>
+                          </>
+                        )}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="person-agenda__add">
+                <input value={newAgenda} onChange={(e) => setNewAgenda(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addAgenda()} placeholder={`Something to raise with ${firstName}…`} />
+                <button type="button" className="btn btn--ghost btn--sm" disabled={!newAgenda.trim()} onClick={addAgenda}>
+                  Add
+                </button>
+              </div>
+            </div>
             {data.iOwe.length > 0 && (
               <div>
                 <div className="voter-insight__group-title">You Owe {firstName}</div>
