@@ -690,6 +690,8 @@ export const api = {
   updateBill: (id: string, patch: Partial<{ enabled: boolean; dueDay: number | null; autopay: boolean | null; name: string; amount: number | null }>) =>
     request<Bill>(`/api/bills/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   deleteBill: (id: string) => request<{ ok: true }>(`/api/bills/${id}`, { method: 'DELETE' }),
+  dismissAutopay: (billId: string, date: string) => request<{ ok: true }>(`/api/bills/${billId}/dismiss`, { method: 'POST', body: JSON.stringify({ date }) }),
+  undismissAutopay: (billId: string, date: string) => request<{ ok: true }>(`/api/bills/${billId}/dismiss?date=${encodeURIComponent(date)}`, { method: 'DELETE' }),
 
   // ---- Quick Links (sidebar "Links" page + its Settings management panel) ----
 

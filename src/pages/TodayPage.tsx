@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
-import type { CompletionItem, Entity, ImportantDate, MeetingItem, StatsResponse, TodayResponse, TodayTask, TopNewsItem, WeatherDay } from '../api/types';
+import type { AutopayBill, CompletionItem, Entity, ImportantDate, MeetingItem, StatsResponse, TodayResponse, TodayTask, TopNewsItem, WeatherDay } from '../api/types';
 import { TaskRow, formatDueTime } from '../components/TaskRow';
 import { TaskDetailModal } from '../components/TaskDetailModal';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -126,6 +126,27 @@ export function TodayPage() {
   const [data, setData] = useState<TodayResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [taskStack, setTaskStack] = useState<string[]>([]);
+  // Auto-Pay marker just dismissed → an Undo line in its place for a few seconds.
+  const [undoBill, setUndoBill] = useState<AutopayBill | null>(null);
+  useEffect(() => {
+    if (!undoBill) return;
+    const t = setTimeout(() => setUndoBill(null), 8000);
+    return () => clearTimeout(t);
+  }, [undoBill]);
+
+  const dismissAutopay = (b: AutopayBill) => {
+    setData((prev) => (prev ? { ...prev, autopayBills: (prev.autopayBills ?? []).filter((x) => x.billId !== b.billId) } : prev));
+    setUndoBill(b);
+    api.dismissAutopay(b.billId, date).catch(() => {
+      setUndoBill(null);
+      setData((prev) => (prev ? { ...prev, autopayBills: [...(prev.autopayBills ?? []), b] } : prev));
+    });
+  };
+  const undoDismissAutopay = (b: AutopayBill) => {
+    setUndoBill(null);
+    setData((prev) => (prev ? { ...prev, autopayBills: [...(prev.autopayBills ?? []).filter((x) => x.billId !== b.billId), b].sort((x, y) => x.name.localeCompare(y.name)) } : prev));
+    api.undismissAutopay(b.billId, date).catch(() => {});
+  };
 
   // A reminder notification opens /today?task=<id> → open that task, then
   // drop the param so a reload doesn't reopen it.
@@ -668,14 +689,27 @@ export function TodayPage() {
               {/* Auto-Pay bills due this day (Bills & Due Dates) — a marker,
                   not a task: no checkbox, nothing to do. */}
               {(data.autopayBills ?? []).map((b) => (
-                <Link key={b.billId} to={b.entryId ? `/vault/${b.entryId}` : '/settings?cat=bills'} className="task-row autopay-row" title="On Auto-Pay — nothing to do">
-                  <span className="autopay-tag">Auto-Pay</span>
-                  <span className="task-row__title">
-                    {b.name}
-                    {b.amount != null ? ` (${fmtBillMoney(b.amount)})` : ''}
-                  </span>
-                </Link>
+                <div key={b.billId} className="task-row autopay-row">
+                  <Link to={b.entryId ? `/vault/${b.entryId}` : '/settings?cat=bills'} className="autopay-row__link" title="On Auto-Pay — nothing to do">
+                    <span className="autopay-tag">Auto-Pay</span>
+                    <span className="task-row__title">
+                      {b.name}
+                      {b.amount != null ? ` (${fmtBillMoney(b.amount)})` : ''}
+                    </span>
+                  </Link>
+                  <button type="button" className="autopay-row__dismiss" onClick={() => dismissAutopay(b)} title="Dismiss — hides it from Today (stays on Week and Month)" aria-label={`Dismiss ${b.name} Auto-Pay`}>
+                    Dismiss
+                  </button>
+                </div>
               ))}
+              {undoBill && (
+                <div className="task-row autopay-row autopay-row--undo">
+                  <span className="task-row__title">Dismissed {undoBill.name} Auto-Pay</span>
+                  <button type="button" className="autopay-row__dismiss autopay-row__dismiss--undo" onClick={() => undoDismissAutopay(undoBill)}>
+                    Undo
+                  </button>
+                </div>
+              )}
               {dueNow.map((task) => renderRow(task, true))}
               {laterToday.length > 0 && (
                 <button

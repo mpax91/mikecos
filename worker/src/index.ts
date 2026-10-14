@@ -56,7 +56,7 @@ import { bookmarksRouter } from './bookmarks';
 import { cloudRouter, keepCloudTokensAlive } from './cloud';
 import { statementsRouter } from './statements/router';
 import { accountPayersRouter } from './accountPayersRouter';
-import { afterBillTaskSpawned, billsOnCalendar, billsRouter } from './bills';
+import { afterBillTaskSpawned, autopayBillsForToday, billsOnCalendar, billsRouter } from './bills';
 import { scanAllLiveFolders, statementsScanDue } from './statements/engine';
 import { beeForContact, beeRouter } from './bee/router';
 import { taxesRouter } from './taxes/router';
@@ -4420,8 +4420,9 @@ app.get('/api/today', async (c) => {
     importantDates: dates.today,
     upcomingDates: dates.upcoming,
     completed,
-    // Auto-Pay bills due that day (Bills & Due Dates) — shown, not checkable.
-    autopayBills: realmOf(c) === 'work' ? [] : await billsOnCalendar(c.env.DB, date, date),
+    // Auto-Pay bills due that day (Bills & Due Dates) — shown, not checkable;
+    // ones Mike dismissed for that day are left out.
+    autopayBills: realmOf(c) === 'work' ? [] : await autopayBillsForToday(c.env.DB, date),
   });
 });
 

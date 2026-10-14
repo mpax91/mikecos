@@ -18767,6 +18767,43 @@ td.month-page__upcoming-actions .today-page__meeting-actions {
   color: inherit;
 }
 
+.autopay-row__link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  text-decoration: none;
+  color: inherit;
+}
+
+/* Far right, where Recurring / last-modified badges sit on task rows. */
+.autopay-row__dismiss {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: var(--weight-regular);
+  color: var(--color-muted);
+  background: var(--color-sidebar);
+  border: none;
+  border-radius: 10px;
+  padding: 1px 8px;
+  white-space: nowrap;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.autopay-row__dismiss:hover,
+.autopay-row__dismiss:focus-visible {
+  color: var(--color-ink);
+  background: rgba(47, 116, 74, 0.14);
+}
+
+.autopay-row__dismiss--undo {
+  color: #2f744a;
+  font-weight: var(--weight-medium);
+}
+
 .autopay-row .task-row__title,
 .week-page__row--autopay .week-page__row-title {
   color: var(--color-muted);

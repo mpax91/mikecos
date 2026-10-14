@@ -342,6 +342,16 @@ export async function billsOnCalendar(db: D1Database, start: string, end: string
   return out.sort((a, b) => a.date.localeCompare(b.date) || a.name.localeCompare(b.name));
 }
 
+/** Today only: Auto-Pay markers minus the ones Mike dismissed for that date
+ * (Week/Month keep showing them). */
+export async function autopayBillsForToday(db: D1Database, date: string): Promise<CalendarBill[]> {
+  const bills = await billsOnCalendar(db, date, date);
+  if (!bills.length) return bills;
+  const { results } = await db.prepare('SELECT bill_id FROM autopay_dismissals WHERE date = ?').bind(date).all<{ bill_id: string }>();
+  const gone = new Set((results ?? []).map((r) => r.bill_id));
+  return bills.filter((b) => !gone.has(b.billId));
+}
+
 // ---- API: /api/bills ----
 async function billJson(db: D1Database, b: BillRow) {
   const eff = effective(b);
@@ -464,6 +474,26 @@ billsRouter.patch('/:id', async (c) => {
   const fresh = (await c.env.DB.prepare('SELECT * FROM bills WHERE id = ?').bind(b.id).first<BillRow>())!;
   await reconcileBill(c.env.DB, fresh);
   return c.json(await billJson(c.env.DB, fresh));
+});
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** POST /:id/dismiss {date} — hide that day's Auto-Pay marker on Today. */
+billsRouter.post('/:id/dismiss', async (c) => {
+  const body = await c.req.json<{ date?: string }>().catch(() => ({}) as { date?: string });
+  if (!body.date || !ISO_DATE.test(body.date)) return c.json({ error: 'date must be YYYY-MM-DD' }, 400);
+  const b = await c.env.DB.prepare('SELECT id FROM bills WHERE id = ?').bind(c.req.param('id')).first();
+  if (!b) return c.json({ error: 'Not found' }, 404);
+  await c.env.DB.prepare('INSERT OR IGNORE INTO autopay_dismissals (bill_id, date, dismissed_at) VALUES (?, ?, ?)').bind(c.req.param('id'), body.date, now()).run();
+  return c.json({ ok: true });
+});
+
+/** DELETE /:id/dismiss?date= — undo. */
+billsRouter.delete('/:id/dismiss', async (c) => {
+  const date = c.req.query('date');
+  if (!date || !ISO_DATE.test(date)) return c.json({ error: 'date must be YYYY-MM-DD' }, 400);
+  await c.env.DB.prepare('DELETE FROM autopay_dismissals WHERE bill_id = ? AND date = ?').bind(c.req.param('id'), date).run();
+  return c.json({ ok: true });
 });
 
 billsRouter.delete('/:id', async (c) => {
