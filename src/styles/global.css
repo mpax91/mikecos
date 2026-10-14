@@ -20857,3 +20857,193 @@ button.task-row__brief-link:disabled { opacity: 0.5; cursor: default; }
 .later-today-item {
   opacity: 0.6;
 }
+
+/* ---- Home → Maintenance (HomeMaintenancePage.tsx, 2026-10-14) ---- */
+.hm-dash .fin-dash__year {
+  width: 100%;
+  background: none;
+  border: 0;
+  padding: 2px 0;
+  font: inherit;
+  font-size: 13px;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.hm-dash .fin-dash__year:hover .fin-dash__year-label {
+  text-decoration: underline;
+}
+.hm-dash .hm-system {
+  grid-template-columns: 92px minmax(0, 1fr) 64px 24px;
+}
+.hm-dash .hm-full {
+  grid-column: 1 / -1;
+}
+.hm-controls__actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hm-flag {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+.hm-empty {
+  color: var(--color-muted);
+  font-size: 13.5px;
+  margin: 4px 0;
+}
+.hm-muted {
+  color: var(--color-muted);
+  font-weight: 400;
+}
+.hm-num {
+  text-align: right;
+  white-space: nowrap;
+}
+.hm-schedule {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.hm-schedule li + li {
+  border-top: var(--border-hairline);
+}
+.hm-schedule__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 2px;
+  background: none;
+  border: 0;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.hm-schedule__row:hover .hm-schedule__name {
+  text-decoration: underline;
+}
+.hm-schedule__main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.hm-schedule__name {
+  font-weight: 600;
+}
+.hm-schedule__sub {
+  font-size: 12.5px;
+  color: var(--color-muted);
+}
+.hm-schedule__task {
+  font-size: 12px;
+  color: var(--color-muted);
+  white-space: nowrap;
+}
+.hm-chip {
+  display: inline-block;
+  flex: none;
+  min-width: 86px;
+  text-align: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  background: rgba(127, 127, 127, 0.14);
+  color: var(--color-muted);
+}
+td .hm-chip,
+.post-card__top .hm-chip {
+  min-width: 0;
+  margin-left: 6px;
+}
+.hm-chip--overdue {
+  background: rgba(192, 57, 43, 0.14);
+  color: #b03a2e;
+}
+.hm-chip--due_soon {
+  background: rgba(214, 140, 20, 0.16);
+  color: #9a6200;
+}
+.hm-chip--ok {
+  background: rgba(44, 107, 63, 0.14);
+  color: #2c6b3f;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .hm-chip--overdue {
+    color: #ef8a7d;
+  }
+  :root:not([data-theme='light']) .hm-chip--due_soon {
+    color: #e8b45a;
+  }
+  :root:not([data-theme='light']) .hm-chip--ok {
+    color: #7cc493;
+  }
+}
+:root[data-theme='dark'] .hm-chip--overdue {
+  color: #ef8a7d;
+}
+:root[data-theme='dark'] .hm-chip--due_soon {
+  color: #e8b45a;
+}
+:root[data-theme='dark'] .hm-chip--ok {
+  color: #7cc493;
+}
+.hm-search {
+  max-width: 220px;
+  font-size: 13px;
+  padding: 4px 8px;
+}
+.hm-footer {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.hm-item__actions {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0 4px;
+}
+.hm-item__heading {
+  margin: 16px 0 6px;
+  font-size: 14px;
+}
+.hm-file-line {
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  word-break: break-all;
+}
+.hm-presets {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+}
+.manage-row.is-muted .manage-row__title {
+  opacity: 0.55;
+}
+@media (max-width: 640px) {
+  .hm-controls__actions {
+    margin-left: 0;
+  }
+  .hm-chip {
+    min-width: 72px;
+  }
+  .hm-search {
+    max-width: 150px;
+  }
+}

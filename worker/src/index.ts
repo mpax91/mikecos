@@ -51,6 +51,7 @@ import { plexRouter } from './plex';
 import { mediaCatalogRouter } from './mediaCatalog';
 import { barRouter } from './bar';
 import { homeRouter } from './home';
+import { homeMaintRouter, maintScanDue, scanMaint } from './homeMaint';
 import { emailRouter, syncAllAccounts } from './email';
 import { bookmarksRouter } from './bookmarks';
 import { cloudRouter, keepCloudTokensAlive } from './cloud';
@@ -106,6 +107,7 @@ app.route('/api/work', workRouter);
 app.route('/api/plex', plexRouter);
 app.route('/api/media', mediaCatalogRouter);
 app.route('/api/bar', barRouter);
+app.route('/api/home/maintenance', homeMaintRouter);
 app.route('/api/home', homeRouter);
 app.route('/api/email', emailRouter);
 app.route('/api/bookmarks', bookmarksRouter);
@@ -8838,6 +8840,14 @@ export default {
           if (await statementsScanDue(env, event.scheduledTime)) await scanAllLiveFolders(env);
         } catch (err) {
           console.error('Statements scan failed', err);
+        }
+        // Home → Maintenance: receipts in the Drive "Home Maintenance" folder
+        // (names only), same nightly slot; scanMaint also refreshes the
+        // "Schedule …" tasks.
+        try {
+          if (await maintScanDue(env, event.scheduledTime)) await scanMaint(env);
+        } catch (err) {
+          console.error('Home Maintenance scan failed', err);
         }
         // Bedford Bee: the Drive "Bedford Bee" exports, same nightly slot.
         try {

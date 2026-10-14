@@ -30,7 +30,9 @@ export interface TaskMeta {
   description?: string;
   /** The Monday / Friday Work tasks open their brief; a brief's next-day
    * Review task opens its note. */
-  action?: 'week-plan' | 'week-review' | 'open-note' | 'meeting-prep' | 'meeting-debrief';
+  action?: 'week-plan' | 'week-review' | 'open-note' | 'meeting-prep' | 'meeting-debrief' | 'home-maint';
+  /** home-maint: the Home → Maintenance item this "Schedule …" task is for. */
+  itemId?: string;
   noteId?: string;
   /** meeting-prep: the meeting occurrence + its date. */
   meetingId?: string;
@@ -4608,4 +4610,73 @@ export interface PushDevice {
 export interface PushDevicesResponse {
   devices: PushDevice[];
   recent: { entity_id: string; fire_key: string; sent_at: string; devices: number; title: string | null }[];
+}
+
+// ---- Home → Maintenance (worker/src/homeMaint.ts, migration 0130) ----
+
+export type HomeMaintStatus = 'overdue' | 'due_soon' | 'ok' | 'unknown' | 'history' | 'paused';
+
+export interface HomeMaintItem {
+  id: string;
+  name: string;
+  system: string;
+  matchWords: string;
+  intervalMonths: number | null;
+  leadDays: number;
+  dueOverride: string | null;
+  overrideActive: boolean;
+  notes: string | null;
+  active: boolean;
+  position: number;
+  status: HomeMaintStatus;
+  nextDue: string | null;
+  remindOn: string | null;
+  lastRecordId: string | null;
+  recordIds: string[];
+  taskId: string | null;
+}
+
+export interface HomeMaintRecord {
+  id: string;
+  source: 'drive' | 'manual';
+  fileName: string | null;
+  fileUrl: string | null;
+  date: string | null;
+  system: string | null;
+  vendor: string | null;
+  service: string | null;
+  amount: number | null;
+  notes: string | null;
+  parseError: string | null;
+  edited: boolean;
+  missing: boolean;
+}
+
+export interface HomeMaintData {
+  today: string;
+  systems: string[];
+  folder: { name: string | null; url: string | null; lastScanAt: string | null; lastError: string | null; expectedName: string };
+  items: HomeMaintItem[];
+  records: HomeMaintRecord[];
+}
+
+export interface HomeMaintItemInput {
+  name?: string;
+  system?: string;
+  matchWords?: string | null;
+  intervalMonths?: number | null;
+  leadDays?: number;
+  dueOverride?: string | null;
+  notes?: string | null;
+  active?: boolean;
+}
+
+export interface HomeMaintRecordInput {
+  date?: string;
+  system?: string;
+  vendor?: string | null;
+  service?: string | null;
+  amount?: number | null;
+  notes?: string | null;
+  reset?: boolean;
 }

@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import type { HomeFloor, HomeRoom } from '../api/types';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { HomeElectricalPage } from '../components/HomeElectricalPage';
 import { HomeFloorCanvas } from '../components/HomeFloorCanvas';
 import { HomeInternetPage } from '../components/HomeInternetPage';
+import { HomeMaintenancePage } from '../components/HomeMaintenancePage';
 import type { RoomOption } from '../components/HomeNetworkDeviceModal';
 import { HomeRoomDevicesButton } from '../components/HomeRoomDevicesButton';
 import { KebabMenu } from '../components/KebabMenu';
@@ -14,8 +16,8 @@ import { useReportTabMeta } from '../contexts/TabsContext';
 /** What the page is showing: one room, an empty floor (so Add Room has
  * somewhere to land), or the Electrical / Internet pills. Other non-room pills slot in
  * here as their own literal. */
-type Selection = `room:${string}` | `floor:${string}` | 'electrical' | 'internet';
-const SECTIONS: Selection[] = ['electrical', 'internet'];
+type Selection = `room:${string}` | `floor:${string}` | 'electrical' | 'internet' | 'maintenance';
+const SECTIONS: Selection[] = ['electrical', 'internet', 'maintenance'];
 
 const SELECTION_KEY = 'mikeos.home.selection';
 
@@ -43,7 +45,10 @@ function storeSelection(sel: Selection) {
 export function HomePage() {
   const [floors, setFloors] = useState<HomeFloor[] | null>(null);
   const [roomsByFloor, setRoomsByFloor] = useState<Record<string, HomeRoom[]>>({});
-  const [selection, setSelectionState] = useState<Selection>(() => readStoredSelection() ?? 'electrical');
+  // `?section=maintenance` (a "Schedule …" task's link) opens that pill.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const asked = searchParams.get('section') as Selection | null;
+  const [selection, setSelectionState] = useState<Selection>(() => (asked && SECTIONS.includes(asked) ? asked : null) ?? readStoredSelection() ?? 'electrical');
   const [error, setError] = useState<string | null>(null);
 
   const [floorModal, setFloorModal] = useState<'new' | HomeFloor | null>(null);
@@ -56,6 +61,19 @@ export function HomePage() {
     setSelectionState(sel);
     storeSelection(sel);
   }, []);
+
+  useEffect(() => {
+    if (!asked) return;
+    if (SECTIONS.includes(asked)) setSelection(asked);
+    setSearchParams(
+      (prev) => {
+        const p = new URLSearchParams(prev);
+        p.delete('section');
+        return p;
+      },
+      { replace: true },
+    );
+  }, [asked, setSelection, setSearchParams]);
 
   /** Reload floors + every floor's rooms, then make sure the selection
    * still points at something that exists (first room, else first floor,
@@ -143,7 +161,8 @@ export function HomePage() {
   }
   const isElectrical = selection === 'electrical';
   const isInternet = selection === 'internet';
-  const isSection = isElectrical || isInternet;
+  const isMaintenance = selection === 'maintenance';
+  const isSection = isElectrical || isInternet || isMaintenance;
   const roomOptions: RoomOption[] = floors.flatMap((f) => (roomsByFloor[f.id] ?? []).map((r) => ({ id: r.id, name: r.name, floorId: f.id, floorName: f.name })));
   const roomCount = floors.reduce((n, f) => n + (roomsByFloor[f.id]?.length ?? 0), 0);
 
@@ -206,6 +225,9 @@ export function HomePage() {
         <button type="button" className={`bar-tabs__tab${isInternet ? ' is-active' : ''}`} onClick={() => setSelection('internet')}>
           <span>📶</span> Internet
         </button>
+        <button type="button" className={`bar-tabs__tab${isMaintenance ? ' is-active' : ''}`} onClick={() => setSelection('maintenance')}>
+          <span>🔧</span> Maintenance
+        </button>
 
         <div className="home-page__floor-menu" title="Floors">
           <KebabMenu items={floorMenu} />
@@ -217,6 +239,8 @@ export function HomePage() {
           <HomeElectricalPage />
         ) : isInternet ? (
           <HomeInternetPage rooms={roomOptions} />
+        ) : isMaintenance ? (
+          <HomeMaintenancePage />
         ) : floors.length === 0 ? (
           <div className="empty-state empty-state--section">
             No rooms yet. Rooms are grouped by floor —{' '}

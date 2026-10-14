@@ -310,6 +310,11 @@ export function TaskDetailModal({
             📝 Open the Notes
           </Link>
         )}
+        {entity && parseTaskMeta(entity.content).action === 'home-maint' && (
+          <Link className="btn task-panel__brief-btn" to="/home?section=maintenance" onClick={onClose}>
+            🔧 Open Home Maintenance
+          </Link>
+        )}
         {entity && (parseTaskMeta(entity.content).action === 'week-plan' || parseTaskMeta(entity.content).action === 'week-review') && (
           <Link
             className="btn task-panel__brief-btn"

@@ -196,6 +196,11 @@ export function TaskRow({
             Open Notes →
           </Link>
         )}
+        {maintAction(entity.content) && (
+          <Link to="/home?section=maintenance" className="task-row__brief-link" onClick={(e) => e.stopPropagation()}>
+            Open Maintenance →
+          </Link>
+        )}
         {briefAction(entity.content) && (
           <Link
             to={`/briefs?kind=${briefAction(entity.content) === 'week-plan' ? 'ahead' : 'review'}`}
@@ -303,6 +308,16 @@ function noteAction(content: string | null): string | null {
     return m.action === 'open-note' && m.noteId ? m.noteId : null;
   } catch {
     return null;
+  }
+}
+
+/** A Home → Maintenance "Schedule …" task carries `{ action: 'home-maint', itemId }`. */
+function maintAction(content: string | null): boolean {
+  if (!content || !content.includes('home-maint')) return false;
+  try {
+    return (JSON.parse(content) as { action?: string }).action === 'home-maint';
+  } catch {
+    return false;
   }
 }
 

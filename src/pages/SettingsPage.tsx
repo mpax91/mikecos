@@ -16,6 +16,7 @@ import { CommsPanel } from './settings/CommsPanel';
 import { WalletCategoriesPanel } from './settings/WalletCategoriesPanel';
 import { MediaCatalogPanel } from './settings/MediaCatalogPanel';
 import { IgnoredShowsPanel } from './settings/IgnoredShowsPanel';
+import { HomeMaintenancePanel } from './settings/HomeMaintenancePanel';
 import { NotificationsPanel } from './settings/NotificationsPanel';
 import { SecurityPanel } from './settings/SecurityPanel';
 import { NewsFeedsPanel } from './settings/NewsFeedsPanel';
@@ -50,6 +51,7 @@ const CATEGORIES: Category[] = [
   { id: 'cloud', label: 'Cloud Storage', icon: '☁️' },
   { id: 'statements', label: 'Statements', icon: '🧾' },
   { id: 'bills', label: 'Bills & Due Dates', icon: '💵' },
+  { id: 'home-maintenance', label: 'Home Maintenance', icon: '🔧' },
   { id: 'bee', label: 'Bedford Bee', icon: '🐝' },
   { id: 'comms', label: 'Calls & Texts', icon: '📞' },
   { id: 'wallet', label: 'Wallet Categories', icon: '🎫' },
@@ -121,6 +123,7 @@ export function SettingsPage() {
           {active === 'wallet' && <WalletCategoriesPanel />}
           {active === 'media-catalog' && <MediaCatalogPanel />}
           {active === 'ignored-shows' && <IgnoredShowsPanel />}
+          {active === 'home-maintenance' && <HomeMaintenancePanel />}
           {active === 'email-accounts' && <EmailAccountsPanel />}
           {active === 'rewards-merchants' && <RewardsMerchantsPanel />}
           {active === 'bets' && (
