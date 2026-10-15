@@ -3411,6 +3411,100 @@ export interface BofaCardDashboard {
   redeemQuietUntil: number | null;
 }
 
+// ---- Target RedCard / Circle Card (worker/src/statements/targetCardSummary.ts) ----
+export interface TargetCardStatementRow {
+  closingDate: string;
+  openingDate: string;
+  previousBalance: number;
+  paid: number;
+  refunds: number;
+  purchases: number;
+  online: number;
+  inStore: number;
+  fees: number;
+  interest: number;
+  newBalance: number;
+  minimumPayment: number;
+  dueDate: string | null;
+  carried: number;
+  apr: number | null;
+  savingsYtd: number | null;
+  savings: number | null;
+  autopay: boolean | null;
+  paidLate: boolean;
+  fileId: string;
+  checksOk: boolean;
+}
+
+export interface TargetCardYear {
+  year: number;
+  statements: number;
+  purchases: number;
+  refunds: number;
+  net: number;
+  online: number;
+  inStore: number;
+  savings: number;
+  savingsAsOf: string | null;
+  rate: number | null;
+  fees: number;
+  interest: number;
+  partial: boolean;
+}
+
+export interface TargetCardSummary {
+  asOf: string | null;
+  latest: TargetCardStatementRow | null;
+  status: 'paid' | 'due' | 'credit' | 'none';
+  balance: number;
+  cardName: string;
+  creditLine: number | null;
+  availableCredit: number | null;
+  utilization: number | null;
+  purchaseApr: number | null;
+  savingsYtd: number;
+  savingsYtdAsOf: string | null;
+  lifetimeSavings: number;
+  savingsRate: number | null;
+  rate12: number | null;
+  last12Net: number;
+  ytdNet: number;
+  lifetimeNet: number;
+  lifetimePurchases: number;
+  onlineShare: number | null;
+  firstStatement: string | null;
+  activeMonths: number;
+  lastPurchase: string | null;
+  paidInFullStreak: number;
+  carriedStatements: string[];
+  lateFees: { date: string; amount: number }[];
+  totalFees: number;
+  totalInterest: number;
+  autopayLikely: boolean | null;
+  charges: { date: string; description: string; kind: 'fee' | 'interest' | 'credit'; amount: number }[];
+  changes: { date: string; what: 'apr' | 'credit_line' | 'renamed'; from: string; to: string }[];
+  statements: TargetCardStatementRow[];
+  years: TargetCardYear[];
+  nextStatementExpected: string | null;
+  expectNext: boolean;
+  nextDue: { date: string; amount: number; minimum: number } | null;
+}
+
+export interface TargetCardDashboard {
+  kind: 'targetCard';
+  folder: StatementFolder;
+  template: { nickname: string; institution: string; type: string; site?: string; phone?: string } | null;
+  account: { accountLast: string } | null;
+  /** Months with no statement: missing (right after a balance) vs quiet (card not used). */
+  gaps: { missing: string[]; quiet: string[] };
+  summary: TargetCardSummary;
+  statements: { id: string; periodStart: string; periodEnd: string; fileId: string; checks: StatementCheckRow[] }[];
+  transactions: { statementId: string; date: string; description: string; kind: string; amount: number }[];
+  files: { fileId: string; name: string; url: string | null; status: string; error: string | null }[];
+  flags: { id: string; severity: 'warn' | 'info'; message: string; created_at: string }[];
+  rewards: CardRewards | null;
+}
+
 // ---- Card rewards (worker/src/statements/rewards.ts) — all money in $,
 // years = statement closing year ----
 export interface RewardsYear {
@@ -3447,7 +3541,7 @@ export interface RewardsOverview {
   cards: { folderId: string; name: string; owner: AccountOwner; rewards: CardRewards; redeemAt: number }[];
 }
 
-export type FinanceDashboard = Ny529Dashboard | AdtDashboard | TmobileDashboard | FiosDashboard | AllyDashboard | AmazonDashboard | AmexBankDashboard | UsaaDashboard | AmexCardDashboard | BofaCardDashboard | PaypalDashboard;
+export type FinanceDashboard = Ny529Dashboard | AdtDashboard | TmobileDashboard | FiosDashboard | AllyDashboard | AmazonDashboard | AmexBankDashboard | UsaaDashboard | AmexCardDashboard | BofaCardDashboard | TargetCardDashboard | PaypalDashboard;
 
 /** PayPal on a card dashboard (worker/src/statements/paypalMatch.ts). */
 export interface CardPaypalPanel {

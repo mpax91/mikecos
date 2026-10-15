@@ -21,12 +21,14 @@ import { categoryOf, summarizeUsaa, USAA_CATEGORIES } from './usaaSummary';
 import { loadAmazonData } from './amazonDerive';
 import { loadAmexCardData } from './amexCardDerive';
 import { loadBofaCardData } from './bofaCardDerive';
+import { loadTargetCardData } from './targetCardDerive';
+import { summarizeTargetCard, targetGaps } from './targetCardSummary';
 import { listAttention } from './attention';
 import { getCashPlacement } from './cashPlacement';
 import { summarizeAmazon } from './amazonSummary';
 import { summarizeAmexCard } from './amexCardSummary';
 import { bofaGaps, summarizeBofaCard } from './bofaCardSummary';
-import { cardRewardsSettings, combineRewards, rewardsFromAmazon, rewardsFromAmexCard, rewardsFromBofaCard, syncRedeemReminder } from './rewards';
+import { cardRewardsSettings, combineRewards, rewardsFromAmazon, rewardsFromAmexCard, rewardsFromBofaCard, rewardsFromTargetCard, syncRedeemReminder } from './rewards';
 import type { CardRewards, RedeemTaskState, RewardsCardLine } from './rewards';
 import { loadPaypalData } from './paypalDerive';
 import { summarizePaypal } from './paypalSummary';
@@ -264,6 +266,11 @@ statementsRouter.get('/accounts', async (c) => {
       const { stmts, txns } = await loadBofaCardData(c.env, row.id);
       const s = summarizeBofaCard(stmts, txns, easternToday());
       if (s.latest) headline = { kind: 'card', value: s.balance, asOf: s.asOf, status: s.status, dueDate: s.nextDue ? s.latest.dueDate : null, minimum: s.nextDue ? s.latest.minimumPayment : null, pointsValue: s.cashBackAvailable };
+    } else if (row.template_id === 'targetCard') {
+      const { stmts, txns } = await loadTargetCardData(c.env, row.id);
+      const s = summarizeTargetCard(stmts, txns, easternToday());
+      // No rewards balance (the 5% is off at checkout) — pointsValue stays null.
+      if (s.latest) headline = { kind: 'card', value: s.balance, asOf: s.asOf, status: s.status, dueDate: s.nextDue ? s.latest.dueDate : null, minimum: s.nextDue ? s.latest.minimumPayment : null, pointsValue: null };
     }
     out.push({ ...folderJson(row, stats.get(row.id)), headline });
   }
@@ -284,6 +291,10 @@ async function cardRewardsFor(env: Env, row: FolderRow): Promise<CardRewards | n
   if (row.template_id === 'bofaCard') {
     const { stmts, txns } = await loadBofaCardData(env, row.id);
     return stmts.length ? rewardsFromBofaCard(summarizeBofaCard(stmts, txns, today), today) : null;
+  }
+  if (row.template_id === 'targetCard') {
+    const { stmts, txns } = await loadTargetCardData(env, row.id);
+    return stmts.length ? rewardsFromTargetCard(summarizeTargetCard(stmts, txns, today), today) : null;
   }
   return null;
 }
@@ -333,6 +344,7 @@ statementsRouter.get('/folders/:id/dashboard', async (c) => {
   if (row.template_id === 'usaa') return c.json(await usaaDashboard(c.env, row));
   if (row.template_id === 'amexCard') return c.json(await amexCardDashboard(c.env, row));
   if (row.template_id === 'bofaCard') return c.json(await bofaCardDashboard(c.env, row));
+  if (row.template_id === 'targetCard') return c.json(await targetCardDashboard(c.env, row));
   if (row.template_id !== 'ny529') return c.json({ error: 'No dashboard for this template yet' }, 400);
   const stats = await folderStats(c.env);
   const { stmts, txns, files } = await loadNy529Data(c.env, row.id);
@@ -680,6 +692,28 @@ async function bofaCardDashboard(env: Env, row: FolderRow) {
     summary,
     statements: stmts.map((s) => ({ id: s.id, periodStart: s.periodStart, periodEnd: s.periodEnd, fileId: s.fileId, checks: s.checks })),
     transactionsSince: since || null,
+    files: files.map((f) => ({ fileId: f.file_id, name: f.file_name, url: f.web_url, status: f.status, error: f.error })),
+    flags: await openFlags(env, row.id),
+  };
+}
+
+/** Target RedCard / Circle Card dashboard payload — few statements, so
+ * every transaction comes along. */
+async function targetCardDashboard(env: Env, row: FolderRow) {
+  const stats = await folderStats(env);
+  const { stmts, txns, files } = await loadTargetCardData(env, row.id);
+  const summary = summarizeTargetCard(stmts, txns, easternToday());
+  const last = stmts[stmts.length - 1];
+  return {
+    kind: 'targetCard' as const,
+    transactions: txns.map(({ statementId, date, description, kind, amount }) => ({ statementId, date, description, kind, amount })),
+    rewards: summary.latest ? rewardsFromTargetCard(summary, easternToday()) : null,
+    folder: folderJson(row, stats.get(row.id)),
+    template: templateById(row.template_id)?.account ?? null,
+    account: last ? { accountLast: last.values.accountLast } : null,
+    gaps: targetGaps(stmts, files),
+    summary,
+    statements: stmts.map((s) => ({ id: s.id, periodStart: s.periodStart, periodEnd: s.periodEnd, fileId: s.fileId, checks: s.checks })),
     files: files.map((f) => ({ fileId: f.file_id, name: f.file_name, url: f.web_url, status: f.status, error: f.error })),
     flags: await openFlags(env, row.id),
   };

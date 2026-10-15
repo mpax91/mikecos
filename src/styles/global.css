@@ -21249,3 +21249,27 @@ td .hm-chip,
 }
 :root[data-theme='dark'] .tbt-card__audience, :root[data-theme='dark'] .tbt__picked { color: #7fc796; }
 :root[data-theme='dark'] .tbt-card__uses, :root[data-theme='dark'] .tbt-hist__src--prefix { color: #e0b25a; }
+
+/* ---- Target RedCard / Circle Card dashboard (TargetCardDashboard.tsx) ---- */
+.target-dash .fin-dash__year.target-dash__year {
+  grid-template-columns: 44px minmax(0, 1fr) 64px 92px;
+  width: 100%;
+  background: none;
+  border: 0;
+  padding: 2px 0;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.target-dash__saved {
+  text-align: right;
+  white-space: nowrap;
+  font-size: 12px;
+}
+@media (max-width: 640px) {
+  .target-dash .fin-dash__year.target-dash__year {
+    grid-template-columns: 40px minmax(0, 1fr) 56px 80px;
+  }
+}

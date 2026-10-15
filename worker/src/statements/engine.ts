@@ -17,6 +17,7 @@ import { deriveUsaa } from './usaaDerive';
 import { deriveAmazon } from './amazonDerive';
 import { deriveAmexCard } from './amexCardDerive';
 import { deriveBofaCard } from './bofaCardDerive';
+import { deriveTargetCard } from './targetCardDerive';
 import { derivePaypal } from './paypalDerive';
 import { syncPaymentFacts } from '../accountPayers';
 import { syncBills } from '../bills';
@@ -196,6 +197,7 @@ export async function derive(env: Env, folder: FolderRow): Promise<void> {
   else if (folder.template_id === 'usaa') await deriveUsaa(env, fresh);
   else if (folder.template_id === 'amexCard') await deriveAmexCard(env, fresh);
   else if (folder.template_id === 'bofaCard') await deriveBofaCard(env, fresh);
+  else if (folder.template_id === 'targetCard') await deriveTargetCard(env, fresh);
   else if (folder.template_id === 'tmobile') await deriveTmobile(env, fresh);
   else if (folder.template_id === 'fios') await deriveFios(env, fresh);
   else if (folder.template_id === 'paypal') await derivePaypal(env, fresh);

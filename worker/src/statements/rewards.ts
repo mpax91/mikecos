@@ -5,6 +5,7 @@ import { loadFolder } from './engine';
 import type { AmexCardSummary } from './amexCardSummary';
 import type { AmazonSummary } from './amazonSummary';
 import type { BofaCardSummary } from './bofaCardSummary';
+import type { TargetCardSummary } from './targetCardSummary';
 
 /** Card rewards in one shape, whatever the card pays in (Amex Reward
  * Dollars are $1 each, Chase points are 100 per $1). Every credit-card
@@ -152,6 +153,27 @@ export function rewardsFromBofaCard(s: BofaCardSummary, today: string): CardRewa
       partial: y.estimated || (y.statements < 12 && (y.year === cy || y.year === s.years[0]?.year)),
       current: y.year === cy,
     })),
+  };
+}
+
+/** Target RedCard / Circle Card: the 5% comes off at the register, so the
+ * "reward" is the savings each statement prints for the year so far —
+ * nothing ever waits to be redeemed (available null → no redeem reminder). */
+export function rewardsFromTargetCard(s: TargetCardSummary, today: string): CardRewards {
+  const cy = thisYear(today);
+  return {
+    unit: 'dollars',
+    unitLabel: 'Savings',
+    pointsPerDollar: 1,
+    available: null,
+    availablePoints: null,
+    asOf: s.savingsYtdAsOf ?? s.asOf,
+    earnedAllTime: s.lifetimeSavings,
+    redeemedAllTime: s.lifetimeSavings,
+    earnedYtd: s.savingsYtd,
+    rate12: s.rate12,
+    since: s.firstStatement,
+    years: s.years.map((y) => ({ year: y.year, statements: y.statements, earned: y.savings, net: y.net, rate: y.rate, partial: y.partial, current: y.year === cy })),
   };
 }
 

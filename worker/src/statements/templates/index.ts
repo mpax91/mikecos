@@ -10,11 +10,12 @@ import { parseTmobile } from './tmobile';
 import { parsePaypal } from './paypal';
 import { parseFios } from './fios';
 import { parseUsaa } from './usaa';
+import { parseTargetCard } from './targetCard';
 
 /** Per-folder templates (one per Drive folder, all on the shared base
  * engine). Build order per progress.md: 529 is live; ADT, Ally Bank, Amazon Prime Visa, PayPal,
  * American Express Bank, the Amex Blue Cash Everyday card and the Bank of America
- * Customized Cash Rewards card, T-Mobile, Verizon Fios and USAA Checking built; the rest are added one folder at a time. */
+ * Customized Cash Rewards card, T-Mobile, Verizon Fios, USAA Checking and the Target RedCard built; the rest are added one folder at a time. */
 export interface StatementTemplate {
   id: string;
   name: string;
@@ -175,6 +176,26 @@ export const TEMPLATES: StatementTemplate[] = [
     // Monthly statements are "BOA CC - YYYY.MM.DD.pdf"; the year-end
     // summaries ("BOA CC - 2024.pdf") and the "BOA Cash Rewards Scorecard"
     // sheet are skipped.
+    isStatementFile: (name) => /\d{4}\.\d{2}\.\d{2}/.test(name),
+  },
+  {
+    id: 'targetCard',
+    name: 'Target RedCard / Circle Card (Monthly Credit Card)',
+    folderNames: ['Target RedCard', 'Target Circle Card', 'Target Card', 'Target REDcard'],
+    account: {
+      nickname: 'Target RedCard',
+      institution: 'TD Bank USA (Target Card Services)',
+      type: 'Store Credit Card',
+      owner: 'household',
+      cadence: 'monthly',
+      kind: 'card',
+      network: 'Target Credit Card',
+      site: 'https://www.target.com/mycirclecard',
+      phone: '1-800-424-6888',
+    },
+    parse: parseTargetCard,
+    // Monthly statements are "Target RedCard - YYYY.MM.DD.pdf"; Target only
+    // sends one for a month with activity or a balance.
     isStatementFile: (name) => /\d{4}\.\d{2}\.\d{2}/.test(name),
   },
   {
