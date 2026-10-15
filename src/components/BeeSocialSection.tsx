@@ -582,6 +582,48 @@ function VsMark({ p, m }: { p: BeeSocialPost; m: BeeMetric }) {
   return null;
 }
 
+const signed = (n: number) => (n > 0 ? `+${n.toLocaleString()}` : n.toLocaleString());
+const dayShort = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+/** Scorecard: page follows around the post (day of + next day). */
+function PostFollowersLine({ p }: { p: BeeSocialPost }) {
+  const f = p.followers;
+  return (
+    <div className="bee-scorecard__followers">
+      <DashTitle
+        info={
+          <p>
+            Facebook and Instagram only report follows for the whole page per day — never per post. This is the page’s total for the day the post went out and the next day (posts go out ~3pm), so other
+            posts those days share the credit. Instagram doesn’t report unfollows, and Meta keeps only 30 days of its follower history, so older Instagram posts have none.
+          </p>
+        }
+      >
+        Followers
+      </DashTitle>
+      {!f ? (
+        <p className="fin-dash__muted">No follower data for these days{p.platform === 'ig' ? ' (Instagram keeps only 30 days)' : ''}.</p>
+      ) : (
+        <p>
+          <strong className={f.net != null ? (f.net > 0 ? 'bee-delta--up' : f.net < 0 ? 'bee-delta--down' : '') : f.gained > 0 ? 'bee-delta--up' : ''}>
+            {f.net != null ? `${signed(f.net)} net` : `${signed(f.gained)} new`}
+          </strong>
+          {f.lost != null && (
+            <span className="fin-dash__muted">
+              {' '}
+              · {signed(f.gained)} followed, {f.lost.toLocaleString()} unfollowed
+            </span>
+          )}
+          <span className="fin-dash__muted">
+            {' '}
+            · {dayShort(f.from)}–{dayShort(f.to)}
+            {f.soFar ? ' (so far)' : f.partial ? ' (one day missing)' : ''}
+            {f.otherPosts > 0 ? ` · shared with ${f.otherPosts} other post${f.otherPosts === 1 ? '' : 's'}` : ''}
+          </span>
+        </p>
+      )}
+    </div>
+  );
+}
+
 function PostRow({ p, onOpen }: { p: BeeSocialPost; onOpen: () => void }) {
   return (
     <tr className="bee-social__row" onClick={onOpen}>
@@ -710,6 +752,7 @@ function Scorecard({ p, data, onReload }: { p: BeeSocialPost; data: Loaded; onRe
           );
         })}
       </div>
+      <PostFollowersLine p={p} />
       <p className="fin-dash__muted">
         Per 1,000 views: {p.per1k.likes != null ? p.per1k.likes.toFixed(1) : '—'} likes · {p.per1k.comments != null ? p.per1k.comments.toFixed(1) : '—'} comments ·{' '}
         {p.per1k.shares != null ? p.per1k.shares.toFixed(1) : '—'} shares

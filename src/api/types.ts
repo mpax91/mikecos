@@ -4210,6 +4210,8 @@ export interface BeeSocialPost {
   score: number | null;
   verdict: string | null;
   mature: boolean;
+  /** Page follows on the post's Eastern day + the next — Meta has no per-post follows. */
+  followers?: { from: string; to: string; gained: number; lost: number | null; net: number | null; soFar: boolean; partial: boolean; otherPosts: number } | null;
   early: { bucket: string; vsTypical: Partial<Record<BeeMetric, number | null>>; topPct?: Partial<Record<BeeMetric, number | null>>; baseline: 'same-age' | 'final' } | null;
   tags: string[];
   manualTags: string[];

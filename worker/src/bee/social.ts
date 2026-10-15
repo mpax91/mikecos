@@ -88,6 +88,22 @@ function styleTags(text: string | null): string[] {
   return out;
 }
 
+/** Page follows on a post's Eastern day + the next (Meta has no per-post follows). */
+export interface PostFollowers {
+  from: string;
+  to: string;
+  gained: number;
+  /** Facebook only — Instagram doesn't report unfollows. */
+  lost: number | null;
+  net: number | null;
+  /** The second day hasn't finished yet. */
+  soFar: boolean;
+  /** One of the two days has no data. */
+  partial: boolean;
+  /** Other posts on the same platform those two days (they share the credit). */
+  otherPosts: number;
+}
+
 export async function socialDashboard(env: Env) {
   const acct = await loadMeta(env);
   const connection = {
@@ -262,6 +278,7 @@ export async function socialDashboard(env: Env) {
       story,
       siteVisits,
       grade: grades.posts.get(`${p.platform}:${p.id}`) ?? null,
+      followers: null as PostFollowers | null,
     };
   });
 
@@ -287,6 +304,39 @@ export async function socialDashboard(env: Env) {
   const igDaily = days.filter((d) => d.platform === 'ig' && d.metric === 'follower_count'); // new followers per day (30d)
   const fbNew = days.filter((d) => d.platform === 'fb' && d.metric === 'page_daily_follows_unique');
   const fbLost = days.filter((d) => d.platform === 'fb' && d.metric === 'page_daily_unfollows_unique');
+
+  // Followers around each post. Meta only reports follows per PAGE per day,
+  // never per post — so this is the page's total for the post's Eastern day
+  // and the next (posts go out ~3pm), plus how many other posts shared
+  // those days. Instagram only gives new followers (no unfollows), and only
+  // for the days MikeOS has saved (Meta keeps 30).
+  const dayVal = new Map<string, number>();
+  for (const d of days) dayVal.set(`${d.platform}|${d.metric}|${d.date}`, d.value);
+  const postsOnDay = new Map<string, number>();
+  for (const s of scored) postsOnDay.set(`${s.platform}|${easternDate(s.createdAt)}`, (postsOnDay.get(`${s.platform}|${easternDate(s.createdAt)}`) ?? 0) + 1);
+  const todayET = easternDate(new Date(nowMs).toISOString());
+  for (const s of scored) {
+    const d0 = easternDate(s.createdAt);
+    const d1 = new Date(new Date(`${d0}T12:00:00Z`).getTime() + DAY).toISOString().slice(0, 10);
+    const gainedKey = s.platform === 'fb' ? 'page_daily_follows_unique' : 'follower_count';
+    const g0 = dayVal.get(`${s.platform}|${gainedKey}|${d0}`);
+    const g1 = dayVal.get(`${s.platform}|${gainedKey}|${d1}`);
+    if (g0 == null && g1 == null) continue;
+    const l0 = s.platform === 'fb' ? dayVal.get(`fb|page_daily_unfollows_unique|${d0}`) : undefined;
+    const l1 = s.platform === 'fb' ? dayVal.get(`fb|page_daily_unfollows_unique|${d1}`) : undefined;
+    const gained = (g0 ?? 0) + (g1 ?? 0);
+    const lost = s.platform === 'fb' ? (l0 ?? 0) + (l1 ?? 0) : null;
+    s.followers = {
+      from: d0,
+      to: d1,
+      gained,
+      lost,
+      net: lost == null ? null : gained - lost,
+      soFar: d1 >= todayET,
+      partial: d1 < todayET && (g0 == null || g1 == null),
+      otherPosts: (postsOnDay.get(`${s.platform}|${d0}`) ?? 1) - 1 + (postsOnDay.get(`${s.platform}|${d1}`) ?? 0),
+    };
+  }
 
   // Weekly scorecard (Mon–Sun, Eastern), last 12 weeks.
   const weekStart = (iso: string) => {
