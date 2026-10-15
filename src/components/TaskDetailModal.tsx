@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, normalizeUrl } from '../api/client';
 import type { Entity, FileMeta, LinkMeta, MeetingAssist, PersonRef, TaskMeta } from '../api/types';
@@ -82,6 +82,7 @@ export function TaskDetailModal({
   const [linkUrl, setLinkUrl] = useState('');
   const [editingAttachment, setEditingAttachment] = useState<Entity | null>(null);
   const titleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const titleRef = useRef<HTMLTextAreaElement | null>(null);
   const descTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -230,6 +231,19 @@ export function TaskDetailModal({
     onMutated();
   }
 
+  // Grow the title box to fit the whole title (long tasks wrap onto 2–3+ lines).
+  useLayoutEffect(() => {
+    const el = titleRef.current;
+    if (!el) return;
+    const fit = () => {
+      el.style.height = 'auto';
+      el.style.height = `${el.scrollHeight}px`;
+    };
+    fit();
+    window.addEventListener('resize', fit);
+    return () => window.removeEventListener('resize', fit);
+  }, [title, entity]);
+
   if (!entity) {
     return (
       <div className="task-panel-backdrop" onClick={onClose}>
@@ -267,12 +281,20 @@ export function TaskDetailModal({
             onChange={toggleDone}
             className="task-panel__checkbox"
           />
-          <input
+          <textarea
+            ref={titleRef}
+            rows={1}
             className={`task-panel__title${isDone ? ' is-done' : ''}`}
             value={title}
             placeholder="Untitled Task"
-            onChange={(e) => handleTitleChange(e.target.value)}
-            onFocus={(e) => e.target.select()}
+            onChange={(e) => handleTitleChange(e.target.value.replace(/\s*\n+\s*/g, ' '))}
+            onKeyDown={(e) => {
+              // A title is one line of text that wraps — Enter finishes editing.
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                e.currentTarget.blur();
+              }
+            }}
           />
         </div>
 
