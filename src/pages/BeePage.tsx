@@ -10,11 +10,12 @@ import { BeeSocialSection } from '../components/BeeSocialSection';
 import { BeeSubstackSection } from '../components/BeeSubstackSection';
 import { BeeReviewSection } from '../components/BeeReviewSection';
 import { BeeMerchSection } from '../components/BeeMerchSection';
+import { BeeThrowbackSection } from '../components/BeeThrowbackSection';
 import { api } from '../api/client';
 import type { BeeSubstack } from '../api/types';
 import { useReportTabMeta } from '../contexts/TabsContext';
 
-/** Insights → Bedford Bee: Social, Substack, Merch, SEO, Website and Year in Review
+/** Insights → Bedford Bee: Social, Throwback, Substack, Merch, SEO, Website and Year in Review
  * tabs sharing one date range (`useUrlRange`). The Substack payload loads
  * here because Scan Now lives on this page. */
 
@@ -27,7 +28,7 @@ export function BeePage() {
   const [params, setParams] = useSearchParams();
   const tabParam = params.get('tab');
   const [range, setRange] = useUrlRange(BEE_START);
-  const tab = tabParam === 'search' || tabParam === 'website' || tabParam === 'substack' || tabParam === 'merch' || tabParam === 'review' ? tabParam : 'social';
+  const tab = tabParam === 'search' || tabParam === 'website' || tabParam === 'substack' || tabParam === 'merch' || tabParam === 'review' || tabParam === 'throwback' ? tabParam : 'social';
 
   const load = useCallback(() => {
     api
@@ -78,6 +79,7 @@ export function BeePage() {
         }
         options={[
           ['social', 'Social'],
+          ['throwback', 'Throwback'],
           ['substack', 'Substack'],
           ['merch', 'Merch'],
           ['search', 'SEO'],
@@ -89,6 +91,8 @@ export function BeePage() {
         <BeeSocialSection range={range} setRange={setRange} />
       ) : tab === 'merch' ? (
         <BeeMerchSection range={range} setRange={setRange} onScan={scan} scanning={scanning} scanMsg={scanMsg} />
+      ) : tab === 'throwback' ? (
+        <BeeThrowbackSection />
       ) : tab === 'review' ? (
         <BeeReviewSection />
       ) : tab === 'search' ? (

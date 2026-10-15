@@ -30,7 +30,7 @@ export interface TaskMeta {
   description?: string;
   /** The Monday / Friday Work tasks open their brief; a brief's next-day
    * Review task opens its note. */
-  action?: 'week-plan' | 'week-review' | 'open-note' | 'meeting-prep' | 'meeting-debrief' | 'home-maint';
+  action?: 'week-plan' | 'week-review' | 'open-note' | 'meeting-prep' | 'meeting-debrief' | 'home-maint' | 'bee-throwback';
   /** home-maint: the Home → Maintenance item this "Schedule …" task is for. */
   itemId?: string;
   noteId?: string;
@@ -4734,4 +4734,53 @@ export interface HomeMaintRecordInput {
   amount?: number | null;
   notes?: string | null;
   reset?: boolean;
+}
+
+/** Bee → Throwback (worker/src/bee/throwback.ts). */
+export interface BeeThrowbackUse {
+  date: string;
+  source: 'prefix' | 'repurpose' | 'manual' | 'planned';
+  markId?: string;
+  reuseAnchor?: string;
+  reuseHeadline?: string;
+  reuseGrade?: BeeGrade | null;
+}
+export interface BeeThrowbackCandidate {
+  anchor: string;
+  date: string;
+  headline: string;
+  grade: BeeGrade | null;
+  social: BeeStoryTotals;
+  links: { platform: 'fb' | 'ig' | 'substack'; url: string | null }[];
+  followersThen: number | null;
+  newFollowers: number | null;
+  newShare: number | null;
+  uses: BeeThrowbackUse[];
+  lastUsed: string | null;
+  coolingUntil: string | null;
+  priority: number | null;
+  yearsAgo?: number;
+  daysOff?: number;
+  fbText: string | null;
+  igText: string | null;
+}
+export interface BeeThrowbackSettings {
+  windowDays: number;
+  cooldownDays: number;
+  minAgeDays: number;
+}
+export interface BeeThrowback {
+  today: string;
+  target: string;
+  settings: BeeThrowbackSettings;
+  followersNow: number | null;
+  planned: { markId: string; anchor: string; headline: string } | null;
+  seasonal: BeeThrowbackCandidate[];
+  seasonalCount: number;
+  best: BeeThrowbackCandidate[];
+  bestCount: number;
+  coolingCount: number;
+  hidden: { markId: string; anchor: string | null; headline: string | null }[];
+  history: (BeeThrowbackUse & { origAnchor: string; origHeadline: string; origDate: string | null; origGrade: BeeGrade | null })[];
+  stats: { reshares: number; thursdayTbt: { n: number; avgRank: number | null }; thursdayOther: { n: number; avgRank: number | null } };
 }

@@ -16,6 +16,7 @@ import { socialDashboard } from './social';
 import { buildStories } from './stories';
 import { gradeAllPosts, gradeStories, loadGradeConfig, saveGradeConfig, DEFAULT_GRADE_CONFIG, METRIC_LABELS } from './grades';
 import { reviewDashboard } from './review';
+import { addMark, deleteMark, loadThrowbackSettings, MarkError, saveThrowbackSettings, throwbackDashboard } from './throwback';
 import { deriveMerch, linkMerchContacts, merchDashboard, saveFourthwall, syncFourthwall } from './merch';
 
 /** /api/bee — Bedford Bee dashboard. Substack + Stripe come from CSV
@@ -145,6 +146,34 @@ beeRouter.get('/stories', async (c) => {
     { socialOnly: true }
   );
   return c.json({ stories: stories.map((s) => ({ ...s, grade: g.get(s.key) ?? null, gradeSocial: gs.get(s.key) ?? null, parts: s.parts.map((p) => ({ ...p, grade: all.posts.get(`${p.platform}:${p.id}`)?.letter ?? null })) })) });
+});
+// Throwback Thursday (throwback.ts): reshare candidates + what's been reused.
+beeRouter.get('/throwback', async (c) => c.json(await throwbackDashboard(c.env, { target: c.req.query('for') })));
+beeRouter.post('/throwback/marks', async (c) => {
+  const body = await c.req.json<{ kind?: string; anchor?: string; date?: string }>().catch(() => ({}));
+  try {
+    return c.json(await addMark(c.env, body));
+  } catch (err) {
+    if (err instanceof MarkError) return c.json({ error: err.message }, err.status);
+    throw err;
+  }
+});
+beeRouter.delete('/throwback/marks/:id', async (c) => {
+  try {
+    return c.json(await deleteMark(c.env, c.req.param('id')));
+  } catch (err) {
+    if (err instanceof MarkError) return c.json({ error: err.message }, err.status);
+    throw err;
+  }
+});
+beeRouter.get('/throwback/settings', async (c) => c.json(await loadThrowbackSettings(c.env)));
+beeRouter.put('/throwback/settings', async (c) => {
+  const body = await c.req.json<Record<string, unknown>>().catch(() => ({}));
+  try {
+    return c.json(await saveThrowbackSettings(c.env, body));
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+  }
 });
 // Post grades A–F (grades.ts): weights, cutoffs, windows — editable.
 beeRouter.get('/grades/settings', async (c) => {

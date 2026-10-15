@@ -196,6 +196,11 @@ export function TaskRow({
             Open Notes →
           </Link>
         )}
+        {throwbackAction(entity.content) && (
+          <Link to="/bee?tab=throwback" className="task-row__brief-link" onClick={(e) => e.stopPropagation()}>
+            Open Throwbacks →
+          </Link>
+        )}
         {maintAction(entity.content) && (
           <Link to="/home?section=maintenance" className="task-row__brief-link" onClick={(e) => e.stopPropagation()}>
             Open Maintenance →
@@ -308,6 +313,16 @@ function noteAction(content: string | null): string | null {
     return m.action === 'open-note' && m.noteId ? m.noteId : null;
   } catch {
     return null;
+  }
+}
+
+/** The Saturday "Pick This Week's Throwback" task carries `{ action: 'bee-throwback' }`. */
+function throwbackAction(content: string | null): boolean {
+  if (!content || !content.includes('bee-throwback')) return false;
+  try {
+    return (JSON.parse(content) as { action?: string }).action === 'bee-throwback';
+  } catch {
+    return false;
   }
 }
 

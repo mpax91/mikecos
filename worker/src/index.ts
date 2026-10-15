@@ -445,6 +445,8 @@ async function spawnDueRecurringTasks(db: D1Database, todayIso: string): Promise
         .run();
       if ((def as { realm?: string }).realm === 'work') await db.prepare(`UPDATE entities SET realm = 'work' WHERE id = ?`).bind(id).run();
       // The Monday / Friday brief tasks open their brief (TaskMeta.action).
+      // Saturday "Pick This Week's Throwback" opens Bee → Throwback (bee/throwback.ts).
+      if (def.id === 'bee-throwback') await db.prepare('UPDATE entities SET content = ? WHERE id = ?').bind(JSON.stringify({ action: 'bee-throwback' }), id).run();
       if (def.id === 'work-week-plan' || def.id === 'work-week-review') {
         await db
           .prepare('UPDATE entities SET content = ? WHERE id = ?')
