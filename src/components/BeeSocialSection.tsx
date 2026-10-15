@@ -571,9 +571,18 @@ const abShare = (m: Record<string, number>) => {
 };
 const ratiosOf = (p: BeeSocialPost) => (p.mature || !p.early ? p.vsTypical : p.early.vsTypical);
 const ratioTone = (p: BeeSocialPost, r: number | null | undefined) => (p.mature || p.early?.baseline === 'same-age' ? tone(r) : '');
+const topsOf = (p: BeeSocialPost) => (p.mature || !p.early ? p.topPct : p.early.topPct) ?? {};
+const topTone = (p: BeeSocialPost, n: number) => (p.mature || p.early?.baseline === 'same-age' ? (n <= 20 ? ' bee-delta--up' : '') : '');
+/** The ×-typical mark, or "Top N%" when the typical post got 0 (no multiplier possible). */
+function VsMark({ p, m }: { p: BeeSocialPost; m: BeeMetric }) {
+  const r = ratiosOf(p)[m];
+  if (r != null) return <span className={`bee-social__x${ratioTone(p, r)}`}> {x1(r)}</span>;
+  const top = topsOf(p)[m];
+  if (top != null) return <span className={`bee-social__x${topTone(p, top)}`} title="The typical post got 0, so this shows how it ranks instead"> Top {top}%</span>;
+  return null;
+}
 
 function PostRow({ p, onOpen }: { p: BeeSocialPost; onOpen: () => void }) {
-  const ratios = ratiosOf(p);
   return (
     <tr className="bee-social__row" onClick={onOpen}>
       <td className="bee-posts__date">
@@ -591,7 +600,7 @@ function PostRow({ p, onOpen }: { p: BeeSocialPost; onOpen: () => void }) {
       {CORE.map((m) => (
         <td key={m} className="num">
           {n0(p[m])}
-          {ratios[m] != null && <span className={`bee-social__x${ratioTone(p, ratios[m])}`}> {x1(ratios[m])}</span>}
+          <VsMark p={p} m={m} />
         </td>
       ))}
     </tr>
@@ -604,7 +613,6 @@ function PostCardList({ posts, onOpen, alwaysCards }: { posts: BeeSocialPost[]; 
   return (
     <ul className="post-cards" style={alwaysCards ? { display: 'block' } : undefined}>
       {posts.map((p) => {
-        const ratios = ratiosOf(p);
         return (
           <li key={`${p.platform}|${p.id}`}>
             <button type="button" className="post-card" onClick={() => onOpen(p)}>
@@ -621,7 +629,7 @@ function PostCardList({ posts, onOpen, alwaysCards }: { posts: BeeSocialPost[]; 
                     <span className="post-card__metric-label">{LABEL[m]}</span>
                     <span className="post-card__metric-value">
                       {compact(p[m] ?? 0)}
-                      {ratios[m] != null && <span className={`bee-social__x${ratioTone(p, ratios[m])}`}> {x1(ratios[m])}</span>}
+                      <VsMark p={p} m={m} />
                     </span>
                   </span>
                 ))}
@@ -689,12 +697,13 @@ function Scorecard({ p, data, onReload }: { p: BeeSocialPost; data: Loaded; onRe
       <div className="bee-scorecard__grid">
         {metrics.map((m) => {
           const r = p.mature || !p.early ? p.vsTypical[m] : p.early.vsTypical[m];
+          const top = r == null ? topsOf(p)[m] : null;
           return (
             <div key={m} className="bee-scorecard__metric">
               <span className="fin-dash__stat-label">{LABEL[m]}</span>
               <span className="bee-year__value">{n0(p[m])}</span>
-              <span className={`fin-dash__stat-sub${tone(r)}`}>
-                {r != null ? `${x1(r)} typical` : '—'}
+              <span className={`fin-dash__stat-sub${top != null ? topTone(p, top) : tone(r)}`}>
+                {r != null ? `${x1(r)} typical` : top != null ? `Top ${top}% (typical post: 0)` : '—'}
                 {t[m] != null ? ` · typical today ${n0(t[m])}` : ''}
               </span>
             </div>

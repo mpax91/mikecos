@@ -4205,10 +4205,12 @@ export interface BeeSocialPost {
   saves: number | null;
   per1k: { likes: number | null; comments: number | null; shares: number | null };
   vsTypical: Partial<Record<BeeMetric, number | null>>;
+  /** Set only when the typical post got 0 for that metric: rank of a non-zero value, e.g. 8 = top 8%. */
+  topPct?: Partial<Record<BeeMetric, number | null>>;
   score: number | null;
   verdict: string | null;
   mature: boolean;
-  early: { bucket: string; vsTypical: Partial<Record<BeeMetric, number | null>>; baseline: 'same-age' | 'final' } | null;
+  early: { bucket: string; vsTypical: Partial<Record<BeeMetric, number | null>>; topPct?: Partial<Record<BeeMetric, number | null>>; baseline: 'same-age' | 'final' } | null;
   tags: string[];
   manualTags: string[];
   story: { title: string; date: string; sent: number | null; opened: number | null; views: number | null } | null;

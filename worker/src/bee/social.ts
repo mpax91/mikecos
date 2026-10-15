@@ -175,17 +175,24 @@ export async function socialDashboard(env: Env) {
     const ranks = used.map((m) => pctRank(p[m]!, base.map((b) => b[m]).filter((v): v is number => v != null)));
     const score = ranks.length ? Math.round((ranks.reduce((a, b) => a + b, 0) / ranks.length) * 100) : null;
     const vsTypical: Record<string, number | null> = {};
+    // When the typical post got 0 (often shares), a multiplier can't be
+    // shown — topPct says where a non-zero number ranks instead ("Top 8%").
+    const topPct: Record<string, number | null> = {};
+    const topOf = (val: number | null | undefined, xs: number[]) => (val != null && val > 0 && xs.length ? Math.max(1, Math.round((1 - pctRank(val, xs)) * 100)) : null);
     for (const m of used) {
-      const t = median(base.map((b) => b[m]).filter((v): v is number => v != null));
+      const xs = base.map((b) => b[m]).filter((v): v is number => v != null);
+      const t = median(xs);
       vsTypical[m] = t && t > 0 ? p[m]! / t : null;
+      topPct[m] = t === 0 ? topOf(p[m], xs) : null;
     }
     // Early read: latest snapshot.
     const sn = (snapsBy.get(`${p.platform}|${p.id}`) ?? []).sort((a, b) => ['24h', '3d', '7d'].indexOf(b.bucket) - ['24h', '3d', '7d'].indexOf(a.bucket))[0];
     // Until enough past posts have a snapshot at the same age, the early
     // read compares against a typical post's final numbers ("so far").
-    let early: { bucket: string; vsTypical: Record<string, number | null>; baseline: 'same-age' | 'final' } | null = null;
+    let early: { bucket: string; vsTypical: Record<string, number | null>; topPct: Record<string, number | null>; baseline: 'same-age' | 'final' } | null = null;
     if (!mature(p)) {
       const v: Record<string, number | null> = {};
+      const tp: Record<string, number | null> = {};
       let sameAge = true;
       for (const m of METRICS) {
         const ts = sn ? snapTypical(p.platform, sn.bucket, m) : null;
@@ -193,8 +200,9 @@ export async function socialDashboard(env: Env) {
         if (ts == null) sameAge = false;
         const val = sn ? sn[m] : p[m];
         v[m] = val != null && t && t > 0 ? val / t : null;
+        tp[m] = t === 0 ? topOf(val, base.map((b) => b[m]).filter((x): x is number => x != null)) : null;
       }
-      early = { bucket: sn?.bucket ?? 'so far', vsTypical: v, baseline: sameAge && sn ? 'same-age' : 'final' };
+      early = { bucket: sn?.bucket ?? 'so far', vsTypical: v, topPct: tp, baseline: sameAge && sn ? 'same-age' : 'final' };
     }
     // Story match.
     const pw = words(p.text ?? '');
@@ -238,6 +246,7 @@ export async function socialDashboard(env: Env) {
       saves: p.saves,
       per1k: { likes: per1k('likes'), comments: per1k('comments'), shares: per1k('shares') },
       vsTypical,
+      topPct,
       score,
       verdict,
       mature: mature(p),
