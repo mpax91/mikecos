@@ -37,7 +37,7 @@ import {
 } from '../utils/bets';
 import { Modal } from '../components/Modal';
 import { ConfirmModal } from '../components/ConfirmModal';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { KebabMenu } from '../components/KebabMenu';
 import { BetsBankingTab } from '../components/BetsBankingTab';
 import { BetsPromosTab } from '../components/BetsPromosTab';
@@ -792,7 +792,10 @@ export function BetsPage() {
   const [promos, setPromos] = useState<BetPromo[] | null>(null);
   const [betOptions, setBetOptions] = useState<BetOption[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<BetsTab>('workspace');
+  // ?tab=promos (etc.) deep-links straight to a tab — Today's Free Bet rows use it.
+  const [searchParams] = useSearchParams();
+  const initialTab = searchParams.get('tab') as BetsTab | null;
+  const [tab, setTab] = useState<BetsTab>(initialTab && TABS.some((t) => t.id === initialTab) ? initialTab : 'workspace');
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<Bet | null>(null);
   const [deleting, setDeleting] = useState<Bet | null>(null);

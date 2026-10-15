@@ -4428,6 +4428,20 @@ app.get('/api/today', async (c) => {
     // Auto-Pay bills due that day (Bills & Due Dates) — shown, not checkable;
     // ones Mike dismissed for that day are left out.
     autopayBills: realmOf(c) === 'work' ? [] : await autopayBillsForToday(c.env.DB, date),
+    // Free Bet promos (Bets → Promos) on their last day of use — the only
+    // promo type that surfaces on Today, and only on its expiration date, so
+    // an unused free bet doesn't quietly go to waste. Every other promo type
+    // stays in Bets only. Checking the row off marks the promo used.
+    expiringFreeBets:
+      realmOf(c) === 'work'
+        ? []
+        : ((
+            await c.env.DB.prepare(
+              `SELECT * FROM bet_promos WHERE status = 'active' AND LOWER(TRIM(promo_type)) IN ('free bet', 'free bets') AND expires_at = ? ORDER BY sportsbook ASC, created_at ASC`
+            )
+              .bind(date)
+              .all<BetPromo>()
+          ).results ?? []),
   });
 });
 

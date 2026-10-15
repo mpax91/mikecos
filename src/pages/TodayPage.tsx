@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
-import type { AutopayBill, CompletionItem, Entity, ImportantDate, MeetingItem, StatsResponse, TodayResponse, TodayTask, TopNewsItem, WeatherDay } from '../api/types';
+import type { AutopayBill, BetPromo, CompletionItem, Entity, ImportantDate, MeetingItem, StatsResponse, TodayResponse, TodayTask, TopNewsItem, WeatherDay } from '../api/types';
 import { TaskRow, formatDueTime } from '../components/TaskRow';
 import { TaskDetailModal } from '../components/TaskDetailModal';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -140,6 +140,14 @@ export function TodayPage() {
     api.dismissAutopay(b.billId, date).catch(() => {
       setUndoBill(null);
       setData((prev) => (prev ? { ...prev, autopayBills: [...(prev.autopayBills ?? []), b] } : prev));
+    });
+  };
+  // Free Bet promo on its last day — checking it off marks the promo used
+  // in Bets → Promos, so it drops off Today and out of the active list.
+  const markFreeBetUsed = (p: BetPromo) => {
+    setData((prev) => (prev ? { ...prev, expiringFreeBets: (prev.expiringFreeBets ?? []).filter((x) => x.id !== p.id) } : prev));
+    api.updateBetPromo(p.id, { status: 'used' }).catch(() => {
+      setData((prev) => (prev ? { ...prev, expiringFreeBets: [...(prev.expiringFreeBets ?? []), p] } : prev));
     });
   };
   const undoDismissAutopay = (b: AutopayBill) => {
@@ -474,7 +482,7 @@ export function TodayPage() {
   const completed = data?.completed ?? [];
 
   const holidays = getHolidays(date);
-  const blankCount = Math.max(0, DEFAULT_ROWS + extraRows - dueNow.length - (laterToday.length ? 1 : 0) - completed.length - (data?.autopayBills?.length ?? 0));
+  const blankCount = Math.max(0, DEFAULT_ROWS + extraRows - dueNow.length - (laterToday.length ? 1 : 0) - completed.length - (data?.autopayBills?.length ?? 0) - (data?.expiringFreeBets?.length ?? 0));
 
   // Birthdays and anniversaries for the viewed day, combined into one list
   // (sorted by name) for the Important Dates panel — see /api/today.
@@ -688,6 +696,30 @@ export function TodayPage() {
             <div className="today-page__list today-page__list--ruled task-list card">
               {/* Auto-Pay bills due this day (Bills & Due Dates) — a marker,
                   not a task: no checkbox, nothing to do. */}
+              {/* Free Bet promos on their expiration day (Bets → Promos) —
+                  the only promos that ever show here. Checkbox = used. */}
+              {(data.expiringFreeBets ?? []).map((p) => (
+                <div key={`freebet-${p.id}`} className="task-row freebet-row">
+                  <input
+                    type="checkbox"
+                    checked={false}
+                    onChange={() => markFreeBetUsed(p)}
+                    className="task-row__checkbox"
+                    title="Mark this free bet used"
+                    aria-label={`Mark ${p.sportsbook} free bet used`}
+                  />
+                  <Link to="/bets?tab=promos" className="autopay-row__link" title="Expires today — open Bets → Promos">
+                    <span className="freebet-tag">Free Bet</span>
+                    <span className="task-row__title">
+                      Use {p.sportsbook}
+                      {p.sport ? ` ${p.sport}` : ''} free bet
+                      {p.amount ? ` (${p.amount})` : p.max_bonus != null ? ` ($${p.max_bonus})` : ''}
+                      {p.description ? ` — ${p.description}` : ''}
+                    </span>
+                  </Link>
+                  <span className="freebet-row__expires">Expires today</span>
+                </div>
+              ))}
               {(data.autopayBills ?? []).map((b) => (
                 <div key={b.billId} className="task-row autopay-row">
                   <Link to={b.entryId ? `/vault/${b.entryId}` : '/settings?cat=bills'} className="autopay-row__link" title="On Auto-Pay — nothing to do">

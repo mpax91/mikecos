@@ -18828,6 +18828,28 @@ td.month-page__upcoming-actions .today-page__meeting-actions {
   touch-action: auto;
 }
 
+/* ---- Bets → Promos: Free Bet expiring today on the Day view ----
+   The only promo that surfaces on Today, and only on its last day. Burnt
+   orange (the app's badge/pressure accent) since it's use-it-or-lose-it. */
+.freebet-tag {
+  flex-shrink: 0;
+  font-size: 10.5px;
+  font-weight: var(--weight-medium);
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(184, 99, 47, 0.14);
+  color: #b8632f;
+  white-space: nowrap;
+}
+
+.freebet-row__expires {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-size: 11px;
+  color: #b8632f;
+  white-space: nowrap;
+}
+
 .week-page__row--autopay .autopay-tag {
   font-size: 9.5px;
   padding: 1px 5px;

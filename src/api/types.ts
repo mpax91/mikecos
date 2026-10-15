@@ -157,6 +157,9 @@ export interface TodayResponse {
   spotlight: TodayTask | null;
   /** Auto-Pay bills due this day (Bills & Due Dates) — shown, never checkable. */
   autopayBills?: AutopayBill[];
+  /** Active "Free Bet" promos (Bets → Promos) expiring on this exact day —
+   * the only promos that ever surface on Today. Checking one off marks it used. */
+  expiringFreeBets?: BetPromo[];
   /** Contacts whose birthday/anniversary falls on this exact date
    * (month+day match; year is optional and irrelevant to the match). */
   birthdays: ImportantDateContact[];
