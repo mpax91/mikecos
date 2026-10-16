@@ -22044,3 +22044,11 @@ td .hm-chip,
   color: inherit;
   cursor: pointer;
 }
+.credit-page__drive {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin: 0 0 12px;
+  font-size: 13px;
+}

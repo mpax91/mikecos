@@ -134,6 +134,17 @@ export function CreditReportsPage() {
           {data!.reports.length} reports · {data!.reports[0].pulledOn.slice(0, 4)}–{s.latestPull?.slice(0, 4)} · Latest pull {fullDate(s.latestPull)} · Next pull {fullDate(s.nextPull)} (on Today)
         </p>
       )}
+      {data && (
+        <div className="credit-page__drive">
+          <span className="fin-dash__muted">
+            📁 Drive folder “{data.drive.folder ?? 'Credit Reports'}” ·{' '}
+            {data.drive.lastScanAt ? `checked ${new Date(data.drive.lastScanAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}` : 'not checked yet'}
+          </span>
+          <button type="button" className="btn btn--sm" onClick={scanNow} disabled={!!scanning && scanning.endsWith('…')}>
+            Scan Drive Now
+          </button>
+        </div>
+      )}
 
       {scanning && <p className="credit-page__scan">{scanning}</p>}
       {data && data.drive.files.some((f) => f.status === 'not_read') && (
