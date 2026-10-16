@@ -30,7 +30,9 @@ export interface TaskMeta {
   description?: string;
   /** The Monday / Friday Work tasks open their brief; a brief's next-day
    * Review task opens its note. */
-  action?: 'week-plan' | 'week-review' | 'open-note' | 'meeting-prep' | 'meeting-debrief' | 'home-maint' | 'bee-throwback' | 'credit-reports';
+  action?: 'week-plan' | 'week-review' | 'open-note' | 'meeting-prep' | 'meeting-debrief' | 'home-maint' | 'bee-throwback' | 'credit-reports' | 'insurance-renewal';
+  /** insurance-renewal: the Hanover statement folder (its Finance dashboard). */
+  folderId?: string;
   /** home-maint: the Home → Maintenance item this "Schedule …" task is for. */
   itemId?: string;
   noteId?: string;
@@ -2776,6 +2778,112 @@ export interface FiosDashboard {
   files: { fileId: string; name: string; url: string | null; status: string; error: string | null }[];
   flags: { id: string; severity: 'warn' | 'info'; message: string; created_at: string }[];
 }
+/** Hanover Insurance — auto + home + umbrella (worker/src/statements/hanoverSummary.ts). */
+export type HanoverLine = 'auto' | 'home' | 'umbrella';
+export interface HanoverVehicle {
+  unit: string;
+  year: number;
+  make: string;
+  model: string;
+  vin: string;
+  mileage: number | null;
+  premium: number | null;
+  additionalInsured: string | null;
+  defensiveDiscount: number | null;
+}
+export interface HanoverPolicyValues {
+  line: HanoverLine;
+  policyNumber: string;
+  termStart: string;
+  termEnd: string;
+  effective: string;
+  reason: string;
+  premium: number;
+  vehicles?: HanoverVehicle[];
+  liabilityCsl?: number | null;
+  sum?: number | null;
+  medPay?: number | null;
+  collisionDeductible?: number | null;
+  comprehensiveDeductible?: number | null;
+  fullGlass?: boolean;
+  dwelling?: number | null;
+  otherStructures?: number | null;
+  personalProperty?: number | null;
+  lossOfUse?: string | null;
+  personalLiability?: number | null;
+  medPayOthers?: number | null;
+  deductible?: number | null;
+  mortgagee?: string | null;
+  limit?: number | null;
+  excessUm?: number | null;
+  retainedLimit?: number | null;
+}
+export interface HanoverPayment {
+  date: string;
+  total: number;
+  byLine: Partial<Record<HanoverLine, number>>;
+  fee: number;
+  status: 'withdrawn' | 'scheduled';
+  notice: string;
+}
+export interface HanoverPolicy {
+  line: HanoverLine;
+  label: string;
+  policyNumber: string;
+  termStart: string;
+  termEnd: string;
+  premium: number;
+  termStartPremium: number;
+  paidVia: 'autopay' | 'escrow' | 'bill';
+  history: { effective: string; premium: number; prevPremium: number | null; reason: string; amended: boolean; fileId: string }[];
+  current: HanoverPolicyValues;
+}
+export interface HanoverTerm {
+  termStart: string;
+  termEnd: string;
+  start: Partial<Record<HanoverLine, number>>;
+  end: Partial<Record<HanoverLine, number>>;
+  startTotal: number;
+  endTotal: number;
+}
+export interface HanoverSummary {
+  asOf: string | null;
+  customer: string | null;
+  last4: string | null;
+  autopay: boolean | null;
+  installmentFee: number | null;
+  termStart: string | null;
+  termEnd: string | null;
+  renewsInDays: number | null;
+  policies: HanoverPolicy[];
+  annualPremium: number;
+  billedPremium: number;
+  escrowPremium: number;
+  vehicles: HanoverVehicle[];
+  payments: HanoverPayment[];
+  next: HanoverPayment | null;
+  last: HanoverPayment | null;
+  paidThisTerm: number;
+  feesThisTerm: number;
+  remainingThisTerm: number;
+  terms: HanoverTerm[];
+  upcoming: HanoverTerm | null;
+  years: { year: number; withdrawn: number; fees: number; payments: number }[];
+  changes: { date: string; line: HanoverLine | null; description: string; amount: number | null; billed?: number; source: 'declarations' | 'notice' }[];
+  defensiveDriving: { perYear: number | null; events: { date: string; reason: string; fileId: string }[] };
+  firstDoc: string | null;
+  bills: { statementDate: string; fileId: string; payments: number; activity: { date: string; description: string; policy: string; effective: string; amount: number }[] }[];
+}
+export interface HanoverDashboard {
+  kind: 'hanover';
+  folder: StatementFolder;
+  template: { nickname: string; institution: string; type: string; site?: string; phone?: string } | null;
+  summary: HanoverSummary;
+  renewal: { leadDays: number; taskId: string | null };
+  statements: { id: string; periodEnd: string; fileId: string; checks: StatementCheckRow[] }[];
+  files: { fileId: string; name: string; url: string | null; status: string; error: string | null }[];
+  flags: { id: string; severity: 'warn' | 'info'; message: string; created_at: string }[];
+}
 /** Home → Internet: the live home internet bill (GET /api/statements/internet-bill). */
 export interface InternetBill {
   folderId: string;
@@ -3549,7 +3657,7 @@ export interface RewardsOverview {
   cards: { folderId: string; name: string; owner: AccountOwner; rewards: CardRewards; redeemAt: number }[];
 }
 
-export type FinanceDashboard = Ny529Dashboard | AdtDashboard | TmobileDashboard | FiosDashboard | AllyDashboard | AmazonDashboard | AmexBankDashboard | UsaaDashboard | AmexCardDashboard | BofaCardDashboard | TargetCardDashboard | PaypalDashboard;
+export type FinanceDashboard = Ny529Dashboard | AdtDashboard | TmobileDashboard | FiosDashboard | HanoverDashboard | AllyDashboard | AmazonDashboard | AmexBankDashboard | UsaaDashboard | AmexCardDashboard | BofaCardDashboard | TargetCardDashboard | PaypalDashboard;
 
 /** PayPal on a card dashboard (worker/src/statements/paypalMatch.ts). */
 export interface CardPaypalPanel {

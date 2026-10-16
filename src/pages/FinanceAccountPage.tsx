@@ -7,6 +7,7 @@ import { Ny529Dashboard } from '../components/Ny529Dashboard';
 import { AdtDashboard } from '../components/AdtDashboard';
 import { TmobileDashboard } from '../components/TmobileDashboard';
 import { FiosDashboard } from '../components/FiosDashboard';
+import { HanoverDashboard } from '../components/HanoverDashboard';
 import { AllyDashboard } from '../components/AllyDashboard';
 import { AmazonDashboard } from '../components/AmazonDashboard';
 import { AmexBankDashboard } from '../components/AmexBankDashboard';
@@ -38,6 +39,8 @@ export function FinanceAccountPage() {
       ? null
       : data.kind === 'adt'
         ? [t.institution, t.type, data.account?.accountLast ? `••${data.account.accountLast}` : null, data.summary.latest?.services].filter(Boolean).join(' · ')
+        : data.kind === 'hanover'
+          ? [t.institution, data.summary.policies.map((p) => p.label).join(' + '), data.summary.termEnd ? `Renews ${new Date(`${data.summary.termEnd}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}` : null].filter(Boolean).join(' · ')
         : data.kind === 'fios'
           ? [t.institution, t.type, data.summary.plan, data.account?.account ? `Account ${data.account.account}` : null].filter(Boolean).join(' · ')
         : data.kind === 'tmobile'
@@ -106,6 +109,8 @@ export function FinanceAccountPage() {
           <AdtDashboard data={data} onDismissFlag={dismiss} />
         ) : data.kind === 'tmobile' ? (
           <TmobileDashboard data={data} onDismissFlag={dismiss} />
+        ) : data.kind === 'hanover' ? (
+          <HanoverDashboard data={data} onDismissFlag={dismiss} />
         ) : data.kind === 'fios' ? (
           <FiosDashboard data={data} onDismissFlag={dismiss} />
         ) : data.kind === 'ally' ? (

@@ -11,6 +11,7 @@ import { deriveNy529 } from './ny529Derive';
 import { deriveAdt } from './adtDerive';
 import { deriveTmobile } from './tmobileDerive';
 import { deriveFios } from './fiosDerive';
+import { deriveHanover } from './hanoverDerive';
 import { deriveAlly } from './allyDerive';
 import { deriveAmexBank } from './amexBankDerive';
 import { deriveUsaa } from './usaaDerive';
@@ -200,6 +201,7 @@ export async function derive(env: Env, folder: FolderRow): Promise<void> {
   else if (folder.template_id === 'targetCard') await deriveTargetCard(env, fresh);
   else if (folder.template_id === 'tmobile') await deriveTmobile(env, fresh);
   else if (folder.template_id === 'fios') await deriveFios(env, fresh);
+  else if (folder.template_id === 'hanover') await deriveHanover(env, fresh);
   else if (folder.template_id === 'paypal') await derivePaypal(env, fresh);
   // Payment Quick Facts (Due Date, Auto-Pay, Paid With, bill amounts) from
   // the billing snapshot the template just stored + the account's payer.

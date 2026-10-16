@@ -206,6 +206,11 @@ export function TaskRow({
             Open Credit Reports →
           </Link>
         )}
+        {renewalFolder(entity.content) && (
+          <Link to={`/finance/${renewalFolder(entity.content)}`} className="task-row__brief-link" onClick={(e) => e.stopPropagation()}>
+            Open Insurance →
+          </Link>
+        )}
         {maintAction(entity.content) && (
           <Link to="/home?section=maintenance" className="task-row__brief-link" onClick={(e) => e.stopPropagation()}>
             Open Maintenance →
@@ -338,6 +343,17 @@ function creditAction(content: string | null): boolean {
     return (JSON.parse(content) as { action?: string }).action === 'credit-reports';
   } catch {
     return false;
+  }
+}
+
+/** The yearly "Review Hanover Renewal" task carries `{ action: 'insurance-renewal', folderId }` → its Finance dashboard. */
+function renewalFolder(content: string | null): string | null {
+  if (!content || !content.includes('insurance-renewal')) return null;
+  try {
+    const m = JSON.parse(content) as { action?: string; folderId?: string };
+    return m.action === 'insurance-renewal' && m.folderId ? m.folderId : null;
+  } catch {
+    return null;
   }
 }
 

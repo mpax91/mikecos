@@ -12,6 +12,8 @@ import { loadTmobileData } from './tmobileDerive';
 import { summarizeTmobile } from './tmobileSummary';
 import { loadFiosData } from './fiosDerive';
 import { summarizeFios } from './fiosSummary';
+import { loadHanoverData, RENEWAL_LEAD_DAYS } from './hanoverDerive';
+import { summarizeHanover } from './hanoverSummary';
 import { loadAllyData } from './allyDerive';
 import { accountLabel, summarizeAlly } from './allySummary';
 import { loadAmexBankData } from './amexBankDerive';
@@ -242,6 +244,11 @@ statementsRouter.get('/accounts', async (c) => {
       const { stmts, txns } = await loadFiosData(c.env, row.id);
       const s = summarizeFios(stmts, txns, easternToday());
       if (s.latest) headline = { kind: 'bill', value: s.latest.totalDue, asOf: s.asOf, monthly: s.monthly, status: s.status };
+    } else if (row.template_id === 'hanover') {
+      const { stmts } = await loadHanoverData(c.env, row.id);
+      const s = summarizeHanover(stmts, easternToday());
+      // Value = the next Auto-Pay withdrawal; monthly = the same (auto + umbrella; the home is paid through escrow).
+      if (s.policies.length) headline = { kind: 'bill', value: s.next?.total ?? 0, asOf: s.asOf, monthly: s.next?.total ?? s.last?.total ?? null, status: s.next ? 'autopay' : 'paid' };
     } else if (row.template_id === 'ally') {
       const { stmts, txns } = await loadAllyData(c.env, row.id);
       const s = summarizeAlly(stmts, txns, easternToday());
@@ -337,6 +344,7 @@ statementsRouter.get('/folders/:id/dashboard', async (c) => {
   if (row.template_id === 'adt') return c.json(await adtDashboard(c.env, row));
   if (row.template_id === 'tmobile') return c.json(await tmobileDashboard(c.env, row));
   if (row.template_id === 'fios') return c.json(await fiosDashboard(c.env, row));
+  if (row.template_id === 'hanover') return c.json(await hanoverDashboard(c.env, row));
   if (row.template_id === 'paypal') return c.json(await paypalDashboard(c.env, row));
   if (row.template_id === 'ally') return c.json(await allyDashboard(c.env, row));
   if (row.template_id === 'amazon') return c.json(await amazonDashboard(c.env, row));
@@ -448,6 +456,29 @@ async function fiosDashboard(env: Env, row: FolderRow) {
     summary,
     statements: stmts.map((s) => ({ id: s.id, periodEnd: s.periodEnd, fileId: s.fileId, checks: s.checks })),
     transactions: txns,
+    files: files.map((f) => ({ fileId: f.file_id, name: f.file_name, url: f.web_url, status: f.status, error: f.error })),
+    flags: await openFlags(env, row.id),
+  };
+}
+
+/** Hanover Insurance (auto + home + umbrella) dashboard payload. */
+async function hanoverDashboard(env: Env, row: FolderRow) {
+  const stats = await folderStats(env);
+  const { stmts, files } = await loadHanoverData(env, row.id);
+  const summary = summarizeHanover(stmts, easternToday());
+  let renewalTask: { termEnd: string; entityId: string } | null = null;
+  try {
+    renewalTask = row.meta_json ? JSON.parse(row.meta_json).renewalTask ?? null : null;
+  } catch {
+    renewalTask = null;
+  }
+  return {
+    kind: 'hanover' as const,
+    folder: folderJson(row, stats.get(row.id)),
+    template: templateById(row.template_id)?.account ?? null,
+    summary,
+    renewal: { leadDays: RENEWAL_LEAD_DAYS, taskId: renewalTask?.termEnd === summary.termEnd ? renewalTask?.entityId ?? null : null },
+    statements: stmts.map((s) => ({ id: s.id, periodEnd: s.periodEnd, fileId: s.fileId, checks: s.checks })),
     files: files.map((f) => ({ fileId: f.file_id, name: f.file_name, url: f.web_url, status: f.status, error: f.error })),
     flags: await openFlags(env, row.id),
   };

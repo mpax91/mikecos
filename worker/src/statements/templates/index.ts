@@ -11,6 +11,7 @@ import { parsePaypal } from './paypal';
 import { parseFios } from './fios';
 import { parseUsaa } from './usaa';
 import { parseTargetCard } from './targetCard';
+import { parseHanover } from './hanover';
 
 /** Per-folder templates (one per Drive folder, all on the shared base
  * engine). Build order per progress.md: 529 is live; ADT, Ally Bank, Amazon Prime Visa, PayPal,
@@ -233,6 +234,25 @@ export const TEMPLATES: StatementTemplate[] = [
     parse: parseFios,
     // Monthly bills are "Verizon Fios - YYYY.MM.DD.pdf".
     isStatementFile: (name) => /\d{4}\.\d{2}\.\d{2}/.test(name),
+  },
+  {
+    id: 'hanover',
+    name: 'Hanover Insurance — Auto, Home & Umbrella (Bills + Declarations)',
+    folderNames: ['Hanover Insurance', 'Hanover'],
+    account: {
+      nickname: 'Hanover Insurance',
+      institution: 'The Hanover Insurance Group',
+      type: 'Auto, Home & Umbrella Insurance',
+      owner: 'household',
+      cadence: 'monthly',
+      kind: 'bill',
+      site: 'https://www.hanover.com/MHP',
+      phone: '1-800-922-8427',
+    },
+    parse: parseHanover,
+    // Every Hanover PDF is read: billing notices (payment schedules) and the
+    // declarations inside each policy packet / change. Anything else
+    // (ID cards alone, letters) is NotAStatement → Skipped by the template.
   },
   {
     id: 'usaa',

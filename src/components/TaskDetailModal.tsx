@@ -347,6 +347,16 @@ export function TaskDetailModal({
             </Link>
           </>
         )}
+        {entity && parseTaskMeta(entity.content).action === 'insurance-renewal' && parseTaskMeta(entity.content).folderId && (
+          <>
+            <Link className="btn task-panel__brief-btn" to={`/finance/${parseTaskMeta(entity.content).folderId}`} onClick={onClose}>
+              🛡️ Open Insurance Dashboard
+            </Link>
+            <a className="btn task-panel__brief-btn" href="https://www.hanover.com/MHP" target="_blank" rel="noopener noreferrer">
+              🔐 My Hanover
+            </a>
+          </>
+        )}
         {entity && parseTaskMeta(entity.content).action === 'home-maint' && (
           <Link className="btn task-panel__brief-btn" to="/home?section=maintenance" onClick={onClose}>
             🔧 Open Home Maintenance
