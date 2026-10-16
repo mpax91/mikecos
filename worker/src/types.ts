@@ -514,7 +514,8 @@ export interface BetLegRow {
   id: string;
   bet_id: string;
   sport: string;
-  bet_type: string;
+  market: 'ML' | 'Spread' | 'Total' | 'Prop' | null; // 0135 — what kind of pick the leg is
+  bet_type: string | null; // legacy (pre-0135 legs only)
   pick: string | null;
   line: number | null;
   over_under: 'over' | 'under' | null;

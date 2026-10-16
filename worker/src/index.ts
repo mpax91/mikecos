@@ -7817,10 +7817,17 @@ function computeBetProfit(bet: Bet): number {
 // logic, not a display choice, so a brand-new bet_type Mike adds later via
 // Settings behaves as a straight bet unless this list is updated too.
 const PARLAY_BET_TYPES = ['Parlay', 'SGP', 'SGPx'];
+// Bet types that hold several legs. Every other type (Straight, Future,
+// Prop, anything Mike adds in Settings) holds at most ONE leg — the bet
+// slip's single pick card (2026-10-15 redesign).
+const MULTI_LEG_BET_TYPES = [...PARLAY_BET_TYPES, 'Teaser'];
+const LEG_MARKETS = ['ML', 'Spread', 'Total', 'Prop'];
+const LEG_RESULTS_WITH_PENDING = [...LEG_RESULTS, 'pending'];
 
 type BetLegInput = {
   sport?: string;
-  bet_type?: string;
+  market?: string | null;
+  bet_type?: string | null;
   pick?: string | null;
   line?: number | null;
   over_under?: 'over' | 'under' | null;
@@ -7828,26 +7835,44 @@ type BetLegInput = {
   result?: string;
 };
 
-function validateLegs(legs: unknown): { error: string } | { legs: BetLegInput[] } {
-  if (!Array.isArray(legs) || legs.length === 0) return { error: 'at least one leg is required for a parlay' };
+function validateLegs(legs: unknown, multi: boolean): { error: string } | { legs: BetLegInput[] } {
+  if (!Array.isArray(legs)) return { error: 'legs must be a list' };
+  if (multi && legs.length === 0) return { error: 'at least one leg is required for a parlay or teaser' };
+  if (!multi && legs.length > 1) return { error: 'a straight bet has at most one leg' };
   for (const leg of legs as BetLegInput[]) {
+    if (!leg || typeof leg !== 'object') return { error: 'every leg must be an object' };
     if (!leg.sport?.trim()) return { error: 'every leg needs a sport' };
-    if (!leg.bet_type?.trim()) return { error: 'every leg needs a bet type' };
-    if (!leg.result || !LEG_RESULTS.includes(leg.result)) return { error: `every leg's result must be one of ${LEG_RESULTS.join(', ')}` };
+    if (leg.market != null && !LEG_MARKETS.includes(leg.market)) return { error: `a leg's market must be one of ${LEG_MARKETS.join(', ')}` };
+    if (leg.market == null && !leg.bet_type?.trim()) return { error: 'every leg needs a market' };
+    if (leg.result !== undefined && !LEG_RESULTS_WITH_PENDING.includes(leg.result)) return { error: `every leg's result must be one of ${LEG_RESULTS_WITH_PENDING.join(', ')}` };
     if (leg.over_under !== undefined && leg.over_under !== null && leg.over_under !== 'over' && leg.over_under !== 'under') {
       return { error: "a leg's over_under must be 'over', 'under', or null" };
     }
+    if (leg.line != null && (typeof leg.line !== 'number' || !Number.isFinite(leg.line))) return { error: "a leg's line must be a number" };
+    if (leg.odds != null && (typeof leg.odds !== 'number' || !Number.isFinite(leg.odds) || leg.odds === 0)) return { error: "a leg's odds must be a non-zero number" };
   }
   return { legs: legs as BetLegInput[] };
 }
 
-// Mirrors parlaySport in src/utils/bets.ts: a parlay's bet-level sport is
-// its legs' sport, or 'Multi-Sport' when the legs span more than one.
+// Mirrors parlaySport in src/utils/bets.ts: a bet with legs takes its sport
+// from them — one sport → that sport, more than one → 'Multi-Sport'.
 const MULTI_SPORT = 'Multi-Sport';
 function deriveParlaySport(legs: BetLegInput[]): string | null {
   const distinct = [...new Set(legs.map((l) => l.sport?.trim() ?? '').filter(Boolean))];
   if (distinct.length === 0) return null;
   return distinct.length === 1 ? distinct[0] : MULTI_SPORT;
+}
+
+// bets.line (Settings → Bets → Line: ATS / ML / o/u / Mixed by default)
+// follows the legs' markets so the existing "by line" stats keep working.
+// Only a value that exists in Mike's Line list is written; else NULL.
+const MARKET_LINE: Record<string, string> = { ML: 'ML', Spread: 'ATS', Total: 'o/u' };
+function deriveBetLine(legs: BetLegInput[], lineOptions: string[]): string | null {
+  const markets = [...new Set(legs.map((l) => l.market).filter((m): m is string => !!m))];
+  if (markets.length === 0) return null;
+  const want = markets.length > 1 ? 'Mixed' : MARKET_LINE[markets[0]];
+  if (!want) return null;
+  return lineOptions.find((o) => o.toLowerCase() === want.toLowerCase()) ?? null;
 }
 
 async function replaceLegs(env: Env, betId: string, legs: BetLegInput[]): Promise<void> {
@@ -7856,18 +7881,19 @@ async function replaceLegs(env: Env, betId: string, legs: BetLegInput[]): Promis
   await env.DB.batch(
     legs.map((leg, i) =>
       env.DB.prepare(
-        `INSERT INTO bet_legs (id, bet_id, sport, bet_type, pick, line, over_under, odds, result, position, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO bet_legs (id, bet_id, sport, market, bet_type, pick, line, over_under, odds, result, position, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).bind(
         uid(),
         betId,
         leg.sport!.trim(),
-        leg.bet_type!.trim(),
+        leg.market ?? null,
+        leg.bet_type?.trim() || null,
         leg.pick?.trim() || null,
         leg.line ?? null,
         leg.over_under ?? null,
         leg.odds ?? null,
-        leg.result!,
+        leg.result ?? 'pending',
         i,
         ts
       )
@@ -7918,17 +7944,18 @@ app.post('/api/bets', async (c) => {
   ]);
   if (!betTypeOptions.includes(body.bet_type.trim())) return c.json({ error: `bet_type must be one of ${betTypeOptions.join(', ')}` }, 400);
   if (!resultOptions.includes(body.result)) return c.json({ error: `result must be one of ${resultOptions.join(', ')}` }, 400);
-  const lineValue = (body as { line?: string }).line?.trim() || null;
+  let lineValue = (body as { line?: string }).line?.trim() || null;
   if (lineValue && !lineOptions.includes(lineValue)) return c.json({ error: `line must be one of ${lineOptions.join(', ')}` }, 400);
 
-  const isParlay = PARLAY_BET_TYPES.includes(body.bet_type.trim());
+  const isMulti = MULTI_LEG_BET_TYPES.includes(body.bet_type.trim());
   let legs: BetLegInput[] = [];
   let sportValue = body.sport.trim();
-  if (isParlay) {
-    const validated = validateLegs(body.legs);
+  if (isMulti || body.legs !== undefined) {
+    const validated = validateLegs(body.legs ?? [], isMulti);
     if ('error' in validated) return c.json({ error: validated.error }, 400);
     legs = validated.legs;
     sportValue = deriveParlaySport(legs) ?? sportValue;
+    if ((body as { line?: string }).line === undefined) lineValue = deriveBetLine(legs, lineOptions);
   }
 
   const tipperValue = (body as { tipper?: string }).tipper?.trim() || null;
@@ -7957,7 +7984,7 @@ app.post('/api/bets', async (c) => {
       ts
     )
     .run();
-  if (isParlay) await replaceLegs(c.env, id, legs);
+  if (legs.length > 0) await replaceLegs(c.env, id, legs);
   await maybePromoteTipper(c.env.DB, tipperValue);
   const bet = await c.env.DB.prepare('SELECT * FROM bets WHERE id = ?').bind(id).first<Bet>();
   const [withLegs] = await attachLegs(c.env, [bet as Bet]);
@@ -7990,18 +8017,24 @@ app.patch('/api/bets/:id', async (c) => {
     }
   }
 
-  const nextBetType = body.bet_type ?? existing.bet_type;
-  const isParlay = PARLAY_BET_TYPES.includes(nextBetType);
+  const nextBetType = (body.bet_type ?? existing.bet_type).trim();
+  const isMulti = MULTI_LEG_BET_TYPES.includes(nextBetType);
   let derivedSport: string | null = null;
-  if (isParlay && body.legs !== undefined) {
-    const validated = validateLegs(body.legs);
+  let derivedLine: string | null | undefined;
+  if (body.legs !== undefined) {
+    const validated = validateLegs(body.legs, isMulti);
     if ('error' in validated) return c.json({ error: validated.error }, 400);
-    await replaceLegs(c.env, id, validated.legs);
-    derivedSport = deriveParlaySport(validated.legs);
-  } else if (!isParlay) {
-    // Switched away from a parlay type (or always wasn't one) — legs, if
-    // any, no longer apply to this bet.
     await c.env.DB.prepare('DELETE FROM bet_legs WHERE bet_id = ?').bind(id).run();
+    if (validated.legs.length > 0) await replaceLegs(c.env, id, validated.legs);
+    derivedSport = deriveParlaySport(validated.legs);
+    if ((body as { line?: string }).line === undefined && validated.legs.length > 0) {
+      derivedLine = deriveBetLine(validated.legs, await getOptionValues(c.env.DB, 'line'));
+    }
+  } else if (!isMulti) {
+    // Switched to a single-pick type without sending legs — a multi-leg
+    // list no longer applies; a single leg (the slip's pick card) stays.
+    const n = await c.env.DB.prepare('SELECT COUNT(*) AS n FROM bet_legs WHERE bet_id = ?').bind(id).first<{ n: number }>();
+    if ((n?.n ?? 0) > 1) await c.env.DB.prepare('DELETE FROM bet_legs WHERE bet_id = ?').bind(id).run();
   }
 
   const fields: [string, unknown][] = [];
@@ -8020,6 +8053,7 @@ app.patch('/api/bets/:id', async (c) => {
     fields.push(['tipper', tipperToPromote]);
   }
   if ('line' in body) fields.push(['line', (body as { line?: string }).line?.trim() || null]);
+  else if (derivedLine !== undefined) fields.push(['line', derivedLine]);
 
   if (fields.length > 0) {
     fields.push(['updated_at', now()]);

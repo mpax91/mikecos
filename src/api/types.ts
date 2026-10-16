@@ -1841,19 +1841,25 @@ export type BetResult = string;
 // Only ever non-empty when bet_type is 'Parlay' | 'SGP' |
 // 'SGPx' — see worker/migrations/0038_bet_legs.sql for the money-vs-
 // pick-accuracy split this exists for.
+export type BetLegMarket = 'ML' | 'Spread' | 'Total' | 'Prop';
+
 export interface BetLeg {
   id: string;
   bet_id: string;
   sport: string;
-  bet_type: string;
+  market: BetLegMarket | null; // 0135 — null only on legs the migration couldn't classify
+  bet_type: string | null; // legacy (pre-0135 legs)
   pick: string | null;
   line: number | null;
   over_under: 'over' | 'under' | null;
   odds: number | null;
-  result: BetResult;
+  result: BetResult; // win | loss | push | void | pending
   position: number;
   created_at: string;
 }
+
+/** What the bet slip sends per leg (POST/PATCH /api/bets). */
+export type BetLegInput = Pick<BetLeg, 'sport' | 'market' | 'pick' | 'line' | 'over_under' | 'odds' | 'result'>;
 
 export type BetStakeType = 'cash' | 'free_bet';
 

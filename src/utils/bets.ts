@@ -1,4 +1,4 @@
-import type { Bet, BetOption, BetOptionCategory, BetResult, BetTransaction } from '../api/types';
+import type { Bet, BetLeg, BetLegMarket, BetOption, BetOptionCategory, BetResult, BetTransaction } from '../api/types';
 
 // Fixed lists (like Contacts' CIRCLES) rather than free text, so the
 // "performance by sport"/"performance by bet type" breakdowns stay clean
@@ -36,6 +36,80 @@ export const PARLAY_BET_TYPES = ['Parlay', 'SGP', 'SGPx'];
 
 export function isParlayType(betType: string): boolean {
   return PARLAY_BET_TYPES.includes(betType);
+}
+
+// ---- Bet slip (2026-10-15 redesign) ----
+// Types that hold several legs; every other type holds one (the slip's
+// single pick card). Mirrors MULTI_LEG_BET_TYPES in worker/src/index.ts.
+export const MULTI_LEG_BET_TYPES = [...PARLAY_BET_TYPES, 'Teaser'];
+export function isMultiLegType(betType: string): boolean {
+  return MULTI_LEG_BET_TYPES.includes(betType);
+}
+
+export const LEG_MARKETS: BetLegMarket[] = ['ML', 'Spread', 'Total', 'Prop'];
+export const MARKET_LABELS: Record<BetLegMarket, string> = { ML: 'Moneyline', Spread: 'Spread', Total: 'Total', Prop: 'Prop' };
+
+/** −110 → 1.909, +150 → 2.5. Null for 0 / non-numbers. */
+export function americanToDecimal(odds: number | null | undefined): number | null {
+  if (odds == null || !Number.isFinite(odds) || odds === 0) return null;
+  return odds > 0 ? 1 + odds / 100 : 1 + 100 / Math.abs(odds);
+}
+
+export function decimalToAmerican(dec: number): number {
+  return dec >= 2 ? Math.round((dec - 1) * 100) : -Math.round(100 / (dec - 1));
+}
+
+/** A parlay's price from its legs' prices — null if any leg has no odds.
+ * Pushed / voided legs drop out, the way books reprice a parlay. */
+export function combinedOdds(legs: { odds: number | null; result?: string }[]): number | null {
+  const live = legs.filter((l) => l.result !== 'push' && l.result !== 'void');
+  if (live.length === 0) return null;
+  let dec = 1;
+  for (const l of live) {
+    const d = americanToDecimal(l.odds);
+    if (d == null) return null;
+    dec *= d;
+  }
+  return decimalToAmerican(dec);
+}
+
+/** "+2.5" / "−2.5" / "O 47.5" / "U 275.5" / "" (moneyline). */
+type LegLike = { sport: string; market: BetLeg['market']; pick: string | null; line: number | null; over_under: BetLeg['over_under']; odds: number | null };
+
+export function formatLegLine(leg: Omit<LegLike, 'sport' | 'pick' | 'odds'>): string {
+  if (leg.line == null) return leg.market === 'ML' ? 'ML' : '';
+  if (leg.market === 'Total' || leg.market === 'Prop' || leg.over_under) {
+    return `${leg.over_under === 'under' ? 'U' : 'O'} ${leg.line}`;
+  }
+  return leg.line > 0 ? `+${leg.line}` : leg.line < 0 ? `−${Math.abs(leg.line)}` : 'PK';
+}
+
+/** One line per leg, e.g. "Texans +2.5 (−105)", "KC @ BUF O 47.5 (−110)",
+ * "Bears ML (+140)". */
+export function legSummary(leg: LegLike): string {
+  const line = formatLegLine(leg);
+  const odds = leg.odds != null ? ` (${leg.odds > 0 ? '+' : '−'}${Math.abs(leg.odds)})` : '';
+  return `${leg.pick || leg.sport}${line ? ` ${line}` : ''}${odds}`;
+}
+
+export type LegMark = null | 'loss' | 'push' | 'void';
+
+/** Leg results that go with a bet result. Won: every leg a hit unless
+ * marked push/void. Lost: only once Mike has tapped the leg(s) that
+ * missed — the rest are hits; with nothing tapped every leg stays pending
+ * (the bet is settled, the legs just aren't graded). Anything else (TBD,
+ * push, void, cashed out): marked legs keep their mark, others pending. */
+export function legResultsFor(betResult: string, marks: LegMark[]): string[] {
+  if (betResult === 'win') return marks.map((m) => (m === 'push' || m === 'void' ? m : 'win'));
+  if (betResult === 'loss') {
+    const anyLoss = marks.some((m) => m === 'loss');
+    return marks.map((m) => m ?? (anyLoss ? 'win' : 'pending'));
+  }
+  return marks.map((m) => m ?? 'pending');
+}
+
+export function markFromLegResult(result: string | null | undefined): LegMark {
+  return result === 'loss' || result === 'push' || result === 'void' ? result : null;
 }
 
 // A leg reuses the bet-type vocabulary minus the parlay types themselves
@@ -412,9 +486,10 @@ export interface Pick {
 export function picksFromBets(bets: Bet[]): Pick[] {
   const picks: Pick[] = [];
   for (const bet of bets) {
-    if (isParlayType(bet.bet_type) && bet.legs.length > 0) {
+    if (isMultiLegType(bet.bet_type) && bet.legs.length > 0) {
       for (const leg of bet.legs) {
-        picks.push({ sport: leg.sport, betType: leg.bet_type, overUnder: leg.over_under, result: leg.result });
+        if (leg.result === 'pending') continue; // not graded yet
+        picks.push({ sport: leg.sport, betType: leg.market ?? leg.bet_type ?? 'Other', overUnder: leg.over_under, result: leg.result });
       }
     } else {
       picks.push({ sport: bet.sport, betType: bet.bet_type, overUnder: null, result: bet.result });

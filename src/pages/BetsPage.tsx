@@ -1,15 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api/client';
-import { BET_STAKE_TYPES, type Bet, type BetLeg, type BetOption, type BetPromo, type BetResult, type BetStakeType, type BetTransaction } from '../api/types';
+import { type Bet, type BetOption, type BetPromo, type BetResult, type BetTransaction } from '../api/types';
 import { useReportTabMeta } from '../contexts/TabsContext';
 import type { Granularity } from '../utils/healthPeriods';
 import {
-  BET_TYPES,
-  COMMON_SPORTSBOOKS,
-  LEG_RESULT_OPTIONS,
-  MULTI_SPORT,
-  SPORTS,
-  parlaySport,
   averageLegsPerParlay,
   buildBetPeriods,
   buildEquityCurve,
@@ -19,31 +13,27 @@ import {
   favoriteUnderdogSplit,
   formatMoney,
   formatOdds,
+  isMultiLegType,
+  legSummary,
   groupByOddsRange,
   groupByTipper,
-  isParlayType,
-  legBetTypes,
-  optionLabel,
-  optionValues,
   overUnderHitRate,
   pickAccuracyByBetType,
   pickAccuracyBySport,
   resultLabel,
   sportsbookBalances,
-  withCurrentValue,
-  yesterdayLocalISODash,
   winRateByParlaySize,
   type AggregatedBetPeriod,
   type BetGroupStat,
   type PickAccuracyStat,
 } from '../utils/bets';
-import { Modal } from '../components/Modal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { Link, useSearchParams } from 'react-router-dom';
 import { KebabMenu } from '../components/KebabMenu';
 import { BetsBankingTab } from '../components/BetsBankingTab';
 import { BetsPromosTab } from '../components/BetsPromosTab';
 import { BetsWorkspaceTab } from '../components/BetsWorkspaceTab';
+import { BetSlipModal, SettleBetModal } from '../components/BetSlip';
 
 type BetsTab = 'workspace' | 'log' | 'performance' | 'trends' | 'banking' | 'promos';
 
@@ -132,305 +122,6 @@ function PickAccuracyTable({ title, rows }: { title: string; rows: PickAccuracyS
         </div>
       ))}
     </div>
-  );
-}
-
-type LegDraft = { sport: string; bet_type: string; pick: string; line: string; over_under: '' | 'over' | 'under'; odds: string; result: BetResult };
-
-function emptyLegDraft(legTypes: string[]): LegDraft {
-  return { sport: SPORTS[0], bet_type: legTypes[0] ?? '', pick: '', line: '', over_under: '', odds: '', result: 'win' };
-}
-
-function legDraftFromLeg(leg: BetLeg): LegDraft {
-  return {
-    sport: leg.sport,
-    bet_type: leg.bet_type,
-    pick: leg.pick ?? '',
-    line: leg.line != null ? String(leg.line) : '',
-    over_under: leg.over_under ?? '',
-    odds: leg.odds != null ? String(leg.odds) : '',
-    result: leg.result,
-  };
-}
-
-/** Add/edit form for a single bet. Straight bets keep the simple
- * pick+odds+result flow; Parlay/SGP/SGPx swap the single Pick
- * field for a repeatable leg builder — the bet's own Odds field still
- * holds the parlay's combined price, wager and result still live at the
- * bet level (see 0038_bet_legs.sql's header for why). */
-function BetFormModal({ bet, betOptions, onClose, onSave }: { bet: Bet | null; betOptions: BetOption[]; onClose: () => void; onSave: (params: Record<string, unknown>) => Promise<void> }) {
-  const betTypeOptions = withCurrentValue(optionValues(betOptions, 'bet_type'), bet?.bet_type);
-  const resultOptions = withCurrentValue(optionValues(betOptions, 'result'), bet?.result);
-  const lineOptions = withCurrentValue(optionValues(betOptions, 'line'), bet?.line);
-  const tipperOptions = optionValues(betOptions, 'tipper');
-  const legTypeOptions = legBetTypes(betTypeOptions.length > 0 ? betTypeOptions : BET_TYPES);
-
-  const [date, setDate] = useState(bet?.date ?? yesterdayLocalISODash());
-  const [sport, setSport] = useState(bet?.sport ?? SPORTS[0]);
-  const [sportsbook, setSportsbook] = useState(bet?.sportsbook ?? '');
-  const [betType, setBetType] = useState(bet?.bet_type ?? betTypeOptions[0] ?? BET_TYPES[0]);
-  const [tipper, setTipper] = useState(bet?.tipper ?? '');
-  const [line, setLine] = useState(bet?.line ?? '');
-  const [odds, setOdds] = useState(bet ? String(bet.odds) : '');
-  const [wager, setWager] = useState(bet ? String(bet.wager) : '');
-  const [result, setResult] = useState<BetResult>(bet?.result ?? resultOptions[0] ?? 'win');
-  const [stakeType, setStakeType] = useState<BetStakeType>(bet?.stake_type ?? 'cash');
-  const [notes, setNotes] = useState(bet?.notes ?? '');
-  const [showOverride, setShowOverride] = useState(bet?.manual_profit != null);
-  const [manualProfit, setManualProfit] = useState(bet?.manual_profit != null ? String(bet.manual_profit) : '');
-  const [legs, setLegs] = useState<LegDraft[]>(bet && bet.legs.length > 0 ? bet.legs.map(legDraftFromLeg) : [emptyLegDraft(legTypeOptions), emptyLegDraft(legTypeOptions)]);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const parlay = isParlayType(betType);
-  // Parlays take their sport from the legs (NHL + NFL → Multi-Sport).
-  const effectiveSport = parlay ? parlaySport(legs.map((l) => l.sport)) ?? sport : sport;
-
-  const oddsNum = Number(odds);
-  const wagerNum = Number(wager);
-  const previewProfit =
-    Number.isFinite(oddsNum) && oddsNum !== 0 && Number.isFinite(wagerNum) && wagerNum > 0
-      ? computeProfit({
-          odds: oddsNum,
-          wager: wagerNum,
-          result,
-          stake_type: stakeType,
-          manual_profit: showOverride && manualProfit !== '' ? Number(manualProfit) : null,
-        } as Bet)
-      : null;
-
-  function updateLeg(i: number, patch: Partial<LegDraft>) {
-    setLegs((prev) => prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
-  }
-  function addLeg() {
-    setLegs((prev) => [...prev, emptyLegDraft(legTypeOptions)]);
-  }
-  function removeLeg(i: number) {
-    setLegs((prev) => prev.filter((_, idx) => idx !== i));
-  }
-
-  async function handleSave() {
-    if (!sportsbook.trim()) return setError('Sportsbook is required.');
-    if (!Number.isFinite(oddsNum) || oddsNum === 0) return setError('Odds must be a non-zero number, e.g. -110 or 150.');
-    if (!Number.isFinite(wagerNum) || wagerNum <= 0) return setError('Wager must be a positive number.');
-    let legsPayload: Record<string, unknown>[] | undefined;
-    if (parlay) {
-      if (legs.length < 2) return setError('A parlay needs at least two legs.');
-      for (const l of legs) {
-        if (!l.sport || !l.bet_type) return setError('Every leg needs a sport and bet type.');
-      }
-      legsPayload = legs.map((l) => ({
-        sport: l.sport,
-        bet_type: l.bet_type,
-        pick: l.pick.trim() || null,
-        line: l.line.trim() !== '' ? Number(l.line) : null,
-        over_under: l.over_under || null,
-        odds: l.odds.trim() !== '' ? Number(l.odds) : null,
-        result: l.result,
-      }));
-    }
-    setSaving(true);
-    setError(null);
-    try {
-      await onSave({
-        date,
-        sport: effectiveSport,
-        sportsbook: sportsbook.trim(),
-        bet_type: betType,
-        tipper: tipper.trim() || undefined,
-        line: parlay ? undefined : line || undefined,
-        odds: oddsNum,
-        wager: wagerNum,
-        result,
-        stake_type: stakeType,
-        manual_profit: showOverride && manualProfit !== '' ? Number(manualProfit) : null,
-        notes: notes.trim() || undefined,
-        legs: legsPayload,
-      });
-    } catch (e) {
-      setError(String(e));
-      setSaving(false);
-    }
-  }
-
-  return (
-    <Modal title={bet ? 'Edit Bet' : 'Log a Bet'} onClose={onClose}>
-      <div className="bets-form">
-        <label className="bets-form__field">
-          <span>Date</span>
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-        </label>
-        <label className="bets-form__field">
-          <span>Sport</span>
-          <select value={effectiveSport} onChange={(e) => setSport(e.target.value)} disabled={parlay}>
-            {[...SPORTS, ...(effectiveSport && !SPORTS.includes(effectiveSport) ? [effectiveSport] : [])].map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-          {parlay && (
-            <span className="bets-form__hint">
-              {effectiveSport === MULTI_SPORT ? 'Set from the legs — they span more than one sport.' : 'Set from the legs.'}
-            </span>
-          )}
-        </label>
-        <label className="bets-form__field">
-          <span>Sportsbook</span>
-          <input list="bets-sportsbooks" placeholder="DraftKings" value={sportsbook} onChange={(e) => setSportsbook(e.target.value)} />
-          <datalist id="bets-sportsbooks">
-            {COMMON_SPORTSBOOKS.map((b) => (
-              <option key={b} value={b} />
-            ))}
-          </datalist>
-        </label>
-        <label className="bets-form__field">
-          <span>Bet type</span>
-          <select value={betType} onChange={(e) => setBetType(e.target.value)}>
-            {betTypeOptions.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="bets-form__field">
-          <span>Tipper (optional)</span>
-          <input list="bets-tippers" placeholder="Who's the pick from?" value={tipper} onChange={(e) => setTipper(e.target.value)} />
-          <datalist id="bets-tippers">
-            {tipperOptions.map((t) => (
-              <option key={t} value={t} />
-            ))}
-          </datalist>
-        </label>
-
-        {!parlay && (
-          <label className="bets-form__field">
-            <span>Line (optional)</span>
-            <select value={line} onChange={(e) => setLine(e.target.value)}>
-              <option value="">—</option>
-              {lineOptions.map((l) => (
-                <option key={l} value={l}>
-                  {l}
-                </option>
-              ))}
-            </select>
-            {bet?.pick && <span className="bets-form__hint">Previously logged as "{bet.pick}" — kept for reference, no longer edited here.</span>}
-          </label>
-        )}
-
-        <div className="bets-form__row">
-          <label className="bets-form__field">
-            <span>{parlay ? 'Combined odds (American)' : 'Odds (American)'}</span>
-            <input placeholder="-110" value={odds} onChange={(e) => setOdds(e.target.value)} />
-          </label>
-          <label className="bets-form__field">
-            <span>Wager</span>
-            <input placeholder="25" inputMode="decimal" value={wager} onChange={(e) => setWager(e.target.value)} />
-          </label>
-        </div>
-        <label className="bets-form__field">
-          <span>Funded with</span>
-          <select value={stakeType} onChange={(e) => setStakeType(e.target.value as BetStakeType)}>
-            {BET_STAKE_TYPES.map((t) => (
-              <option key={t.value} value={t.value}>
-                {t.label}
-              </option>
-            ))}
-          </select>
-          {stakeType === 'free_bet' && (
-            <span className="bets-form__hint">A loss here won't be counted against your real balance — the stake wasn't your cash. A win still pays out normally (stake not returned, same as the sportsbook's own rule).</span>
-          )}
-        </label>
-        <label className="bets-form__field">
-          <span>Result</span>
-          <select value={result} onChange={(e) => setResult(e.target.value as BetResult)}>
-            {resultOptions.map((r) => (
-              <option key={r} value={r}>
-                {optionLabel(betOptions, 'result', r) !== r ? optionLabel(betOptions, 'result', r) : resultLabel(r)}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        {parlay && (
-          <div className="bets-legs">
-            <div className="bets-legs__title">Legs</div>
-            {legs.map((leg, i) => (
-              <div key={i} className="bets-legs__row">
-                <select value={leg.sport} onChange={(e) => updateLeg(i, { sport: e.target.value })}>
-                  {SPORTS.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
-                <select value={leg.bet_type} onChange={(e) => updateLeg(i, { bet_type: e.target.value })}>
-                  {withCurrentValue(legTypeOptions, leg.bet_type).map((t) => (
-                    <option key={t} value={t}>
-                      {t}
-                    </option>
-                  ))}
-                </select>
-                <input className="bets-legs__pick" placeholder="Mahomes o275.5 pass yds" value={leg.pick} onChange={(e) => updateLeg(i, { pick: e.target.value })} />
-                <input className="bets-legs__line" placeholder="Line" inputMode="decimal" value={leg.line} onChange={(e) => updateLeg(i, { line: e.target.value })} />
-                <select value={leg.over_under} onChange={(e) => updateLeg(i, { over_under: e.target.value as LegDraft['over_under'] })}>
-                  <option value="">O/U</option>
-                  <option value="over">Over</option>
-                  <option value="under">Under</option>
-                </select>
-                <input className="bets-legs__odds" placeholder="Odds" value={leg.odds} onChange={(e) => updateLeg(i, { odds: e.target.value })} />
-                <select value={leg.result} onChange={(e) => updateLeg(i, { result: e.target.value as BetResult })}>
-                  {LEG_RESULT_OPTIONS.map((r) => (
-                    <option key={r.value} value={r.value}>
-                      {r.label}
-                    </option>
-                  ))}
-                </select>
-                <button type="button" className="bets-legs__remove" onClick={() => removeLeg(i)} disabled={legs.length <= 2} aria-label="Remove leg">
-                  ✕
-                </button>
-              </div>
-            ))}
-            <button type="button" className="link-btn" onClick={() => addLeg()}>
-              + Add leg
-            </button>
-          </div>
-        )}
-
-        {previewProfit != null && (
-          <div className={`bets-form__preview ${previewProfit >= 0 ? 'is-up' : 'is-down'}`}>
-            {previewProfit >= 0 ? 'Profit' : 'Loss'}: {formatMoney(previewProfit)}
-          </div>
-        )}
-
-        {!showOverride ? (
-          <button type="button" className="link-btn" onClick={() => setShowOverride(true)}>
-            Override calculated profit (boost, free bet, partial void…)
-          </button>
-        ) : (
-          <label className="bets-form__field">
-            <span>Actual profit/loss (overrides the calculation above)</span>
-            <input placeholder="e.g. 37.50 or -25" inputMode="decimal" value={manualProfit} onChange={(e) => setManualProfit(e.target.value)} />
-          </label>
-        )}
-
-        <label className="bets-form__field">
-          <span>Notes (optional)</span>
-          <textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
-        </label>
-
-        {error && <div className="bets-form__error">{error}</div>}
-      </div>
-      <div className="modal__actions">
-        <button className="btn btn--ghost" onClick={onClose} disabled={saving}>
-          Cancel
-        </button>
-        <button className="btn" onClick={handleSave} disabled={saving}>
-          {saving ? 'Saving…' : bet ? 'Save' : 'Log Bet'}
-        </button>
-      </div>
-    </Modal>
   );
 }
 
@@ -533,27 +224,41 @@ function ProfitCalendar({ stats, selected, onSelect }: { stats: Map<string, DayS
   );
 }
 
-function BetRow({ bet, showDate, onEdit, onDelete }: { bet: Bet; showDate: boolean; onEdit: (b: Bet) => void; onDelete: (b: Bet) => void }) {
+function BetRow({ bet, showDate, onEdit, onDelete, onSettle }: { bet: Bet; showDate: boolean; onEdit: (b: Bet) => void; onDelete: (b: Bet) => void; onSettle: (b: Bet) => void }) {
   const profit = computeProfit(bet);
+  const multi = isMultiLegType(bet.bet_type) && bet.legs.length > 0;
+  const title = multi ? `${bet.legs.length}-Leg ${bet.bet_type}` : bet.legs[0] ? legSummary(bet.legs[0]) : bet.pick || `${bet.sport} ${bet.bet_type}`;
   return (
     <div className="bets-log__row">
       <div className="bets-log__main">
         {showDate && <span className="bets-log__date">{bet.date}</span>}
-        <span className="bets-log__pick">{bet.pick || (bet.legs.length > 0 ? `${bet.legs.length}-leg ${bet.bet_type}` : `${bet.sport} ${bet.bet_type}`)}</span>
+        <span className="bets-log__pick">{title}</span>
         <span className="bets-log__meta">
           {bet.sport} · {bet.sportsbook} · {formatOdds(bet.odds)} · {formatMoney(bet.wager)}
           {bet.stake_type === 'free_bet' && <span className="bets-log__freebet"> · Free bet</span>}
         </span>
-        {bet.legs.length > 0 && (
+        {multi && (
           <span className="bets-log__legs">
-            {bet.legs.map((l) => `${l.pick || l.sport}${l.over_under ? ` (${l.over_under})` : ''}`).join(' · ')}
+            {bet.legs.map((l, i) => (
+              <span key={l.id} className={`bets-log__leg is-${l.result}`}>
+                {i > 0 ? ' · ' : ''}
+                {legSummary(l)}
+              </span>
+            ))}
           </span>
         )}
       </div>
-      <ResultBadge result={bet.result} />
-      <span className={`bets-log__profit ${profit >= 0 ? 'is-up' : 'is-down'}`}>{formatMoney(profit)}</span>
+      {bet.result === 'tbd' ? (
+        <button type="button" className="chip bets-log__settle" onClick={() => onSettle(bet)}>
+          Settle
+        </button>
+      ) : (
+        <ResultBadge result={bet.result} />
+      )}
+      <span className={`bets-log__profit ${profit >= 0 ? 'is-up' : 'is-down'}`}>{bet.result === 'tbd' ? '—' : formatMoney(profit)}</span>
       <KebabMenu
         items={[
+          ...(bet.result === 'tbd' ? [] : [{ label: 'Change Result', onClick: () => onSettle(bet) }]),
           { label: 'Edit', onClick: () => onEdit(bet) },
           { label: 'Delete', onClick: () => onDelete(bet), danger: true, separatorBefore: true },
         ]}
@@ -564,7 +269,7 @@ function BetRow({ bet, showDate, onEdit, onDelete }: { bet: Bet; showDate: boole
 
 /** The clicked day: its record, net and amount risked, then every bet made
  * that day with how it did. */
-function BetsDayDetail({ date, stat, bets, onClose, onEdit, onDelete }: { date: string; stat: DayStat; bets: Bet[]; onClose: () => void; onEdit: (b: Bet) => void; onDelete: (b: Bet) => void }) {
+function BetsDayDetail({ date, stat, bets, onClose, onEdit, onDelete, onSettle }: { date: string; stat: DayStat; bets: Bet[]; onClose: () => void; onEdit: (b: Bet) => void; onDelete: (b: Bet) => void; onSettle: (b: Bet) => void }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     ref.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -601,14 +306,14 @@ function BetsDayDetail({ date, stat, bets, onClose, onEdit, onDelete }: { date: 
       </div>
       <div className="bets-day__list">
         {bets.map((bet) => (
-          <BetRow key={bet.id} bet={bet} showDate={false} onEdit={onEdit} onDelete={onDelete} />
+          <BetRow key={bet.id} bet={bet} showDate={false} onEdit={onEdit} onDelete={onDelete} onSettle={onSettle} />
         ))}
       </div>
     </div>
   );
 }
 
-function LogTab({ bets, onEdit, onDelete }: { bets: Bet[]; onEdit: (b: Bet) => void; onDelete: (b: Bet) => void }) {
+function LogTab({ bets, onEdit, onDelete, onSettle }: { bets: Bet[]; onEdit: (b: Bet) => void; onDelete: (b: Bet) => void; onSettle: (b: Bet) => void }) {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const stats = useMemo(() => dayStats(bets), [bets]);
@@ -631,7 +336,7 @@ function LogTab({ bets, onEdit, onDelete }: { bets: Bet[]; onEdit: (b: Bet) => v
       <ProfitCalendar stats={stats} selected={selectedDate} onSelect={setSelectedDate} />
 
       {selectedDate && selectedStat && (
-        <BetsDayDetail date={selectedDate} stat={selectedStat} bets={dayBets} onClose={() => setSelectedDate(null)} onEdit={onEdit} onDelete={onDelete} />
+        <BetsDayDetail date={selectedDate} stat={selectedStat} bets={dayBets} onClose={() => setSelectedDate(null)} onEdit={onEdit} onDelete={onDelete} onSettle={onSettle} />
       )}
 
       <div className="toolbar-row" style={{ marginTop: 16 }}>
@@ -643,7 +348,7 @@ function LogTab({ bets, onEdit, onDelete }: { bets: Bet[]; onEdit: (b: Bet) => v
       ) : (
         <div className="bets-log card">
           {filtered.map((bet) => (
-            <BetRow key={bet.id} bet={bet} showDate onEdit={onEdit} onDelete={onDelete} />
+            <BetRow key={bet.id} bet={bet} showDate onEdit={onEdit} onDelete={onDelete} onSettle={onSettle} />
           ))}
         </div>
       )}
@@ -808,6 +513,7 @@ export function BetsPage() {
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<Bet | null>(null);
   const [deleting, setDeleting] = useState<Bet | null>(null);
+  const [settling, setSettling] = useState<Bet | null>(null);
 
   const load = () =>
     Promise.all([api.listBets(), api.listBetTransactions(), api.listBetPromos(), api.listBetOptions()])
@@ -833,6 +539,13 @@ export function BetsPage() {
     if (!editing) return;
     await api.updateBet(editing.id, params);
     setEditing(null);
+    load();
+  }
+
+  async function handleSettle(params: Record<string, unknown>) {
+    if (!settling) return;
+    await api.updateBet(settling.id, params);
+    setSettling(null);
     load();
   }
 
@@ -876,6 +589,10 @@ export function BetsPage() {
   if (!bets || !transactions || !promos) return <div className="empty-state">Loading…</div>;
 
   const balances = sportsbookBalances(bets, transactions);
+  // Most-used books first on the slip's sportsbook chips.
+  const bookCounts = new Map<string, number>();
+  for (const b of bets) bookCounts.set(b.sportsbook, (bookCounts.get(b.sportsbook) ?? 0) + 1);
+  const recentBooks = [...bookCounts.entries()].sort((a, b) => b[1] - a[1]).map(([k]) => k);
 
   return (
     <div>
@@ -909,7 +626,7 @@ export function BetsPage() {
         (bets.length === 0 ? (
           <div className="empty-state">No bets logged yet — log one the day after you make it: sport, sportsbook, odds, wager, and the result.</div>
         ) : (
-          <LogTab bets={bets} onEdit={setEditing} onDelete={setDeleting} />
+          <LogTab bets={bets} onEdit={setEditing} onDelete={setDeleting} onSettle={setSettling} />
         ))}
       {tab === 'performance' &&
         (bets.length === 0 ? <div className="empty-state">No bets logged yet.</div> : <PerformanceTab bets={bets} />)}
@@ -919,8 +636,9 @@ export function BetsPage() {
       )}
       {tab === 'promos' && <BetsPromosTab promos={promos} onCreate={handleCreatePromo} onUpdate={handleUpdatePromo} onDelete={handleDeletePromo} />}
 
-      {adding && <BetFormModal bet={null} betOptions={betOptions} onClose={() => setAdding(false)} onSave={handleCreate} />}
-      {editing && <BetFormModal bet={editing} betOptions={betOptions} onClose={() => setEditing(null)} onSave={handleUpdate} />}
+      {adding && <BetSlipModal bet={null} betOptions={betOptions} recentBooks={recentBooks} onClose={() => setAdding(false)} onSave={handleCreate} />}
+      {editing && <BetSlipModal bet={editing} betOptions={betOptions} recentBooks={recentBooks} onClose={() => setEditing(null)} onSave={handleUpdate} />}
+      {settling && <SettleBetModal bet={settling} betOptions={betOptions} onClose={() => setSettling(null)} onSave={handleSettle} />}
       {deleting && (
         <ConfirmModal
           title="Delete bet?"
