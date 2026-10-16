@@ -7,7 +7,9 @@ import {
   BET_TYPES,
   COMMON_SPORTSBOOKS,
   LEG_RESULT_OPTIONS,
+  MULTI_SPORT,
   SPORTS,
+  parlaySport,
   averageLegsPerParlay,
   buildBetPeriods,
   buildEquityCurve,
@@ -181,6 +183,8 @@ function BetFormModal({ bet, betOptions, onClose, onSave }: { bet: Bet | null; b
   const [error, setError] = useState<string | null>(null);
 
   const parlay = isParlayType(betType);
+  // Parlays take their sport from the legs (NHL + NFL → Multi-Sport).
+  const effectiveSport = parlay ? parlaySport(legs.map((l) => l.sport)) ?? sport : sport;
 
   const oddsNum = Number(odds);
   const wagerNum = Number(wager);
@@ -230,7 +234,7 @@ function BetFormModal({ bet, betOptions, onClose, onSave }: { bet: Bet | null; b
     try {
       await onSave({
         date,
-        sport,
+        sport: effectiveSport,
         sportsbook: sportsbook.trim(),
         bet_type: betType,
         tipper: tipper.trim() || undefined,
@@ -258,13 +262,18 @@ function BetFormModal({ bet, betOptions, onClose, onSave }: { bet: Bet | null; b
         </label>
         <label className="bets-form__field">
           <span>Sport</span>
-          <select value={sport} onChange={(e) => setSport(e.target.value)}>
-            {SPORTS.map((s) => (
+          <select value={effectiveSport} onChange={(e) => setSport(e.target.value)} disabled={parlay}>
+            {[...SPORTS, ...(effectiveSport && !SPORTS.includes(effectiveSport) ? [effectiveSport] : [])].map((s) => (
               <option key={s} value={s}>
                 {s}
               </option>
             ))}
           </select>
+          {parlay && (
+            <span className="bets-form__hint">
+              {effectiveSport === MULTI_SPORT ? 'Set from the legs — they span more than one sport.' : 'Set from the legs.'}
+            </span>
+          )}
         </label>
         <label className="bets-form__field">
           <span>Sportsbook</span>

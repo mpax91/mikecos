@@ -7,6 +7,19 @@ import type { Bet, BetOption, BetOptionCategory, BetResult, BetTransaction } fro
 // scoping discussion this feature was built from).
 export const SPORTS = ['NFL', 'NBA', 'MLB', 'NHL', 'NCAAF', 'NCAAB', 'Soccer', 'Tennis', 'Golf', 'MMA/Boxing', 'Other'];
 
+// A parlay's bet-level sport is never picked by hand — it comes from its
+// legs: one sport across every leg → that sport; more than one →
+// MULTI_SPORT. Deliberately NOT in SPORTS, so it never shows up as a leg's
+// sport or in promo/workspace pickers. The worker derives the same value on
+// save (deriveParlaySport in worker/src/index.ts) — keep the two in sync.
+export const MULTI_SPORT = 'Multi-Sport';
+
+export function parlaySport(legSports: string[]): string | null {
+  const distinct = [...new Set(legSports.map((s) => s.trim()).filter(Boolean))];
+  if (distinct.length === 0) return null;
+  return distinct.length === 1 ? distinct[0] : MULTI_SPORT;
+}
+
 // Defaults seeded by worker/migrations/0084_bet_options_tipper_line.sql —
 // Bet Type, Tipper, Line, and Result are all Settings-editable now (see
 // the Settings tab in BetsPage.tsx and the bet_options table), so these

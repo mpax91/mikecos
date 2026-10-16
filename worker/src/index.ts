@@ -7841,6 +7841,15 @@ function validateLegs(legs: unknown): { error: string } | { legs: BetLegInput[] 
   return { legs: legs as BetLegInput[] };
 }
 
+// Mirrors parlaySport in src/utils/bets.ts: a parlay's bet-level sport is
+// its legs' sport, or 'Multi-Sport' when the legs span more than one.
+const MULTI_SPORT = 'Multi-Sport';
+function deriveParlaySport(legs: BetLegInput[]): string | null {
+  const distinct = [...new Set(legs.map((l) => l.sport?.trim() ?? '').filter(Boolean))];
+  if (distinct.length === 0) return null;
+  return distinct.length === 1 ? distinct[0] : MULTI_SPORT;
+}
+
 async function replaceLegs(env: Env, betId: string, legs: BetLegInput[]): Promise<void> {
   await env.DB.prepare('DELETE FROM bet_legs WHERE bet_id = ?').bind(betId).run();
   const ts = now();
@@ -7914,10 +7923,12 @@ app.post('/api/bets', async (c) => {
 
   const isParlay = PARLAY_BET_TYPES.includes(body.bet_type.trim());
   let legs: BetLegInput[] = [];
+  let sportValue = body.sport.trim();
   if (isParlay) {
     const validated = validateLegs(body.legs);
     if ('error' in validated) return c.json({ error: validated.error }, 400);
     legs = validated.legs;
+    sportValue = deriveParlaySport(legs) ?? sportValue;
   }
 
   const tipperValue = (body as { tipper?: string }).tipper?.trim() || null;
@@ -7930,7 +7941,7 @@ app.post('/api/bets', async (c) => {
     .bind(
       id,
       body.date,
-      body.sport.trim(),
+      sportValue,
       body.sportsbook.trim(),
       body.bet_type.trim(),
       body.pick?.trim() || null,
@@ -7981,10 +7992,12 @@ app.patch('/api/bets/:id', async (c) => {
 
   const nextBetType = body.bet_type ?? existing.bet_type;
   const isParlay = PARLAY_BET_TYPES.includes(nextBetType);
+  let derivedSport: string | null = null;
   if (isParlay && body.legs !== undefined) {
     const validated = validateLegs(body.legs);
     if ('error' in validated) return c.json({ error: validated.error }, 400);
     await replaceLegs(c.env, id, validated.legs);
+    derivedSport = deriveParlaySport(validated.legs);
   } else if (!isParlay) {
     // Switched away from a parlay type (or always wasn't one) — legs, if
     // any, no longer apply to this bet.
@@ -7994,8 +8007,10 @@ app.patch('/api/bets/:id', async (c) => {
   const fields: [string, unknown][] = [];
   const simple: (keyof Bet)[] = ['date', 'sport', 'sportsbook', 'bet_type', 'odds', 'wager', 'result', 'stake_type'];
   for (const key of simple) {
+    if (key === 'sport' && derivedSport) continue;
     if (key in body) fields.push([key, (body as Record<string, unknown>)[key]]);
   }
+  if (derivedSport) fields.push(['sport', derivedSport]);
   if ('pick' in body) fields.push(['pick', body.pick?.trim() || null]);
   if ('notes' in body) fields.push(['notes', body.notes?.trim() || null]);
   if ('manual_profit' in body) fields.push(['manual_profit', body.manual_profit ?? null]);
