@@ -4,6 +4,7 @@ import type { CreditReport } from './types';
 import { cleanReport } from './clean';
 import { summarizeCredit } from './summary';
 import { syncCreditReportsTask } from './task';
+import { loadCreditSettings, scanCreditFolder, storeReport, type FileRow } from './drive';
 
 /** Finance → Credit Reports (migration 0136), mounted at /api/credit-reports
  * behind authGate. Reports are stored whole as JSON (one row per bureau
@@ -36,20 +37,25 @@ async function buildSummary(env: Env) {
   );
 }
 
-async function upsert(env: Env, r: CreditReport, source: string) {
-  const ts = new Date().toISOString();
-  await env.DB.prepare(
-    `INSERT INTO credit_reports (id, bureau, pulled_on, file_id, source, data_json, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(id) DO UPDATE SET bureau = excluded.bureau, pulled_on = excluded.pulled_on, file_id = excluded.file_id,
-       source = excluded.source, data_json = excluded.data_json, updated_at = excluded.updated_at`,
-  )
-    .bind(r.id, r.bureau, r.pulled_on, r.file_id, source, JSON.stringify(r), ts, ts)
-    .run();
-}
+// GET / — the whole page, plus what's in the Drive folder.
+creditReportsRouter.get('/', async (c) => {
+  const summary = await buildSummary(c.env);
+  const s = await loadCreditSettings(c.env);
+  const files = (await c.env.DB.prepare("SELECT * FROM credit_report_files WHERE kind != 'other' ORDER BY name DESC").all<FileRow>()).results ?? [];
+  return c.json({
+    ...summary,
+    drive: {
+      folder: s.folder_name,
+      folderUrl: s.folder_url,
+      lastScanAt: s.last_scan_at,
+      lastError: s.last_error,
+      files: files.map((f) => ({ fileId: f.file_id, name: f.name, kind: f.kind, status: f.status, reportId: f.report_id, error: f.error, webUrl: f.web_url, checkedAt: f.checked_at })),
+    },
+  });
+});
 
-// GET / — the whole page.
-creditReportsRouter.get('/', async (c) => c.json(await buildSummary(c.env)));
+// POST /scan — check the Drive folder now (Scan Drive Now on the page).
+creditReportsRouter.post('/scan', async (c) => c.json(await scanCreditFolder(c.env)));
 
 // GET /reports/:id — one stored report as imported (for the report sheet).
 creditReportsRouter.get('/reports/:id', async (c) => {
@@ -70,7 +76,7 @@ creditReportsRouter.post('/import', async (c) => {
     if (typeof r === 'string') return c.json({ error: `report ${i + 1}: ${r}` }, 400);
     clean.push(r);
   }
-  for (const r of clean) await upsert(c.env, r, 'import');
+  for (const r of clean) await storeReport(c.env, r, 'import');
   await syncCreditReportsTask(c.env);
   return c.json({ imported: clean.length, ids: clean.map((r) => r.id) });
 });

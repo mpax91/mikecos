@@ -44,6 +44,29 @@ export function CreditReportsPage() {
   const [importing, setImporting] = useState(false);
   const [allChecks, setAllChecks] = useState(false);
   const [q, setQ] = useState('');
+  const [scanning, setScanning] = useState<string | null>(null);
+  // Scan Drive Now: keep going while files are queued (each pass reads a few PDFs).
+  const scanNow = async () => {
+    setScanning('Checking Drive…');
+    try {
+      for (let pass = 0; pass < 6; pass++) {
+        const r = await api.scanCreditReports();
+        if (r.error) {
+          setScanning(r.error);
+          break;
+        }
+        setScanning(
+          r.queued
+            ? `Read ${r.read + r.imported} so far…`
+            : `Checked ${r.listed} files${r.read + r.imported ? ` · loaded ${r.read + r.imported}` : ''}${r.notRead ? ` · ${r.notRead} not read yet` : ''}`,
+        );
+        if (!r.queued) break;
+      }
+    } catch (e) {
+      setScanning(e instanceof Error ? e.message : String(e));
+    }
+    load();
+  };
 
   const load = useCallback(() => {
     api
@@ -100,7 +123,8 @@ export function CreditReportsPage() {
         </h1>
         <KebabMenu
           items={[
-            { label: 'Open Drive Folder', onClick: () => window.open(DRIVE_FOLDER, '_blank', 'noopener') },
+            { label: 'Scan Drive Now', onClick: scanNow },
+            { label: 'Open Drive Folder', onClick: () => window.open(data?.drive.folderUrl ?? DRIVE_FOLDER, '_blank', 'noopener') },
             { label: 'Import Reports (JSON)…', onClick: () => setImporting(true) },
           ]}
         />
@@ -111,6 +135,12 @@ export function CreditReportsPage() {
         </p>
       )}
 
+      {scanning && <p className="credit-page__scan">{scanning}</p>}
+      {data && data.drive.files.some((f) => f.status === 'not_read') && (
+        <button type="button" className="credit-page__unread" onClick={() => setParam('tab', 'reports', 'overview')}>
+          ⚠ {data.drive.files.filter((f) => f.status === 'not_read').length} file(s) in the Drive folder couldn’t be read automatically — ask Claude to read them →
+        </button>
+      )}
       {error && <div className="empty-state">Couldn’t load credit reports: {error}</div>}
       {!data && !error && <div className="empty-state empty-state--section">Loading…</div>}
       {data && data.reports.length === 0 && <div className="empty-state">No reports yet. Use ⋯ → Import Reports.</div>}
@@ -253,6 +283,7 @@ export function CreditReportsPage() {
 
           {tab === 'inquiries' && <InquiriesView data={data} />}
 
+          {tab === 'reports' && <DriveCard data={data} onScan={scanNow} />}
           {tab === 'reports' && (
             <section className="fin-dash__card fin-dash__card--full">
               <DashTitle info={<p>Every report in the Drive folder, newest first. Tap one for what it holds and a link to the PDF.</p>}>Reports by Year</DashTitle>
@@ -294,6 +325,71 @@ export function CreditReportsPage() {
         />
       )}
     </div>
+  );
+}
+
+const FILE_STATUS: Record<string, string> = { loaded: 'Loaded', read: 'Read by MikeOS', imported: 'Imported', not_read: 'Not read yet', queued: 'Queued' };
+
+function DriveCard({ data, onScan }: { data: CreditReportsResponse; onScan: () => void }) {
+  const d = data.drive;
+  const files = d.files.filter((f) => f.kind === 'pdf' || f.status !== 'loaded');
+  const unread = files.filter((f) => f.status === 'not_read' || f.status === 'queued');
+  return (
+    <section className="fin-dash__card fin-dash__card--full">
+      <DashTitle
+        info={
+          <>
+            <p>
+              MikeOS checks the Drive folder “Credit Reports” every night. Name each PDF “YYYY.MM.DD - Bureau.pdf”. PDFs in this year’s Equifax, Experian and TransUnion layouts are read automatically;
+              anything it can’t read shows Not read yet — ask Claude to read those, and the .json file it saves in the folder is picked up the same way.
+            </p>
+          </>
+        }
+      >
+        Drive Folder
+      </DashTitle>
+      <p className="fin-dash__muted">
+        {d.folder ? `“${d.folder}”` : 'Not found yet'} ·{' '}
+        {d.lastScanAt ? `checked ${new Date(d.lastScanAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}` : 'not checked yet'}
+        {d.lastError ? ` · ${d.lastError}` : ''}{' '}
+        <button type="button" className="btn btn--ghost btn--sm" onClick={onScan}>
+          Scan Drive Now
+        </button>
+      </p>
+      {unread.length > 0 && (
+        <ul className="credit-mini">
+          {unread.map((f) => (
+            <li key={f.fileId}>
+              <span className="fin-dash__neg">{f.name}</span>
+              <span className="fin-dash__muted">
+                {FILE_STATUS[f.status]}
+                {f.error ? ` — ${f.error}` : ''}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <details>
+        <summary className="fin-dash__muted">All {files.length} files</summary>
+        <ul className="credit-mini">
+          {files.map((f) => (
+            <li key={f.fileId}>
+              {f.webUrl ? (
+                <a href={f.webUrl} target="_blank" rel="noopener noreferrer">
+                  {f.name}
+                </a>
+              ) : (
+                <span>{f.name}</span>
+              )}
+              <span className="fin-dash__muted" title={f.error ?? ''}>
+                {FILE_STATUS[f.status] ?? f.status}
+                {f.error ? ' ⓘ' : ''}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </details>
+    </section>
   );
 }
 

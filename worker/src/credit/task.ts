@@ -12,7 +12,7 @@ import type { Env } from '../types';
 export const CREDIT_TASK_DEF_ID = 'credit-reports';
 const EARLY_DAYS = 30;
 export const CREDIT_TASK_DESCRIPTION =
-  'Pull all three free reports at annualcreditreport.com (Equifax, Experian, TransUnion). Save each PDF to the Google Drive folder "Credit Reports" named "YYYY.MM.DD - Bureau.pdf", then load them into MikeOS (Finance → Credit Reports).';
+  'Pull all three free reports at annualcreditreport.com (Equifax, Experian, TransUnion) and save each PDF to the Google Drive folder "Credit Reports" named "YYYY.MM.DD - Bureau.pdf". MikeOS reads the folder overnight (or Scan Drive Now on Finance → Credit Reports) and checks this off once all three are in. Any it can\'t read: ask Claude to read them.';
 
 const now = () => new Date().toISOString();
 const easternToday = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });

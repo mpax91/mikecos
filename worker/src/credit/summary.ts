@@ -750,7 +750,14 @@ export function summarizeCredit(reportsIn: CreditReport[], match: MikeOSMatchSou
 
   return {
     reports: reportRows,
-    years: [...yearMap.entries()].sort((a, b) => b[0] - a[0]).map(([year, rs]) => ({ year, reports: rs })),
+    years: [...yearMap.entries()]
+      .sort((a, b) => b[0] - a[0])
+      .map(([year, rs]) => ({
+        year,
+        reports: [...rs].sort(
+          (x, y) => (x.bureau === 'other' ? 9 : REAL_BUREAUS.indexOf(x.bureau)) - (y.bureau === 'other' ? 9 : REAL_BUREAUS.indexOf(y.bureau)) || x.pulledOn.localeCompare(y.pulledOn),
+        ),
+      })),
     accounts,
     inquiries,
     addresses: list(addrMap).sort((a, b) => Number(b.current) - Number(a.current)),

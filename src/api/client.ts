@@ -785,6 +785,7 @@ export const api = {
   getCreditReports: () => request<CreditReportsResponse>('/api/credit-reports'),
   importCreditReports: (reports: unknown[]) => request<{ imported: number; ids: string[] }>('/api/credit-reports/import', { method: 'POST', body: JSON.stringify({ reports }) }),
   deleteCreditReport: (id: string) => request<{ ok: true }>(`/api/credit-reports/reports/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  scanCreditReports: () => request<{ folder: string | null; listed: number; read: number; imported: number; notRead: number; queued: number; error: string | null }>('/api/credit-reports/scan', { method: 'POST' }),
   setCreditAccountKnown: (key: string, known: boolean) => request<{ ok: true }>('/api/credit-reports/known', { method: 'POST', body: JSON.stringify({ key, known }) }),
   saveTaxYear: (r: TaxReturnRecord) => request<TaxReturnRecord>(`/api/taxes/${r.year}`, { method: 'PUT', body: JSON.stringify(r) }),
   deleteTaxYear: (year: number) => request<{ ok: true }>(`/api/taxes/${year}`, { method: 'DELETE' }),

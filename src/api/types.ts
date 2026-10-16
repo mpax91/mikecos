@@ -5000,4 +5000,11 @@ export interface CreditReportsResponse {
   negatives: { reportId: string; bureau: CreditBureau; pulledOn: string; kind: string; creditor: string | null; date: string | null; amount: number | null; status: string | null; removalDate: string | null }[];
   stats: CreditStats;
   checks: CreditCheck[];
+  drive: {
+    folder: string | null;
+    folderUrl: string | null;
+    lastScanAt: string | null;
+    lastError: string | null;
+    files: { fileId: string; name: string; kind: 'pdf' | 'json'; status: 'loaded' | 'read' | 'imported' | 'not_read' | 'queued'; reportId: string | null; error: string | null; webUrl: string | null; checkedAt: string | null }[];
+  };
 }

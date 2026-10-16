@@ -63,6 +63,7 @@ import { beeForContact, beeRouter } from './bee/router';
 import { taxesRouter } from './taxes/router';
 import { creditReportsRouter } from './credit/router';
 import { CREDIT_TASK_DEF_ID, CREDIT_TASK_DESCRIPTION, syncCreditReportsTask } from './credit/task';
+import { creditScanDue, scanCreditFolder } from './credit/drive';
 import { fwSyncDue, merchForContact, syncFourthwall } from './bee/merch';
 import { commsRouter } from './comms/router';
 import { commsForContact } from './comms/read';
@@ -8921,6 +8922,12 @@ export default {
           if (await maintScanDue(env, event.scheduledTime)) await scanMaint(env);
         } catch (err) {
           console.error('Home Maintenance scan failed', err);
+        }
+        // Finance → Credit Reports: the Drive "Credit Reports" folder (credit/drive.ts), same slot.
+        try {
+          if (await creditScanDue(env, event.scheduledTime)) await scanCreditFolder(env);
+        } catch (err) {
+          console.error('Credit Reports scan failed', err);
         }
         // Bedford Bee: the Drive "Bedford Bee" exports, same nightly slot.
         try {
