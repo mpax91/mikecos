@@ -30,7 +30,7 @@ export interface TaskMeta {
   description?: string;
   /** The Monday / Friday Work tasks open their brief; a brief's next-day
    * Review task opens its note. */
-  action?: 'week-plan' | 'week-review' | 'open-note' | 'meeting-prep' | 'meeting-debrief' | 'home-maint' | 'bee-throwback';
+  action?: 'week-plan' | 'week-review' | 'open-note' | 'meeting-prep' | 'meeting-debrief' | 'home-maint' | 'bee-throwback' | 'credit-reports';
   /** home-maint: the Home → Maintenance item this "Schedule …" task is for. */
   itemId?: string;
   noteId?: string;
@@ -4889,4 +4889,115 @@ export interface BeeThrowback {
   hidden: { markId: string; anchor: string | null; headline: string | null }[];
   history: (BeeThrowbackUse & { origAnchor: string; origHeadline: string; origDate: string | null; origGrade: BeeGrade | null })[];
   stats: { reshares: number; thursdayTbt: { n: number; avgRank: number | null }; thursdayOther: { n: number; avgRank: number | null } };
+}
+
+// ── Finance → Credit Reports (worker/src/credit/summary.ts) ──
+export type CreditBureau = 'equifax' | 'experian' | 'transunion' | 'other';
+export interface CreditReportRow {
+  id: string;
+  bureau: CreditBureau;
+  source: string | null;
+  pulledOn: string;
+  fileId: string | null;
+  fileName: string | null;
+  unreadable: boolean;
+  partial: boolean;
+  scores: { value: number; model: string | null; bureau: CreditBureau | null }[];
+  accounts: number;
+  open: number;
+  hardInquiries: number;
+  lateMarks: number;
+  notes: string | null;
+  inLatest: boolean;
+}
+export interface CreditAccountRecord {
+  reportId: string;
+  bureau: CreditBureau;
+  pulledOn: string;
+  creditor: string;
+  status: string | null;
+  statusText: string | null;
+  balance: number | null;
+  limit: number | null;
+  highBalance: number | null;
+  monthlyPayment: number | null;
+  lastReported: string | null;
+  lateCounts: { '30': number; '60': number; '90': number; '120': number };
+  owner: string | null;
+  remarks: string[];
+}
+export interface CreditMergedAccount {
+  key: string;
+  name: string;
+  brand: string;
+  kind: string;
+  type: string | null;
+  owner: string | null;
+  opened: string | null;
+  closed: string | null;
+  status: string;
+  statusText: string | null;
+  limit: number | null;
+  highBalance: number | null;
+  balance: number | null;
+  monthlyPayment: number | null;
+  lastReported: string | null;
+  last4s: string[];
+  bureausLatest: CreditBureau[];
+  bureausEver: CreditBureau[];
+  firstSeen: string;
+  lastSeen: string;
+  onLatest: boolean;
+  lates: { month: string; days: number; bureaus: CreditBureau[]; dropsOff: string; onFile: boolean }[];
+  worstLate: number;
+  inMikeOS: string | null;
+  known: boolean;
+  records: CreditAccountRecord[];
+}
+export interface CreditInquiry {
+  key: string;
+  name: string;
+  date: string | null;
+  type: 'hard' | 'soft';
+  bureaus: CreditBureau[];
+  dropsOff: string | null;
+  onFile: boolean;
+}
+export interface CreditCheck {
+  key: string;
+  tone: 'warn' | 'info' | 'good';
+  title: string;
+  detail: string;
+  accountKey?: string;
+}
+export interface CreditStats {
+  latestPull: string | null;
+  latestBureaus: CreditBureau[];
+  openAccounts: number;
+  openCards: number;
+  totalAccountsEver: number;
+  oldestOpened: { name: string; opened: string; years: number } | null;
+  avgAgeOpenYears: number | null;
+  revolvingLimit: number | null;
+  revolvingBalance: number | null;
+  utilization: number | null;
+  totalDebt: number | null;
+  hardInquiries2y: number;
+  latesOnFile: number;
+  latesEver: number;
+  negatives: number;
+  nextPull: string;
+}
+export interface CreditReportsResponse {
+  reports: CreditReportRow[];
+  years: { year: number; reports: { id: string; bureau: CreditBureau; pulledOn: string }[] }[];
+  accounts: CreditMergedAccount[];
+  inquiries: CreditInquiry[];
+  addresses: { address: string; firstSeen: string; lastSeen: string; bureaus: CreditBureau[]; current: boolean }[];
+  employers: { name: string; firstSeen: string; lastSeen: string; bureaus: CreditBureau[] }[];
+  names: { name: string; firstSeen: string; lastSeen: string; bureaus: CreditBureau[] }[];
+  scores: { pulledOn: string; bureau: CreditBureau | null; value: number; model: string | null; reportId: string }[];
+  negatives: { reportId: string; bureau: CreditBureau; pulledOn: string; kind: string; creditor: string | null; date: string | null; amount: number | null; status: string | null; removalDate: string | null }[];
+  stats: CreditStats;
+  checks: CreditCheck[];
 }

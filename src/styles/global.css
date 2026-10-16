@@ -21770,3 +21770,257 @@ td .hm-chip,
     background: rgba(168, 58, 50, 0.25);
   }
 }
+
+/* ---- Finance → Credit Reports (CreditReportsPage.tsx) ---- */
+.credit-page__tabs {
+  margin: 4px 0 14px;
+}
+.credit-page__filters {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.credit-page__search {
+  flex: 1;
+  min-width: 160px;
+  max-width: 320px;
+}
+.credit-checks__open {
+  margin-left: 6px;
+}
+.credit-mini {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+}
+.credit-mini li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: var(--border-hairline);
+  font-size: 14px;
+}
+.credit-mini li > span:last-child {
+  text-align: right;
+  flex: none;
+}
+.credit-dots {
+  display: inline-flex;
+  gap: 3px;
+  vertical-align: middle;
+}
+.credit-dot {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 4px;
+  border-radius: 4px;
+  color: #fff;
+  line-height: 1.4;
+}
+.credit-dot.is-off {
+  color: var(--color-placeholder);
+  background: transparent;
+  border: 1px dashed var(--color-border);
+}
+.credit-dot--equifax,
+.credit-chip--equifax {
+  background: #2a6fb0;
+}
+.credit-dot--experian,
+.credit-chip--experian {
+  background: #c0662e;
+}
+.credit-dot--transunion,
+.credit-chip--transunion {
+  background: #5b8c3a;
+}
+.credit-chip--other {
+  background: #777;
+}
+.credit-years__row {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  padding: 8px 0;
+  border-bottom: var(--border-hairline);
+}
+.credit-years__year {
+  font-family: var(--font-serif);
+  font-size: 18px;
+  width: 48px;
+  flex: none;
+}
+.credit-years__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.credit-chip {
+  border: 0;
+  border-radius: 999px;
+  padding: 4px 10px;
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+}
+.credit-chip .fin-dash__muted {
+  color: rgba(255, 255, 255, 0.85);
+}
+.credit-chip.is-bad {
+  opacity: 0.55;
+}
+.credit-table td.num,
+.credit-table th.num {
+  text-align: right;
+}
+.credit-table tr.is-clickable {
+  cursor: pointer;
+}
+.credit-table--compact td,
+.credit-table--compact th {
+  font-size: 13px;
+}
+.credit-card-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  width: 100%;
+}
+.credit-card-row__top {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.credit-timeline {
+  display: grid;
+  gap: 2px;
+}
+.credit-timeline__axis,
+.credit-timeline__row {
+  display: grid;
+  grid-template-columns: minmax(140px, 260px) 1fr;
+  gap: 10px;
+  align-items: center;
+}
+.credit-timeline__row {
+  border: 0;
+  background: none;
+  padding: 3px 0;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+}
+.credit-timeline__row:hover {
+  background: var(--color-paper);
+}
+.credit-timeline__name {
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.credit-timeline__track {
+  position: relative;
+  height: 14px;
+}
+.credit-timeline__axis .credit-timeline__track {
+  height: 16px;
+  border-bottom: var(--border-hairline);
+}
+.credit-timeline__tick {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  font-size: 11px;
+  color: var(--color-muted);
+}
+.credit-timeline__bar {
+  position: absolute;
+  top: 3px;
+  height: 8px;
+  border-radius: 4px;
+  opacity: 0.35;
+  min-width: 3px;
+}
+.credit-timeline__bar.is-open {
+  opacity: 1;
+}
+.credit-timeline__bar--card {
+  background: #2a6fb0;
+}
+.credit-timeline__bar--loan {
+  background: #c0662e;
+}
+.credit-timeline__bar--home {
+  background: #5b8c3a;
+}
+.credit-timeline__bar--other {
+  background: #888;
+}
+.credit-timeline__late {
+  position: absolute;
+  top: 0;
+  width: 2px;
+  height: 14px;
+  background: #c0392b;
+}
+.credit-timeline__legend {
+  margin-top: 8px;
+  font-size: 12px;
+}
+.credit-timeline__key {
+  display: inline-block;
+  position: static;
+  width: 14px;
+  height: 8px;
+  border-radius: 4px;
+  margin: 0 3px 0 8px;
+}
+.credit-import__text {
+  width: 100%;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  margin: 10px 0;
+}
+@media (max-width: 640px) {
+  .credit-timeline__axis,
+  .credit-timeline__row {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+  .credit-timeline__axis > span:first-child {
+    display: none;
+  }
+}
+/* Credit Score dashboard → link to the reports + pull markers on the trend */
+.credit-score__reports {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+  margin-top: 16px;
+  padding: 14px 16px;
+}
+.credit-score__reports-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  font-size: 14px;
+}
+.credit-score__reports-row .is-bad strong {
+  color: #c0392b;
+}
+.credit-score__reports-go {
+  margin-left: auto;
+  color: var(--color-accent-text);
+}
+.credit-trend__pull {
+  stroke: var(--color-muted);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+  opacity: 0.6;
+}

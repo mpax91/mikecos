@@ -3,6 +3,8 @@ import { api } from '../api/client';
 import type { CreditScoreEntry } from '../api/types';
 import { buildCreditScoreSummary, fmtPts, fmtSigned, monthYear, type CreditScorePoint } from '../utils/creditScore';
 import { ConfirmModal } from './ConfirmModal';
+import { Link } from 'react-router-dom';
+import type { CreditStats } from '../api/types';
 
 function todayLocalISO(): string {
   const d = new Date();
@@ -36,7 +38,7 @@ function StatTile({ label, value, aside, delta, highlight }: { label: string; va
  * any single month's exact score without cluttering the chart with labels
  * on every point; the all-time high/low and latest month get their own
  * small marker so those three moments are visible even without hovering. */
-function CreditTrendChart({ series, allTimeHigh, allTimeLow }: { series: CreditScorePoint[]; allTimeHigh: CreditScorePoint | null; allTimeLow: CreditScorePoint | null }) {
+function CreditTrendChart({ series, allTimeHigh, allTimeLow, pulls }: { series: CreditScorePoint[]; allTimeHigh: CreditScorePoint | null; allTimeLow: CreditScorePoint | null; pulls?: string[] }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
@@ -83,6 +85,11 @@ function CreditTrendChart({ series, allTimeHigh, allTimeLow }: { series: CreditS
         <line x1="0" y1={yOf(max)} x2={w} y2={yOf(max)} className="credit-trend__gridline" />
         <polygon points={areaPoints} className="credit-trend__area" />
         <polyline points={linePoints} className="credit-trend__line" />
+        {/* Months a bureau report was pulled (Finance → Credit Reports). */}
+        {(pulls ?? []).map((m) => {
+          const i = series.findIndex((p) => p.date.slice(0, 7) === m);
+          return i >= 0 ? <line key={m} x1={coords[i][0]} y1={h - 14} x2={coords[i][0]} y2={h} className="credit-trend__pull" /> : null;
+        })}
         {hoverIndex != null && <line x1={coords[hoverIndex][0]} y1="0" x2={coords[hoverIndex][0]} y2={h} className="credit-trend__crosshair" />}
         {lowIndex >= 0 && <circle cx={coords[lowIndex][0]} cy={coords[lowIndex][1]} r="4" className="credit-trend__dot credit-trend__dot--low" />}
         {highIndex >= 0 && <circle cx={coords[highIndex][0]} cy={coords[highIndex][1]} r="4" className="credit-trend__dot credit-trend__dot--high" />}
@@ -93,7 +100,10 @@ function CreditTrendChart({ series, allTimeHigh, allTimeLow }: { series: CreditS
       {hover && hoverLeftPct != null && (
         <div className="credit-trend__tooltip" style={{ left: `${hoverLeftPct}%` }}>
           <div className="credit-trend__tooltip-value">{fmtPts(hover.average)}</div>
-          <div className="credit-trend__tooltip-date">{monthYear(hover.date)}</div>
+          <div className="credit-trend__tooltip-date">
+            {monthYear(hover.date)}
+            {pulls?.includes(hover.date.slice(0, 7)) ? ' · reports pulled' : ''}
+          </div>
         </div>
       )}
 
@@ -193,8 +203,15 @@ export function CreditScoreDashboard() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
 
+  const [reports, setReports] = useState<{ stats: CreditStats; pulls: string[] } | null>(null);
   const load = useCallback(() => {
     api.listCreditScore().then(setEntries).catch((e) => setError(String(e)));
+  }, []);
+  useEffect(() => {
+    api
+      .getCreditReports()
+      .then((c) => c.reports.length && setReports({ stats: c.stats, pulls: [...new Set(c.reports.map((r) => r.pulledOn.slice(0, 7)))] }))
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -287,9 +304,30 @@ export function CreditScoreDashboard() {
 
           <div className="dashboard-page__trend-panel card">
             <div className="stats-page__section-title">Score trend</div>
-            <CreditTrendChart series={summary.series} allTimeHigh={summary.allTimeHigh} allTimeLow={summary.allTimeLow} />
+            <CreditTrendChart series={summary.series} allTimeHigh={summary.allTimeHigh} allTimeLow={summary.allTimeLow} pulls={reports?.pulls} />
           </div>
         </>
+      )}
+
+      {reports && (
+        <Link to="/finance/credit" className="credit-score__reports card">
+          <div className="stats-page__section-title">From Your Credit Reports · {monthYear(reports.stats.latestPull ?? '')}</div>
+          <div className="credit-score__reports-row">
+            <span>
+              <strong>{reports.stats.openAccounts}</strong> open accounts
+            </span>
+            <span>
+              <strong>{reports.stats.oldestOpened ? `${reports.stats.oldestOpened.years} yrs` : '—'}</strong> oldest
+            </span>
+            <span>
+              <strong>{reports.stats.hardInquiries2y}</strong> hard inquiries (2 yrs)
+            </span>
+            <span className={reports.stats.latesOnFile ? 'is-bad' : ''}>
+              <strong>{reports.stats.latesOnFile}</strong> lates on file
+            </span>
+            <span className="credit-score__reports-go">Open Credit Reports →</span>
+          </div>
+        </Link>
       )}
 
       <div className="credit-score__add card">

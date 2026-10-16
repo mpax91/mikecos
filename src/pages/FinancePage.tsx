@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
-import type { AccountOwner, CashPlacement, FinanceAccount, FinanceAttentionItem, RewardsOverview, TaxYearSummary } from '../api/types';
+import type { AccountOwner, CashPlacement, FinanceAccount, FinanceAttentionItem, RewardsOverview, TaxYearSummary, CreditStats } from '../api/types';
 import { CashPlacementCard } from '../components/CashPlacementCard';
 import { FinanceRewardsCard } from '../components/CardRewardsPanel';
 import { useReportTabMeta } from '../contexts/TabsContext';
@@ -23,12 +23,17 @@ export function FinancePage() {
   const [cash, setCash] = useState<CashPlacement | null>(null);
   const [rewards, setRewards] = useState<RewardsOverview | null>(null);
   const [taxYear, setTaxYear] = useState<TaxYearSummary | null>(null);
+  const [credit, setCredit] = useState<CreditStats | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
     api
       .getTaxes()
       .then((t) => setTaxYear(t.summary[t.summary.length - 1] ?? null))
+      .catch(() => {});
+    api
+      .getCreditReports()
+      .then((c) => setCredit(c.reports.length ? c.stats : null))
       .catch(() => {});
   }, []);
 
@@ -227,6 +232,24 @@ export function FinancePage() {
                   <span className="finance-page__row-sub">
                     {taxYear.effTotal != null ? `${(taxYear.effTotal * 100).toFixed(1)}% income tax · ` : ''}
                     {taxYear.federalBalance == null ? '' : taxYear.federalBalance >= 0 ? `Refund $${taxYear.federalBalance.toLocaleString('en-US')}` : `Owed $${(-taxYear.federalBalance).toLocaleString('en-US')}`}
+                  </span>
+                )}
+              </span>
+              <span className="finance-page__chev">›</span>
+            </Link>
+            <Link to="/finance/credit" className="finance-page__row">
+              <span className="finance-page__row-name">
+                <span className="cloud-meters__label">📑 Credit Reports</span>
+                <span className="cloud-meters__provider">
+                  {credit?.latestPull ? `Equifax · Experian · TransUnion · Latest ${new Date(`${credit.latestPull}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' })}` : 'Yearly reports from the three bureaus'}
+                </span>
+              </span>
+              <span />
+              <span className="finance-page__row-value">
+                {credit ? `${credit.openAccounts} open accounts` : ''}
+                {credit && (
+                  <span className="finance-page__row-sub">
+                    {credit.latesOnFile ? `${credit.latesOnFile} late on file` : 'No lates on file'} · {credit.hardInquiries2y} hard inquiries
                   </span>
                 )}
               </span>

@@ -201,6 +201,11 @@ export function TaskRow({
             Open Throwbacks →
           </Link>
         )}
+        {creditAction(entity.content) && (
+          <Link to="/finance/credit" className="task-row__brief-link" onClick={(e) => e.stopPropagation()}>
+            Open Credit Reports →
+          </Link>
+        )}
         {maintAction(entity.content) && (
           <Link to="/home?section=maintenance" className="task-row__brief-link" onClick={(e) => e.stopPropagation()}>
             Open Maintenance →
@@ -321,6 +326,16 @@ function throwbackAction(content: string | null): boolean {
   if (!content || !content.includes('bee-throwback')) return false;
   try {
     return (JSON.parse(content) as { action?: string }).action === 'bee-throwback';
+  } catch {
+    return false;
+  }
+}
+
+/** The yearly Feb 22 "Pull Free Credit Reports" task carries `{ action: 'credit-reports' }`. */
+function creditAction(content: string | null): boolean {
+  if (!content || !content.includes('credit-reports')) return false;
+  try {
+    return (JSON.parse(content) as { action?: string }).action === 'credit-reports';
   } catch {
     return false;
   }

@@ -27,6 +27,7 @@ import { CloudPage } from './pages/CloudPage';
 import { FinancePage } from './pages/FinancePage';
 import { FinanceAccountPage } from './pages/FinanceAccountPage';
 import { TaxesPage } from './pages/TaxesPage';
+import { CreditReportsPage } from './pages/CreditReportsPage';
 import { VaultPage } from './pages/VaultPage';
 import { VaultRollupsPage } from './pages/VaultRollupsPage';
 import { WalletPage } from './pages/WalletPage';
@@ -100,6 +101,7 @@ export default function App() {
             <Route path="/cloud" element={<CloudPage />} />
             <Route path="/finance" element={<FinancePage />} />
             <Route path="/finance/taxes" element={<TaxesPage />} />
+            <Route path="/finance/credit" element={<CreditReportsPage />} />
             <Route path="/finance/:id" element={<FinanceAccountPage />} />
             <Route path="/vault" element={<VaultPage />} />
             <Route path="/vault/rollups" element={<VaultRollupsPage />} />

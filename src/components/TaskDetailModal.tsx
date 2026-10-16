@@ -337,6 +337,16 @@ export function TaskDetailModal({
             🕰️ Open Throwbacks
           </Link>
         )}
+        {entity && parseTaskMeta(entity.content).action === 'credit-reports' && (
+          <>
+            <a className="btn task-panel__brief-btn" href="https://www.annualcreditreport.com" target="_blank" rel="noopener noreferrer">
+              🔐 AnnualCreditReport.com
+            </a>
+            <Link className="btn task-panel__brief-btn" to="/finance/credit" onClick={onClose}>
+              📑 Open Credit Reports
+            </Link>
+          </>
+        )}
         {entity && parseTaskMeta(entity.content).action === 'home-maint' && (
           <Link className="btn task-panel__brief-btn" to="/home?section=maintenance" onClick={onClose}>
             🔧 Open Home Maintenance

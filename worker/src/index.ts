@@ -61,6 +61,8 @@ import { afterBillTaskSpawned, autopayBillsForToday, billsOnCalendar, billsRoute
 import { scanAllLiveFolders, statementsScanDue } from './statements/engine';
 import { beeForContact, beeRouter } from './bee/router';
 import { taxesRouter } from './taxes/router';
+import { creditReportsRouter } from './credit/router';
+import { CREDIT_TASK_DEF_ID, CREDIT_TASK_DESCRIPTION, syncCreditReportsTask } from './credit/task';
 import { fwSyncDue, merchForContact, syncFourthwall } from './bee/merch';
 import { commsRouter } from './comms/router';
 import { commsForContact } from './comms/read';
@@ -118,6 +120,7 @@ app.route('/api/account-payers', accountPayersRouter);
 app.route('/api/bills', billsRouter);
 app.route('/api/bee', beeRouter);
 app.route('/api/taxes', taxesRouter);
+app.route('/api/credit-reports', creditReportsRouter);
 app.route('/api/comms', commsRouter);
 app.route('/api/contacts/ask', contactsAssistantRouter);
 app.route('/api/bets/enrichment', betsEnrichmentRouter);
@@ -447,6 +450,8 @@ async function spawnDueRecurringTasks(db: D1Database, todayIso: string): Promise
       // The Monday / Friday brief tasks open their brief (TaskMeta.action).
       // Saturday "Pick This Week's Throwback" opens Bee → Throwback (bee/throwback.ts).
       if (def.id === 'bee-throwback') await db.prepare('UPDATE entities SET content = ? WHERE id = ?').bind(JSON.stringify({ action: 'bee-throwback' }), id).run();
+      // Feb 22 "Pull Free Credit Reports" opens Finance → Credit Reports (credit/task.ts).
+      if (def.id === CREDIT_TASK_DEF_ID) await db.prepare('UPDATE entities SET content = ? WHERE id = ?').bind(JSON.stringify({ action: 'credit-reports', description: CREDIT_TASK_DESCRIPTION }), id).run();
       if (def.id === 'work-week-plan' || def.id === 'work-week-review') {
         await db
           .prepare('UPDATE entities SET content = ? WHERE id = ?')
@@ -464,6 +469,8 @@ async function spawnDueRecurringTasks(db: D1Database, todayIso: string): Promise
     if (def.bill_id) await afterBillTaskSpawned(db, def.bill_id, def.id, id, dueDate);
     // Monthly Bedford Bee export reminder: already done if the files came early.
     if (def.id === BEE_TASK_DEF_ID) await syncBeeExportTask({ DB: db } as Env);
+    // Yearly credit-report pull: already done if the reports came in early.
+    if (def.id === CREDIT_TASK_DEF_ID) await syncCreditReportsTask({ DB: db } as Env);
   }
 }
 
