@@ -3439,7 +3439,7 @@ export interface TargetCardStatementRow {
   apr: number | null;
   savingsYtd: number | null;
   savings: number | null;
-  autopay: boolean | null;
+  paidInFullOnDue: boolean | null;
   paidLate: boolean;
   fileId: string;
   checksOk: boolean;
@@ -3489,7 +3489,6 @@ export interface TargetCardSummary {
   lateFees: { date: string; amount: number }[];
   totalFees: number;
   totalInterest: number;
-  autopayLikely: boolean | null;
   charges: { date: string; description: string; kind: 'fee' | 'interest' | 'credit'; amount: number }[];
   changes: { date: string; what: 'apr' | 'credit_line' | 'renamed'; from: string; to: string }[];
   statements: TargetCardStatementRow[];

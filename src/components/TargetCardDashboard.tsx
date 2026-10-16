@@ -123,7 +123,7 @@ export function TargetCardDashboard({ data, onDismissFlag }: { data: Data; onDis
           <span className="fin-dash__stat-label">Balance</span>
           <span className="fin-dash__stat-value">{money(s.balance)}</span>
           <span className="fin-dash__stat-sub">
-            {latest ? (s.nextDue ? `${paymentText(latest)}${s.autopayLikely ? ' · AutoPay' : ''}` : `as of ${fmtDate(latest.closingDate)}`) : '—'}
+            {latest ? (s.nextDue ? `${paymentText(latest)}` : `as of ${fmtDate(latest.closingDate)}`) : '—'}
           </span>
         </button>
         <button type="button" className="fin-dash__stat" onClick={() => setSheet({ kind: 'saved', title: 'Saved by Year' })}>
@@ -169,7 +169,6 @@ export function TargetCardDashboard({ data, onDismissFlag }: { data: Data; onDis
               <dt>Payment</dt>
               <dd>
                 {paymentText(latest)}
-                {s.nextDue && s.autopayLikely ? ' — AutoPay pays it that day' : ''}
               </dd>
               <dt>Credit Limit</dt>
               <dd>{s.creditLine !== null ? `${money(s.creditLine, false)}${s.utilization !== null ? ` · ${s.utilization.toFixed(1)}% used` : ''}` : '—'}</dd>
@@ -191,9 +190,8 @@ export function TargetCardDashboard({ data, onDismissFlag }: { data: Data; onDis
         )}
 
         <section className="fin-dash__card">
-          <DashTitle info={<p>Patterns in the statements, recomputed with every new one.</p>}>Worth Knowing</DashTitle>
+          <DashTitle info={<p>Patterns in the statements, recomputed with every new one. Target statements don’t say whether a payment was AutoPay — set it in Settings → Bills &amp; Due Dates.</p>}>Worth Knowing</DashTitle>
           <ul className="fios-dash__notes">
-            {s.autopayLikely && <li>Every payment is the full statement balance on the due date — that’s AutoPay. Bills &amp; Due Dates treats it as Auto-Pay (change it there if not).</li>}
             {s.onlineShare !== null && (
               <li>
                 {s.onlineShare}% of what you’ve put on the card was on Target.com; the rest in a store.
@@ -429,7 +427,7 @@ function StatementSheet({
         <dt>Payments</dt>
         <dd>
           {money(-r.paid)}
-          {r.autopay ? ' (on the due date)' : r.paidLate ? ' (after the due date)' : ''}
+          {r.paidInFullOnDue ? ' (paid in full on time)' : r.paidLate ? ' (after the due date)' : ''}
         </dd>
         {r.refunds > 0.005 && (
           <>

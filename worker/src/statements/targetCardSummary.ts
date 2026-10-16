@@ -55,8 +55,9 @@ export interface TargetCardStatementRow {
   savingsYtd: number | null;
   savings: number | null; // this statement's share of the year's savings
   /** The statement's payment = the previous statement's full balance, on
-   * its due date (or a day after) — the AutoPay pattern. null = no payment. */
-  autopay: boolean | null;
+   * its due date (or a day after). null = no payment. Target statements never
+   * say whether a payment was AutoPay, so this is NOT evidence of AutoPay. */
+  paidInFullOnDue: boolean | null;
   paidLate: boolean; // a payment that landed after the previous due date
   fileId: string;
   checksOk: boolean;
@@ -125,7 +126,6 @@ export interface TargetCardSummary {
   lateFees: { date: string; amount: number }[];
   totalFees: number;
   totalInterest: number;
-  autopayLikely: boolean | null; // latest payment followed the AutoPay pattern
   charges: TargetCardCharge[];
   changes: TargetCardChange[];
   statements: TargetCardStatementRow[];
@@ -177,13 +177,13 @@ export function summarizeTargetCard(stmts: TargetCardStmtRow[], txns: TargetCard
       savings = round2(Math.max(0, v.savingsYtd - (lastYtd.get(y) ?? 0)));
       lastYtd.set(y, v.savingsYtd);
     }
-    let autopay: boolean | null = null;
+    let paidInFullOnDue: boolean | null = null;
     let paidLate = false;
     const pays = txns.filter((t) => t.statementId === s.id && t.kind === 'payment');
     if (pays.length) {
-      autopay = false;
+      paidInFullOnDue = false;
       if (prev && prev.dueDate && prev.newBalance > 0.005) {
-        autopay = pays.some((p) => Math.abs(-p.amount - prev.newBalance) < 0.005 && p.date >= prev.dueDate! && p.date <= addDays(prev.dueDate!, 1));
+        paidInFullOnDue = pays.some((p) => Math.abs(-p.amount - prev.newBalance) < 0.005 && p.date >= prev.dueDate! && p.date <= addDays(prev.dueDate!, 1));
         paidLate = pays.every((p) => p.date > prev.dueDate!);
       }
     }
@@ -205,7 +205,7 @@ export function summarizeTargetCard(stmts: TargetCardStmtRow[], txns: TargetCard
       apr: v.purchaseApr,
       savingsYtd: v.savingsYtd,
       savings,
-      autopay,
+      paidInFullOnDue,
       paidLate,
       fileId: s.fileId,
       checksOk: s.checks.every((c) => c.ok),
@@ -271,7 +271,6 @@ export function summarizeTargetCard(stmts: TargetCardStmtRow[], txns: TargetCard
   const onlineTotal = round2(rows.reduce((s, r) => s + r.online, 0));
   const purchaseTxns = txns.filter((t) => t.kind === 'purchase');
   const thisYear = years.find((y) => String(y.year) === year);
-  const latestPay = [...rows].reverse().find((r) => r.autopay !== null && r.previousBalance > 0.005);
   const expectNext = !!latest && Math.abs(latest.newBalance) >= 0.005;
 
   return {
@@ -302,7 +301,6 @@ export function summarizeTargetCard(stmts: TargetCardStmtRow[], txns: TargetCard
     lateFees,
     totalFees: round2(years.reduce((s, y) => s + y.fees, 0)),
     totalInterest: round2(years.reduce((s, y) => s + y.interest, 0)),
-    autopayLikely: latestPay ? latestPay.autopay : null,
     charges,
     changes,
     statements: rows,

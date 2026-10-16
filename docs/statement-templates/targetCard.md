@@ -55,10 +55,12 @@ only while the latest statement has a balance.
 
 ## AutoPay
 
-Not printed. Inferred: a payment equal to the previous statement's full
-balance dated on its due date (or one day after) = AutoPay. Feeds
-`billing.autopay` (Bills & Due Dates, Auto-Pay Quick Fact); Mike can
-override in Bills.
+Not printed, so **not inferred** (Mike, 2026-10-15): paying the full
+balance on the due date looks the same whether AutoPay or Mike paid it.
+`billing.autopay` is always null → Bills & Due Dates / the Auto-Pay Quick
+Fact follow Mike's Bills row or the account payer (Pays For mode). Rows
+keep `paidInFullOnDue` (full previous balance on/one day after the due
+date) for the "paid in full on time" label only.
 
 ## Outputs
 

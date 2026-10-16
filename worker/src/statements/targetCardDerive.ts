@@ -165,14 +165,15 @@ export async function deriveTargetCard(env: Env, folder: FolderRow): Promise<voi
   flags.push(...cardChargeFlags(name, stmts.map((x) => x.id), txns));
 
   // ---- Billing → payer flags + payment Quick Facts + Bills ----
-  // Each bill's Auto-Pay is read off the NEXT statement's payment (paid in
-  // full on the due date = AutoPay); the latest bill takes the latest pattern.
+  // Target statements never print whether a payment was AutoPay, so Auto-Pay
+  // is unknown (null) here — Mike's Bills row / payer setting decides. Paying
+  // in full on the due date is NOT taken as AutoPay (Mike, 2026-10-15).
   const billing = billingFromBills(
     s.statements.map((r, i) => {
       const next = s.statements[i + 1];
       const paid = r.newBalance <= 0.005 ? true : next ? next.carried <= 0.005 : null;
       const owed = Math.max(0, r.newBalance);
-      return { date: r.closingDate, amount: owed, totalDue: owed, dueDate: r.dueDate, autopay: next ? next.autopay : s.autopayLikely, paid };
+      return { date: r.closingDate, amount: owed, totalDue: owed, dueDate: r.dueDate, autopay: null, paid };
     })
   );
   meta.billing = billing;
@@ -200,7 +201,7 @@ export async function deriveTargetCard(env: Env, folder: FolderRow): Promise<voi
         ? `Credit of ${fmtMoney(-latest.newBalance)} — nothing to pay`
         : !s.nextDue
           ? 'Nothing due'
-          : `${fmtMoney(latest.newBalance)} by ${latest.dueDate ? fmtMdy(latest.dueDate) : '—'}${s.autopayLikely ? ' (AutoPay pays it on the due date)' : ` (minimum ${fmtMoney(latest.minimumPayment)})`}`;
+          : `${fmtMoney(latest.newBalance)} by ${latest.dueDate ? fmtMdy(latest.dueDate) : '—'} (minimum ${fmtMoney(latest.minimumPayment)})`;
     sections.push({
       key: 'current',
       match: (h) => /^(Balance|Current Statement|Latest Statement)\b/i.test(h),
@@ -209,7 +210,7 @@ export async function deriveTargetCard(env: Env, folder: FolderRow): Promise<voi
         kv([
           ['Statement Balance', fmtMoney(latest.newBalance)],
           ['Payment Due', payLine],
-          ['Last Payment', latest.paid > 0.005 ? `${fmtMoney(latest.paid)}${latest.autopay ? ' (on the due date — AutoPay)' : ''}` : 'None this statement'],
+          ['Last Payment', latest.paid > 0.005 ? `${fmtMoney(latest.paid)}${latest.paidInFullOnDue ? ' (paid in full on time)' : latest.paidLate ? ' (after the due date)' : ''}` : 'None this statement'],
           ['Paid in Full', s.paidInFullStreak ? `${s.paidInFullStreak} statement${s.paidInFullStreak === 1 ? '' : 's'} in a row` : 'Not on the latest statement'],
           ['Credit Limit', s.creditLine !== null ? `${fmtMoney(s.creditLine)}${s.utilization !== null ? ` · ${s.utilization.toFixed(1)}% used` : ''}` : '—'],
           ['Purchase APR', s.purchaseApr !== null ? `${s.purchaseApr}% (variable)` : '—'],
