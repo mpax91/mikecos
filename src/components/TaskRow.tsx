@@ -326,7 +326,7 @@ function noteAction(content: string | null): string | null {
   }
 }
 
-/** The Saturday "Pick This Week's Throwback" task carries `{ action: 'bee-throwback' }`. */
+/** The Saturday "Pick This Week's Bedford Bee Throwback Post" task carries `{ action: 'bee-throwback' }`. */
 function throwbackAction(content: string | null): boolean {
   if (!content || !content.includes('bee-throwback')) return false;
   try {

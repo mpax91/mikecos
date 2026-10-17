@@ -37,7 +37,7 @@ export function ThrowbackSettings() {
     <>
       <h3 className="settings-page__field-label">Throwback Thursday</h3>
       <p className="settings-page__section-hint">
-        Bee → <Link to="/bee?tab=throwback">Throwback</Link> ranks older stories to reshare. “Pick This Week’s Throwback” appears every Saturday and checks itself off when you pick one — change the
+        Bee → <Link to="/bee?tab=throwback">Throwback</Link> ranks older stories to reshare. “Pick This Week’s Bedford Bee Throwback Post” appears every Saturday and checks itself off when you pick one — change the
         day or turn it off in <Link to="/settings?cat=recurring">Recurring Tasks</Link>.
       </p>
       {s && (
