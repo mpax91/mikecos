@@ -32,16 +32,43 @@ CREATE TABLE home_paints (
 
 CREATE INDEX idx_home_paints_room ON home_paints(room_id);
 
+-- Seed lists go through a scratch table (D1 rejects long compound SELECTs:
+-- "too many terms in compound SELECT").
+CREATE TABLE _seed_floors (name TEXT NOT NULL, pos INTEGER NOT NULL);
+INSERT INTO _seed_floors VALUES ('Basement', 0);
+INSERT INTO _seed_floors VALUES ('1st Floor', 1);
+INSERT INTO _seed_floors VALUES ('2nd Floor', 2);
+INSERT INTO _seed_floors VALUES ('3rd Floor', 3);
+
 -- Floors (only the 2nd Floor existed). Matched by name, so nothing doubles.
 INSERT INTO home_floors (id, name, position, created_at, updated_at)
 SELECT lower(hex(randomblob(16))), f.name, f.pos, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-FROM (SELECT 'Basement' AS name, 0 AS pos UNION ALL SELECT '1st Floor', 1 UNION ALL SELECT '2nd Floor', 2 UNION ALL SELECT '3rd Floor', 3) f
+FROM _seed_floors f
 WHERE NOT EXISTS (SELECT 1 FROM home_floors h WHERE lower(trim(h.name)) = lower(f.name));
 
-UPDATE home_floors SET position = 0 WHERE lower(trim(name)) = 'basement';
-UPDATE home_floors SET position = 1 WHERE lower(trim(name)) = '1st floor';
-UPDATE home_floors SET position = 2 WHERE lower(trim(name)) = '2nd floor';
-UPDATE home_floors SET position = 3 WHERE lower(trim(name)) = '3rd floor';
+UPDATE home_floors SET position = (SELECT f.pos FROM _seed_floors f WHERE lower(f.name) = lower(trim(home_floors.name)))
+WHERE lower(trim(name)) IN (SELECT lower(name) FROM _seed_floors);
+
+CREATE TABLE _seed_rooms (floor TEXT NOT NULL, name TEXT NOT NULL);
+INSERT INTO _seed_rooms VALUES ('basement', 'Laundry Room');
+INSERT INTO _seed_rooms VALUES ('basement', 'Boiler Room');
+INSERT INTO _seed_rooms VALUES ('1st floor', 'Mudroom');
+INSERT INTO _seed_rooms VALUES ('1st floor', 'Kitchen');
+INSERT INTO _seed_rooms VALUES ('1st floor', '1st Floor Bathroom');
+INSERT INTO _seed_rooms VALUES ('1st floor', 'Living Room');
+INSERT INTO _seed_rooms VALUES ('1st floor', 'Dining Room');
+INSERT INTO _seed_rooms VALUES ('1st floor', 'Study');
+INSERT INTO _seed_rooms VALUES ('1st floor', 'Foyer');
+INSERT INTO _seed_rooms VALUES ('2nd floor', '2nd Floor Bathroom');
+INSERT INTO _seed_rooms VALUES ('2nd floor', 'Office');
+INSERT INTO _seed_rooms VALUES ('2nd floor', 'Chase''s Room');
+INSERT INTO _seed_rooms VALUES ('2nd floor', 'Cady''s Room');
+INSERT INTO _seed_rooms VALUES ('2nd floor', 'Master Bedroom');
+INSERT INTO _seed_rooms VALUES ('2nd floor', 'Master Bedroom Closet');
+INSERT INTO _seed_rooms VALUES ('3rd floor', 'Playroom');
+INSERT INTO _seed_rooms VALUES ('3rd floor', 'Gym');
+INSERT INTO _seed_rooms VALUES ('3rd floor', '3rd Floor Bathroom');
+INSERT INTO _seed_rooms VALUES ('3rd floor', 'Attic');
 
 -- Every room, unmeasured placeholders (120" × 120"); rooms that already exist
 -- on that floor (same name, any case) are left alone.
@@ -49,26 +76,9 @@ INSERT INTO home_rooms (id, floor_id, name, x, y, width, depth, points, measured
 SELECT lower(hex(randomblob(16))), fl.id, r.name, 0, 0, 120, 120,
        '[{"x":0,"y":0},{"x":120,"y":0},{"x":120,"y":120},{"x":0,"y":120}]', 0,
        strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-FROM (
-  SELECT 'basement' AS floor, 'Laundry Room' AS name
-  UNION ALL SELECT 'basement', 'Boiler Room'
-  UNION ALL SELECT '1st floor', 'Mudroom'
-  UNION ALL SELECT '1st floor', 'Kitchen'
-  UNION ALL SELECT '1st floor', '1st Floor Bathroom'
-  UNION ALL SELECT '1st floor', 'Living Room'
-  UNION ALL SELECT '1st floor', 'Dining Room'
-  UNION ALL SELECT '1st floor', 'Study'
-  UNION ALL SELECT '1st floor', 'Foyer'
-  UNION ALL SELECT '2nd floor', '2nd Floor Bathroom'
-  UNION ALL SELECT '2nd floor', 'Office'
-  UNION ALL SELECT '2nd floor', 'Chase''s Room'
-  UNION ALL SELECT '2nd floor', 'Cady''s Room'
-  UNION ALL SELECT '2nd floor', 'Master Bedroom'
-  UNION ALL SELECT '2nd floor', 'Master Bedroom Closet'
-  UNION ALL SELECT '3rd floor', 'Playroom'
-  UNION ALL SELECT '3rd floor', 'Gym'
-  UNION ALL SELECT '3rd floor', '3rd Floor Bathroom'
-  UNION ALL SELECT '3rd floor', 'Attic'
-) r
+FROM _seed_rooms r
 JOIN home_floors fl ON lower(trim(fl.name)) = r.floor
 WHERE NOT EXISTS (SELECT 1 FROM home_rooms x WHERE x.floor_id = fl.id AND lower(trim(x.name)) = lower(r.name));
+
+DROP TABLE _seed_rooms;
+DROP TABLE _seed_floors;
