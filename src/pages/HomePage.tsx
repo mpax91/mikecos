@@ -8,7 +8,9 @@ import { HomeFloorCanvas } from '../components/HomeFloorCanvas';
 import { HomeInternetPage } from '../components/HomeInternetPage';
 import { HomeMaintenancePage } from '../components/HomeMaintenancePage';
 import type { RoomOption } from '../components/HomeNetworkDeviceModal';
+import { HomePaintPage } from '../components/HomePaintPage';
 import { HomeRoomDevicesButton } from '../components/HomeRoomDevicesButton';
+import { HomeRoomPaintButton } from '../components/HomeRoomPaintButton';
 import { KebabMenu } from '../components/KebabMenu';
 import { Modal } from '../components/Modal';
 import { useReportTabMeta } from '../contexts/TabsContext';
@@ -16,8 +18,8 @@ import { useReportTabMeta } from '../contexts/TabsContext';
 /** What the page is showing: one room, an empty floor (so Add Room has
  * somewhere to land), or the Electrical / Internet pills. Other non-room pills slot in
  * here as their own literal. */
-type Selection = `room:${string}` | `floor:${string}` | 'electrical' | 'internet' | 'maintenance';
-const SECTIONS: Selection[] = ['electrical', 'internet', 'maintenance'];
+type Selection = `room:${string}` | `floor:${string}` | 'electrical' | 'internet' | 'paint' | 'maintenance';
+const SECTIONS: Selection[] = ['electrical', 'internet', 'paint', 'maintenance'];
 
 const SELECTION_KEY = 'mikeos.home.selection';
 
@@ -39,7 +41,7 @@ function storeSelection(sel: Selection) {
 
 /** Home — room-first. A Rooms dropdown (grouped by floor) picks one room,
  * shown alone on the to-scale canvas (HomeFloorCanvas with `roomId`);
- * Electrical (and any future non-room section) sits beside it as a pill.
+ * Electrical, Internet, Paint and Maintenance sit beside it as pills.
  * Floors still exist in the data model (worker/migrations/0077_home.sql)
  * but only as the dropdown's groups — there's no whole-floor plan view. */
 export function HomePage() {
@@ -161,8 +163,9 @@ export function HomePage() {
   }
   const isElectrical = selection === 'electrical';
   const isInternet = selection === 'internet';
+  const isPaint = selection === 'paint';
   const isMaintenance = selection === 'maintenance';
-  const isSection = isElectrical || isInternet || isMaintenance;
+  const isSection = isElectrical || isInternet || isPaint || isMaintenance;
   const roomOptions: RoomOption[] = floors.flatMap((f) => (roomsByFloor[f.id] ?? []).map((r) => ({ id: r.id, name: r.name, floorId: f.id, floorName: f.name })));
   const roomCount = floors.reduce((n, f) => n + (roomsByFloor[f.id]?.length ?? 0), 0);
 
@@ -225,6 +228,9 @@ export function HomePage() {
         <button type="button" className={`bar-tabs__tab${isInternet ? ' is-active' : ''}`} onClick={() => setSelection('internet')}>
           <span>📶</span> Internet
         </button>
+        <button type="button" className={`bar-tabs__tab${isPaint ? ' is-active' : ''}`} onClick={() => setSelection('paint')}>
+          <span>🎨</span> Paint
+        </button>
         <button type="button" className={`bar-tabs__tab${isMaintenance ? ' is-active' : ''}`} onClick={() => setSelection('maintenance')}>
           <span>🔧</span> Maintenance
         </button>
@@ -239,6 +245,8 @@ export function HomePage() {
           <HomeElectricalPage />
         ) : isInternet ? (
           <HomeInternetPage rooms={roomOptions} />
+        ) : isPaint ? (
+          <HomePaintPage rooms={roomOptions} />
         ) : isMaintenance ? (
           <HomeMaintenancePage />
         ) : floors.length === 0 ? (
@@ -257,7 +265,19 @@ export function HomePage() {
             floors={floors}
             onRoomsChanged={reload}
             onSelectRoom={(id) => setSelection(`room:${id}`)}
-            toolbarExtra={activeRoom ? <HomeRoomDevicesButton key={activeRoom.id} roomId={activeRoom.id} roomName={activeRoom.name} rooms={roomOptions} /> : null}
+            toolbarExtra={
+              activeRoom ? (
+                <>
+                  {!activeRoom.measured && (
+                    <span className="home-room-unmeasured" title="This room is a 10' × 10' placeholder — edit its size (or import a room spec) once it's measured">
+                      📏 Not Measured Yet
+                    </span>
+                  )}
+                  <HomeRoomPaintButton key={`paint-${activeRoom.id}`} roomId={activeRoom.id} roomName={activeRoom.name} rooms={roomOptions} />
+                  <HomeRoomDevicesButton key={activeRoom.id} roomId={activeRoom.id} roomName={activeRoom.name} rooms={roomOptions} />
+                </>
+              ) : null
+            }
           />
         ) : (
           <div className="empty-state">Loading…</div>

@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { decryptField, encryptField } from './cryptoField';
-import type { ElectricalBreakerRow, ElectricalPanelRow, Env, HomeNetworkConnection, HomeNetworkDeviceRow, HomeNetworkPointRow, HomeFixtureRow, HomeFixtureType, HomeRoomRow, HomeFloorRow, HomeWallItemRow, HomeWallItemType } from './types';
+import type { ElectricalBreakerRow, ElectricalPanelRow, Env, HomeNetworkConnection, HomeNetworkDeviceRow, HomeNetworkPointRow, HomeFixtureRow, HomeFixtureType, HomeRoomRow, HomeFloorRow, HomePaintRow, HomeWallItemRow, HomeWallItemType } from './types';
 
 const now = () => new Date().toISOString();
 const uid = () => crypto.randomUUID();
@@ -92,6 +92,7 @@ function roomJson(r: HomeRoomRow) {
     points: parsePoints(r.points, r.width, r.depth),
     ceilingHeight: r.ceiling_height ?? null,
     spec: r.spec ?? null,
+    measured: r.measured !== 0,
     notes: r.notes,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
@@ -205,6 +206,7 @@ homeRouter.delete('/floors/:id', async (c) => {
   const id = c.req.param('id');
   await db(c).batch([
     db(c).prepare('UPDATE home_network_devices SET room_id = NULL WHERE room_id IN (SELECT id FROM home_rooms WHERE floor_id = ?)').bind(id),
+    db(c).prepare('UPDATE home_paints SET room_id = NULL WHERE room_id IN (SELECT id FROM home_rooms WHERE floor_id = ?)').bind(id),
     db(c).prepare('DELETE FROM home_fixtures WHERE room_id IN (SELECT id FROM home_rooms WHERE floor_id = ?)').bind(id),
     db(c).prepare('DELETE FROM home_wall_items WHERE room_id IN (SELECT id FROM home_rooms WHERE floor_id = ?)').bind(id),
     db(c).prepare('DELETE FROM home_rooms WHERE floor_id = ?').bind(id),
@@ -322,7 +324,7 @@ homeRouter.patch('/rooms/:id', async (c) => {
     const bbox = boundingBoxOf(body.points);
     // Any canvas reshape means the imported spec (if any) no longer
     // describes this room — drop it so export derives from the new shape.
-    sets.push('points = ?', 'width = ?', 'depth = ?', 'spec = NULL');
+    sets.push('points = ?', 'width = ?', 'depth = ?', 'spec = NULL', 'measured = 1');
     binds.push(JSON.stringify(body.points), bbox.width, bbox.depth);
   } else if (body.width !== undefined || body.depth !== undefined) {
     // Editing width/depth numerically (the room modal, for a still-simple
@@ -332,7 +334,7 @@ homeRouter.patch('/rooms/:id', async (c) => {
     if (body.depth !== undefined && body.depth <= 0) return c.json({ error: 'depth must be positive' }, 400);
     const width = Math.round(body.width ?? existing.width);
     const depth = Math.round(body.depth ?? existing.depth);
-    sets.push('width = ?', 'depth = ?', 'points = ?', 'spec = NULL');
+    sets.push('width = ?', 'depth = ?', 'points = ?', 'spec = NULL', 'measured = 1');
     binds.push(width, depth, JSON.stringify(rectanglePoints(width, depth)));
   }
   if (body.ceilingHeight !== undefined) {
@@ -454,7 +456,7 @@ homeRouter.post('/rooms/:id/reshape', async (c) => {
   const ts = now();
   await db(c).batch([
     db(c)
-      .prepare('UPDATE home_rooms SET points = ?, width = ?, depth = ?, ceiling_height = ?, spec = ?, updated_at = ? WHERE id = ?')
+      .prepare('UPDATE home_rooms SET points = ?, width = ?, depth = ?, ceiling_height = ?, spec = ?, measured = 1, updated_at = ? WHERE id = ?')
       .bind(JSON.stringify(body.points), bbox.width, bbox.depth, body.ceilingHeight && body.ceilingHeight > 0 ? Math.round(body.ceilingHeight) : existing.ceiling_height, body.spec ? JSON.stringify(body.spec) : null, ts, id),
     db(c).prepare('DELETE FROM home_wall_items WHERE room_id = ?').bind(id),
     ...wallItemInserts(c, id, body.wallItems ?? [], ts),
@@ -467,6 +469,7 @@ homeRouter.delete('/rooms/:id', async (c) => {
   const id = c.req.param('id');
   await db(c).batch([
     db(c).prepare('UPDATE home_network_devices SET room_id = NULL WHERE room_id = ?').bind(id),
+    db(c).prepare('UPDATE home_paints SET room_id = NULL WHERE room_id = ?').bind(id),
     db(c).prepare('DELETE FROM home_fixtures WHERE room_id = ?').bind(id),
     db(c).prepare('DELETE FROM home_wall_items WHERE room_id = ?').bind(id),
     db(c).prepare('DELETE FROM home_rooms WHERE id = ?').bind(id),
@@ -1210,5 +1213,166 @@ homeRouter.get('/network/wifi/:id/password', async (c) => {
 
 homeRouter.delete('/network/wifi/:id', async (c) => {
   await db(c).prepare('DELETE FROM home_wifi_networks WHERE id = ?').bind(c.req.param('id')).run();
+  return c.json({ ok: true });
+});
+
+// ---- Paint (migration 0139) ----
+// One row per painted surface in a room (Ceiling / Walls / Trim…), as a
+// paint store's color sheet lists it, tint formula included. The 🎨 Paint
+// pill lists every room's; the room view shows that room's.
+
+const PAINT_SELECT = `SELECT pt.*, r.name AS room_name, r.floor_id AS floor_id, fl.name AS floor_name
+  FROM home_paints pt
+  LEFT JOIN home_rooms r ON r.id = pt.room_id
+  LEFT JOIN home_floors fl ON fl.id = r.floor_id`;
+
+type PaintJoinRow = HomePaintRow & { room_name: string | null; floor_id: string | null; floor_name: string | null };
+
+function paintJson(r: PaintJoinRow) {
+  return {
+    id: r.id,
+    roomId: r.room_id,
+    roomName: r.room_name ?? null,
+    floorId: r.floor_id ?? null,
+    floorName: r.floor_name ?? null,
+    surface: r.surface,
+    brand: r.brand,
+    product: r.product,
+    finish: r.finish,
+    colorName: r.color_name,
+    colorCode: r.color_code,
+    hex: r.hex,
+    formula: r.formula,
+    store: r.store,
+    paintedOn: r.painted_on,
+    notes: r.notes,
+    position: r.position,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
+}
+
+interface PaintBody {
+  roomId?: string | null;
+  surface?: string | null;
+  brand?: string | null;
+  product?: string | null;
+  finish?: string | null;
+  colorName?: string | null;
+  colorCode?: string | null;
+  hex?: string | null;
+  formula?: string | null;
+  store?: string | null;
+  paintedOn?: string | null;
+  notes?: string | null;
+  position?: number;
+}
+
+/** "#abc" / "aabbcc" → "#AABBCC"; anything else is an error. */
+export function normalizeHex(v: string | null | undefined): string | null | { error: string } {
+  const t = v?.trim().replace(/^#/, '');
+  if (!t) return null;
+  if (/^[0-9a-f]{3}$/i.test(t)) return `#${t.split('').map((ch) => ch + ch).join('').toUpperCase()}`;
+  if (/^[0-9a-f]{6}$/i.test(t)) return `#${t.toUpperCase()}`;
+  return { error: 'hex must look like #RRGGBB' };
+}
+
+/** Tidy a pasted formula: trim each line, drop blank lines, keep order. */
+function cleanFormula(v: string | null | undefined): string | null {
+  const lines = (v ?? '').split(/\r?\n/).map((l) => l.trim().replace(/\s+/g, ' ')).filter(Boolean);
+  return lines.length ? lines.join('\n') : null;
+}
+
+async function paintColumns(c: { env: Env }, body: PaintBody): Promise<Record<string, unknown> | { error: string }> {
+  const cols: Record<string, unknown> = {};
+  if (body.roomId !== undefined) {
+    const rid = text(body.roomId);
+    if (rid && !(await db(c).prepare('SELECT id FROM home_rooms WHERE id = ?').bind(rid).first())) return { error: 'room not found' };
+    cols.room_id = rid;
+  }
+  if (body.surface !== undefined) {
+    if (!text(body.surface)) return { error: 'surface cannot be blank' };
+    cols.surface = text(body.surface);
+  }
+  if (body.brand !== undefined) cols.brand = text(body.brand);
+  if (body.product !== undefined) cols.product = text(body.product);
+  if (body.finish !== undefined) cols.finish = text(body.finish);
+  if (body.colorName !== undefined) cols.color_name = text(body.colorName);
+  if (body.colorCode !== undefined) cols.color_code = text(body.colorCode);
+  if (body.hex !== undefined) {
+    const h = normalizeHex(body.hex);
+    if (h && typeof h === 'object') return h;
+    cols.hex = h;
+  }
+  if (body.formula !== undefined) cols.formula = cleanFormula(body.formula);
+  if (body.store !== undefined) cols.store = text(body.store);
+  if (body.paintedOn !== undefined) {
+    const d = text(body.paintedOn);
+    if (d && !/^\d{4}-\d{2}-\d{2}$/.test(d)) return { error: 'paintedOn must be YYYY-MM-DD' };
+    cols.painted_on = d;
+  }
+  if (body.notes !== undefined) cols.notes = text(body.notes);
+  if (body.position !== undefined) {
+    if (!Number.isFinite(body.position)) return { error: 'position must be a number' };
+    cols.position = Math.round(body.position);
+  }
+  return cols;
+}
+
+async function paintById(c: { env: Env }, id: string) {
+  return db(c).prepare(`${PAINT_SELECT} WHERE pt.id = ?`).bind(id).first<PaintJoinRow>();
+}
+
+// GET /paints[?roomId=] — every paint entry (or one room's), room/floor names joined.
+homeRouter.get('/paints', async (c) => {
+  const roomId = c.req.query('roomId');
+  const order = 'ORDER BY pt.position ASC, pt.created_at ASC';
+  const stmt = roomId ? db(c).prepare(`${PAINT_SELECT} WHERE pt.room_id = ? ${order}`).bind(roomId) : db(c).prepare(`${PAINT_SELECT} ${order}`);
+  const { results } = await stmt.all<PaintJoinRow>();
+  return c.json((results ?? []).map(paintJson));
+});
+
+homeRouter.post('/paints', async (c) => {
+  const body = await c.req.json<PaintBody>();
+  if (!body.surface?.trim()) return c.json({ error: 'surface is required' }, 400);
+  const cols = await paintColumns(c, body);
+  if ('error' in cols) return c.json(cols, 400);
+  if (cols.position === undefined) {
+    // New entries go to the end of their room's list.
+    const m = await db(c)
+      .prepare('SELECT COALESCE(MAX(position), -1) AS m FROM home_paints WHERE room_id IS ?')
+      .bind((cols.room_id as string | null | undefined) ?? null)
+      .first<{ m: number }>();
+    cols.position = (m?.m ?? -1) + 1;
+  }
+  const id = uid();
+  const ts = now();
+  const all: Record<string, unknown> = { id, ...cols, created_at: ts, updated_at: ts };
+  const keys = Object.keys(all);
+  await db(c)
+    .prepare(`INSERT INTO home_paints (${keys.join(', ')}) VALUES (${keys.map(() => '?').join(', ')})`)
+    .bind(...keys.map((k) => all[k]))
+    .run();
+  return c.json(paintJson((await paintById(c, id))!), 201);
+});
+
+homeRouter.patch('/paints/:id', async (c) => {
+  const id = c.req.param('id');
+  const existing = await db(c).prepare('SELECT id FROM home_paints WHERE id = ?').bind(id).first();
+  if (!existing) return c.json({ error: 'not found' }, 404);
+  const cols = await paintColumns(c, await c.req.json<PaintBody>());
+  if ('error' in cols) return c.json(cols, 400);
+  const keys = Object.keys(cols);
+  if (keys.length) {
+    await db(c)
+      .prepare(`UPDATE home_paints SET ${keys.map((k) => `${k} = ?`).join(', ')}, updated_at = ? WHERE id = ?`)
+      .bind(...keys.map((k) => cols[k]), now(), id)
+      .run();
+  }
+  return c.json(paintJson((await paintById(c, id))!));
+});
+
+homeRouter.delete('/paints/:id', async (c) => {
+  await db(c).prepare('DELETE FROM home_paints WHERE id = ?').bind(c.req.param('id')).run();
   return c.json({ ok: true });
 });

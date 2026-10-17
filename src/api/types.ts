@@ -2321,6 +2321,7 @@ export interface HomeRoom {
   points: HomePoint[]; // the room's real shape — polygon in inches, relative to (x,y)'s bounding box. Rectilinear when drawn on the canvas; may have angled walls/curves when imported from a spec. See src/lib/homeGeometry.ts, src/lib/roomSpec.ts.
   ceilingHeight: number | null; // inches
   spec: string | null; // JSON room spec it was imported from — null once reshaped on the canvas
+  measured: boolean; // false = placeholder 10'×10' size, not measured yet
   notes: string | null;
   createdAt: string;
   updatedAt: string;
@@ -2412,6 +2413,45 @@ export interface HomeNetworkPoint {
   createdAt: string;
   updatedAt: string;
 }
+
+/** Home → Paint: one painted surface in a room (Walls, Ceiling, Trim…). */
+export interface HomePaint {
+  id: string;
+  roomId: string | null;
+  roomName: string | null;
+  floorId: string | null;
+  floorName: string | null;
+  surface: string;
+  brand: string | null;
+  product: string | null;
+  finish: string | null;
+  colorName: string | null;
+  colorCode: string | null;
+  hex: string | null; // "#RRGGBB" swatch, optional
+  formula: string | null; // tint formula, one colorant per line
+  store: string | null;
+  paintedOn: string | null; // YYYY-MM-DD
+  notes: string | null;
+  position: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type HomePaintInput = Partial<{
+  roomId: string | null;
+  surface: string;
+  brand: string | null;
+  product: string | null;
+  finish: string | null;
+  colorName: string | null;
+  colorCode: string | null;
+  hex: string | null;
+  formula: string | null;
+  store: string | null;
+  paintedOn: string | null;
+  notes: string | null;
+  position: number;
+}>;
 
 export interface HomeNetworkDevice {
   id: string;

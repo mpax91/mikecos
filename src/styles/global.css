@@ -22113,3 +22113,181 @@ td .hm-chip,
   margin: 0 0 12px;
   font-size: 13px;
 }
+
+/* ---- Home → Paint (HomePaintPage / HomeRoomPaintButton / HomePaintModal) ---- */
+.home-paint__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  align-items: start;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.home-paint-room {
+  border: var(--border-hairline);
+  border-radius: 10px;
+  background: var(--color-card-bg);
+  overflow: hidden;
+}
+
+.home-paint-room--flat {
+  margin-bottom: 4px;
+}
+
+.home-paint-room__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px 8px 12px;
+  border-bottom: var(--border-hairline);
+}
+
+.home-paint-room__name {
+  font-weight: var(--weight-medium);
+  font-size: 14px;
+}
+
+.home-paint-entry {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-top: var(--border-hairline);
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--color-ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.home-paint-room__head + .home-paint-entry,
+.home-paint-room > .home-paint-entry:first-child {
+  border-top: none;
+}
+
+.home-paint-entry:hover {
+  background: var(--color-hover, rgba(0, 0, 0, 0.03));
+}
+
+.home-paint-entry__surface {
+  font-weight: var(--weight-medium);
+}
+
+.home-paint-entry__body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.home-paint-entry__color {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: var(--weight-medium);
+}
+
+.home-paint-entry__line {
+  color: var(--color-ink);
+}
+
+.home-paint-entry__formula {
+  white-space: pre-line;
+  font-size: 12px;
+  color: var(--color-muted);
+  line-height: 1.5;
+}
+
+.home-paint-entry__meta {
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.home-paint-swatch {
+  flex: none;
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.18);
+}
+
+.home-paint-swatch[data-empty] {
+  background: repeating-linear-gradient(45deg, transparent 0 3px, rgba(128, 128, 128, 0.25) 3px 4px);
+}
+
+.home-paint-swatch--sm {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+}
+
+.home-paint__todo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.home-paint__todo-room {
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px dashed var(--color-muted);
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  color: var(--color-ink);
+  cursor: pointer;
+}
+
+.home-paint__todo-room:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.home-paint-modal__swatch {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.home-paint-modal__swatch input[type='color'] {
+  flex: none;
+  width: 38px;
+  height: 34px;
+  padding: 2px;
+  border: var(--border-hairline);
+  border-radius: 6px;
+  background: none;
+}
+
+.home-paint-modal__swatch input:not([type='color']) {
+  flex: 1;
+  min-width: 0;
+}
+
+.home-room-unmeasured {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px dashed #c08a2e;
+  color: #9a6a16;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .home-paint__grid {
+    grid-template-columns: 1fr;
+  }
+  .home-paint-entry {
+    grid-template-columns: 80px 1fr;
+  }
+}

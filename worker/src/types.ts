@@ -771,6 +771,7 @@ export interface HomeRoomRow {
   points: string | null; // JSON Point[] — see 0078_home_room_shapes.sql; width/depth stay the shape's bounding box
   ceiling_height: number | null; // inches — 0087_home_room_specs.sql
   spec: string | null; // JSON room spec this shape was imported from; null once reshaped on the canvas
+  measured: number; // 0 = placeholder size, not measured yet (0139)
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -828,6 +829,25 @@ export interface HomeNetworkPointRow {
   id: string;
   name: string;
   notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface HomePaintRow {
+  id: string;
+  room_id: string | null;
+  surface: string;
+  brand: string | null;
+  product: string | null;
+  finish: string | null;
+  color_name: string | null;
+  color_code: string | null;
+  hex: string | null;
+  formula: string | null;
+  store: string | null;
+  painted_on: string | null;
+  notes: string | null;
+  position: number;
   created_at: string;
   updated_at: string;
 }
