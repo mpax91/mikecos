@@ -79,6 +79,7 @@ function allSportsbookBalances(balances: SportsbookBalance[]): SportsbookBalance
     bonuses: 0,
     adjustments: 0,
     betNet: 0,
+    pending: 0,
     balance: 0,
   }));
   return [...balances, ...missing];

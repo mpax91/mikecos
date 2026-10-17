@@ -227,6 +227,12 @@ function americanOddsProfit(wager: number, odds: number): number {
  * A won free bet needs no special-casing at all: americanOddsProfit
  * already returns stake-exclusive winnings (never stake+winnings), which
  * is exactly how a free bet actually pays out (stake not returned). */
+/** A bet that hasn't been graded yet (Pending in the slip). A manual
+ * profit means Mike already typed the outcome, so it counts as settled. */
+export function isUnsettled(bet: Bet): boolean {
+  return bet.result === 'tbd' && bet.manual_profit == null;
+}
+
 export function computeProfit(bet: Bet): number {
   if (bet.manual_profit != null) return bet.manual_profit;
   if (bet.result === 'win') return americanOddsProfit(bet.wager, bet.odds);
@@ -700,7 +706,12 @@ export function buildEquityCurve(bets: Bet[]): EquityPoint[] {
 // derived here, live, as that book's transactions (deposits add,
 // withdrawals subtract, bonuses add, adjustments add-signed) plus that
 // book's net bet profit (money already sitting in the book from wins,
-// still owed from losses).
+// still owed from losses), minus the cash stake of every bet that hasn't
+// settled yet (result 'tbd') — the book takes the stake the moment the bet
+// is placed, so a pending $15 bet shows $15 less right away. Settling it
+// swaps that hold for the bet's profit (win: +stake +winnings back, loss:
+// stays gone, push/void: stake back). Free-bet stakes are the book's credit,
+// so a pending free bet holds nothing.
 
 export interface SportsbookBalance {
   sportsbook: string;
@@ -709,11 +720,12 @@ export interface SportsbookBalance {
   bonuses: number;
   adjustments: number;
   betNet: number;
+  pending: number; // cash stakes on bets not settled yet (held by the book)
   balance: number;
 }
 
 function emptyBalance(sportsbook: string): SportsbookBalance {
-  return { sportsbook, deposited: 0, withdrawn: 0, bonuses: 0, adjustments: 0, betNet: 0, balance: 0 };
+  return { sportsbook, deposited: 0, withdrawn: 0, bonuses: 0, adjustments: 0, betNet: 0, pending: 0, balance: 0 };
 }
 
 /** One row per sportsbook that has at least one transaction or bet,
@@ -736,10 +748,13 @@ export function sportsbookBalances(bets: Bet[], transactions: BetTransaction[]):
     else row.adjustments += t.amount;
   }
   for (const bet of bets) {
-    get(bet.sportsbook).betNet += computeProfit(bet);
+    const row = get(bet.sportsbook);
+    if (isUnsettled(bet)) {
+      if (bet.stake_type !== 'free_bet') row.pending += bet.wager;
+    } else row.betNet += computeProfit(bet);
   }
   for (const row of byBook.values()) {
-    row.balance = row.deposited - row.withdrawn + row.bonuses + row.adjustments + row.betNet;
+    row.balance = row.deposited - row.withdrawn + row.bonuses + row.adjustments + row.betNet - row.pending;
   }
   return [...byBook.values()].sort((a, b) => b.balance - a.balance);
 }

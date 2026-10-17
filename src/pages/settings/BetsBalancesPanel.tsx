@@ -45,7 +45,7 @@ export function BetsBalancesPanel() {
     // with no history yet has nowhere to click.
     const known = new Set(computed.map((b) => b.sportsbook));
     const extra = COMMON_SPORTSBOOKS.filter((b) => !known.has(b)).map(
-      (sportsbook): SportsbookBalance => ({ sportsbook, deposited: 0, withdrawn: 0, bonuses: 0, adjustments: 0, betNet: 0, balance: 0 })
+      (sportsbook): SportsbookBalance => ({ sportsbook, deposited: 0, withdrawn: 0, bonuses: 0, adjustments: 0, betNet: 0, pending: 0, balance: 0 })
     );
     return [...computed, ...extra].sort((a, b) => a.sportsbook.localeCompare(b.sportsbook));
   }, [bets, transactions]);

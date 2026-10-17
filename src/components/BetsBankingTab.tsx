@@ -154,7 +154,10 @@ export function BetsBankingTab({
               <span>{formatMoney(b.deposited)}</span>
               <span>{formatMoney(b.withdrawn)}</span>
               <span className={b.betNet >= 0 ? 'is-up' : 'is-down'}>{formatMoney(b.betNet)}</span>
-              <span className={`bets-breakdown__net ${b.balance >= 0 ? 'is-up' : 'is-down'}`}>{formatMoney(b.balance)}</span>
+              <span className={`bets-breakdown__net ${b.balance >= 0 ? 'is-up' : 'is-down'}`}>
+                {formatMoney(b.balance)}
+                {b.pending > 0 && <span className="bets-breakdown__pending">{formatMoney(b.pending)} in play</span>}
+              </span>
             </div>
           ))}
         </div>

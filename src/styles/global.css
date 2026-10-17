@@ -9897,6 +9897,13 @@ td.month-page__upcoming-actions .today-page__meeting-actions {
   white-space: nowrap;
 }
 
+.bets-breakdown__pending {
+  display: block;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--color-muted);
+}
+
 .bets-breakdown__net.is-up {
   color: #2e8b57;
 }
