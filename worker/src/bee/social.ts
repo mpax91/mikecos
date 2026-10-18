@@ -296,7 +296,10 @@ export async function socialDashboard(env: Env) {
   const days = dayRows ?? [];
   const latest = (plat: string, metric: string) => [...days].reverse().find((d) => d.platform === plat && d.metric === metric)?.value ?? null;
   const followSeries = (plat: string) => {
-    const fol = days.filter((d) => d.platform === plat && (d.metric === (plat === 'fb' ? 'page_follows' : 'follower_count') || d.metric === 'followers'));
+    // Totals only: FB page_follows is the page's follower total per day; IG's
+    // follower_count is NEW followers per day (not a total), so IG uses the
+    // saved 'followers' snapshots alone.
+    const fol = days.filter((d) => d.platform === plat && (d.metric === 'followers' || (plat === 'fb' && d.metric === 'page_follows')));
     const byDate = new Map<string, number>();
     for (const d of fol) if (d.metric === 'followers' || !byDate.has(d.date)) byDate.set(d.date, d.value);
     return [...byDate.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([date, value]) => ({ date, value }));
@@ -304,6 +307,14 @@ export async function socialDashboard(env: Env) {
   const igDaily = days.filter((d) => d.platform === 'ig' && d.metric === 'follower_count'); // new followers per day (30d)
   const fbNew = days.filter((d) => d.platform === 'fb' && d.metric === 'page_daily_follows_unique');
   const fbLost = days.filter((d) => d.platform === 'fb' && d.metric === 'page_daily_unfollows_unique');
+  // Daily follows / unfollows (FB) and new followers (IG — no unfollows) for range totals.
+  const dailyFollows = (plat: 'fb' | 'ig') => {
+    const m = new Map<string, { date: string; gained: number; lost: number | null }>();
+    const row = (date: string) => m.get(date) ?? (m.set(date, { date, gained: 0, lost: plat === 'fb' ? 0 : null }), m.get(date)!);
+    for (const d of plat === 'fb' ? fbNew : igDaily) row(d.date).gained = d.value;
+    if (plat === 'fb') for (const d of fbLost) row(d.date).lost = d.value;
+    return [...m.values()].sort((a, b) => a.date.localeCompare(b.date));
+  };
 
   // Followers around each post. Meta only reports follows per PAGE per day,
   // never per post — so this is the page's total for the post's Eastern day
@@ -430,8 +441,8 @@ export async function socialDashboard(env: Env) {
     period: { now: p28, prev: pPrev },
     typical: Object.fromEntries((['fb', 'ig'] as const).map((plat) => [plat, Object.fromEntries(METRICS.map((m) => [m, typical(plat, m)]))])),
     followers: {
-      fb: { now: latest('fb', 'followers') ?? latest('fb', 'page_follows'), series: followSeries('fb') },
-      ig: { now: latest('ig', 'followers'), series: followSeries('ig'), newLast30: igDaily.reduce((n, d) => n + d.value, 0) },
+      fb: { now: latest('fb', 'followers') ?? latest('fb', 'page_follows'), series: followSeries('fb'), daily: dailyFollows('fb') },
+      ig: { now: latest('ig', 'followers'), series: followSeries('ig'), daily: dailyFollows('ig'), newLast30: igDaily.reduce((n, d) => n + d.value, 0) },
     },
     posts: scored,
     weekly,

@@ -4400,7 +4400,7 @@ export type BeeSocial =
       range: { from: string; to: string; fbPosts: number; igPosts: number };
       period: { now: Record<'all' | 'fb' | 'ig', BeeSocialPeriod>; prev: Record<'all' | 'fb' | 'ig', BeeSocialPeriod> };
       typical: Record<'fb' | 'ig', Record<BeeMetric, number | null>>;
-      followers: { fb: { now: number | null; series: { date: string; value: number }[] }; ig: { now: number | null; series: { date: string; value: number }[]; newLast30: number } };
+      followers: { fb: BeeFollowerPlatform; ig: BeeFollowerPlatform & { newLast30: number } };
       posts: BeeSocialPost[];
       weekly: {
         week: string;
@@ -5155,4 +5155,11 @@ export interface CreditReportsResponse {
     lastError: string | null;
     files: { fileId: string; name: string; kind: 'pdf' | 'json'; status: 'loaded' | 'read' | 'imported' | 'not_read' | 'queued'; reportId: string | null; error: string | null; webUrl: string | null; checkedAt: string | null }[];
   };
+}
+
+/** Bee Social: one platform's follower history. `series` = follower totals by day; `daily` = follows per day (lost null on Instagram — Meta doesn't report unfollows). */
+export interface BeeFollowerPlatform {
+  now: number | null;
+  series: { date: string; value: number }[];
+  daily: { date: string; gained: number; lost: number | null }[];
 }

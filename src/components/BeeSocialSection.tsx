@@ -157,7 +157,7 @@ function changeVs(now: number, prev: number | null, label: string | null) {
 const postDay = (p: BeeSocialPost) => nyDay(p.createdAt);
 
 /** What the open drill-down sheet shows. */
-type Sheet = { kind: 'metric'; metric: TileKey } | { kind: 'post'; post: BeeSocialPost } | { kind: 'posts'; title: string; sub?: string; posts: BeeSocialPost[] };
+type Sheet = { kind: 'metric'; metric: TileKey } | { kind: 'followers'; platform: 'fb' | 'ig' } | { kind: 'post'; post: BeeSocialPost } | { kind: 'posts'; title: string; sub?: string; posts: BeeSocialPost[] };
 
 function SocialBody({ data, onSync, busy, msg, onReload, rangeIn, setRange }: { data: Loaded; onSync: () => void; busy: boolean; msg: string | null; onReload: () => void; rangeIn: DateRange; setRange: (r: DateRange) => void }) {
   const today = nyToday();
@@ -218,6 +218,8 @@ function SocialBody({ data, onSync, busy, msg, onReload, rangeIn, setRange }: { 
           </InfoTip>
         </span>
       </div>
+
+      <FollowerTiles data={data} plat={plat} range={range} prevR={prevR} onOpen={(platform) => setSheet({ kind: 'followers', platform })} />
 
       <div className="fin-dash__stats fin-dash__stats--5">
         {TILES.map((m) => {
@@ -293,6 +295,7 @@ function SocialBody({ data, onSync, busy, msg, onReload, rangeIn, setRange }: { 
       </div>
 
       {sheet?.kind === 'metric' && <MetricSheet metric={sheet.metric} posts={inR} prevPosts={inPrev} range={range} prevR={prevR} plat={plat} onClose={() => setSheet(null)} onOpenPost={openPost} />}
+      {sheet?.kind === 'followers' && <FollowerSheet data={data} platform={sheet.platform} range={range} prevR={prevR} onClose={() => setSheet(null)} />}
       {sheet?.kind === 'posts' && (
         <DetailSheet title={sheet.title} sub={sheet.sub} onClose={() => setSheet(null)}>
           <PostCardList posts={sheet.posts} onOpen={openPost} alwaysCards />
@@ -307,7 +310,129 @@ function SocialBody({ data, onSync, busy, msg, onReload, rangeIn, setRange }: { 
   );
 }
 
-const compact = (n: number) => (n >= 100000 ? `${(n / 1000).toFixed(0)}K` : n >= 10000 ? `${(n / 1000).toFixed(1)}K` : Math.round(n).toLocaleString('en-US'));
+/** Short tile numbers: 2.5M, 254K, 25.3K, 9,876. */
+const compact = (n: number) => {
+  const a = Math.abs(n);
+  const trim = (x: string) => x.replace(/\.0$/, '');
+  if (a >= 999500) return `${trim((n / 1e6).toFixed(a >= 1e8 ? 0 : 1))}M`;
+  if (a >= 1e5) return `${(n / 1e3).toFixed(0)}K`;
+  if (a >= 1e4) return `${trim((n / 1e3).toFixed(1))}K`;
+  return Math.round(n).toLocaleString('en-US');
+};
+
+type FollowPoint = { date: string; value: number };
+/** Follower total at the end of `day` (the last count on or before it). */
+const countOn = (series: FollowPoint[], day: string) => {
+  let v: FollowPoint | null = null;
+  for (const p of series) {
+    if (p.date > day) break;
+    v = p;
+  }
+  return v;
+};
+/** Follower change over a range: count at the end of the range vs the end of the day before it starts.
+ *  When history starts inside the range, measures from the first saved count (`since`). */
+function followChange(series: FollowPoint[], r: { from: string; to: string }) {
+  const end = countOn(series, r.to);
+  if (!end) return null;
+  let start = countOn(series, addDays(r.from, -1));
+  let since: string | null = null;
+  if (!start) {
+    start = series.find((p) => p.date >= r.from && p.date <= r.to) ?? null;
+    if (!start || start.date === end.date) return { end, start: null, change: null, pct: null, since: null };
+    since = start.date;
+  }
+  const change = end.value - start.value;
+  return { end, start, change, pct: start.value ? change / start.value : null, since };
+}
+const FOLLOW_NAME = { fb: 'Facebook', ig: 'Instagram' } as const;
+const arrow = (n: number) => (n > 0 ? '▲' : n < 0 ? '▼' : '—');
+
+/** Top-of-tab follower tiles: count now + ▲/▼ change over the selected range. */
+function FollowerTiles({ data, plat, range, prevR, onOpen }: { data: Loaded; plat: Plat; range: DateRange; prevR: { from: string; to: string; label: string } | null; onOpen: (p: 'fb' | 'ig') => void }) {
+  const plats = (['fb', 'ig'] as const).filter((p) => plat === 'all' || plat === p);
+  return (
+    <div className={`fin-dash__stats bee-social__follow-tiles${plats.length === 1 ? ' bee-social__follow-tiles--one' : ''}`}>
+      {plats.map((p) => {
+        const f = data.followers[p];
+        const ch = followChange(f.series, range);
+        const prevCh = prevR ? followChange(f.series, prevR) : null;
+        const now = range.to >= nyToday() ? (f.now ?? ch?.end.value ?? null) : (ch?.end.value ?? null);
+        const tone = ch?.change ? (ch.change > 0 ? ' bee-delta--up' : ' bee-delta--down') : '';
+        return (
+          <button key={p} type="button" className="fin-dash__stat" onClick={() => onOpen(p)}>
+            <span className="fin-dash__stat-label">
+              <span className={`bee-social__dot bee-social__dot--${p}`} />
+              {FOLLOW_NAME[p]} Followers
+            </span>
+            <span className="fin-dash__stat-value">{n0(now)}</span>
+            {ch?.change != null ? (
+              <span className={`fin-dash__stat-sub${tone}`}>
+                {arrow(ch.change)} {signed(ch.change)}
+                {ch.pct != null && ch.change !== 0 ? ` (${ch.pct > 0 ? '+' : '−'}${Math.abs(ch.pct * 100).toFixed(1)}%)` : ''}
+                {ch.since ? ` since ${dayShort(ch.since)}` : ` · ${range.key === 'all' ? 'all time' : range.key === 'ytd' ? 'this year' : range.label.toLowerCase()}`}
+                {!ch.since && prevCh?.change != null ? <span className="fin-dash__muted"> · {signed(prevCh.change)} {prevR?.label}</span> : null}
+              </span>
+            ) : (
+              <span className="fin-dash__stat-sub fin-dash__muted">{f.series.length ? 'No change data for this range' : 'Not tracked yet'}</span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Drill-down: follower count over the range, gained / lost, vs the period before. */
+function FollowerSheet({ data, platform, range, prevR, onClose }: { data: Loaded; platform: 'fb' | 'ig'; range: DateRange; prevR: { from: string; to: string; label: string } | null; onClose: () => void }) {
+  const f = data.followers[platform];
+  const ch = followChange(f.series, range);
+  const prevCh = prevR ? followChange(f.series, prevR) : null;
+  const daily = f.daily.filter((d) => inRange(d.date, range));
+  const gained = daily.reduce((n, d) => n + d.gained, 0);
+  const lost = platform === 'fb' ? daily.reduce((n, d) => n + (d.lost ?? 0), 0) : null;
+  const pts = f.series.filter((p) => inRange(p.date, { from: addDays(range.from, -1), to: range.to }));
+  const fmtX = (ms: number) => new Date(ms).toLocaleDateString('en-US', daysBetween(range.from, range.to) > 400 ? { month: 'short', year: '2-digit' } : { month: 'short', day: 'numeric' });
+  return (
+    <DetailSheet title={`${FOLLOW_NAME[platform]} Followers`} sub={`${range.label} · ${rangeText(range)}`} onClose={onClose}>
+      <div className="dash-split">
+        <div className="dash-split__item">
+          <span className="fin-dash__stat-label">Now</span>
+          <span className="dash-split__value">{n0(range.to >= nyToday() ? (f.now ?? ch?.end.value) : ch?.end.value)}</span>
+          <span className="fin-dash__stat-sub">{range.to >= nyToday() ? 'today' : ch ? dayShort(ch.end.date) : ''}</span>
+        </div>
+        <div className="dash-split__item">
+          <span className="fin-dash__stat-label">Change</span>
+          <span className={`dash-split__value${ch?.change ? (ch.change > 0 ? ' bee-delta--up' : ' bee-delta--down') : ''}`}>{ch?.change != null ? `${arrow(ch.change)} ${signed(ch.change)}` : '—'}</span>
+          <span className="fin-dash__stat-sub">{ch?.start ? `from ${n0(ch.start.value)}${ch.since ? ` on ${dayShort(ch.since)}` : ''}` : ''}</span>
+        </div>
+        {prevR && (
+          <div className="dash-split__item">
+            <span className="fin-dash__stat-label">Period Before</span>
+            <span className="dash-split__value">{prevCh?.change != null ? signed(prevCh.change) : '—'}</span>
+            <span className="fin-dash__stat-sub">{rangeText(prevR)}</span>
+          </div>
+        )}
+        {daily.length > 0 && (
+          <div className="dash-split__item">
+            <span className="fin-dash__stat-label">{lost != null ? 'Followed / Unfollowed' : 'New Followers'}</span>
+            <span className="dash-split__value">{lost != null ? `+${n0(gained)} / −${n0(lost)}` : `+${n0(gained)}`}</span>
+            <span className="fin-dash__stat-sub">{daily.length} days reported</span>
+          </div>
+        )}
+      </div>
+      {pts.length > 1 ? (
+        <div className="dash-sheet__section">
+          <h4>Followers Over Time</h4>
+          <FinanceLineChart series={[{ name: FOLLOW_NAME[platform], color: platform === 'ig' ? IG_COLOR : FB_COLOR, points: pts.map((p) => ({ x: toMs(p.date), y: p.value })) }]} formatY={n0} formatX={fmtX} ariaLabel={`${FOLLOW_NAME[platform]} followers`} height={200} yFromZero={false} />
+        </div>
+      ) : (
+        <p className="fin-dash__muted">Not enough follower history in this range yet.</p>
+      )}
+      {platform === 'ig' && <p className="fin-dash__note">Meta only shares 30 days of Instagram follower history, so its counts start when MikeOS began saving them daily. Instagram doesn’t report unfollows.</p>}
+    </DetailSheet>
+  );
+}
 
 function MetricSheet({
   metric,

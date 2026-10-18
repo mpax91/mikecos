@@ -19394,6 +19394,21 @@ td.month-page__upcoming-actions .today-page__meeting-actions {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   margin-bottom: 10px;
 }
+.bee-social__follow-tiles {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 12px;
+}
+.bee-social__follow-tiles--one {
+  grid-template-columns: minmax(0, 1fr);
+}
+.bee-social__follow-tiles .fin-dash__stat-label .bee-social__dot {
+  margin-right: 6px;
+}
+@media (max-width: 720px) {
+  .bee-social__follow-tiles .fin-dash__stat {
+    border-bottom: none;
+  }
+}
 .bee-social__row {
   cursor: pointer;
 }
