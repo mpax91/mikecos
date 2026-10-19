@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
-import type { AccountOwner, CashPlacement, FinanceAccount, FinanceAttentionItem, RewardsOverview, TaxYearSummary, CreditStats } from '../api/types';
+import type { AccountOwner, CashPlacement, FinanceAccount, FinanceAttentionItem, RewardsOverview, TaxYearSummary, CreditStats, SocialSecurityResponse } from '../api/types';
 import { CashPlacementCard } from '../components/CashPlacementCard';
 import { FinanceRewardsCard } from '../components/CardRewardsPanel';
 import { useReportTabMeta } from '../contexts/TabsContext';
@@ -24,6 +24,7 @@ export function FinancePage() {
   const [rewards, setRewards] = useState<RewardsOverview | null>(null);
   const [taxYear, setTaxYear] = useState<TaxYearSummary | null>(null);
   const [credit, setCredit] = useState<CreditStats | null>(null);
+  const [ssa, setSsa] = useState<SocialSecurityResponse | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -34,6 +35,10 @@ export function FinancePage() {
     api
       .getCreditReports()
       .then((c) => setCredit(c.reports.length ? c.stats : null))
+      .catch(() => {});
+    api
+      .getSocialSecurity()
+      .then((r) => setSsa(r.latest ? r : null))
       .catch(() => {});
   }, []);
 
@@ -255,6 +260,20 @@ export function FinancePage() {
               </span>
               <span className="finance-page__chev">›</span>
             </Link>
+            <Link to="/finance/social-security" className="finance-page__row">
+              <span className="finance-page__row-name">
+                <span className="cloud-meters__label">🏛️ Social Security</span>
+                <span className="cloud-meters__provider">
+                  {ssa?.latest ? `Statement ${new Date(`${ssa.latest.statement_date}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' })} · ${ssa.totals.yearsWorked} years of earnings` : 'Yearly SSA statements'}
+                </span>
+              </span>
+              <span />
+              <span className="finance-page__row-value">
+                {ssaFra(ssa) ? `$${ssaFra(ssa)!.toLocaleString('en-US')}/mo at ${ssa!.latest!.fra_years}` : ''}
+                {ssaFra(ssa) && <span className="finance-page__row-sub">≈ ${(Math.round((ssaFra(ssa)! * 12 * 25) / 10000) / 100).toFixed(2)}M in savings terms</span>}
+              </span>
+              <span className="finance-page__chev">›</span>
+            </Link>
           </div>
         </div>
       )}
@@ -263,4 +282,10 @@ export function FinancePage() {
       <CashPlacementCard data={cash} owner={owner} />
     </div>
   );
+}
+
+/** Full-retirement-age estimate on the newest Social Security statement. */
+function ssaFra(r: SocialSecurityResponse | null): number | null {
+  const l = r?.latest;
+  return l?.fra_years ? (l.retirement[String(l.fra_years)] ?? null) : null;
 }

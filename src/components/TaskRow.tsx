@@ -206,6 +206,11 @@ export function TaskRow({
             Open Credit Reports →
           </Link>
         )}
+        {ssaAction(entity.content) && (
+          <Link to="/finance/social-security" className="task-row__brief-link" onClick={(e) => e.stopPropagation()}>
+            Open Social Security →
+          </Link>
+        )}
         {renewalFolder(entity.content) && (
           <Link to={`/finance/${renewalFolder(entity.content)}`} className="task-row__brief-link" onClick={(e) => e.stopPropagation()}>
             Open Insurance →
@@ -341,6 +346,16 @@ function creditAction(content: string | null): boolean {
   if (!content || !content.includes('credit-reports')) return false;
   try {
     return (JSON.parse(content) as { action?: string }).action === 'credit-reports';
+  } catch {
+    return false;
+  }
+}
+
+/** The yearly Apr 20 "Download Your Social Security Statement" task carries `{ action: 'social-security' }`. */
+function ssaAction(content: string | null): boolean {
+  if (!content || !content.includes('social-security')) return false;
+  try {
+    return (JSON.parse(content) as { action?: string }).action === 'social-security';
   } catch {
     return false;
   }

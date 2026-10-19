@@ -64,6 +64,9 @@ import { taxesRouter } from './taxes/router';
 import { creditReportsRouter } from './credit/router';
 import { CREDIT_TASK_DEF_ID, CREDIT_TASK_DESCRIPTION, syncCreditReportsTask } from './credit/task';
 import { creditScanDue, scanCreditFolder } from './credit/drive';
+import { ssaRouter } from './ssa/router';
+import { SSA_TASK_DEF_ID, SSA_TASK_DESCRIPTION, syncSsaTask } from './ssa/task';
+import { scanSsaFolder, ssaScanDue } from './ssa/drive';
 import { fwSyncDue, merchForContact, syncFourthwall } from './bee/merch';
 import { commsRouter } from './comms/router';
 import { commsForContact } from './comms/read';
@@ -122,6 +125,7 @@ app.route('/api/bills', billsRouter);
 app.route('/api/bee', beeRouter);
 app.route('/api/taxes', taxesRouter);
 app.route('/api/credit-reports', creditReportsRouter);
+app.route('/api/social-security', ssaRouter);
 app.route('/api/comms', commsRouter);
 app.route('/api/contacts/ask', contactsAssistantRouter);
 app.route('/api/bets/enrichment', betsEnrichmentRouter);
@@ -453,6 +457,8 @@ async function spawnDueRecurringTasks(db: D1Database, todayIso: string): Promise
       if (def.id === 'bee-throwback') await db.prepare('UPDATE entities SET content = ? WHERE id = ?').bind(JSON.stringify({ action: 'bee-throwback' }), id).run();
       // Feb 22 "Pull Free Credit Reports" opens Finance → Credit Reports (credit/task.ts).
       if (def.id === CREDIT_TASK_DEF_ID) await db.prepare('UPDATE entities SET content = ? WHERE id = ?').bind(JSON.stringify({ action: 'credit-reports', description: CREDIT_TASK_DESCRIPTION }), id).run();
+      // Apr 20 "Download Your Social Security Statement" opens Finance → Social Security (ssa/task.ts).
+      if (def.id === SSA_TASK_DEF_ID) await db.prepare('UPDATE entities SET content = ? WHERE id = ?').bind(JSON.stringify({ action: 'social-security', description: SSA_TASK_DESCRIPTION }), id).run();
       if (def.id === 'work-week-plan' || def.id === 'work-week-review') {
         await db
           .prepare('UPDATE entities SET content = ? WHERE id = ?')
@@ -472,6 +478,8 @@ async function spawnDueRecurringTasks(db: D1Database, todayIso: string): Promise
     if (def.id === BEE_TASK_DEF_ID) await syncBeeExportTask({ DB: db } as Env);
     // Yearly credit-report pull: already done if the reports came in early.
     if (def.id === CREDIT_TASK_DEF_ID) await syncCreditReportsTask({ DB: db } as Env);
+    // Yearly Social Security statement: already done if it came in early.
+    if (def.id === SSA_TASK_DEF_ID) await syncSsaTask({ DB: db } as Env);
   }
 }
 
@@ -8928,6 +8936,12 @@ export default {
           if (await creditScanDue(env, event.scheduledTime)) await scanCreditFolder(env);
         } catch (err) {
           console.error('Credit Reports scan failed', err);
+        }
+        // Finance → Social Security: the Drive "Social Security" folder (ssa/drive.ts), same slot.
+        try {
+          if (await ssaScanDue(env, event.scheduledTime)) await scanSsaFolder(env);
+        } catch (err) {
+          console.error('Social Security scan failed', err);
         }
         // Bedford Bee: the Drive "Bedford Bee" exports, same nightly slot.
         try {

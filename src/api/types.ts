@@ -30,7 +30,7 @@ export interface TaskMeta {
   description?: string;
   /** The Monday / Friday Work tasks open their brief; a brief's next-day
    * Review task opens its note. */
-  action?: 'week-plan' | 'week-review' | 'open-note' | 'meeting-prep' | 'meeting-debrief' | 'home-maint' | 'bee-throwback' | 'credit-reports' | 'insurance-renewal';
+  action?: 'week-plan' | 'week-review' | 'open-note' | 'meeting-prep' | 'meeting-debrief' | 'home-maint' | 'bee-throwback' | 'credit-reports' | 'insurance-renewal' | 'social-security';
   /** insurance-renewal: the Hanover statement folder (its Finance dashboard). */
   folderId?: string;
   /** home-maint: the Home → Maintenance item this "Schedule …" task is for. */
@@ -5162,4 +5162,76 @@ export interface BeeFollowerPlatform {
   now: number | null;
   series: { date: string; value: number }[];
   daily: { date: string; gained: number; lost: number | null }[];
+}
+
+// ── Finance → Social Security (worker/src/ssa/summary.ts) ──
+export interface SsaStatementView {
+  id: string;
+  statement_date: string;
+  layout: 'paper' | 'classic' | 'chart2021' | 'chart';
+  file_id: string | null;
+  file_name: string | null;
+  birth_date: string | null;
+  fra_years: number | null;
+  retirement: Record<string, number>;
+  age62_stop_now: boolean;
+  assumed_earnings: number | null;
+  disability: number | null;
+  survivors: { child: number | null; spouse_caring: number | null; spouse_fra: number | null; family_max: number | null };
+  death_benefit: number | null;
+  earnings: { from: number; to: number; ss: number; medicare: number }[];
+  taxes: { ss_you: number | null; ss_employer: number | null; medicare_you: number | null; medicare_employer: number | null };
+  trust_fund: { year: number; pct: number } | null;
+  notes: string | null;
+  sameAsPrevious: boolean;
+}
+export interface SsaYearView {
+  year: number;
+  ss: number;
+  medicare: number;
+  wageBase: number;
+  atMax: boolean;
+  indexed: number;
+  counted: boolean;
+  source: string;
+  history: { statement: string; ss: number; medicare: number; latestOnThatStatement: boolean }[];
+  estimated: boolean;
+  w2: number | null;
+}
+export interface SsaCheckView {
+  key: string;
+  level: 'warn' | 'info' | 'good';
+  title: string;
+  detail: string;
+}
+export interface SsaProjectionView {
+  asOfYear: number;
+  currentAge: number;
+  fraYears: number;
+  future: number;
+  stopAges: number[];
+  claimAges: number[];
+  grid: Record<string, Record<string, { monthly: number; fromJanuary: number | null }>>;
+  calibration: { age: number; ours: number; ssa: number }[];
+  pia: number;
+  aime: number;
+  zeroYearsInTop35: number;
+  nextYearAdds: number;
+  breakEven: { from: number; to: number; age: number | null }[];
+}
+export interface SocialSecurityResponse {
+  statements: SsaStatementView[];
+  latest: SsaStatementView | null;
+  years: SsaYearView[];
+  estimates: { statement: string; at62: number | null; atFra: number | null; at70: number | null; assumed: number | null; disability: number | null; sameAsPrevious: boolean }[];
+  projection: SsaProjectionView | null;
+  totals: { ssEarnings: number; medicareEarnings: number; yearsWorked: number; yearsAtMax: number; maxStreak: number; maxStreakFrom: number | null; taxesYou: number | null; taxesEmployer: number | null };
+  checks: SsaCheckView[];
+  drive: {
+    folder: string | null;
+    folderUrl: string | null;
+    lastScanAt: string | null;
+    lastError: string | null;
+    files: { fileId: string; name: string; kind: string; status: string; statementId: string | null; error: string | null; webUrl: string | null }[];
+  };
 }

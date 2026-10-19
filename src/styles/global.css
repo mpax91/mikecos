@@ -22306,3 +22306,101 @@ td .hm-chip,
     grid-template-columns: 80px 1fr;
   }
 }
+
+/* ── Finance → Social Security (SocialSecurityPage.tsx) ── */
+.ssa-bars {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.ssa-bars li {
+  display: grid;
+  grid-template-columns: 24px 1fr 64px;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.ssa-bars__label {
+  color: var(--color-muted);
+  font-variant-numeric: tabular-nums;
+}
+.ssa-bars__track {
+  height: 12px;
+  border-radius: 6px;
+  background: var(--color-paper);
+  overflow: hidden;
+}
+.ssa-bars__fill {
+  display: block;
+  height: 100%;
+  border-radius: 6px;
+}
+.ssa-bars__value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.ssa-breakeven {
+  margin-top: 12px;
+}
+.ssa-cover {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+.ssa-cover__item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--color-paper);
+}
+.ssa-cover__item strong {
+  font-variant-numeric: tabular-nums;
+}
+.ssa-plan__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+.ssa-plan__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 150px;
+}
+.ssa-plan__result {
+  margin-bottom: 0;
+}
+.ssa-plan__table tbody tr {
+  cursor: pointer;
+}
+.ssa-plan__row--on td {
+  font-weight: 600;
+  background: var(--color-paper);
+}
+.ssa-earn__stats {
+  grid-column: 1 / -1;
+}
+.ssa-earn__chart {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.ssa-earn__bar {
+  cursor: pointer;
+}
+.ssa-earn__bar:hover rect:last-of-type {
+  opacity: 0.8;
+}
+.ssa-earn__row {
+  cursor: pointer;
+}
+@media (max-width: 640px) {
+  .ssa-plan__field {
+    flex: 1 1 140px;
+  }
+}

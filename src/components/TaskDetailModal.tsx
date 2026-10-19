@@ -347,6 +347,16 @@ export function TaskDetailModal({
             </Link>
           </>
         )}
+        {entity && parseTaskMeta(entity.content).action === 'social-security' && (
+          <>
+            <a className="btn task-panel__brief-btn" href="https://www.ssa.gov/myaccount/" target="_blank" rel="noopener noreferrer">
+              🔐 my Social Security
+            </a>
+            <Link className="btn task-panel__brief-btn" to="/finance/social-security" onClick={onClose}>
+              🏛️ Open Social Security
+            </Link>
+          </>
+        )}
         {entity && parseTaskMeta(entity.content).action === 'insurance-renewal' && parseTaskMeta(entity.content).folderId && (
           <>
             <Link className="btn task-panel__brief-btn" to={`/finance/${parseTaskMeta(entity.content).folderId}`} onClick={onClose}>
