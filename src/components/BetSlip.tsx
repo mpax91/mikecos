@@ -168,7 +168,7 @@ function ResultSection({
         <label className="bet-slip__inline-field">
           <span>Cashed out for</span>
           <span className="bet-slip__money">
-            $<input inputMode="decimal" placeholder="0.00" value={cashout} onChange={(e) => setCashout(e.target.value.replace(/[^0-9.]/g, ''))} aria-label="Cash-out amount" />
+            $<input inputMode="decimal" placeholder="Amount" value={cashout} onChange={(e) => setCashout(e.target.value.replace(/[^0-9.]/g, ''))} aria-label="Cash-out amount" />
           </span>
         </label>
       )}
@@ -313,7 +313,7 @@ function LegCard({
               setSide={(v) => update({ lineSide: v as LineSide })}
               value={leg.line}
               setValue={(v) => update({ line: v })}
-              placeholder={leg.market === 'Spread' ? '2.5' : leg.market === 'Total' ? '47.5' : '275.5'}
+              placeholder={leg.market === 'Spread' ? 'e.g. 2.5' : leg.market === 'Total' ? 'e.g. 47.5' : 'e.g. 275.5'}
               label={`Leg ${index + 1} line`}
               decimal
             />
@@ -327,7 +327,7 @@ function LegCard({
             setSide={(v) => update({ oddsSign: v as Sign })}
             value={leg.odds}
             setValue={(v) => update({ odds: v })}
-            placeholder="110"
+            placeholder="e.g. 110"
             label={`Leg ${index + 1} odds`}
           />
         </label>
@@ -354,8 +354,9 @@ export function BetSlipModal({
   const tipperOptions = optionValues(betOptions, 'tipper');
 
   const initial = useMemo(() => {
-    const t = bet?.bet_type ?? 'Parlay';
-    const kind: Kind = t === 'Teaser' ? 'Teaser' : isMultiLegType(t) ? 'Parlay' : bet ? 'Straight' : 'Parlay';
+    // New bets start on Straight (Mike, 2026-10-20).
+    const t = bet?.bet_type ?? 'Straight';
+    const kind: Kind = t === 'Teaser' ? 'Teaser' : isMultiLegType(t) ? 'Parlay' : 'Straight';
     const legs = bet
       ? bet.legs.length > 0
         ? bet.legs.map(draftFromLeg)
@@ -397,7 +398,7 @@ export function BetSlipModal({
   const [tipper, setTipper] = useState(bet?.tipper ?? '');
   const [notes, setNotes] = useState(bet?.notes ?? '');
   const [manualProfit, setManualProfit] = useState(bet?.manual_profit != null && bet.result !== 'cashed_out' ? String(bet.manual_profit) : '');
-  const [showMore, setShowMore] = useState(!!(bet?.tipper || bet?.notes || (bet?.manual_profit != null && bet.result !== 'cashed_out')));
+  const [showMore, setShowMore] = useState(!!(bet?.notes || (bet?.manual_profit != null && bet.result !== 'cashed_out')));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -514,7 +515,7 @@ export function BetSlipModal({
             <label className="bet-slip__tile">
               <span className="bet-slip__label">Risk</span>
               <span className="bet-slip__money">
-                $<input inputMode="decimal" placeholder="10" value={risk} onChange={(e) => setRisk(e.target.value.replace(/[^0-9.]/g, ''))} aria-label="Risk" />
+                $<input inputMode="decimal" placeholder="Amount" value={risk} onChange={(e) => setRisk(e.target.value.replace(/[^0-9.]/g, ''))} aria-label="Risk" />
               </span>
             </label>
             <div className="bet-slip__tile">
@@ -535,7 +536,7 @@ export function BetSlipModal({
                   setSide={(v) => setOverride({ sign: v as Sign, value: override?.value ?? '' })}
                   value={override?.value ?? ''}
                   setValue={(v) => setOverride({ sign: override?.sign ?? '-', value: v })}
-                  placeholder={kind === 'Teaser' ? '120' : '265'}
+                  placeholder={kind === 'Teaser' ? 'e.g. 120' : 'e.g. 265'}
                   label="Bet odds"
                 />
               </div>
@@ -654,20 +655,21 @@ export function BetSlipModal({
           setCashout={setCashout}
         />
 
+        <label className="bet-slip__field">
+          <span className="bet-slip__label">Tipper</span>
+          <input className="bet-slip__text" list="bet-slip-tippers" placeholder="Who's the pick from?" value={tipper} onChange={(e) => setTipper(e.target.value)} />
+          <datalist id="bet-slip-tippers">
+            {tipperOptions.map((t) => (
+              <option key={t} value={t} />
+            ))}
+          </datalist>
+        </label>
+
         <button type="button" className="link-btn bet-slip__more" onClick={() => setShowMore((v) => !v)}>
-          {showMore ? '− Fewer details' : '+ Tipper, notes, profit override'}
+          {showMore ? '− Fewer details' : '+ Notes, profit override'}
         </button>
         {showMore && (
           <div className="bet-slip__more-fields">
-            <label className="bet-slip__field">
-              <span className="bet-slip__label">Tipper</span>
-              <input className="bet-slip__text" list="bet-slip-tippers" placeholder="Who's the pick from?" value={tipper} onChange={(e) => setTipper(e.target.value)} />
-              <datalist id="bet-slip-tippers">
-                {tipperOptions.map((t) => (
-                  <option key={t} value={t} />
-                ))}
-              </datalist>
-            </label>
             <label className="bet-slip__field">
               <span className="bet-slip__label">Notes</span>
               <textarea className="bet-slip__text" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />

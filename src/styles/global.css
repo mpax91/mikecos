@@ -22404,3 +22404,23 @@ td .hm-chip,
     flex: 1 1 140px;
   }
 }
+
+/* Bet slip: placeholders must never look like typed values (Mike, 2026-10-20).
+   Hints are faint + italic + normal weight; real entries stay solid. */
+.bet-slip-modal input::placeholder,
+.bet-slip-modal textarea::placeholder {
+  color: var(--color-muted);
+  opacity: 0.55;
+  font-style: italic;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.bet-slip-modal .bet-slip__money input,
+.bet-slip-modal .bet-slip__signed input {
+  color: var(--color-ink);
+  font-weight: 600;
+}
+.bet-slip-modal .bet-slip__money input:placeholder-shown,
+.bet-slip-modal .bet-slip__signed input:placeholder-shown {
+  font-size: 0.85em;
+}
