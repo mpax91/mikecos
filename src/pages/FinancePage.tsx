@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
-import type { AccountOwner, CashPlacement, FinanceAccount, FinanceAttentionItem, RewardsOverview, TaxYearSummary, CreditStats, SocialSecurityResponse } from '../api/types';
+import type { AccountOwner, CashPlacement, FinanceAccount, FinanceAttentionItem, RewardsOverview, TaxYearSummary, CreditStats, SocialSecurityResponse, CareerResponse } from '../api/types';
+import { careerRow } from './CareerPage';
 import { CashPlacementCard } from '../components/CashPlacementCard';
 import { FinanceRewardsCard } from '../components/CardRewardsPanel';
 import { useReportTabMeta } from '../contexts/TabsContext';
@@ -25,6 +26,7 @@ export function FinancePage() {
   const [taxYear, setTaxYear] = useState<TaxYearSummary | null>(null);
   const [credit, setCredit] = useState<CreditStats | null>(null);
   const [ssa, setSsa] = useState<SocialSecurityResponse | null>(null);
+  const [career, setCareer] = useState<CareerResponse | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -39,6 +41,10 @@ export function FinancePage() {
     api
       .getSocialSecurity()
       .then((r) => setSsa(r.latest ? r : null))
+      .catch(() => {});
+    api
+      .getCareer()
+      .then(setCareer)
       .catch(() => {});
   }, []);
 
@@ -271,6 +277,18 @@ export function FinancePage() {
               <span className="finance-page__row-value">
                 {ssaFra(ssa) ? `$${ssaFra(ssa)!.toLocaleString('en-US')}/mo at ${ssa!.latest!.fra_years}` : ''}
                 {ssaFra(ssa) && <span className="finance-page__row-sub">≈ ${(Math.round((ssaFra(ssa)! * 12 * 25) / 10000) / 100).toFixed(2)}M in savings terms</span>}
+              </span>
+              <span className="finance-page__chev">›</span>
+            </Link>
+            <Link to="/finance/career" className="finance-page__row">
+              <span className="finance-page__row-name">
+                <span className="cloud-meters__label">💼 Career</span>
+                <span className="cloud-meters__provider">{careerRow(career)?.sub ?? 'Paystubs, bonuses, severance and equity from every job'}</span>
+              </span>
+              <span />
+              <span className="finance-page__row-value">
+                {careerRow(career)?.value ?? ''}
+                {careerRow(career)?.value2 && <span className="finance-page__row-sub">{careerRow(career)!.value2}</span>}
               </span>
               <span className="finance-page__chev">›</span>
             </Link>

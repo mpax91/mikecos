@@ -5235,3 +5235,161 @@ export interface SocialSecurityResponse {
     files: { fileId: string; name: string; kind: string; status: string; statementId: string | null; error: string | null; webUrl: string | null }[];
   };
 }
+
+// ---- Finance → Career (worker/src/career/, migration 0141) ----
+export type CareerPayKind = 'regular' | 'bonus' | 'stipend' | 'severance' | 'equity' | 'other';
+export type CareerBucket = 'base' | 'bonus' | 'stipend' | 'severance' | 'equity' | 'other';
+export interface CareerPayLine {
+  label: string;
+  kind: string;
+  current: number;
+  ytd: number | null;
+  rate?: number | null;
+  hours?: number | null;
+  pre_tax?: boolean;
+}
+export interface CareerStub {
+  id: string;
+  employer: string;
+  pay_date: string;
+  period_start: string | null;
+  period_end: string | null;
+  kind: CareerPayKind;
+  provider: string | null;
+  gross: number;
+  net: number | null;
+  taxes_total: number | null;
+  pre_tax_total: number | null;
+  post_tax_total: number | null;
+  rate: { amount: number; per: 'hour' | 'period' | 'year' } | null;
+  hours: number | null;
+  earnings: CareerPayLine[];
+  taxes: CareerPayLine[];
+  deductions: CareerPayLine[];
+  employer_contrib: CareerPayLine[];
+  ytd: { gross: number | null; taxes: number | null; net: number | null } | null;
+  file_id: string | null;
+  file_name: string | null;
+  issues: string[];
+}
+export interface CareerEventView {
+  id: string;
+  employer: string;
+  date: string;
+  kind: string;
+  title: string;
+  gross: number | null;
+  net: number | null;
+  shares: number | null;
+  price: number | null;
+  remaining: number | null;
+  via_payroll: boolean;
+  file_id: string | null;
+  file_name: string | null;
+  notes: string | null;
+}
+export type CareerBuckets = Record<CareerBucket, number>;
+export interface CareerEmployerView {
+  id: string;
+  name: string;
+  aliases: string[];
+  title: string | null;
+  isCurrent: boolean;
+  start: string | null;
+  end: string | null;
+  months: number | null;
+  stubs: number;
+  firstStub: string | null;
+  lastStub: string | null;
+  totals: CareerBuckets & { gross: number; net: number; taxes: number; k401: number };
+  equityCash: number;
+  startSalary: number | null;
+  endSalary: number | null;
+  frequency: number | null;
+  provider: string | null;
+  notes: string | null;
+  folderNames: string[];
+}
+export interface CareerYearView {
+  year: number;
+  source: 'paystubs' | 'w2' | 'ssa' | 'mixed';
+  total: number;
+  buckets: CareerBuckets;
+  equityCash: number;
+  byEmployer: { id: string; name: string; gross: number; source: 'paystubs' | 'w2'; partial: boolean }[];
+  taxes: { federal: number; socialSecurity: number; medicare: number; stateLocal: number; other: number; total: number } | null;
+  deductions: { k401: number; health: number; other: number } | null;
+  net: number | null;
+  w2: number | null;
+  ssa: number | null;
+  stubs: number;
+}
+export interface CareerSalaryPoint {
+  date: string;
+  employer: string;
+  annual: number;
+  basis: 'rate' | 'period' | 'letter';
+}
+export interface CareerPayChange {
+  date: string;
+  employer: string;
+  from: number;
+  to: number;
+  pct: number;
+  kind: 'raise' | 'cut' | 'job_change';
+  gapDays: number | null;
+}
+export interface CareerCheckView {
+  id: string;
+  level: 'warn' | 'info' | 'good';
+  title: string;
+  detail: string;
+  year?: number;
+  employer?: string;
+}
+export interface CareerResponse {
+  employers: CareerEmployerView[];
+  years: CareerYearView[];
+  stubs: CareerStub[];
+  events: CareerEventView[];
+  salary: CareerSalaryPoint[];
+  changes: CareerPayChange[];
+  checks: CareerCheckView[];
+  totals: {
+    lifetime: number;
+    paystubTotal: number;
+    equityCash: number;
+    bestYear: { year: number; total: number } | null;
+    years: number;
+    firstYear: number | null;
+    currentSalary: number | null;
+    startSalary: number | null;
+    cagr: number | null;
+    severance: number;
+    bonus: number;
+  };
+  current: {
+    employer: string | null;
+    lastStub: CareerStub | null;
+    ytd: { gross: number; net: number; taxes: number; k401: number } | null;
+    nextPayDate: string | null;
+    annualSalary: number | null;
+    ssMaxDate: string | null;
+  };
+  drive: {
+    lastScanAt: string | null;
+    lastError: string | null;
+    folders: { folderId: string; employerId: string; name: string; url: string | null; listedAt: string | null }[];
+    files: { fileId: string; employerId: string; name: string; kind: string; status: string; recordId: string | null; error: string | null; webUrl: string | null }[];
+  };
+}
+export interface CareerScanResult {
+  employers: number;
+  folders: number;
+  listed: number;
+  read: number;
+  imported: number;
+  notRead: number;
+  queued: number;
+  error: string | null;
+}

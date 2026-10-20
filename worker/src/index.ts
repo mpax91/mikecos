@@ -67,6 +67,8 @@ import { creditScanDue, scanCreditFolder } from './credit/drive';
 import { ssaRouter } from './ssa/router';
 import { SSA_TASK_DEF_ID, SSA_TASK_DESCRIPTION, syncSsaTask } from './ssa/task';
 import { scanSsaFolder, ssaScanDue } from './ssa/drive';
+import { careerRouter } from './career/router';
+import { careerScanDue, scanCareer } from './career/drive';
 import { fwSyncDue, merchForContact, syncFourthwall } from './bee/merch';
 import { commsRouter } from './comms/router';
 import { commsForContact } from './comms/read';
@@ -126,6 +128,7 @@ app.route('/api/bee', beeRouter);
 app.route('/api/taxes', taxesRouter);
 app.route('/api/credit-reports', creditReportsRouter);
 app.route('/api/social-security', ssaRouter);
+app.route('/api/career', careerRouter);
 app.route('/api/comms', commsRouter);
 app.route('/api/contacts/ask', contactsAssistantRouter);
 app.route('/api/bets/enrichment', betsEnrichmentRouter);
@@ -8942,6 +8945,12 @@ export default {
           if (await ssaScanDue(env, event.scheduledTime)) await scanSsaFolder(env);
         } catch (err) {
           console.error('Social Security scan failed', err);
+        }
+        // Finance → Career: every employer's paystub folder(s) (career/drive.ts), same slot.
+        try {
+          if (await careerScanDue(env, event.scheduledTime)) await scanCareer(env);
+        } catch (err) {
+          console.error('Career scan failed', err);
         }
         // Bedford Bee: the Drive "Bedford Bee" exports, same nightly slot.
         try {

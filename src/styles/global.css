@@ -22424,3 +22424,218 @@ td .hm-chip,
 .bet-slip-modal .bet-slip__signed input:placeholder-shown {
   font-size: 0.85em;
 }
+
+/* ---- Finance → Career (CareerPage.tsx) ---- */
+.career-now {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.career-now__item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--color-paper);
+  border: 0;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+}
+button.career-now__item {
+  cursor: pointer;
+}
+.career-now__item strong {
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+.career-click {
+  cursor: pointer;
+}
+.career-timeline {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.career-timeline-list {
+  display: none;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.career-timeline-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  padding: 7px 0;
+  border-top: 1px solid var(--color-border);
+  font-size: 14px;
+}
+.career-timeline-list li:first-child {
+  border-top: 0;
+}
+.career-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--color-muted);
+}
+.career-legend i,
+.career-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  margin-right: 5px;
+  vertical-align: -1px;
+}
+.career-bars__label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.career-page .ssa-bars li {
+  grid-template-columns: minmax(80px, 140px) 1fr 70px;
+}
+.career-changes li {
+  gap: 10px;
+}
+.career-chip {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--color-paper);
+  color: var(--color-muted);
+}
+.career-chip--bonus {
+  background: rgba(192, 102, 46, 0.14);
+  color: #a3531f;
+}
+.career-chip--severance {
+  background: rgba(122, 91, 181, 0.14);
+  color: #6a4ca6;
+}
+.career-chip--stipend {
+  background: rgba(58, 157, 122, 0.14);
+  color: #2c7f62;
+}
+.career-chip--equity {
+  background: rgba(181, 145, 58, 0.16);
+  color: #8a6a1f;
+}
+.career-chip--current {
+  background: rgba(42, 111, 176, 0.14);
+  color: #2a6fb0;
+}
+.career-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.career-filters .input {
+  width: auto;
+  min-width: 150px;
+}
+.career-emps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+.career-emps > li {
+  padding: 10px 0;
+  border-top: 1px solid var(--color-border);
+}
+.career-emps__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.career-emps__head .btn {
+  margin-left: auto;
+}
+.career-emps__folder {
+  display: inline-block;
+  margin: 4px 12px 0 0;
+  font-size: 13px;
+}
+.career-emps__counts {
+  margin: 4px 0 0;
+  font-size: 12px;
+}
+.career-sheet__h {
+  margin: 16px 0 6px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-muted);
+}
+.career-sheet__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+.career-lines td:first-child {
+  max-width: 220px;
+}
+.career-form {
+  display: grid;
+  gap: 12px;
+}
+.career-form__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.career-form__hint {
+  font-size: 12px;
+}
+.career-form__check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+@media (max-width: 640px) {
+  .career-timeline {
+    display: none;
+  }
+  .career-timeline-list {
+    display: block;
+  }
+  .career-page .ssa-bars li {
+    grid-template-columns: 96px 1fr 60px;
+  }
+  .career-now__item strong {
+    font-size: 16px;
+  }
+}
+@media (prefers-color-scheme: dark) {
+  .career-chip--bonus { color: #e39a6b; }
+  .career-chip--severance { color: #b39ae3; }
+  .career-chip--stipend { color: #6fcfa9; }
+  .career-chip--equity { color: #d9b866; }
+  .career-chip--current { color: #7fb2e3; }
+}
+.career-emps__name {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--color-ink);
+  cursor: pointer;
+}
+.career-emps__name:hover {
+  text-decoration: underline;
+}

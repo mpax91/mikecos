@@ -29,6 +29,7 @@ import { FinanceAccountPage } from './pages/FinanceAccountPage';
 import { TaxesPage } from './pages/TaxesPage';
 import { CreditReportsPage } from './pages/CreditReportsPage';
 import { SocialSecurityPage } from './pages/SocialSecurityPage';
+import { CareerPage } from './pages/CareerPage';
 import { VaultPage } from './pages/VaultPage';
 import { VaultRollupsPage } from './pages/VaultRollupsPage';
 import { WalletPage } from './pages/WalletPage';
@@ -104,6 +105,7 @@ export default function App() {
             <Route path="/finance/taxes" element={<TaxesPage />} />
             <Route path="/finance/credit" element={<CreditReportsPage />} />
             <Route path="/finance/social-security" element={<SocialSecurityPage />} />
+            <Route path="/finance/career" element={<CareerPage />} />
             <Route path="/finance/:id" element={<FinanceAccountPage />} />
             <Route path="/vault" element={<VaultPage />} />
             <Route path="/vault/rollups" element={<VaultRollupsPage />} />

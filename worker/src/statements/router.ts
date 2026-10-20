@@ -103,6 +103,8 @@ statementsRouter.get('/drive-folders', async (c) => {
   const { results: rows } = await c.env.DB.prepare('SELECT * FROM statement_folders').all<FolderRow>();
   const stats = await folderStats(c.env);
   const registered = new Map((rows ?? []).map((r) => [`${r.cloud_account_id}|${r.folder_id}`, r]));
+  // Employer paystub folders belong to Finance → Career — ignored here by default.
+  const careerFolders = new Set((((await c.env.DB.prepare('SELECT folder_id FROM career_folders').all<{ folder_id: string }>().catch(() => ({ results: [] }))).results ?? []) as { folder_id: string }[]).map((r) => r.folder_id));
   const out = [];
   for (const acct of accounts ?? []) {
     let folders: { id: string; name: string; webUrl: string | null }[] = [];
@@ -127,7 +129,7 @@ statementsRouter.get('/drive-folders', async (c) => {
           folderUrl: f.webUrl,
           registered: reg ? folderJson(reg, stats.get(reg.id)) : null,
           suggestedTemplateId: suggested?.id ?? null,
-          defaultIgnored: DEFAULT_IGNORED_FOLDERS.includes(f.name),
+          defaultIgnored: DEFAULT_IGNORED_FOLDERS.includes(f.name) || careerFolders.has(f.id),
         };
       }),
     });
