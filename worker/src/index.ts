@@ -81,6 +81,7 @@ import { bingSyncDue, syncBing } from './bee/bing';
 import { claritySyncDue, syncClarity } from './bee/clarity';
 import { metaSyncDue, syncMeta } from './bee/meta';
 import { recordGradeHistory } from './bee/grades';
+import { beePublicStats } from './bee/publicStats';
 import { contactsAssistantRouter } from './contactsAssistant';
 import { betsEnrichmentRouter } from './betsEnrichment';
 import { cascadeRealm, contactRealmSql, inheritRealmFromParent, realmOf, realmSql, stampRealm, createRealm, workLabel, type RealmFilter } from './work/realm';
@@ -98,6 +99,26 @@ const app = new Hono<{ Bindings: Env }>();
 app.use('*', async (c, next) => {
   const corsMiddleware = cors({ origin: (origin) => (origin && resolveOrigin(c) === origin ? origin : undefined), credentials: true });
   return corsMiddleware(c, next);
+});
+
+// Public, read-only Bedford Bee homepage stats — aggregate numbers only
+// (see bee/publicStats.ts). Outside /api/*, so authGate doesn't apply;
+// CORS is opened only to the Bee site's own origins.
+const BEE_PUBLIC_ORIGINS = new Set(['https://thebedfordbee.com', 'https://www.thebedfordbee.com', 'https://bedford-bee-site.pages.dev']);
+const BEE_PREVIEW_ORIGIN_RE = /^https:\/\/[a-z0-9-]+\.bedford-bee-site\.pages\.dev$/;
+app.get('/public/bee-stats', async (c) => {
+  const origin = c.req.header('Origin');
+  if (origin && (BEE_PUBLIC_ORIGINS.has(origin) || BEE_PREVIEW_ORIGIN_RE.test(origin))) {
+    c.header('Access-Control-Allow-Origin', origin);
+    c.header('Vary', 'Origin');
+  }
+  try {
+    const stats = await beePublicStats(c.env);
+    c.header('Cache-Control', 'public, max-age=900');
+    return c.json(stats);
+  } catch {
+    return c.json({ error: 'unavailable' }, 503);
+  }
 });
 
 // Every /api/* route requires a valid session except /api/auth/* itself
