@@ -2651,6 +2651,8 @@ export interface StatementDriveAccount {
     registered: StatementFolder | null;
     suggestedTemplateId: string | null;
     defaultIgnored: boolean;
+    /** An employer paystub folder — read nightly by Finance → Career, not Statements. */
+    career?: boolean;
   }[];
 }
 

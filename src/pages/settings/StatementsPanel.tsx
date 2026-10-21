@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../../api/client';
 import type { AccountOwner, StatementDriveAccount, StatementFolder } from '../../api/types';
 
-const STATUS_LABEL = { live: 'Live', needs_template: 'Needs Template', ignored: 'Ignored' } as const;
+const STATUS_LABEL = { live: 'Live', needs_template: 'Needs Template', ignored: 'Ignored', career: '💼 Read by Career' } as const;
 
 function fmtDate(iso: string | null): string {
   if (!iso) return '—';
@@ -117,7 +117,8 @@ export function StatementsPanel() {
       )}
 
       {accounts?.map((acct) => {
-        const folders = acct.folders.filter((f) => showIgnored || !(f.registered ? f.registered.status === 'ignored' : f.defaultIgnored));
+        // Employer paystub folders aren't ignored — Finance → Career reads them nightly — so they stay visible.
+        const folders = acct.folders.filter((f) => showIgnored || (!f.registered && f.career) || !(f.registered ? f.registered.status === 'ignored' : f.defaultIgnored));
         const hidden = acct.folders.length - folders.length;
         return (
           <section key={acct.accountId} className="statements-settings__section">
@@ -128,7 +129,7 @@ export function StatementsPanel() {
             {acct.error && <div className="statements-settings__error">⚠ {acct.error}</div>}
             <div className="statements-settings__folders">
               {folders.map((f) => {
-                const status = f.registered?.status ?? (f.defaultIgnored ? 'ignored' : 'needs_template');
+                const status = f.registered?.status ?? (f.career ? 'career' : f.defaultIgnored ? 'ignored' : 'needs_template');
                 return (
                   <div key={f.folderId} className="statements-settings__folder">
                     <span className="statements-settings__folder-name">📁 {f.folderName}</span>
@@ -139,7 +140,11 @@ export function StatementsPanel() {
                           Go Live
                         </button>
                       )}
-                      {status === 'ignored' ? (
+                      {status === 'career' ? (
+                        <Link to="/finance/career" className="btn btn--ghost btn--sm">
+                          Open Career
+                        </Link>
+                      ) : status === 'ignored' ? (
                         <button type="button" className="btn btn--ghost btn--sm" disabled={busy === f.folderId} onClick={() => register(acct, f, 'needs_template')}>
                           Unignore
                         </button>

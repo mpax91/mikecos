@@ -17993,6 +17993,11 @@ td.month-page__upcoming-actions .today-page__meeting-actions {
   border-color: #ecd3b4;
   color: #8a3f06;
 }
+.statements-pill--career {
+  background: #eef2fb;
+  border-color: #cfd9ef;
+  color: #2f4a86;
+}
 .statements-settings__show-ignored {
   margin-top: 6px;
 }

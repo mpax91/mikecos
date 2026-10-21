@@ -130,6 +130,8 @@ statementsRouter.get('/drive-folders', async (c) => {
           registered: reg ? folderJson(reg, stats.get(reg.id)) : null,
           suggestedTemplateId: suggested?.id ?? null,
           defaultIgnored: DEFAULT_IGNORED_FOLDERS.includes(f.name) || careerFolders.has(f.id),
+          // Read nightly by Finance → Career's paystub scan (not by Statements).
+          career: careerFolders.has(f.id),
         };
       }),
     });
