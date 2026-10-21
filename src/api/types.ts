@@ -2667,6 +2667,8 @@ export interface StatementScanResult {
 }
 
 export interface FinanceAccount extends StatementFolder {
+  /** Where the row opens when it isn't the folder's own dashboard (Chase's UTMA → the Merrill dashboard's Chase tab). */
+  link?: string;
   /** 'balance' accounts (529, savings) count toward totals; 'bill' accounts
    * (ADT, utilities) show their latest bill and monthly cost instead. */
   headline:
@@ -3699,7 +3701,7 @@ export interface RewardsOverview {
   cards: { folderId: string; name: string; owner: AccountOwner; rewards: CardRewards; redeemAt: number }[];
 }
 
-export type FinanceDashboard = Ny529Dashboard | AdtDashboard | TmobileDashboard | FiosDashboard | HanoverDashboard | AllyDashboard | AmazonDashboard | AmexBankDashboard | UsaaDashboard | AmexCardDashboard | BofaCardDashboard | TargetCardDashboard | PaypalDashboard;
+export type FinanceDashboard = MerrillDashboard | Ny529Dashboard | AdtDashboard | TmobileDashboard | FiosDashboard | HanoverDashboard | AllyDashboard | AmazonDashboard | AmexBankDashboard | UsaaDashboard | AmexCardDashboard | BofaCardDashboard | TargetCardDashboard | PaypalDashboard;
 
 /** PayPal on a card dashboard (worker/src/statements/paypalMatch.ts). */
 export interface CardPaypalPanel {
@@ -5394,4 +5396,197 @@ export interface CareerScanResult {
   notRead: number;
   queued: number;
   error: string | null;
+}
+
+// ---- Finance → Merrill Lynch (worker/src/statements/merrillSummary.ts) ----
+
+export type MlAccountType = 'ira' | 'roth' | 'cma' | 'utma';
+
+export interface MlHolding {
+  name: string;
+  symbol: string | null;
+  section: 'cash' | 'mmf' | 'equity' | 'fund' | 'fixed' | 'other';
+  qty: number | null;
+  cost: number | null;
+  price: number | null;
+  value: number;
+  gain: number | null;
+  income: number | null;
+  classes: { equity: number; fixed: number; cash: number; other: number };
+  initialPurchase: string | null;
+}
+
+export interface MlReturns {
+  ytd: number | null;
+  y1: number | null;
+  y3: number | null;
+  y5: number | null;
+  since: number | null;
+  sinceMonths: number;
+  sinceStart: string | null;
+}
+
+export interface MlSeriesPoint {
+  date: string;
+  month: string;
+  value: number;
+  netFlow: number;
+  fees: number;
+  income: number;
+  market: number;
+  rNet: number | null;
+  rGross: number | null;
+  rSpy: number | null;
+  rBlend: number | null;
+  mix: { us: number; intl: number; fixed: number; cash: number; other: number } | null;
+}
+
+export interface MlAllocation {
+  equity: number;
+  us: number;
+  intl: number;
+  fixed: number;
+  cash: number;
+  other: number;
+}
+
+export interface MlFees {
+  last: number;
+  ytd: number;
+  trailing12: number;
+  rate12: number | null;
+  allTime: number;
+  byYear: { year: number; fees: number; avgValue: number; rate: number | null; months: number }[];
+}
+
+export interface MlWindowDollars {
+  y1: number | null;
+  y3: number | null;
+  since: number | null;
+}
+
+export interface MlAccountSummary {
+  number: string;
+  last4: string;
+  type: MlAccountType;
+  label: string;
+  owner: 'household' | 'chase';
+  value: number;
+  asOf: string;
+  firstDate: string;
+  strategy: string | null;
+  sleeves: { name: string; pct: number; rate: number | null }[];
+  objective: string | null;
+  allocation: MlAllocation;
+  costBasis: number | null;
+  unrealized: number | null;
+  estIncome: number | null;
+  holdings: MlHolding[];
+  fees: MlFees;
+  income: { ytd: number; last12: number; allTime: number; byYear: { year: number; total: number }[] };
+  flows: { allTimeIn: number; allTimeOut: number; byYear: { year: number; in: number; out: number }[] };
+  returns: { net: MlReturns; gross: MlReturns; spy: MlReturns; blend: MlReturns };
+  valueAdded: { vsBlend: MlWindowDollars; vsSpy: MlWindowDollars };
+  series: MlSeriesPoint[];
+  realizedYtd: { st: number; lt: number } | null;
+  unrealizedSplit: { st: number; lt: number } | null;
+  rollovers: { year: number; amount: number }[];
+  tradesPerYear: { year: number; trades: number }[];
+}
+
+export interface MlInsight {
+  key: string;
+  severity: 'good' | 'info' | 'warn';
+  area: 'performance' | 'fees' | 'allocation' | 'taxes' | 'chase' | 'retirement' | 'data';
+  title: string;
+  detail: string;
+  question?: string;
+}
+
+export interface MlMergedHolding {
+  key: string;
+  name: string;
+  symbol: string | null;
+  section: MlHolding['section'];
+  value: number;
+  pct: number;
+  gain: number | null;
+  income: number | null;
+  intl: boolean;
+  classes: MlHolding['classes'];
+  accounts: { last4: string; type: MlAccountType; value: number }[];
+}
+
+export interface MlHarvestLot {
+  account: string;
+  type: MlAccountType;
+  symbol: string;
+  name: string;
+  acquired: string | null;
+  qty: number | null;
+  cost: number;
+  value: number;
+  loss: number;
+  term: 'short' | 'long' | null;
+  fund: boolean;
+}
+
+export interface MlWashSale {
+  account: string;
+  type: MlAccountType;
+  name: string;
+  sold: string;
+  loss: number | null;
+  merrillFlagged: boolean;
+  buys: { date: string; account: string; type: MlAccountType; qty: number | null; amount: number }[];
+  permanent: boolean;
+}
+
+export interface MerrillSummaryView {
+  asOf: string | null;
+  household: MlAccountSummary | null;
+  accounts: MlAccountSummary[];
+  chase: MlAccountSummary | null;
+  total: number;
+  holdings: MlMergedHolding[];
+  taxes: {
+    accounts: string[];
+    years: { year: number; st: number; lt: number; lossesHarvested: number; lossSales: number; washMarked: number; taxableIncome: number; exemptIncome: number; partial: boolean }[];
+    ytd: { st: number; lt: number; income: number; harvested: number } | null;
+    harvest: { lots: MlHarvestLot[]; total: number; st: number; lt: number };
+    washSales: MlWashSale[];
+    unrealizedGain: number;
+  };
+  insights: MlInsight[];
+  questions: { area: MlInsight['area']; text: string }[];
+  benchmark: { months: number; first: string | null; last: string | null; symbols: string[] };
+  retirement: { age: number | null; birthDate: string | null; preTax: number; roth: number; taxable: number; feeRate: number | null; historicalNet: number | null; historicalBlend: number | null };
+  statements: {
+    id: string;
+    date: string;
+    kind: 'household' | 'chase';
+    total: number | null;
+    partial: boolean;
+    fileId: string;
+    checks: StatementCheckRow[];
+    checkCount: number;
+    checkOk: number;
+    accounts: { last4: string; type: MlAccountType; value: number }[];
+  }[];
+}
+
+export interface MerrillDashboard {
+  kind: 'merrill';
+  folder: StatementFolder;
+  template: { nickname: string; institution: string; type: string; site?: string; phone?: string } | null;
+  settings: { retireAge: number };
+  summary: MerrillSummaryView;
+  market: { fetchedAt: string | null; error: string | null; months: number; first: string | null; last: string | null };
+  /** Social Security projection: grid[stopAge][claimAge] = monthly benefit, today's dollars. */
+  ssa: { grid: Record<string, Record<string, { monthly: number; fromJanuary: number | null }>>; stopAges: number[]; claimAges: number[]; fraYears: number; currentAge: number; asOfYear: number } | null;
+  ny529: { folderId: string; value: number; asOf: string | null; contributionsYtd: number | null; nyLimit: number | null } | null;
+  reviews: { name: string; url: string | null; date: string | null }[];
+  statements: { id: string; periodEnd: string; fileId: string }[];
+  files: { fileId: string; name: string; url: string | null; status: string; error: string | null }[];
+  flags: { id: string; severity: 'warn' | 'info'; message: string; created_at: string }[];
 }

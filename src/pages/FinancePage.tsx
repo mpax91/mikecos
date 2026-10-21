@@ -176,7 +176,7 @@ export function FinancePage() {
           </div>
           <div className="cloud-meters__rows">
             {shown.map((a) => (
-              <Link key={a.id} to={`/finance/${a.id}`} className="finance-page__row">
+              <Link key={`${a.id}:${a.owner}`} to={a.link ?? `/finance/${a.id}`} className="finance-page__row">
                 <span className="finance-page__row-name">
                   <span className="cloud-meters__label">{a.nickname}</span>
                   <span className="cloud-meters__provider">

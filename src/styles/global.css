@@ -22644,3 +22644,211 @@ button.career-now__item {
 .career-emps__name:hover {
   text-decoration: underline;
 }
+
+/* Finance → Merrill Lynch dashboard (MerrillDashboard.tsx) */
+.ml-dash__tabs {
+  margin: 4px 0 14px;
+}
+.ml-dash__link {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+.ml-dash__link:hover strong,
+.ml-dash__link:hover {
+  text-decoration: underline;
+}
+.ml-mix {
+  display: flex;
+  width: 100%;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--color-border);
+  margin: 6px 0;
+}
+.ml-mix span {
+  display: block;
+  height: 100%;
+}
+.ml-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  font-size: 12.5px;
+  color: var(--color-muted);
+}
+.ml-legend strong {
+  color: var(--color-text);
+  font-weight: 600;
+}
+.ml-legend__dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 5px;
+  vertical-align: 0;
+}
+.ml-accts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.ml-accts li + li {
+  border-top: 1px solid var(--color-border);
+}
+.ml-acct {
+  display: block;
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 10px 0;
+  cursor: pointer;
+}
+.ml-acct__top {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.ml-acct__value {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.ml-acct__sub {
+  display: block;
+  font-size: 12.5px;
+}
+.ml-select {
+  font: inherit;
+  font-size: 13px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: var(--color-card-bg);
+  color: inherit;
+  max-width: 100%;
+}
+.ml-search {
+  width: 100%;
+  font: inherit;
+  padding: 7px 10px;
+  margin: 0 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: var(--color-card-bg);
+  color: inherit;
+}
+.ml-row {
+  cursor: pointer;
+}
+.ml-ret tr.ml-ret--you td {
+  font-weight: 600;
+}
+.ml-ret tr.ml-ret--diff td {
+  border-top: 1px solid var(--color-border);
+}
+.ml-card__right {
+  margin-left: auto;
+}
+.ml-card__nums {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.ml-calc {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin: 0 0 10px;
+  font-size: 13px;
+}
+.ml-calc label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ml-plan {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px 22px;
+}
+.ml-plan__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--color-muted);
+}
+.ml-plan__field strong {
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+.ml-plan__field input[type='range'] {
+  width: 100%;
+}
+.ml-questions {
+  margin: 0;
+  padding-left: 20px;
+  line-height: 1.45;
+}
+.ml-questions li + li {
+  margin-top: 8px;
+}
+.ml-compare td:first-child {
+  white-space: nowrap;
+  color: var(--color-muted);
+}
+.ml-compare td {
+  vertical-align: top;
+}
+.ml-wash li span:first-child {
+  flex: 1 1 auto;
+}
+@media (max-width: 900px) {
+  .ml-plan {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 640px) {
+  .ml-plan {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ml-compare thead {
+    display: none;
+  }
+  .ml-compare tr {
+    display: block;
+    padding: 8px 0;
+    border-top: 1px solid var(--color-border);
+  }
+  .ml-compare td {
+    display: block;
+    padding: 2px 0;
+    border: none;
+  }
+  .ml-compare td:not(:first-child)::before {
+    font-size: 11.5px;
+    color: var(--color-muted);
+    margin-right: 6px;
+  }
+  .ml-compare td:nth-child(2)::before {
+    content: 'NY 529 ·';
+  }
+  .ml-compare td:nth-child(3)::before {
+    content: 'UTMA ·';
+  }
+  .ml-compare td:nth-child(4)::before {
+    content: 'Trump Acct ·';
+  }
+}

@@ -12,7 +12,7 @@ export const ssaRouter = new Hono<{ Bindings: Env }>();
 const todayEastern = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
 
 /** Mike's W-2 wages per year from Finance → Taxes (single years: every W-2; joint: Mike's). */
-async function w2Wages(env: Env): Promise<Map<number, number>> {
+export async function w2Wages(env: Env): Promise<Map<number, number>> {
   const out = new Map<number, number>();
   try {
     const { results } = await env.DB.prepare('SELECT year, data_json FROM tax_returns').all<{ year: number; data_json: string }>();

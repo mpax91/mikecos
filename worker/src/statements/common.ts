@@ -27,6 +27,10 @@ export interface ParsedTransaction {
     | 'refund'
     | 'reward'
     | 'cash_advance'
+    // investment accounts (Merrill Lynch)
+    | 'buy'
+    | 'sell'
+    | 'dividend'
     | 'other';
   amount: number;
   units: number | null;

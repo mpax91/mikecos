@@ -12,6 +12,7 @@ import { parseFios } from './fios';
 import { parseUsaa } from './usaa';
 import { parseTargetCard } from './targetCard';
 import { parseHanover } from './hanover';
+import { parseMerrill } from './merrill';
 
 /** Per-folder templates (one per Drive folder, all on the shared base
  * engine). Build order per progress.md: 529 is live; ADT, Ally Bank, Amazon Prime Visa, PayPal,
@@ -35,6 +36,9 @@ export interface StatementTemplate {
      * accounts (PayPal) are pass-through payment apps — their balance (usually
      * $0) counts toward the total, the dashboard is about activity. */
     kind: 'balance' | 'bill' | 'card' | 'app';
+    /** Investment accounts (Merrill) — a balance account whose dashboard is
+     * about performance, fees, allocation and taxes. */
+    investment?: boolean;
     site?: string;
     phone?: string;
     /** Cards: the network / tier for the Card Type Quick Fact when the
@@ -272,6 +276,26 @@ export const TEMPLATES: StatementTemplate[] = [
     // Monthly statements are "USAA FSB - YYYY.MM.DD.pdf"; a 1099 or other
     // document dropped in the folder is skipped.
     isStatementFile: (name) => /\d{4}\.\d{2}\.\d{2}/.test(name) && !/1099/.test(name),
+  },
+  {
+    id: 'merrill',
+    name: 'Merrill Lynch Investment Accounts (Monthly)',
+    folderNames: ['Merrill Lynch', 'Merrill', 'Merrill Edge'],
+    account: {
+      nickname: 'Merrill Lynch',
+      institution: 'Merrill Lynch, Pierce, Fenner & Smith',
+      type: 'Advisory Investment Accounts (IRA, Roth IRA, CMA, UTMA)',
+      owner: 'household',
+      cadence: 'monthly',
+      kind: 'balance',
+      investment: true,
+      site: 'https://www.mymerrill.com',
+      phone: '1-800-637-7455',
+    },
+    parse: parseMerrill,
+    // Monthly packages are "Merrill Lynch - YYYY.MM.DD.pdf" (the UTMA's own
+    // statement adds " - Chase"); Portfolio / Client Reviews are skipped.
+    isStatementFile: (name) => /\d{4}\.\d{2}\.\d{2}/.test(name) && !/review/i.test(name),
   },
   {
     id: 'paypal',

@@ -36,6 +36,13 @@ import { loadPaypalData } from './paypalDerive';
 import { summarizePaypal } from './paypalSummary';
 import { cardPaypalView, loadPaypalMatches, paypalKey } from './paypalMatch';
 import type { PaypalMatchResult } from './paypalMatch';
+import { loadMerrillData, merrillContext, merrillSettings } from './merrillDerive';
+import { summarizeMerrill } from './merrillSummary';
+import type { MerrillSummary } from './merrillSummary';
+import { loadMarket, refreshMarket, storeMarket } from './market';
+import { summarizeSsa } from '../ssa/summary';
+import { loadStatements as loadSsaStatements } from '../ssa/drive';
+import { w2Wages } from '../ssa/router';
 
 /** Statements API, mounted at /api/statements. */
 export const statementsRouter = new Hono<{ Bindings: Env }>();
@@ -68,6 +75,7 @@ function folderJson(row: FolderRow, stats?: FolderStats) {
   const t = templateById(row.template_id);
   let settings: unknown = null;
   if (row.template_id === 'ny529') settings = ny529Settings(row);
+  else if (row.template_id === 'merrill') settings = merrillSettings(row);
   else if (t?.account.kind === 'card') settings = cardRewardsSettings(row);
   return {
     id: row.id,
@@ -283,7 +291,24 @@ statementsRouter.get('/accounts', async (c) => {
       // No rewards balance (the 5% is off at checkout) — pointsValue stays null.
       if (s.latest) headline = { kind: 'card', value: s.balance, asOf: s.asOf, status: s.status, dueDate: s.nextDue ? s.latest.dueDate : null, minimum: s.nextDue ? s.latest.minimumPayment : null, pointsValue: null };
     }
+    let extra: Record<string, unknown> | null = null;
+    if (row.template_id === 'merrill') {
+      const { stmts, txns } = await loadMerrillData(c.env, row.id);
+      const s = summarizeMerrill(stmts, txns, await merrillContext(c.env, row, easternToday()));
+      if (s.asOf) headline = { kind: 'balance', value: s.total, asOf: s.household?.asOf ?? s.asOf, parts: s.accounts.map((a) => ({ label: `${a.label} ••${a.last4}`, value: a.value })) };
+      // Chase's UTMA lives in the same folder but belongs on Chase's tab (kept out of the Household total).
+      if (s.chase)
+        extra = {
+          ...folderJson(row, stats.get(row.id)),
+          id: row.id,
+          owner: 'chase',
+          nickname: 'Merrill UTMA · Chase',
+          link: `/finance/${row.id}?tab=chase`,
+          headline: { kind: 'balance', value: s.chase.value, asOf: s.chase.asOf },
+        };
+    }
     out.push({ ...folderJson(row, stats.get(row.id)), headline });
+    if (extra) out.push(extra);
   }
   return c.json(out);
 });
@@ -357,6 +382,7 @@ statementsRouter.get('/folders/:id/dashboard', async (c) => {
   if (row.template_id === 'amexCard') return c.json(await amexCardDashboard(c.env, row));
   if (row.template_id === 'bofaCard') return c.json(await bofaCardDashboard(c.env, row));
   if (row.template_id === 'targetCard') return c.json(await targetCardDashboard(c.env, row));
+  if (row.template_id === 'merrill') return c.json(await merrillDashboard(c.env, row));
   if (row.template_id !== 'ny529') return c.json({ error: 'No dashboard for this template yet' }, 400);
   const stats = await folderStats(c.env);
   const { stmts, txns, files } = await loadNy529Data(c.env, row.id);
@@ -561,6 +587,61 @@ async function allyDashboard(env: Env, row: FolderRow) {
     flags: await openFlags(env, row.id),
   };
 }
+
+/** Merrill Lynch dashboard payload: the whole summary (per-account monthly
+ * series, returns vs benchmarks, fees, allocation, taxes, insights), the
+ * Social Security projection grid + the 529 for the Plan and Chase tabs,
+ * benchmark freshness, Portfolio Review files and statement checks (full
+ * detail for the last 24 statements, failures only before). */
+async function merrillDashboard(env: Env, row: FolderRow) {
+  const stats = await folderStats(env);
+  const today = easternToday();
+  const { stmts, txns, files } = await loadMerrillData(env, row.id);
+  const summary: MerrillSummary = summarizeMerrill(stmts, txns, await merrillContext(env, row, today));
+  const market = await loadMarket(env);
+  let ssa: { grid: unknown; stopAges: number[]; claimAges: number[]; fraYears: number; currentAge: number; asOfYear: number } | null = null;
+  try {
+    const sum = summarizeSsa(await loadSsaStatements(env), await w2Wages(env), today);
+    if (sum.projection) ssa = { grid: sum.projection.grid, stopAges: sum.projection.stopAges, claimAges: sum.projection.claimAges, fraYears: sum.projection.fraYears, currentAge: sum.projection.currentAge, asOfYear: sum.projection.asOfYear };
+  } catch {
+    ssa = null;
+  }
+  let ny529: { folderId: string; value: number; asOf: string | null; contributionsYtd: number | null; nyLimit: number | null } | null = null;
+  try {
+    const f = await env.DB.prepare(`SELECT * FROM statement_folders WHERE status = 'live' AND template_id = 'ny529'`).first<FolderRow>();
+    if (f) {
+      const { stmts: ns, txns: nt } = await loadNy529Data(env, f.id);
+      const n = summarizeNy529(ns, nt, ny529Settings(f), today);
+      ny529 = { folderId: f.id, value: n.value, asOf: n.asOf, contributionsYtd: n.ytdContributions, nyLimit: ny529Settings(f).nyLimit };
+    }
+  } catch {
+    ny529 = null;
+  }
+  const since = summary.statements.length > 24 ? summary.statements[summary.statements.length - 25].date : '';
+  return {
+    kind: 'merrill' as const,
+    folder: folderJson(row, stats.get(row.id)),
+    template: templateById(row.template_id)?.account ?? null,
+    settings: merrillSettings(row),
+    summary: { ...summary, statements: summary.statements.map((s) => ({ ...s, checkCount: s.checks.length, checkOk: s.checks.filter((x) => x.ok).length, checks: s.date > since ? s.checks : s.checks.filter((x) => !x.ok) })) },
+    market: { fetchedAt: market.fetchedAt, error: market.error, months: summary.benchmark.months, first: summary.benchmark.first, last: summary.benchmark.last },
+    ssa,
+    ny529,
+    reviews: files.filter((f) => /review/i.test(f.file_name) || f.status === 'skipped').map((f) => ({ name: f.file_name, url: f.web_url, date: (f.file_name.match(/(\d{4})\.(\d{2})\.(\d{2})/) ?? []).slice(1, 4).join('-') || null })),
+    statements: stmts.map((s) => ({ id: s.id, periodEnd: s.date, fileId: s.fileId })),
+    files: files.map((f) => ({ fileId: f.file_id, name: f.file_name, url: f.web_url, status: f.status, error: f.error })),
+    flags: await openFlags(env, row.id),
+  };
+}
+
+// Benchmark prices (public index data): refresh now, or load by hand.
+statementsRouter.post('/market/refresh', async (c) => c.json(await refreshMarket(c.env, true)));
+statementsRouter.post('/market/import', async (c) => {
+  const body = await c.req.json<{ rows?: { symbol?: string; month?: string; adjClose?: number }[] }>().catch(() => ({ rows: undefined }));
+  if (!Array.isArray(body.rows) || !body.rows.length) return c.json({ error: 'rows: [{symbol, month: "YYYY-MM", adjClose}] required' }, 400);
+  const stored = await storeMarket(c.env, body.rows.map((r) => ({ symbol: String(r.symbol ?? '').toUpperCase(), month: String(r.month ?? ''), adjClose: Number(r.adjClose) })));
+  return c.json({ stored });
+});
 
 /** USAA checking dashboard payload. Every statement's flows (by category)
  * go out so ranges work back to 2007; individual transactions are capped to
