@@ -3701,7 +3701,7 @@ export interface RewardsOverview {
   cards: { folderId: string; name: string; owner: AccountOwner; rewards: CardRewards; redeemAt: number }[];
 }
 
-export type FinanceDashboard = MerrillDashboard | Ny529Dashboard | AdtDashboard | TmobileDashboard | FiosDashboard | HanoverDashboard | AllyDashboard | AmazonDashboard | AmexBankDashboard | UsaaDashboard | AmexCardDashboard | BofaCardDashboard | TargetCardDashboard | PaypalDashboard;
+export type FinanceDashboard = TspDashboard | MerrillDashboard | Ny529Dashboard | AdtDashboard | TmobileDashboard | FiosDashboard | HanoverDashboard | AllyDashboard | AmazonDashboard | AmexBankDashboard | UsaaDashboard | AmexCardDashboard | BofaCardDashboard | TargetCardDashboard | PaypalDashboard;
 
 /** PayPal on a card dashboard (worker/src/statements/paypalMatch.ts). */
 export interface CardPaypalPanel {
@@ -5575,6 +5575,99 @@ export interface MerrillSummaryView {
   }[];
 }
 
+// ---- Thrift Savings Plan (Finance → Thrift Savings Plan; worker/src/statements/tspSummary.ts) ----
+export interface TspReturnRow {
+  ytd: number | null;
+  y1: number | null;
+  y3: number | null;
+  y5: number | null;
+}
+export interface TspInsight {
+  key: string;
+  severity: 'warn' | 'info' | 'good';
+  title: string;
+  detail: string;
+}
+export interface TspYear {
+  year: number;
+  start: number;
+  end: number;
+  gain: number;
+  contributions: number;
+  ret: number | null;
+  printed: number | null;
+  partial: boolean;
+  funds: Record<string, number | null>;
+}
+export interface TspSummaryView {
+  asOf: string | null;
+  balance: number;
+  latest: { date: string; kind: 'quarterly' | 'annual' | 'interim'; gain: number; prr: { value: number; window: 'period' | '12mo' } | null; opening: number; fileId: string } | null;
+  current: { fund: string; value: number; price: number | null; shares: number | null; pct: number }[];
+  election: Record<string, number> | null;
+  beneficiary: boolean | null;
+  returns: { quarter: number | null; ytd: number | null; y1: number | null; y3: number | null; y5: number | null; y10: number | null; since: number | null; sinceDate: string | null } | null;
+  points: { date: string; value: number; index: number; funds: { fund: string; value: number; pct: number }[] | null }[];
+  periods: { from: string; to: string; start: number; end: number; ret: number | null; gain: number }[];
+  years: TspYear[];
+  eras: { from: string; to: string; mix: { fund: string; pct: number }[] }[];
+  transfers: { date: string; fund: string; amount: number; units: number | null }[];
+  navs: Record<string, { date: string; price: number }[]>;
+  contributions: { lifetime: number; traditional: number; roth: number; employer: number; first: string | null; last: string | null; count: number; list: { date: string; amount: number }[]; onStatements: number; growth: number | null; multiple: number | null };
+  costs: {
+    rate: number | null;
+    year: number | null;
+    perYear: number | null;
+    allTime: number;
+    history: { year: number; rate: number | null; dollars: number | null; rows: Record<string, number> }[];
+    compare: { label: string; rate: number; perYear: number; tenYears: number }[];
+  };
+  whatIf: { from: string; start: number; years: number[]; lines: { fund: string; values: { year: number; value: number }[]; end: number; missing: number[] }[]; actual: { year: number; value: number }[]; ytdNote: string | null } | null;
+  target: {
+    current: string | null;
+    birthYear: number | null;
+    age: number | null;
+    retireAge: number;
+    targetYear: number | null;
+    suggested: string | null;
+    yearsToTarget: number | null;
+    ageAtFundDate: number | null;
+    lFunds: ({ fund: string; expense: number | null } & TspReturnRow)[];
+    asOf: string | null;
+  };
+  vsFunds: ({ fund: string; held: boolean } & TspReturnRow)[];
+  vsFundsAsOf: string | null;
+  personalPrinted: TspReturnRow | null;
+  missingQuarters: string[];
+  uncovered: { from: string; to: string }[];
+  inferred: { from: string; to: string; amount: number } | null;
+  insights: TspInsight[];
+  statements: {
+    id: string;
+    key: string;
+    date: string;
+    start: string;
+    kind: 'quarterly' | 'annual' | 'interim';
+    layout: string;
+    opening: number;
+    closing: number;
+    gain: number;
+    contributions: number;
+    prr: { value: number; window: 'period' | '12mo' } | null;
+    fileId: string;
+    checks: StatementCheckRow[];
+  }[];
+}
+export interface TspDashboard {
+  kind: 'tsp';
+  folder: StatementFolder;
+  template: { nickname: string; institution: string; type: string; site?: string; phone?: string } | null;
+  summary: TspSummaryView;
+  statements: { id: string; periodEnd: string; fileId: string }[];
+  files: { fileId: string; name: string; url: string | null; status: string; error: string | null }[];
+  flags: { id: string; severity: 'warn' | 'info'; message: string; created_at: string }[];
+}
+
 export interface MerrillDashboard {
   kind: 'merrill';
   folder: StatementFolder;
@@ -5585,6 +5678,8 @@ export interface MerrillDashboard {
   /** Social Security projection: grid[stopAge][claimAge] = monthly benefit, today's dollars. */
   ssa: { grid: Record<string, Record<string, { monthly: number; fromJanuary: number | null }>>; stopAges: number[]; claimAges: number[]; fraYears: number; currentAge: number; asOfYear: number } | null;
   ny529: { folderId: string; value: number; asOf: string | null; contributionsYtd: number | null; nyLimit: number | null } | null;
+  /** Thrift Savings Plan balance (Finance → Thrift Savings Plan), when that folder is live. */
+  tsp?: { folderId: string; value: number; asOf: string | null } | null;
   reviews: { name: string; url: string | null; date: string | null }[];
   statements: { id: string; periodEnd: string; fileId: string }[];
   files: { fileId: string; name: string; url: string | null; status: string; error: string | null }[];

@@ -13,6 +13,7 @@ import { parseUsaa } from './usaa';
 import { parseTargetCard } from './targetCard';
 import { parseHanover } from './hanover';
 import { parseMerrill } from './merrill';
+import { parseTsp } from './tsp';
 
 /** Per-folder templates (one per Drive folder, all on the shared base
  * engine). Build order per progress.md: 529 is live; ADT, Ally Bank, Amazon Prime Visa, PayPal,
@@ -296,6 +297,26 @@ export const TEMPLATES: StatementTemplate[] = [
     // Monthly packages are "Merrill Lynch - YYYY.MM.DD.pdf" (the UTMA's own
     // statement adds " - Chase"); Portfolio / Client Reviews are skipped.
     isStatementFile: (name) => /\d{4}\.\d{2}\.\d{2}/.test(name) && !/review/i.test(name),
+  },
+  {
+    id: 'tsp',
+    name: 'Thrift Savings Plan (Quarterly + Annual)',
+    folderNames: ['Thrift Savings Plan', 'TSP'],
+    account: {
+      nickname: 'Thrift Savings Plan',
+      institution: 'Federal Retirement Thrift Investment Board',
+      type: 'TSP (Uniformed Services) — Traditional',
+      owner: 'household',
+      cadence: 'quarterly',
+      kind: 'balance',
+      investment: true,
+      site: 'https://www.tsp.gov',
+      phone: '1-877-968-3778',
+    },
+    parse: parseTsp,
+    // "TSP - YYYY.Q#.pdf", "TSP - YYYY.pdf" (annual), "TSP - YYYY.MM[.DD].pdf" (on-demand);
+    // a 1099-R or a form dropped in the folder is skipped.
+    isStatementFile: (name) => /\d{4}/.test(name) && !/1099|TSP-\d|form/i.test(name),
   },
   {
     id: 'paypal',

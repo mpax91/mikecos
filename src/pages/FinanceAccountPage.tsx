@@ -17,6 +17,7 @@ import { BofaCardDashboard } from '../components/BofaCardDashboard';
 import { TargetCardDashboard } from '../components/TargetCardDashboard';
 import { PaypalDashboard } from '../components/PaypalDashboard';
 import { MerrillDashboard } from '../components/MerrillDashboard';
+import { TspDashboard } from '../components/TspDashboard';
 
 export function FinanceAccountPage() {
   const { id } = useParams<{ id: string }>();
@@ -38,6 +39,8 @@ export function FinanceAccountPage() {
   const subhead =
     !data || !t
       ? null
+      : data.kind === 'tsp'
+        ? [t.institution, 'Uniformed Services', data.summary.current.map((f) => f.fund).join(' + '), data.summary.contributions.roth ? 'Traditional + Roth' : 'Traditional'].filter(Boolean).join(' · ')
       : data.kind === 'merrill'
         ? [t.institution, 'Investment Advisory Program', ...data.summary.accounts.map((a) => `${a.label} ••${a.last4}`), data.summary.chase ? `Chase UTMA ••${data.summary.chase.last4}` : null].filter(Boolean).join(' · ')
       : data.kind === 'adt'
@@ -108,7 +111,9 @@ export function FinanceAccountPage() {
           No statements read yet — run <strong>Scan Now</strong> in <Link to="/settings?cat=statements">Settings → Statements</Link>.
         </div>
       )}
-      {data && data.statements.length > 0 && (data.kind === 'merrill' ? (
+      {data && data.statements.length > 0 && (data.kind === 'tsp' ? (
+          <TspDashboard data={data} onDismissFlag={dismiss} />
+        ) : data.kind === 'merrill' ? (
           <MerrillDashboard data={data} onDismissFlag={dismiss} onReload={load} />
         ) : data.kind === 'adt' ? (
           <AdtDashboard data={data} onDismissFlag={dismiss} />

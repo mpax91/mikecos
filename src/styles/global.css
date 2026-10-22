@@ -22852,3 +22852,100 @@ button.career-now__item {
     content: 'Trump Acct ·';
   }
 }
+
+/* ---- Finance → Thrift Savings Plan (TspDashboard.tsx) ---- */
+.tsp-dash .ml-ret tr.tsp-ret--you td {
+  font-weight: 600;
+}
+.tsp-dash tr.tsp-ret--held td {
+  background: color-mix(in srgb, #2a6fb0 9%, transparent);
+  font-weight: 600;
+}
+.tsp-dash tr.tsp-ret--fit td {
+  background: color-mix(in srgb, #c0662e 9%, transparent);
+}
+.tsp-dash .tsp-row {
+  cursor: pointer;
+}
+.tsp-dash .tsp-row:hover td {
+  background: rgba(127, 127, 127, 0.07);
+}
+.tsp-desc {
+  display: block;
+  font-size: 12px;
+  font-weight: 400;
+}
+.tsp-sub {
+  margin: 16px 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.tsp-bars {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.tsp-bars li {
+  display: grid;
+  grid-template-columns: 92px 1fr 58px;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.tsp-bars__label {
+  color: var(--color-muted);
+  white-space: nowrap;
+}
+.tsp-bars__track {
+  height: 8px;
+  border-radius: 4px;
+  background: color-mix(in srgb, currentColor 8%, transparent);
+  overflow: hidden;
+}
+.tsp-bars__bar {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+}
+.tsp-bars__bar--up {
+  background: #2a6fb0;
+}
+.tsp-bars__bar--down {
+  background: #c0662e;
+}
+.tsp-bars__value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.tsp-eras {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+.tsp-eras li {
+  display: grid;
+  gap: 4px;
+}
+.tsp-eras__when {
+  font-size: 13px;
+  font-weight: 600;
+}
+@media (max-width: 640px) {
+  .tsp-cost th:nth-child(4),
+  .tsp-cost td:nth-child(4) {
+    display: none;
+  }
+  .tsp-bars li {
+    grid-template-columns: 84px 1fr 52px;
+  }
+}
+@media (max-width: 640px) {
+  .tsp-ret th:nth-child(6),
+  .tsp-ret td:nth-child(6) {
+    display: none;
+  }
+}

@@ -950,7 +950,7 @@ function Plan({ data, onReload }: { data: Data; onReload: () => void }) {
   const s = data.summary;
   const rr = s.retirement;
   const age = rr.age ?? data.ssa?.currentAge ?? null;
-  const defaults: PlanState = { retireAge: data.settings.retireAge, spending: 150000, saving: 0, ret: 6.5, infl: 2.5, fee: 'current', claim: 67, ss: true, other: 0, tax: 18 };
+  const defaults: PlanState = { retireAge: data.settings.retireAge, spending: 150000, saving: 0, ret: 6.5, infl: 2.5, fee: 'current', claim: 67, ss: true, other: Math.round(data.tsp?.value ?? 0), tax: 18 };
   const [p, setP] = useState<PlanState>(() => readPlan(defaults));
   useEffect(() => {
     try {
@@ -1024,7 +1024,7 @@ function Plan({ data, onReload }: { data: Data; onReload: () => void }) {
             <Dial label="Return before fees" value={p.ret} min={3} max={10} step={0.5} fmt={(v) => `${v}%`} onChange={(v) => set('ret', v)} />
             <Dial label="Inflation" value={p.infl} min={1} max={5} step={0.25} fmt={(v) => `${v}%`} onChange={(v) => set('infl', v)} />
             <Dial label="Tax on IRA withdrawals" value={p.tax} min={0} max={40} step={1} fmt={(v) => `${v}%`} onChange={(v) => set('tax', v)} />
-            <Dial label="Other retirement savings" value={p.other} min={0} max={2000000} step={10000} fmt={(v) => money(v)} onChange={(v) => set('other', v)} />
+            <Dial label={data.tsp ? `Other retirement savings (TSP ${money(data.tsp.value)})` : 'Other retirement savings'} value={p.other} min={0} max={2000000} step={10000} fmt={(v) => money(v)} onChange={(v) => set('other', v)} />
             <label className="ml-plan__field">
               <span>Social Security</span>
               <select className="ml-select" value={p.ss ? p.claim : 0} onChange={(e) => (Number(e.target.value) ? setP((cur) => ({ ...cur, ss: true, claim: Number(e.target.value) })) : set('ss', false))}>

@@ -27,6 +27,7 @@ const ATTENTION = new Set([
   'idle', // money left sitting in a payment app (PayPal) — withdraw it
   'price_lock', // a bill's price guarantee ends within 90 days (Verizon Fios) — call for a new rate
   'wash', // possible wash sale across investment accounts (Merrill) — the 1099 won't catch it
+  'beneficiary', // a retirement account with no beneficiary designated (TSP)
 ]);
 /** Gaps and missed contributions only matter if recent; old history stays on the dashboard. */
 const RECENT_ONLY = new Set(['gap', 'aip_missed']);

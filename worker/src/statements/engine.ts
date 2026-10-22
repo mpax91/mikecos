@@ -21,6 +21,7 @@ import { deriveBofaCard } from './bofaCardDerive';
 import { deriveTargetCard } from './targetCardDerive';
 import { derivePaypal } from './paypalDerive';
 import { deriveMerrill } from './merrillDerive';
+import { deriveTsp } from './tspDerive';
 import { syncPaymentFacts } from '../accountPayers';
 import { syncBills } from '../bills';
 import { syncCardFacts } from '../cardFacts';
@@ -205,6 +206,7 @@ export async function derive(env: Env, folder: FolderRow): Promise<void> {
   else if (folder.template_id === 'hanover') await deriveHanover(env, fresh);
   else if (folder.template_id === 'paypal') await derivePaypal(env, fresh);
   else if (folder.template_id === 'merrill') await deriveMerrill(env, fresh);
+  else if (folder.template_id === 'tsp') await deriveTsp(env, fresh);
   // Payment Quick Facts (Due Date, Auto-Pay, Paid With, bill amounts) from
   // the billing snapshot the template just stored + the account's payer.
   const after = await loadFolder(env, folder.id);

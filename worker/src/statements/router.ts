@@ -39,6 +39,8 @@ import type { PaypalMatchResult } from './paypalMatch';
 import { loadMerrillData, merrillContext, merrillSettings } from './merrillDerive';
 import { summarizeMerrill } from './merrillSummary';
 import type { MerrillSummary } from './merrillSummary';
+import { loadTspData, tspContext } from './tspDerive';
+import { summarizeTsp } from './tspSummary';
 import { loadMarket, refreshMarket, storeMarket } from './market';
 import { summarizeSsa } from '../ssa/summary';
 import { loadStatements as loadSsaStatements } from '../ssa/drive';
@@ -269,6 +271,10 @@ statementsRouter.get('/accounts', async (c) => {
       const { stmts, txns } = await loadUsaaData(c.env, row.id);
       const s = summarizeUsaa(stmts, txns, easternToday());
       if (s.asOf) headline = { kind: 'balance', value: s.balance, asOf: s.asOf };
+    } else if (row.template_id === 'tsp') {
+      const { stmts, txns } = await loadTspData(c.env, row.id);
+      const s = summarizeTsp(stmts, txns, await tspContext(c.env, easternToday()));
+      if (s.asOf) headline = { kind: 'balance', value: s.balance, asOf: s.asOf, parts: s.current.length > 1 ? s.current.map((f) => ({ label: f.fund, value: f.value })) : undefined };
     } else if (row.template_id === 'amexBank') {
       const { stmts, txns } = await loadAmexBankData(c.env, row.id);
       const s = summarizeAmexBank(stmts, txns, easternToday());
@@ -383,6 +389,7 @@ statementsRouter.get('/folders/:id/dashboard', async (c) => {
   if (row.template_id === 'bofaCard') return c.json(await bofaCardDashboard(c.env, row));
   if (row.template_id === 'targetCard') return c.json(await targetCardDashboard(c.env, row));
   if (row.template_id === 'merrill') return c.json(await merrillDashboard(c.env, row));
+  if (row.template_id === 'tsp') return c.json(await tspDashboard(c.env, row));
   if (row.template_id !== 'ny529') return c.json({ error: 'No dashboard for this template yet' }, 400);
   const stats = await folderStats(c.env);
   const { stmts, txns, files } = await loadNy529Data(c.env, row.id);
@@ -588,6 +595,25 @@ async function allyDashboard(env: Env, row: FolderRow) {
   };
 }
 
+/** Thrift Savings Plan dashboard payload: the whole summary (balance points,
+ * returns, years, fund history, what-ifs, target fit, costs, checks) plus
+ * files, flags and statement links. Small (one account, ~100 statements). */
+async function tspDashboard(env: Env, row: FolderRow) {
+  const stats = await folderStats(env);
+  const today = easternToday();
+  const { stmts, txns, files } = await loadTspData(env, row.id);
+  const summary = summarizeTsp(stmts, txns, await tspContext(env, today));
+  return {
+    kind: 'tsp' as const,
+    folder: folderJson(row, stats.get(row.id)),
+    template: templateById(row.template_id)?.account ?? null,
+    summary,
+    statements: stmts.map((s) => ({ id: s.id, periodEnd: s.date, fileId: s.fileId })),
+    files: files.map((f) => ({ fileId: f.file_id, name: f.file_name, url: f.web_url, status: f.status, error: f.error })),
+    flags: await openFlags(env, row.id),
+  };
+}
+
 /** Merrill Lynch dashboard payload: the whole summary (per-account monthly
  * series, returns vs benchmarks, fees, allocation, taxes, insights), the
  * Social Security projection grid + the 529 for the Plan and Chase tabs,
@@ -617,6 +643,18 @@ async function merrillDashboard(env: Env, row: FolderRow) {
   } catch {
     ny529 = null;
   }
+  // Other retirement money MikeOS reads (the TSP) — the Retirement tab's "Other retirement savings" starts from it.
+  let tsp: { folderId: string; value: number; asOf: string | null } | null = null;
+  try {
+    const f = await env.DB.prepare(`SELECT * FROM statement_folders WHERE status = 'live' AND template_id = 'tsp'`).first<FolderRow>();
+    if (f) {
+      const { stmts: ts, txns: tt } = await loadTspData(env, f.id);
+      const t = summarizeTsp(ts, tt, await tspContext(env, today));
+      if (t.asOf) tsp = { folderId: f.id, value: t.balance, asOf: t.asOf };
+    }
+  } catch {
+    tsp = null;
+  }
   const since = summary.statements.length > 24 ? summary.statements[summary.statements.length - 25].date : '';
   return {
     kind: 'merrill' as const,
@@ -627,6 +665,7 @@ async function merrillDashboard(env: Env, row: FolderRow) {
     market: { fetchedAt: market.fetchedAt, error: market.error, months: summary.benchmark.months, first: summary.benchmark.first, last: summary.benchmark.last },
     ssa,
     ny529,
+    tsp,
     reviews: files.filter((f) => /review/i.test(f.file_name) || f.status === 'skipped').map((f) => ({ name: f.file_name, url: f.web_url, date: (f.file_name.match(/(\d{4})\.(\d{2})\.(\d{2})/) ?? []).slice(1, 4).join('-') || null })),
     statements: stmts.map((s) => ({ id: s.id, periodEnd: s.date, fileId: s.fileId })),
     files: files.map((f) => ({ fileId: f.file_id, name: f.file_name, url: f.web_url, status: f.status, error: f.error })),
