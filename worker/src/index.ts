@@ -3699,7 +3699,12 @@ app.patch('/api/entities/:id', async (c) => {
   const values: unknown[] = [];
   let touchesContent = false;
 
-  if (body.title !== undefined) {
+  // Title/content saves that repeat what's already stored are no-ops — the
+  // note editor can fire one just from opening a note (load-time
+  // normalization), and it must not bump last_touched/updated_at, or simply
+  // viewing a note would jump it to the top of the Notes list (Mike,
+  // 2026-10-22: only real edits reorder).
+  if (body.title !== undefined && body.title !== existing.title) {
     fields.push('title = ?');
     values.push(body.title);
     touchesContent = true;
@@ -3718,7 +3723,7 @@ app.patch('/api/entities/:id', async (c) => {
     values.push(body.blocked_reason === null ? null : String(body.blocked_reason));
     touchesContent = true;
   }
-  if (body.content !== undefined) {
+  if (body.content !== undefined && body.content !== existing.content) {
     fields.push('content = ?');
     values.push(body.content);
     fields.push('search_text = ?');
@@ -3779,8 +3784,11 @@ app.patch('/api/entities/:id', async (c) => {
   // project with no last_touched of its own yet (falls back to updated_at
   // for display) would still appear freshly modified after the "restore".
   const isPureTouchRestore = explicitTouch && fields.length === 1;
+  // Nothing actually changed (e.g. an unchanged title/content resave) —
+  // leave the row, including updated_at, exactly as it was.
+  const isNoop = fields.length === 0;
   const ts = now();
-  if (!isPureTouchRestore) {
+  if (!isPureTouchRestore && !isNoop) {
     fields.push('updated_at = ?');
     values.push(ts);
   }
@@ -3790,9 +3798,11 @@ app.patch('/api/entities/:id', async (c) => {
   }
 
   values.push(id);
-  await c.env.DB.prepare(`UPDATE entities SET ${fields.join(', ')} WHERE id = ?`)
-    .bind(...values)
-    .run();
+  if (!isNoop) {
+    await c.env.DB.prepare(`UPDATE entities SET ${fields.join(', ')} WHERE id = ?`)
+      .bind(...values)
+      .run();
+  }
   if (touchesContent) await touchProjectAncestor(c.env.DB, id);
   // Work ↔ Personal: an item and everything under it move together.
   if (body.realm === 'work' || body.realm === 'personal') await cascadeRealm(c.env.DB, id, body.realm);

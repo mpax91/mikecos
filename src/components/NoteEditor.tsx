@@ -545,6 +545,11 @@ export function NoteEditor({
   const contentAreaRef = useRef<HTMLDivElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingJson = useRef<string | null>(null);
+  // The document as it stood right after opening (post load-time
+  // normalization) or as of the last save. An update that lands back on
+  // exactly this isn't a real edit, so it isn't saved — opening a note to
+  // read it must never count as modifying it (that would reorder Notes).
+  const baselineJson = useRef<string | null>(null);
   const [, forceRerender] = useState(0);
   const [linkModalOpen, setLinkModalOpen] = useState(false);
   const [linkPreviewModalOpen, setLinkPreviewModalOpen] = useState(false);
@@ -568,16 +573,31 @@ export function NoteEditor({
       // Snapshot the JSON immediately (cheap) so a flush-on-unmount never
       // needs to touch a possibly-already-destroyed editor instance.
       const json = JSON.stringify(editor.getJSON());
-      pendingJson.current = json;
       onChangeRef.current?.(json);
       if (saveTimer.current) clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+      if (json === baselineJson.current) {
+        pendingJson.current = null;
+        return;
+      }
+      pendingJson.current = json;
       saveTimer.current = setTimeout(() => {
         saveTimer.current = null;
         pendingJson.current = null;
+        baselineJson.current = json;
         onSave(json);
       }, AUTOSAVE_DEBOUNCE_MS);
     },
-    onCreate: ({ editor }) => ensureTrailingParagraph(editor),
+    onCreate: ({ editor }) => {
+      ensureTrailingParagraph(editor);
+      // Whatever ensureTrailingParagraph (or Tiptap's own parsing) did on
+      // load is normalization, not an edit — drop any save it queued and
+      // treat the result as the starting point.
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+      pendingJson.current = null;
+      baselineJson.current = JSON.stringify(editor.getJSON());
+    },
     onSelectionUpdate: () => forceRerender((n) => n + 1),
     onTransaction: () => forceRerender((n) => n + 1),
     editorProps: {
@@ -772,7 +792,9 @@ export function NoteEditor({
           })
           .run();
         // setNodeMarkup doesn't itself trigger onUpdate's autosave — nudge it.
-        onSaveRef.current(JSON.stringify(editor.getJSON()));
+        const json = JSON.stringify(editor.getJSON());
+        baselineJson.current = json;
+        onSaveRef.current(json);
       }
     } catch {
       // Unfurl failed — the domain-only card inserted above stands as-is.
