@@ -139,23 +139,34 @@ function pad2(n: number): string {
   return String(n).padStart(2, '0');
 }
 
-type DayStat = { net: number; risked: number; wins: number; losses: number; draws: number; pending: number; count: number };
+type DayStat = { net: number; risked: number; wins: number; losses: number; draws: number; pending: number; count: number; picks: number; arbs: number; hedges: number };
+
+function emptyDayStat(): DayStat {
+  return { net: 0, risked: 0, wins: 0, losses: 0, draws: 0, pending: 0, count: 0, picks: 0, arbs: 0, hedges: 0 };
+}
 
 /** Per-day totals for the Log calendar. Record is W-L-D where a push is a
  * draw; void / cashed-out don't count toward the record, TBD is "pending". */
 function dayStats(bets: Bet[]): Map<string, DayStat> {
   const map = new Map<string, DayStat>();
+  const seenLinks = new Set<string>(); // `${date}|${link_id}` — each group counts once a day
   for (const bet of bets) {
-    const s = map.get(bet.date) ?? { net: 0, risked: 0, wins: 0, losses: 0, draws: 0, pending: 0, count: 0 };
+    const s = map.get(bet.date) ?? emptyDayStat();
     s.net += computeProfit(bet);
     s.risked += bet.wager;
     s.count += 1;
     if (bet.result === 'tbd') s.pending += 1;
+    if (bet.link_id && !seenLinks.has(`${bet.date}|${bet.link_id}`)) {
+      seenLinks.add(`${bet.date}|${bet.link_id}`);
+      if (bet.link_kind === 'hedge') s.hedges += 1;
+      else s.arbs += 1;
+    }
     // Arb sides / hedge bets add to the day's money, not its record.
     if (!countsAsPick(bet)) {
       map.set(bet.date, s);
       continue;
     }
+    s.picks += 1;
     if (bet.result === 'win') s.wins += 1;
     else if (bet.result === 'loss') s.losses += 1;
     else if (bet.result === 'push') s.draws += 1;
@@ -164,8 +175,25 @@ function dayStats(bets: Bet[]): Map<string, DayStat> {
   return map;
 }
 
-function recordLabel(s: DayStat): string {
-  return `${s.wins}-${s.losses}-${s.draws}`;
+function plural(n: number, word: string): string {
+  return `${n} ${word}${n === 1 ? '' : 's'}`;
+}
+
+/** "2 arbs" / "1 arb · 1 hedge" — '' when the day has none. */
+function linkedLabel(s: DayStat): string {
+  return [s.arbs ? plural(s.arbs, 'arb') : '', s.hedges ? plural(s.hedges, 'hedge') : ''].filter(Boolean).join(' · ');
+}
+
+/** W-L-D for the day's picks. A day that's only arbs/hedges reads "1 arb"
+ * instead of a misleading 0-0-0 next to a profit; a day with both gets a
+ * short "+1A" (calendar cell) or "+ 1 arb" suffix. */
+function recordLabel(s: DayStat, compact = false): string {
+  const linked = linkedLabel(s);
+  if (s.picks === 0 && linked) return linked;
+  const record = `${s.wins}-${s.losses}-${s.draws}`;
+  if (!linked) return record;
+  if (compact) return `${record} +${s.arbs + s.hedges}${s.hedges && !s.arbs ? 'H' : 'A'}`;
+  return `${record} + ${linked}`;
 }
 
 /** Month grid, color-coded by that day's net (deeper green/red the bigger
@@ -186,8 +214,17 @@ function ProfitCalendar({ stats, selected, onSelect }: { stats: Map<string, DayS
   const monthPrefix = `${monthCursor.y}-${pad2(monthCursor.m + 1)}-`;
   const monthDays = [...stats.entries()].filter(([d]) => d.startsWith(monthPrefix)).map(([, s]) => s);
   const monthTotal = monthDays.reduce(
-    (acc, s) => ({ net: acc.net + s.net, risked: 0, wins: acc.wins + s.wins, losses: acc.losses + s.losses, draws: acc.draws + s.draws, pending: 0, count: 0 }),
-    { net: 0, risked: 0, wins: 0, losses: 0, draws: 0, pending: 0, count: 0 } as DayStat
+    (acc, s) => ({
+      ...acc,
+      net: acc.net + s.net,
+      wins: acc.wins + s.wins,
+      losses: acc.losses + s.losses,
+      draws: acc.draws + s.draws,
+      picks: acc.picks + s.picks,
+      arbs: acc.arbs + s.arbs,
+      hedges: acc.hedges + s.hedges,
+    }),
+    emptyDayStat()
   );
 
   return (
@@ -230,7 +267,7 @@ function ProfitCalendar({ stats, selected, onSelect }: { stats: Map<string, DayS
             >
               <span className="bets-calendar__daynum">{Number(date.slice(-2))}</span>
               {s && <span className="bets-calendar__net">{formatMoney(s.net)}</span>}
-              {s && <span className="bets-calendar__record">{recordLabel(s)}</span>}
+              {s && <span className="bets-calendar__record">{recordLabel(s, true)}</span>}
             </button>
           );
         })}
@@ -373,8 +410,14 @@ function BetsDayDetail({ date, stat, bets, onClose, actions }: { date: string; s
       <div className="bets-day__stats">
         <div>
           <span className="bets-day__stat-label">Record (W-L-D)</span>
-          <span className="bets-day__stat-value">{recordLabel(stat)}</span>
+          <span className="bets-day__stat-value">{stat.picks > 0 ? `${stat.wins}-${stat.losses}-${stat.draws}` : <span className="bets-day__pending">No picks</span>}</span>
         </div>
+        {linkedLabel(stat) && (
+          <div>
+            <span className="bets-day__stat-label">Arbs & Hedges</span>
+            <span className="bets-day__stat-value">{linkedLabel(stat)}</span>
+          </div>
+        )}
         <div>
           <span className="bets-day__stat-label">Won / Lost</span>
           <span className={`bets-day__stat-value ${stat.net >= 0 ? 'is-up' : 'is-down'}`}>{formatMoney(stat.net)}</span>
