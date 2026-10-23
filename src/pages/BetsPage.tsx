@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api/client';
 import { type Bet, type BetOption, type BetPromo, type BetResult, type BetTransaction } from '../api/types';
 import { useReportTabMeta } from '../contexts/TabsContext';
@@ -44,6 +44,21 @@ import { BetsPromosTab } from '../components/BetsPromosTab';
 import { BetsWorkspaceTab } from '../components/BetsWorkspaceTab';
 import { BetSlipModal, SettleBetModal } from '../components/BetSlip';
 import { BetLinkModal } from '../components/BetLinkModal';
+import { BetShareModal } from '../components/BetShareModal';
+import { InfoTip } from '../components/dash/InfoTip';
+import {
+  buildUnitIndex,
+  formatAmount,
+  formatUnits,
+  groupByUnitSize,
+  loadBetDisplay,
+  saveBetDisplay,
+  unitizeBets,
+  type BetDisplay,
+  countsTowardUnit,
+  type UnitIndex,
+  type UnitPoint,
+} from '../utils/betUnits';
 
 type BetsTab = 'workspace' | 'log' | 'performance' | 'trends' | 'banking' | 'promos';
 
@@ -63,6 +78,51 @@ const GRANULARITIES: { id: Granularity; label: string }[] = [
   { id: 'year', label: 'Year' },
 ];
 
+/** $ ↔ units display for the Log, Performance and Trends. `fmt` formats an
+ * amount that's already in the active display (bets are converted to units
+ * up front — see unitizeBets); `sizeOf` is a bet's size in units at the time
+ * it was placed (by id, from the original dollar bet). */
+interface AmountDisplay {
+  display: BetDisplay;
+  fmt: (v: number) => string;
+  sizeOf: (id: string) => number | null;
+  unitHistory: UnitPoint[];
+}
+
+const AmountContext = createContext<AmountDisplay>({ display: 'dollars', fmt: formatMoney, sizeOf: () => null, unitHistory: [] });
+
+function useAmt(): AmountDisplay {
+  return useContext(AmountContext);
+}
+
+/** The $ / Units switch plus today's unit (average, with the median beside it). */
+function UnitBar({ display, onChange, units }: { display: BetDisplay; onChange: (d: BetDisplay) => void; units: UnitIndex }) {
+  return (
+    <div className="bets-units">
+      <div className="bets-view__chips" role="radiogroup" aria-label="Show amounts in">
+        {(['dollars', 'units'] as BetDisplay[]).map((d) => (
+          <button key={d} type="button" role="radio" aria-checked={display === d} className={`chip${display === d ? ' is-active' : ''}`} onClick={() => onChange(d)}>
+            {d === 'dollars' ? '$' : 'Units'}
+          </button>
+        ))}
+      </div>
+      {units.average != null ? (
+        <span className="bets-units__now">
+          1u = <strong>{formatMoney(units.average)}</strong>
+          {units.median != null && <span className="bets-units__median"> · median {formatMoney(units.median)}</span>}
+          <InfoTip label="About units">
+            Your unit is the average stake of your cash picks ({units.basisCount} so far). Free bets, arb sides and hedge bets are left out — their size comes from the
+            promo or the math, not your confidence. Each bet is measured against your unit when you placed it, so older bets keep their size as your average moves. The
+            median is your middle-sized bet; if it drifts well below the average, a few big bets are pulling the average up.
+          </InfoTip>
+        </span>
+      ) : (
+        <span className="bets-units__now">No cash picks yet to size a unit.</span>
+      )}
+    </div>
+  );
+}
+
 function ResultBadge({ result }: { result: BetResult }) {
   return <span className={`bets__result-badge bets__result-badge--${result}`}>{resultLabel(result)}</span>;
 }
@@ -81,6 +141,7 @@ function Tile({ label, value, aside }: { label: string; value: string | null; as
  * best-net-first (or, for odds ranges, favorite→underdog order — see
  * groupByOddsRange). */
 function MoneyBreakdownTable({ title, rows }: { title: string; rows: BetGroupStat[] }) {
+  const { fmt } = useAmt();
   if (rows.length === 0) return null;
   return (
     <div className="bets-breakdown card">
@@ -96,8 +157,8 @@ function MoneyBreakdownTable({ title, rows }: { title: string; rows: BetGroupSta
         <div key={r.key} className="bets-breakdown__row">
           <span className="bets-breakdown__name">{r.key}</span>
           <span>{r.count}</span>
-          <span>{formatMoney(r.risked)}</span>
-          <span className={`bets-breakdown__net ${r.net >= 0 ? 'is-up' : 'is-down'}`}>{formatMoney(r.net)}</span>
+          <span>{fmt(r.risked)}</span>
+          <span className={`bets-breakdown__net ${r.net >= 0 ? 'is-up' : 'is-down'}`}>{fmt(r.net)}</span>
           <span>{r.winRate != null ? `${Math.round(r.winRate * 100)}%` : '—'}</span>
         </div>
       ))}
@@ -201,6 +262,7 @@ function recordLabel(s: DayStat, compact = false): string {
  * calendar" idea pulled from real competing apps (Bet Journal). Each day
  * shows its net and W-L-D record; clicking a day opens that day's bets. */
 function ProfitCalendar({ stats, selected, onSelect }: { stats: Map<string, DayStat>; selected: string | null; onSelect: (date: string | null) => void }) {
+  const { fmt } = useAmt();
   const [monthCursor, setMonthCursor] = useState(() => {
     const d = new Date();
     return { y: d.getFullYear(), m: d.getMonth() };
@@ -241,7 +303,7 @@ function ProfitCalendar({ stats, selected, onSelect }: { stats: Map<string, DayS
       {monthDays.length > 0 && (
         <div className="bets-calendar__month-summary">
           <span>{recordLabel(monthTotal)}</span>
-          <span className={monthTotal.net >= 0 ? 'is-up' : 'is-down'}>{formatMoney(monthTotal.net)}</span>
+          <span className={monthTotal.net >= 0 ? 'is-up' : 'is-down'}>{fmt(monthTotal.net)}</span>
         </div>
       )}
       <div className="bets-calendar__weekdays">
@@ -263,10 +325,10 @@ function ProfitCalendar({ stats, selected, onSelect }: { stats: Map<string, DayS
               style={bg ? { background: bg } : undefined}
               onClick={() => onSelect(selected === date ? null : date)}
               disabled={!s}
-              title={s ? `${date}: ${recordLabel(s)}, ${formatMoney(s.net)}` : date}
+              title={s ? `${date}: ${recordLabel(s)}, ${fmt(s.net)}` : date}
             >
               <span className="bets-calendar__daynum">{Number(date.slice(-2))}</span>
-              {s && <span className="bets-calendar__net">{formatMoney(s.net)}</span>}
+              {s && <span className="bets-calendar__net">{fmt(s.net)}</span>}
               {s && <span className="bets-calendar__record">{recordLabel(s, true)}</span>}
             </button>
           );
@@ -276,10 +338,12 @@ function ProfitCalendar({ stats, selected, onSelect }: { stats: Map<string, DayS
   );
 }
 
-type RowActions = { onEdit: (b: Bet) => void; onDelete: (b: Bet) => void; onSettle: (b: Bet) => void; onLink: (b: Bet) => void };
+type RowActions = { onEdit: (b: Bet) => void; onDelete: (b: Bet) => void; onSettle: (b: Bet) => void; onLink: (b: Bet) => void; onShare: (b: Bet) => void };
 
 function BetRow({ bet, showDate, actions, inGroup = false }: { bet: Bet; showDate: boolean; actions: RowActions; inGroup?: boolean }) {
-  const { onEdit, onDelete, onSettle, onLink } = actions;
+  const { fmt, display, sizeOf } = useAmt();
+  const { onEdit, onDelete, onSettle, onLink, onShare } = actions;
+  const size = sizeOf(bet.id);
   const profit = computeProfit(bet);
   const multi = isMultiLegType(bet.bet_type) && bet.legs.length > 0;
   const title = betTitle(bet);
@@ -289,7 +353,8 @@ function BetRow({ bet, showDate, actions, inGroup = false }: { bet: Bet; showDat
         {showDate && <span className="bets-log__date">{bet.date}</span>}
         <span className="bets-log__pick">{title}</span>
         <span className="bets-log__meta">
-          {bet.sport} · {bet.sportsbook} · {formatOdds(bet.odds)} · {formatMoney(bet.wager)}
+          {bet.sport} · {bet.sportsbook} · {formatOdds(bet.odds)} · {fmt(bet.wager)}
+          {display === 'dollars' && size != null && bet.stake_type !== 'free_bet' && <span className="bets-log__units"> ({formatUnits(size)})</span>}
           {bet.stake_type === 'free_bet' && <span className="bets-log__freebet"> · Free bet</span>}
           {inGroup && bet.link_role === 'original' && <span className="bets-log__original"> · Original pick</span>}
         </span>
@@ -311,11 +376,12 @@ function BetRow({ bet, showDate, actions, inGroup = false }: { bet: Bet; showDat
       ) : (
         <ResultBadge result={bet.result} />
       )}
-      <span className={`bets-log__profit ${profit >= 0 ? 'is-up' : 'is-down'}`}>{bet.result === 'tbd' ? '—' : formatMoney(profit)}</span>
+      <span className={`bets-log__profit ${profit >= 0 ? 'is-up' : 'is-down'}`}>{bet.result === 'tbd' ? '—' : fmt(profit)}</span>
       <KebabMenu
         items={[
           ...(bet.result === 'tbd' ? [] : [{ label: 'Change Result', onClick: () => onSettle(bet) }]),
           { label: 'Edit', onClick: () => onEdit(bet) },
+          { label: 'Share in Units…', onClick: () => onShare(bet) },
           { label: bet.link_id ? `Edit ${LINK_KIND_LABELS[bet.link_kind ?? 'arb']} link…` : 'Link as Arb / Hedge…', onClick: () => onLink(bet) },
           { label: 'Delete', onClick: () => onDelete(bet), danger: true, separatorBefore: true },
         ]}
@@ -327,17 +393,18 @@ function BetRow({ bet, showDate, actions, inGroup = false }: { bet: Bet; showDat
 /** A linked Arb / Hedge in the Log: one header with the group's net (or
  * its locked profit while pending), then each side as a normal row. */
 function LinkGroupBlock({ group, showDate, actions }: { group: LinkGroup; showDate: boolean; actions: RowActions }) {
+  const { fmt } = useAmt();
   const label = LINK_KIND_LABELS[group.kind];
   let value: string;
   let tone: string;
   if (group.settled) {
-    value = formatMoney(group.net);
+    value = fmt(group.net);
     tone = group.net >= 0 ? 'is-up' : 'is-down';
   } else if (group.worst >= 0) {
-    value = `${formatMoney(group.worst)} locked`;
+    value = `${fmt(group.worst)} locked`;
     tone = 'is-up';
   } else {
-    value = `${formatMoney(group.worst)} to ${formatMoney(group.best)}`;
+    value = `${fmt(group.worst)} to ${fmt(group.best)}`;
     tone = '';
   }
   return (
@@ -394,6 +461,7 @@ function LogEntries({ bets, showDate, actions }: { bets: Bet[]; showDate: boolea
 /** The clicked day: its record, net and amount risked, then every bet made
  * that day with how it did. */
 function BetsDayDetail({ date, stat, bets, onClose, actions }: { date: string; stat: DayStat; bets: Bet[]; onClose: () => void; actions: RowActions }) {
+  const { fmt } = useAmt();
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     ref.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -420,11 +488,11 @@ function BetsDayDetail({ date, stat, bets, onClose, actions }: { date: string; s
         )}
         <div>
           <span className="bets-day__stat-label">Won / Lost</span>
-          <span className={`bets-day__stat-value ${stat.net >= 0 ? 'is-up' : 'is-down'}`}>{formatMoney(stat.net)}</span>
+          <span className={`bets-day__stat-value ${stat.net >= 0 ? 'is-up' : 'is-down'}`}>{fmt(stat.net)}</span>
         </div>
         <div>
           <span className="bets-day__stat-label">Risked</span>
-          <span className="bets-day__stat-value">{formatMoney(stat.risked)}</span>
+          <span className="bets-day__stat-value">{fmt(stat.risked)}</span>
         </div>
         <div>
           <span className="bets-day__stat-label">Bets</span>
@@ -521,6 +589,7 @@ function BetViewSlicer({ view, onChange }: { view: BetView; onChange: (v: BetVie
 
 /** Arbs & Hedges view: each linked group counts once, with its net. */
 function LinkedSummary({ bets }: { bets: Bet[] }) {
+  const { fmt } = useAmt();
   const groups = useMemo(() => buildLinkGroups(bets), [bets]);
   const totals = linkTotals(groups);
   if (groups.length === 0) return <div className="empty-state">No arbs or hedges in this period. Link two bets from the Log's ⋯ menu.</div>;
@@ -531,14 +600,14 @@ function LinkedSummary({ bets }: { bets: Bet[] }) {
         <Tile label="Arbs & Hedges" value={String(totals.groups)} aside={`${arbs} arb${arbs === 1 ? '' : 's'} · ${groups.length - arbs} hedge${groups.length - arbs === 1 ? '' : 's'}`} />
         <Tile
           label="Net"
-          value={totals.settled ? formatMoney(totals.net) : null}
-          aside={totals.settled < totals.groups ? `${formatMoney(totals.pendingLocked)} locked on ${totals.groups - totals.settled} pending` : null}
+          value={totals.settled ? fmt(totals.net) : null}
+          aside={totals.settled < totals.groups ? `${fmt(totals.pendingLocked)} locked on ${totals.groups - totals.settled} pending` : null}
         />
-        <Tile label="Avg. per group" value={totals.avgNet != null ? formatMoney(totals.avgNet) : null} aside={totals.roi != null ? `${(totals.roi * 100).toFixed(1)}% on cash staked` : null} />
+        <Tile label="Avg. per group" value={totals.avgNet != null ? fmt(totals.avgNet) : null} aside={totals.roi != null ? `${(totals.roi * 100).toFixed(1)}% on cash staked` : null} />
         <Tile
           label="Free-bet conversion"
           value={totals.conversion != null ? `${Math.round(totals.conversion * 100)}%` : null}
-          aside={totals.freeBetStaked > 0 ? `${formatMoney(totals.freeBetNet)} from ${formatMoney(totals.freeBetStaked)} in free bets` : null}
+          aside={totals.freeBetStaked > 0 ? `${fmt(totals.freeBetNet)} from ${fmt(totals.freeBetStaked)} in free bets` : null}
         />
       </div>
       <div className="bets-breakdown card">
@@ -554,8 +623,8 @@ function LinkedSummary({ bets }: { bets: Bet[] }) {
           <div key={g.id} className="bets-breakdown__row">
             <span className="bets-breakdown__name">{g.books.join(' + ')}</span>
             <span>{g.date.slice(5)}</span>
-            <span>{formatMoney(g.cashStaked + g.freeBetStaked)}</span>
-            <span className={`bets-breakdown__net ${(g.settled ? g.net : g.worst) >= 0 ? 'is-up' : 'is-down'}`}>{g.settled ? formatMoney(g.net) : `${formatMoney(g.worst)}*`}</span>
+            <span>{fmt(g.cashStaked + g.freeBetStaked)}</span>
+            <span className={`bets-breakdown__net ${(g.settled ? g.net : g.worst) >= 0 ? 'is-up' : 'is-down'}`}>{g.settled ? fmt(g.net) : `${fmt(g.worst)}*`}</span>
             <span>{LINK_KIND_LABELS[g.kind]}</span>
           </div>
         ))}
@@ -566,6 +635,7 @@ function LinkedSummary({ bets }: { bets: Bet[] }) {
 }
 
 function PerformanceTab({ bets, view }: { bets: Bet[]; view: BetView }) {
+  const { fmt, sizeOf } = useAmt();
   const [granularity, setGranularity] = useState<Granularity>('month');
   const [periodIndex, setPeriodIndex] = useState<number>(-1);
 
@@ -580,6 +650,8 @@ function PerformanceTab({ bets, view }: { bets: Bet[]; view: BetView }) {
 
   const { over, under } = overUnderHitRate(current?.bets ?? bets);
   const oddsRanges = groupByOddsRange(current?.bets ?? bets);
+  const sized = (current?.bets ?? []).filter(countsTowardUnit).map((b) => sizeOf(b.id)).filter((v): v is number => v != null);
+  const avgSize = sized.length ? sized.reduce((a, b) => a + b, 0) / sized.length : null;
 
   return (
     <div>
@@ -624,10 +696,11 @@ function PerformanceTab({ bets, view }: { bets: Bet[]; view: BetView }) {
 
       {current && view !== 'linked' && (
         <div className="dashboard-page__tiles">
-          <Tile label="Risked" value={formatMoney(current.risked)} />
-          <Tile label="Net" value={formatMoney(current.net)} />
+          <Tile label="Risked" value={fmt(current.risked)} />
+          <Tile label="Net" value={fmt(current.net)} />
           <Tile label="ROI" value={current.roi != null ? `${(current.roi * 100).toFixed(1)}%` : null} />
           <Tile label="Win Rate" value={current.winRate != null ? `${Math.round(current.winRate * 100)}%` : null} aside={`${current.wins}-${current.losses}${current.pushes ? `-${current.pushes}p` : ''}`} />
+          <Tile label="Avg. Bet Size" value={avgSize != null ? formatUnits(avgSize) : null} aside={avgSize != null ? 'cash picks, vs. your unit then' : null} />
         </div>
       )}
 
@@ -637,6 +710,7 @@ function PerformanceTab({ bets, view }: { bets: Bet[]; view: BetView }) {
           <MoneyBreakdownTable title="By bet type" rows={current.byBetType} />
           <MoneyBreakdownTable title="By sportsbook" rows={current.bySportsbook} />
           {view !== 'linked' && <MoneyBreakdownTable title="By odds range" rows={oddsRanges} />}
+          {view !== 'linked' && <MoneyBreakdownTable title="By unit size" rows={groupByUnitSize(current.bets, (b) => sizeOf(b.id))} />}
           {view !== 'linked' && <MoneyBreakdownTable title="By tipper" rows={groupByTipper(current?.bets ?? bets)} />}
         </div>
       )}
@@ -688,6 +762,7 @@ function linkedByMonth(bets: Bet[]): BetGroupStat[] {
 }
 
 function TrendsTab({ bets, view }: { bets: Bet[]; view: BetView }) {
+  const { fmt, unitHistory } = useAmt();
   const sorted = useMemo(() => [...bets].sort((a, b) => (a.date < b.date ? -1 : 1)), [bets]);
   const streaks = useMemo(() => computeStreaks(sorted), [sorted]);
   const dow = useMemo(() => byDayOfWeek(bets), [bets]);
@@ -705,7 +780,7 @@ function TrendsTab({ bets, view }: { bets: Bet[]; view: BetView }) {
             <EquityChart points={equity} />
             <div className="bets-equity__endpoints">
               <span>{equity[0].date}</span>
-              <span className={equity[equity.length - 1].cumulative >= 0 ? 'is-up' : 'is-down'}>{formatMoney(equity[equity.length - 1].cumulative)}</span>
+              <span className={equity[equity.length - 1].cumulative >= 0 ? 'is-up' : 'is-down'}>{fmt(equity[equity.length - 1].cumulative)}</span>
             </div>
           </div>
         )}
@@ -735,7 +810,20 @@ function TrendsTab({ bets, view }: { bets: Bet[]; view: BetView }) {
           <EquityChart points={equity} />
           <div className="bets-equity__endpoints">
             <span>{equity[0].date}</span>
-            <span className={equity[equity.length - 1].cumulative >= 0 ? 'is-up' : 'is-down'}>{formatMoney(equity[equity.length - 1].cumulative)}</span>
+            <span className={equity[equity.length - 1].cumulative >= 0 ? 'is-up' : 'is-down'}>{fmt(equity[equity.length - 1].cumulative)}</span>
+          </div>
+        </div>
+      )}
+
+      {unitHistory.length > 1 && (
+        <div className="bets-equity card">
+          <div className="bets-breakdown__title">Your unit over time</div>
+          <EquityChart points={unitHistory.map((p) => ({ date: p.date, cumulative: p.average }))} />
+          <div className="bets-equity__endpoints">
+            <span>
+              {unitHistory[0].date} · {formatMoney(unitHistory[0].average)}
+            </span>
+            <span>{formatMoney(unitHistory[unitHistory.length - 1].average)}</span>
           </div>
         </div>
       )}
@@ -766,6 +854,22 @@ export function BetsPage() {
   const [settling, setSettling] = useState<Bet | null>(null);
   const [linking, setLinking] = useState<Bet | null>(null);
   const [view, setView] = useState<BetView>('all');
+  const [display, setDisplayState] = useState<BetDisplay>(loadBetDisplay);
+  const [sharing, setSharing] = useState<Bet | null>(null);
+  function setDisplay(d: BetDisplay) {
+    setDisplayState(d);
+    saveBetDisplay(d);
+  }
+  const units = useMemo(() => buildUnitIndex(bets ?? []), [bets]);
+  const amountDisplay = useMemo<AmountDisplay>(() => {
+    const sizes = new Map<string, number>();
+    for (const b of bets ?? []) {
+      const u = units.byId.get(b.id);
+      if (u) sizes.set(b.id, b.wager / u);
+    }
+    return { display, fmt: (v: number) => formatAmount(v, display), sizeOf: (id: string) => sizes.get(id) ?? null, unitHistory: units.history };
+  }, [display, units, bets]);
+  const shownBets = useMemo(() => (bets && display === 'units' ? unitizeBets(bets, units) : bets), [bets, display, units]);
 
   const load = () =>
     Promise.all([api.listBets(), api.listBetTransactions(), api.listBetPromos(), api.listBetOptions()])
@@ -857,8 +961,12 @@ export function BetsPage() {
   const bookCounts = new Map<string, number>();
   for (const b of bets) bookCounts.set(b.sportsbook, (bookCounts.get(b.sportsbook) ?? 0) + 1);
   const recentBooks = [...bookCounts.entries()].sort((a, b) => b[1] - a[1]).map(([k]) => k);
-  const rowActions: RowActions = { onEdit: setEditing, onDelete: setDeleting, onSettle: setSettling, onLink: setLinking };
-  const viewBets = filterBetView(bets, view);
+  // Rows may hold unit-converted copies — every action works on the real bet.
+  const byId = new Map(bets.map((b) => [b.id, b]));
+  const real = (fn: (b: Bet) => void) => (b: Bet) => fn(byId.get(b.id) ?? b);
+  const rowActions: RowActions = { onEdit: real(setEditing), onDelete: real(setDeleting), onSettle: real(setSettling), onLink: real(setLinking), onShare: real(setSharing) };
+  const viewBets = filterBetView(shownBets ?? bets, view);
+  const showUnitBar = (tab === 'log' || tab === 'performance' || tab === 'trends') && bets.length > 0;
 
   return (
     <div>
@@ -887,12 +995,14 @@ export function BetsPage() {
         ))}
       </div>
 
+      {showUnitBar && <UnitBar display={display} onChange={setDisplay} units={units} />}
+      <AmountContext.Provider value={amountDisplay}>
       {tab === 'workspace' && <BetsWorkspaceTab balances={balances} promos={promos} />}
       {tab === 'log' &&
         (bets.length === 0 ? (
           <div className="empty-state">No bets logged yet — log one the day after you make it: sport, sportsbook, odds, wager, and the result.</div>
         ) : (
-          <LogTab bets={bets} actions={rowActions} />
+          <LogTab bets={shownBets ?? bets} actions={rowActions} />
         ))}
       {(tab === 'performance' || tab === 'trends') && bets.length > 0 && <BetViewSlicer view={view} onChange={setView} />}
       {tab === 'performance' &&
@@ -911,14 +1021,16 @@ export function BetsPage() {
         ) : (
           <TrendsTab bets={viewBets} view={view} />
         ))}
+      </AmountContext.Provider>
       {tab === 'banking' && (
         <BetsBankingTab bets={bets} transactions={transactions} onCreate={handleCreateTransaction} onUpdate={handleUpdateTransaction} onDelete={handleDeleteTransaction} />
       )}
       {tab === 'promos' && <BetsPromosTab promos={promos} onCreate={handleCreatePromo} onUpdate={handleUpdatePromo} onDelete={handleDeletePromo} />}
 
-      {adding && <BetSlipModal bet={null} betOptions={betOptions} recentBooks={recentBooks} onClose={() => setAdding(false)} onSave={handleCreate} />}
-      {editing && <BetSlipModal bet={editing} betOptions={betOptions} recentBooks={recentBooks} onClose={() => setEditing(null)} onSave={handleUpdate} />}
+      {adding && <BetSlipModal bet={null} betOptions={betOptions} recentBooks={recentBooks} unitAsOf={units.asOf} display={display} onClose={() => setAdding(false)} onSave={handleCreate} />}
+      {editing && <BetSlipModal bet={editing} betOptions={betOptions} recentBooks={recentBooks} unitAsOf={units.asOf} display={display} onClose={() => setEditing(null)} onSave={handleUpdate} />}
       {linking && <BetLinkModal anchor={linking} bets={bets} onClose={() => setLinking(null)} onSave={handleLink} onUnlink={handleUnlink} />}
+      {sharing && <BetShareModal bet={sharing} unit={units.byId.get(sharing.id) ?? null} onClose={() => setSharing(null)} />}
       {settling && <SettleBetModal bet={settling} betOptions={betOptions} onClose={() => setSettling(null)} onSave={handleSettle} />}
       {deleting && (
         <ConfirmModal

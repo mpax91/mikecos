@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { BET_STAKE_TYPES, type Bet, type BetLeg, type BetLegInput, type BetLegMarket, type BetOption, type BetStakeType } from '../api/types';
 import { Modal } from './Modal';
+import { formatUnits, type BetDisplay } from '../utils/betUnits';
 import {
   COMMON_SPORTSBOOKS,
   LEG_MARKETS,
@@ -341,12 +342,17 @@ export function BetSlipModal({
   bet,
   betOptions,
   recentBooks,
+  unitAsOf,
+  display = 'dollars',
   onClose,
   onSave,
 }: {
   bet: Bet | null;
   betOptions: BetOption[];
   recentBooks: string[];
+  /** Mike's unit ($) as of a date — sizes the stake in units on the slip. */
+  unitAsOf?: (date: string) => number | null;
+  display?: BetDisplay;
   onClose: () => void;
   onSave: (params: Record<string, unknown>) => Promise<void>;
 }) {
@@ -410,6 +416,7 @@ export function BetSlipModal({
   const odds = kind === 'Straight' ? legInputs[0]?.odds ?? null : overrideOdds ?? fromLegs;
   const riskNum = Number(risk) || 0;
   const toWin = profitFor(riskNum, odds);
+  const unit = unitAsOf ? unitAsOf(date) : null;
   const n = shownLegs.length;
   const headline = kind === 'Straight' ? (future ? 'Future' : 'Straight Bet') : kind === 'Teaser' ? `${n}-Team Teaser` : `${n}-Leg ${parlayKind === 'SGP' ? 'Same Game Parlay' : parlayKind === 'SGPx' ? 'SGP+' : 'Parlay'}`;
   const choices = resultChoices(betOptions, result);
@@ -552,6 +559,12 @@ export function BetSlipModal({
               </button>
             )}
           </div>
+          {unit != null && riskNum > 0 && stake !== 'free_bet' && (
+            <div className={`bet-slip__units${display === 'units' ? ' is-prominent' : ''}`}>
+              {formatUnits(riskNum / unit)}
+              {toWin != null ? ` to win ${formatUnits(toWin / unit)}` : ''} · 1u = {formatMoney(unit)} on this date
+            </div>
+          )}
           {kind === 'Parlay' && !override && <div className="bet-slip__hint">Odds worked out from the legs. Tap Odds to type the book's price (boosts).</div>}
           {kind === 'Parlay' && override && (
             <button type="button" className="link-btn bet-slip__hint-btn" onClick={() => setOverride(null)}>
