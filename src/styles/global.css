@@ -23717,3 +23717,9 @@ button.career-now__item {
     white-space: normal;
   }
 }
+
+.bets-arb__badge--any {
+  background: transparent;
+  color: var(--color-muted);
+  border: 1px dashed var(--color-border);
+}

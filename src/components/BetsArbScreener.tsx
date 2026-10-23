@@ -7,6 +7,7 @@ import {
   bestSpot,
   findPromoPlays,
   formatAmerican,
+  HEDGE_BOOK,
   minBoostToArb,
   promoFit,
   solveArb,
@@ -31,6 +32,13 @@ function kickoff(iso: string | null): string {
 }
 
 function BookBadge({ book }: { book: string }) {
+  // The hedge on a DraftKings promo can go anywhere but DK — no brand to show.
+  if (book === HEDGE_BOOK)
+    return (
+      <span className="bets-promos__badge bets-arb__badge bets-arb__badge--any" title="Any book other than the promo's — DK's price shown">
+        ANY
+      </span>
+    );
   const brand = sportsbookBrand(book);
   return (
     <span className="bets-promos__badge bets-arb__badge" style={{ background: brand.color }} title={book}>
