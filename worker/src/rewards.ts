@@ -37,6 +37,8 @@ interface RewardsCardRow {
   notes: string | null;
   sort_order: number;
   import_key: string | null;
+  mobile_wallet_rate: number | null;
+  mobile_wallet_name: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -129,6 +131,8 @@ function cardJson(row: RewardsCardRow, bonuses: RewardsBonusRow[], perks: Reward
     notes: row.notes,
     sortOrder: row.sort_order,
     importKey: row.import_key,
+    mobileWalletRate: row.mobile_wallet_rate,
+    mobileWalletName: row.mobile_wallet_name,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     bonuses: bonuses.filter((b) => b.card_id === row.id).sort((a, b) => a.sort_order - b.sort_order).map(bonusJson),
@@ -171,6 +175,8 @@ rewardsRouter.post('/cards', async (c) => {
       coverArtKey?: string | null;
       notes?: string | null;
       importKey?: string | null;
+      mobileWalletRate?: number | null;
+      mobileWalletName?: string | null;
     }>()
     .catch(() => ({}) as Record<string, never>);
   const nickname = body.nickname?.trim();
@@ -200,6 +206,11 @@ rewardsRouter.post('/cards', async (c) => {
       ts
     )
     .run();
+  if (typeof body.mobileWalletRate === 'number' || body.mobileWalletName?.trim()) {
+    await c.env.DB.prepare('UPDATE rewards_cards SET mobile_wallet_rate = ?, mobile_wallet_name = ? WHERE id = ?')
+      .bind(typeof body.mobileWalletRate === 'number' ? body.mobileWalletRate : null, body.mobileWalletName?.trim() || null, id)
+      .run();
+  }
 
   const row = await c.env.DB.prepare('SELECT * FROM rewards_cards WHERE id = ?').bind(id).first<RewardsCardRow>();
   return c.json(cardJson(row!, [], []), 201);
@@ -221,6 +232,8 @@ rewardsRouter.patch('/cards/:id', async (c) => {
       notes: string | null;
       sortOrder: number;
       importKey: string | null;
+      mobileWalletRate: number | null;
+      mobileWalletName: string | null;
     }>
   >();
   const existing = await c.env.DB.prepare('SELECT * FROM rewards_cards WHERE id = ?').bind(id).first<RewardsCardRow>();
@@ -248,6 +261,8 @@ rewardsRouter.patch('/cards/:id', async (c) => {
   if (body.notes !== undefined) set('notes', body.notes?.trim() || null);
   if (body.sortOrder !== undefined) set('sort_order', body.sortOrder);
   if (body.importKey !== undefined) set('import_key', body.importKey?.trim() || null);
+  if (body.mobileWalletRate !== undefined) set('mobile_wallet_rate', typeof body.mobileWalletRate === 'number' ? body.mobileWalletRate : null);
+  if (body.mobileWalletName !== undefined) set('mobile_wallet_name', body.mobileWalletName?.trim() || null);
 
   if (fields.length) {
     fields.push('updated_at = ?');
@@ -484,6 +499,10 @@ interface ImportCard {
   network?: string | null;
   baseRate?: number;
   annualFee?: number | null;
+  /** Rate earned on anything paid through a phone wallet (Samsung Galaxy
+   * Card: 3% via Samsung Wallet) — see 0144_rewards_mobile_wallet.sql. */
+  mobileWalletRate?: number | null;
+  mobileWalletName?: string | null;
   bonuses?: ImportBonus[];
   perks?: ImportPerk[];
 }
@@ -520,6 +539,8 @@ rewardsRouter.get('/export', async (c) => {
     last4: row.last4,
     baseRate: row.base_rate,
     annualFee: row.annual_fee,
+    mobileWalletRate: row.mobile_wallet_rate,
+    mobileWalletName: row.mobile_wallet_name,
     bonuses: bonusRows
       .filter((b) => b.card_id === row.id)
       .sort((a, b) => a.sort_order - b.sort_order)
@@ -597,6 +618,13 @@ rewardsRouter.post('/import', async (c) => {
         .bind(cardId, nickname, card.network?.trim() || null, typeof card.baseRate === 'number' ? card.baseRate : 1.0, typeof card.annualFee === 'number' ? card.annualFee : null, (maxPos?.m ?? -1) + 1, importKey, ts, ts)
         .run();
       created++;
+    }
+    // Only when the import says something about it — older research output
+    // has no such field and must not wipe a value set in the app.
+    if (card.mobileWalletRate !== undefined || card.mobileWalletName !== undefined) {
+      await c.env.DB.prepare('UPDATE rewards_cards SET mobile_wallet_rate = ?, mobile_wallet_name = ? WHERE id = ?')
+        .bind(typeof card.mobileWalletRate === 'number' ? card.mobileWalletRate : null, card.mobileWalletName?.trim() || null, cardId)
+        .run();
     }
 
     await c.env.DB.prepare('DELETE FROM rewards_bonuses WHERE card_id = ?').bind(cardId).run();

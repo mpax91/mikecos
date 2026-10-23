@@ -728,6 +728,14 @@ export interface RewardsCard {
    * worker/migrations/0057_rewards_import.sql) — null for a card Mike
    * added by hand, which an import never touches. */
   importKey: string | null;
+  /** Rate earned on anything paid by tapping/paying through a phone wallet
+   * (Samsung Galaxy Card: 3% via Samsung Wallet, while the physical card
+   * earns only baseRate). Null for an ordinary card. Ranking treats it as
+   * an in-person, phone-only rate: it wins Find/category answers but never
+   * puts the card in the physical-wallet carry plan. */
+  mobileWalletRate: number | null;
+  /** Which wallet earns mobileWalletRate — "Samsung Wallet". */
+  mobileWalletName: string | null;
   createdAt: string;
   updatedAt: string;
   bonuses: RewardsBonus[];

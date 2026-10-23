@@ -80,13 +80,15 @@ interface WalletCardRow {
   active: number;
 }
 
+type RewardsRateRow = { id: string; base_rate: number; mobile_wallet_rate: number | null; mobile_wallet_name: string | null };
+
 /** The MikeOS Rewards card's earn rates as of `today` (YYYY-MM-DD). */
 async function rewardsCardRates(env: Env, rewardsCardId: string | null, last4: string | null, today: string): Promise<{ rate: number; category: string }[] | null> {
   let card = rewardsCardId
-    ? await env.DB.prepare('SELECT id, base_rate FROM rewards_cards WHERE id = ?').bind(rewardsCardId).first<{ id: string; base_rate: number }>()
+    ? await env.DB.prepare('SELECT id, base_rate, mobile_wallet_rate, mobile_wallet_name FROM rewards_cards WHERE id = ?').bind(rewardsCardId).first<RewardsRateRow>()
     : null;
   if (!card && last4) {
-    card = await env.DB.prepare('SELECT id, base_rate FROM rewards_cards WHERE last4 = ? AND active = 1 ORDER BY updated_at DESC LIMIT 1').bind(last4).first<{ id: string; base_rate: number }>();
+    card = await env.DB.prepare('SELECT id, base_rate, mobile_wallet_rate, mobile_wallet_name FROM rewards_cards WHERE last4 = ? AND active = 1 ORDER BY updated_at DESC LIMIT 1').bind(last4).first<RewardsRateRow>();
   }
   if (!card) return null;
   const { results } = await env.DB.prepare('SELECT category, rate, kind, starts_on, ends_on FROM rewards_bonuses WHERE card_id = ? ORDER BY rate DESC, sort_order')
@@ -94,6 +96,7 @@ async function rewardsCardRates(env: Env, rewardsCardId: string | null, last4: s
     .all<{ category: string; rate: number; kind: string; starts_on: string | null; ends_on: string | null }>();
   const active = (results ?? []).filter((b) => b.kind !== 'rotating' || ((!b.starts_on || b.starts_on <= today) && (!b.ends_on || b.ends_on >= today)));
   const rows = active.map((b) => ({ rate: b.rate, category: b.category.trim() }));
+  if (card.mobile_wallet_rate && card.mobile_wallet_rate > 0) rows.push({ rate: card.mobile_wallet_rate, category: `Anything via ${card.mobile_wallet_name || 'mobile wallet'}` });
   if (card.base_rate > 0) rows.push({ rate: card.base_rate, category: 'Everything Else' });
   return rows;
 }

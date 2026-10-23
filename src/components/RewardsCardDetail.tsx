@@ -92,9 +92,15 @@ export function RewardsCardDetail({
 
         <div className="rewards-detail__rates">
           <div className="rewards-detail__rate-row rewards-detail__rate-row--base">
-            <span>Base rate</span>
+            <span>{card.mobileWalletRate ? 'Base rate (physical card)' : 'Base rate'}</span>
             <span>{card.baseRate}%</span>
           </div>
+          {card.mobileWalletRate ? (
+            <div className="rewards-detail__rate-row is-active">
+              <span>Anything via {card.mobileWalletName || 'mobile wallet'}</span>
+              <span>{card.mobileWalletRate}%</span>
+            </div>
+          ) : null}
           {sortedBonuses.map((b) => (
             <div key={b.id} className={`rewards-detail__rate-row${isBonusActiveToday(b) ? ' is-active' : ''}`}>
               <span>

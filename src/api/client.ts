@@ -1283,7 +1283,7 @@ export const api = {
   listRewardsCards: () => request<RewardsCard[]>('/api/rewards/cards').then((cards) => cards.map(resolveRewardsCard)),
 
   createRewardsCard: (
-    params: Partial<Pick<RewardsCard, 'nickname' | 'network' | 'last4' | 'baseRate' | 'annualFee' | 'alwaysCarry' | 'color' | 'coverArtKey' | 'notes' | 'importKey'>>
+    params: Partial<Pick<RewardsCard, 'nickname' | 'network' | 'last4' | 'baseRate' | 'annualFee' | 'alwaysCarry' | 'color' | 'coverArtKey' | 'notes' | 'importKey' | 'mobileWalletRate' | 'mobileWalletName'>>
   ) => request<RewardsCard>('/api/rewards/cards', { method: 'POST', body: JSON.stringify(params) }).then(resolveRewardsCard),
 
   updateRewardsCard: (
@@ -1291,7 +1291,7 @@ export const api = {
     patch: Partial<
       Pick<
         RewardsCard,
-        'nickname' | 'network' | 'last4' | 'baseRate' | 'annualFee' | 'alwaysCarry' | 'active' | 'color' | 'coverArtKey' | 'notes' | 'sortOrder' | 'importKey'
+        'nickname' | 'network' | 'last4' | 'baseRate' | 'annualFee' | 'alwaysCarry' | 'active' | 'color' | 'coverArtKey' | 'notes' | 'sortOrder' | 'importKey' | 'mobileWalletRate' | 'mobileWalletName'
       >
     >
   ) => request<RewardsCard>(`/api/rewards/cards/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }).then(resolveRewardsCard),

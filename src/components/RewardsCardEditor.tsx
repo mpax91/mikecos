@@ -11,6 +11,8 @@ type CoreForm = {
   last4: string;
   baseRate: string;
   annualFee: string;
+  mobileWalletRate: string;
+  mobileWalletName: string;
   alwaysCarry: boolean;
   color: string | null;
   coverArtKey: string | null;
@@ -25,6 +27,8 @@ function toCoreForm(card: RewardsCard | null): CoreForm {
     last4: card?.last4 ?? '',
     baseRate: card ? String(card.baseRate) : '1',
     annualFee: card?.annualFee != null ? String(card.annualFee) : '',
+    mobileWalletRate: card?.mobileWalletRate != null ? String(card.mobileWalletRate) : '',
+    mobileWalletName: card?.mobileWalletName ?? '',
     alwaysCarry: card?.alwaysCarry ?? false,
     color: card?.color ?? null,
     coverArtKey: card?.coverArtKey ?? null,
@@ -90,6 +94,8 @@ export function RewardsCardEditor({
       last4: form.last4.trim() || null,
       baseRate: parseFloat(form.baseRate) || 0,
       annualFee: form.annualFee.trim() ? parseFloat(form.annualFee) : null,
+      mobileWalletRate: form.mobileWalletRate.trim() ? parseFloat(form.mobileWalletRate) : null,
+      mobileWalletName: form.mobileWalletName.trim() || null,
       alwaysCarry: form.alwaysCarry,
       color: form.color,
       coverArtKey: form.coverArtKey,
@@ -179,6 +185,17 @@ export function RewardsCardEditor({
             <label className="wallet-editor__field">
               <span>Annual fee (optional)</span>
               <input type="number" step="1" value={form.annualFee} onChange={(e) => set('annualFee', e.target.value)} placeholder="0" />
+            </label>
+          </div>
+
+          <div className="wallet-editor__row">
+            <label className="wallet-editor__field">
+              <span>Phone-wallet % (optional)</span>
+              <input type="number" step="0.1" value={form.mobileWalletRate} onChange={(e) => set('mobileWalletRate', e.target.value)} placeholder="e.g. 3" />
+            </label>
+            <label className="wallet-editor__field">
+              <span>Paid through</span>
+              <input value={form.mobileWalletName} onChange={(e) => set('mobileWalletName', e.target.value)} placeholder="Samsung Wallet" />
             </label>
           </div>
 

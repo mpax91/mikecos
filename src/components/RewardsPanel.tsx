@@ -278,7 +278,9 @@ export function RewardsPanel({ mode = 'home' }: { mode?: 'home' | 'manage' }) {
                     onOpen={setOpenCard}
                     perks={match.card.perks.map((p) => p.label)}
                     subtitle={
-                      match.bonus ? (
+                      match.viaWallet ? (
+                        `pay with ${match.viaWallet} (tap your phone)`
+                      ) : match.bonus ? (
                         <>
                           {match.bonus.category}
                           {match.bonus.kind === 'rotating' && ' · active now'}
@@ -433,8 +435,8 @@ export function RewardsPanel({ mode = 'home' }: { mode?: 'home' | 'manage' }) {
               <div className="empty-state">Add a card to see it ranked here.</div>
             ) : (
               <ul className="rewards-find__results">
-                {headlineRates.map(({ card: c, rate, bonus }) => (
-                  <RewardsHeadlineRow key={c.id} card={c} rate={rate} bonus={bonus} onOpen={setOpenCard} />
+                {headlineRates.map(({ card: c, rate, bonus, viaWallet }) => (
+                  <RewardsHeadlineRow key={c.id} card={c} rate={rate} bonus={bonus} viaWallet={viaWallet} onOpen={setOpenCard} />
                 ))}
               </ul>
             )}
@@ -521,14 +523,16 @@ function RewardsHeadlineRow({
   card,
   rate,
   bonus,
+  viaWallet,
   onOpen,
 }: {
   card: RewardsCard;
   rate: number;
   bonus: RewardsBonus | null;
+  viaWallet?: string;
   onOpen: (card: RewardsCard) => void;
 }) {
-  const heading = bonus ? bonus.category : 'Everyday spending';
+  const heading = viaWallet ? `Anything via ${viaWallet}` : bonus ? bonus.category : 'Everyday spending';
   const window = bonus?.kind === 'rotating' ? describeRotatingWindow(bonus.startsOn, bonus.endsOn) ?? 'rotating' : null;
   return (
     <li className="rewards-find__result" onClick={() => onOpen(card)}>

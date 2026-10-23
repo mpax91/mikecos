@@ -111,7 +111,7 @@ export function carryPlan(cards: RewardsCard[]): CarryPlanEntry[] {
   addReason(flat, `${floor}% everywhere`, floor);
 
   for (const category of MAJOR_CATEGORIES) {
-    const best = bestCardForCategory(active, category, { excludeOnlineOnly: true });
+    const best = bestCardForCategory(active, category, { excludeOnlineOnly: true, excludeMobileWallet: true });
     if (best && best.rate > floor) addReason(best.card, `${category} ${best.rate}%`, best.rate);
   }
 
@@ -219,6 +219,30 @@ export interface RewardsMatch {
   card: RewardsCard;
   bonus: RewardsBonus | null;
   rate: number;
+  /** Set when the rate only applies paying through a phone wallet — the
+   * card's mobileWalletRate beat everything else ("Samsung Wallet"). */
+  viaWallet?: string;
+}
+
+/** A card's phone-wallet rate (Samsung Galaxy Card: 3% via Samsung
+ * Wallet), or 0 when it has none. */
+export function mobileWalletRateOf(card: RewardsCard): number {
+  return typeof card.mobileWalletRate === 'number' && card.mobileWalletRate > 0 ? card.mobileWalletRate : 0;
+}
+
+export function mobileWalletLabel(card: RewardsCard): string {
+  return card.mobileWalletName?.trim() || 'mobile wallet';
+}
+
+/** The better of `rate` and the card's phone-wallet rate, as a match.
+ * Skipped when the purchase itself is online-only for this card (its own
+ * matched bonus is onlineOnly — a streaming subscription can't be tapped
+ * with a phone), and when the caller is picking the physical wallet. */
+function withWalletRate(match: RewardsMatch, opts: FindOptions): RewardsMatch {
+  const walletRate = mobileWalletRateOf(match.card);
+  if (opts.excludeMobileWallet || walletRate <= match.rate) return match;
+  if (match.bonus?.onlineOnly) return match;
+  return { card: match.card, bonus: null, rate: walletRate, viaWallet: mobileWalletLabel(match.card) };
 }
 
 // Alphanumeric-only, lowercased — for comparing a typed merchant name
@@ -271,6 +295,9 @@ export interface FindOptions {
    * a dead end. Omit to skip resolution entirely (bonusMatchesQuery's
    * plain category/keyword match only). */
   merchants?: RewardsMerchant[];
+  /** Ignore phone-wallet rates (RewardsCard.mobileWalletRate) — carryPlan
+   * only, since the phone isn't the physical wallet. */
+  excludeMobileWallet?: boolean;
 }
 
 /** Looks up a free-text query against the merchant directory — name or
@@ -338,9 +365,9 @@ export function findBestCardsFor(cards: RewardsCard[], query: string, opts: Find
     const applicable = card.bonuses.filter((b) => isBonusActiveToday(b) && matchesQuery(b));
     if (applicable.length > 0) {
       const best = applicable.reduce((a, b) => (b.rate > a.rate ? b : a));
-      matches.push({ card, bonus: best, rate: best.rate });
+      matches.push(withWalletRate({ card, bonus: best, rate: best.rate }, opts));
     } else {
-      matches.push({ card, bonus: null, rate: card.baseRate });
+      matches.push(withWalletRate({ card, bonus: null, rate: card.baseRate }, opts));
     }
   }
   return matches.sort((a, b) => b.rate - a.rate);
@@ -450,6 +477,8 @@ export interface HeadlineRate {
   /** The active bonus that's driving this card's rate, or null when the
    * card's flat base rate is what's showing (no active bonus beats it). */
   bonus: RewardsBonus | null;
+  /** Set when the card's phone-wallet rate is what's showing. */
+  viaWallet?: string;
 }
 
 /** Every active card's own best current answer, independent of any
@@ -467,9 +496,12 @@ export function headlineRatesForCards(cards: RewardsCard[]): HeadlineRate[] {
   const active = cards.filter((c) => c.active);
   const rows: HeadlineRate[] = active.map((card) => {
     const eligible = card.bonuses.filter((b) => !b.onlineOnly && isBonusActiveToday(b));
-    if (eligible.length === 0) return { card, rate: card.baseRate, bonus: null };
-    const best = eligible.reduce((a, b) => (b.rate > a.rate ? b : a));
-    return best.rate > card.baseRate ? { card, rate: best.rate, bonus: best } : { card, rate: card.baseRate, bonus: null };
+    const best = eligible.length ? eligible.reduce((a, b) => (b.rate > a.rate ? b : a)) : null;
+    const row: HeadlineRate = best && best.rate > card.baseRate ? { card, rate: best.rate, bonus: best } : { card, rate: card.baseRate, bonus: null };
+    // A phone-wallet rate is an everyday in-person rate (tap the phone), so
+    // it can headline — labelled so it never reads as the physical card's.
+    const walletRate = mobileWalletRateOf(card);
+    return walletRate > row.rate ? { card, rate: walletRate, bonus: null, viaWallet: mobileWalletLabel(card) } : row;
   });
   return rows.sort((a, b) => b.rate - a.rate);
 }

@@ -58,7 +58,7 @@ export function RewardsCardTile({
       <div className="wallet-tile__category">
         {reason || (
           <>
-            {`${card.baseRate}% base`}
+            {card.mobileWalletRate ? `${card.mobileWalletRate}% via ${card.mobileWalletName || 'wallet'}` : `${card.baseRate}% base`}
             {card.network ? ` · ${card.network}` : ''}
             {card.last4 ? ` ····${card.last4}` : ''}
           </>
