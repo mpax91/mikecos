@@ -23365,3 +23365,14 @@ button.career-now__item {
     display: none;
   }
 }
+
+/* Bet slip → Arb / Hedge (0143_bet_links.sql) */
+.bet-slip__link {
+  gap: 8px;
+}
+.bet-slip__link .is-up {
+  color: #2e8b57;
+}
+.bet-slip__link .is-down {
+  color: #c0392b;
+}

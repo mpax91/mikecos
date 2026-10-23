@@ -42,7 +42,7 @@ import { KebabMenu } from '../components/KebabMenu';
 import { BetsBankingTab } from '../components/BetsBankingTab';
 import { BetsPromosTab } from '../components/BetsPromosTab';
 import { BetsWorkspaceTab } from '../components/BetsWorkspaceTab';
-import { BetSlipModal, SettleBetModal } from '../components/BetSlip';
+import { BetSlipModal, SettleBetModal, type SlipLink } from '../components/BetSlip';
 import { BetLinkModal } from '../components/BetLinkModal';
 import { BetShareModal } from '../components/BetShareModal';
 import { InfoTip } from '../components/dash/InfoTip';
@@ -885,15 +885,41 @@ export function BetsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function handleCreate(params: Record<string, unknown>) {
-    await api.createBet(params as Parameters<typeof api.createBet>[0]);
+  /** The slip's Arb / Hedge choice: join the other bet (and its group, if
+   * it has one), or leave this bet's current group. */
+  async function applySlipLink(saved: Bet, link: SlipLink) {
+    const all = bets ?? [];
+    if (!link) {
+      if (!saved.link_id) return;
+      const rest = all.filter((b) => b.link_id === saved.link_id && b.id !== saved.id);
+      if (rest.length >= 2) {
+        const original = rest.find((b) => b.link_role === 'original')?.id ?? null;
+        await api.linkBets({ bet_ids: rest.map((b) => b.id), kind: saved.link_kind ?? 'arb', original_id: saved.link_kind === 'hedge' ? original ?? rest[0].id : null, link_id: saved.link_id });
+      } else {
+        await api.unlinkBets(saved.link_id);
+      }
+      return;
+    }
+    const other = all.find((b) => b.id === link.otherId);
+    if (!other) return;
+    const mates = other.link_id ? all.filter((b) => b.link_id === other.link_id && b.id !== saved.id) : [other];
+    const ids = [saved.id, ...mates.map((b) => b.id)];
+    let original: string | null = null;
+    if (link.kind === 'hedge') original = link.thisIsOriginal ? saved.id : mates.find((b) => b.link_role === 'original')?.id ?? other.id;
+    await api.linkBets({ bet_ids: ids, kind: link.kind, original_id: original, link_id: other.link_id ?? null });
+  }
+
+  async function handleCreate(params: Record<string, unknown>, link?: { value: SlipLink }) {
+    const created = await api.createBet(params as Parameters<typeof api.createBet>[0]);
+    if (link) await applySlipLink(created, link.value);
     setAdding(false);
     load();
   }
 
-  async function handleUpdate(params: Record<string, unknown>) {
+  async function handleUpdate(params: Record<string, unknown>, link?: { value: SlipLink }) {
     if (!editing) return;
-    await api.updateBet(editing.id, params);
+    const updated = await api.updateBet(editing.id, params);
+    if (link) await applySlipLink(updated, link.value);
     setEditing(null);
     load();
   }
@@ -1027,8 +1053,8 @@ export function BetsPage() {
       )}
       {tab === 'promos' && <BetsPromosTab promos={promos} onCreate={handleCreatePromo} onUpdate={handleUpdatePromo} onDelete={handleDeletePromo} />}
 
-      {adding && <BetSlipModal bet={null} betOptions={betOptions} recentBooks={recentBooks} unitAsOf={units.asOf} display={display} onClose={() => setAdding(false)} onSave={handleCreate} />}
-      {editing && <BetSlipModal bet={editing} betOptions={betOptions} recentBooks={recentBooks} unitAsOf={units.asOf} display={display} onClose={() => setEditing(null)} onSave={handleUpdate} />}
+      {adding && <BetSlipModal bet={null} bets={bets} betOptions={betOptions} recentBooks={recentBooks} unitAsOf={units.asOf} display={display} onClose={() => setAdding(false)} onSave={handleCreate} />}
+      {editing && <BetSlipModal bet={editing} bets={bets} betOptions={betOptions} recentBooks={recentBooks} unitAsOf={units.asOf} display={display} onClose={() => setEditing(null)} onSave={handleUpdate} />}
       {linking && <BetLinkModal anchor={linking} bets={bets} onClose={() => setLinking(null)} onSave={handleLink} onUnlink={handleUnlink} />}
       {sharing && <BetShareModal bet={sharing} unit={units.byId.get(sharing.id) ?? null} onClose={() => setSharing(null)} />}
       {settling && <SettleBetModal bet={settling} betOptions={betOptions} onClose={() => setSettling(null)} onSave={handleSettle} />}

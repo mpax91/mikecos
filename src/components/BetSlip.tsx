@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { BET_STAKE_TYPES, type Bet, type BetLeg, type BetLegInput, type BetLegMarket, type BetOption, type BetStakeType } from '../api/types';
+import { BET_STAKE_TYPES, type Bet, type BetLinkKind, type BetLeg, type BetLegInput, type BetLegMarket, type BetOption, type BetStakeType } from '../api/types';
 import { Modal } from './Modal';
 import { formatUnits, type BetDisplay } from '../utils/betUnits';
 import {
@@ -10,8 +10,10 @@ import {
   formatMoney,
   formatOdds,
   isMultiLegType,
+  betTitle,
   legResultsFor,
   legSummary,
+  linkScenarios,
   markFromLegResult,
   optionLabel,
   optionValues,
@@ -338,8 +340,19 @@ function LegCard({
   );
 }
 
+/** What the slip's Arb / Hedge section asks for: link this bet with one
+ * other bet (joining that bet's group if it already has one). */
+export type SlipLink = { kind: BetLinkKind; otherId: string; thisIsOriginal: boolean } | null;
+
+const LINK_NEARBY_DAYS = 7;
+
+function daysApart(a: string, b: string): number {
+  return Math.abs(Math.round((Date.parse(`${a}T12:00:00`) - Date.parse(`${b}T12:00:00`)) / 86_400_000));
+}
+
 export function BetSlipModal({
   bet,
+  bets = [],
   betOptions,
   recentBooks,
   unitAsOf,
@@ -348,13 +361,14 @@ export function BetSlipModal({
   onSave,
 }: {
   bet: Bet | null;
+  bets?: Bet[];
   betOptions: BetOption[];
   recentBooks: string[];
   /** Mike's unit ($) as of a date — sizes the stake in units on the slip. */
   unitAsOf?: (date: string) => number | null;
   display?: BetDisplay;
   onClose: () => void;
-  onSave: (params: Record<string, unknown>) => Promise<void>;
+  onSave: (params: Record<string, unknown>, link?: { value: SlipLink }) => Promise<void>;
 }) {
   const betTypeOptions = optionValues(betOptions, 'bet_type');
   const tipperOptions = optionValues(betOptions, 'tipper');
@@ -408,6 +422,14 @@ export function BetSlipModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // ---- Arb / Hedge (0143_bet_links.sql) ----
+  const groupMates = useMemo(() => (bet?.link_id ? bets.filter((b) => b.link_id === bet.link_id && b.id !== bet.id) : []), [bet, bets]);
+  // A group of 3+ is edited from the Log's link window, not here.
+  const bigGroup = groupMates.length > 1;
+  const initialLink: SlipLink = bet?.link_id && groupMates.length === 1 ? { kind: bet.link_kind ?? 'arb', otherId: groupMates[0].id, thisIsOriginal: bet.link_role === 'original' } : null;
+  const [link, setLink] = useState<SlipLink>(initialLink);
+  const [linkOpen, setLinkOpen] = useState(!!bet?.link_id);
+
   const multi = kind !== 'Straight';
   const shownLegs = multi ? legs : legs.slice(0, 1);
   const legInputs = shownLegs.map((l) => legInput(l, 'pending'));
@@ -420,6 +442,28 @@ export function BetSlipModal({
   const n = shownLegs.length;
   const headline = kind === 'Straight' ? (future ? 'Future' : 'Straight Bet') : kind === 'Teaser' ? `${n}-Team Teaser` : `${n}-Leg ${parlayKind === 'SGP' ? 'Same Game Parlay' : parlayKind === 'SGPx' ? 'SGP+' : 'Parlay'}`;
   const choices = resultChoices(betOptions, result);
+
+  const linkCandidates = useMemo(
+    () =>
+      bets
+        .filter((b) => b.id !== bet?.id && (daysApart(b.date, date) <= LINK_NEARBY_DAYS || b.id === link?.otherId))
+        .sort((a, b) => daysApart(a.date, date) - daysApart(b.date, date) || (a.created_at < b.created_at ? 1 : -1))
+        .slice(0, 40),
+    [bets, bet, date, link?.otherId]
+  );
+  const linkOther = link ? bets.find((b) => b.id === link.otherId) ?? null : null;
+  const linkPreview = useMemo(() => {
+    if (!linkOther || odds == null || !(riskNum > 0)) return null;
+    const self = { ...linkOther, id: '__slip', sportsbook: book || 'This bet', odds, wager: riskNum, stake_type: stake, manual_profit: null, result: 'tbd', legs: [] } as Bet;
+    const mates = linkOther.link_id ? bets.filter((b) => b.link_id === linkOther.link_id && b.id !== bet?.id) : [linkOther];
+    const nets = linkScenarios([self, ...mates]).map((sc) => sc.net);
+    return { worst: Math.min(...nets), best: Math.max(...nets) };
+  }, [linkOther, odds, riskNum, book, stake, bets, bet]);
+
+  function pickLinkKind(k: BetLinkKind | null) {
+    if (!k) return setLink(null);
+    setLink((prev) => ({ kind: k, otherId: prev?.otherId ?? linkCandidates[0]?.id ?? '', thisIsOriginal: prev?.thisIsOriginal ?? false }));
+  }
 
   function updateLeg(i: number, patch: Partial<LegDraft>) {
     setLegs((prev) => prev.map((l, j) => (j === i ? { ...l, ...patch } : l)));
@@ -455,6 +499,8 @@ export function BetSlipModal({
     const cash = cashoutProfit(result, cashout, riskNum, stake);
     if (result === 'cashed_out' && cash == null) return setError('Enter what you cashed out for.');
     const manual = result === 'cashed_out' ? cash : manualProfit.trim() !== '' && Number.isFinite(Number(manualProfit)) ? Number(manualProfit) : null;
+    if (link && !link.otherId) return setError(`Pick the other side of this ${link.kind}.`);
+    const linkChanged = !bigGroup && JSON.stringify(link) !== JSON.stringify(initialLink);
     setSaving(true);
     setError(null);
     try {
@@ -471,7 +517,7 @@ export function BetSlipModal({
         manual_profit: manual,
         notes: notes.trim(),
         legs: legsPayload,
-      });
+      }, linkChanged ? { value: link } : undefined);
     } catch (e) {
       setError(String(e));
       setSaving(false);
@@ -677,6 +723,73 @@ export function BetSlipModal({
             ))}
           </datalist>
         </label>
+
+        {!linkOpen ? (
+          <button type="button" className="link-btn bet-slip__more" onClick={() => setLinkOpen(true)}>
+            + Arb / Hedge
+          </button>
+        ) : (
+          <div className="bet-slip__section bet-slip__link">
+            <span className="bet-slip__label">Arb / Hedge</span>
+            {bigGroup ? (
+              <div className="bet-slip__hint">
+                Part of a {bet?.link_kind === 'hedge' ? 'hedge' : 'arb'} with {groupMates.length} other bets — change it from the Log's ⋯ menu.
+              </div>
+            ) : (
+              <>
+                <div className="bet-slip__seg">
+                  <button type="button" className={!link ? 'is-on' : ''} onClick={() => pickLinkKind(null)}>
+                    None
+                  </button>
+                  <button type="button" className={link?.kind === 'arb' ? 'is-on' : ''} onClick={() => pickLinkKind('arb')}>
+                    Arb
+                  </button>
+                  <button type="button" className={link?.kind === 'hedge' ? 'is-on' : ''} onClick={() => pickLinkKind('hedge')}>
+                    Hedge
+                  </button>
+                </div>
+                {link && (
+                  <>
+                    <select className="bet-slip__text" value={link.otherId} onChange={(e) => setLink({ ...link, otherId: e.target.value })} aria-label="Other side">
+                      {linkCandidates.length === 0 && <option value="">No bets within a week of this date — log the other side first</option>}
+                      {!linkCandidates.some((b) => b.id === link.otherId) && linkCandidates.length > 0 && <option value="">Pick the other side…</option>}
+                      {linkCandidates.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.date.slice(5)} · {b.sportsbook} · {betTitle(b)} · {formatOdds(b.odds)} · ${b.wager}
+                          {b.stake_type === 'free_bet' ? ' (free bet)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                    {link.kind === 'hedge' && (
+                      <div className="bet-slip__seg">
+                        <button type="button" className={!link.thisIsOriginal ? 'is-on' : ''} onClick={() => setLink({ ...link, thisIsOriginal: false })}>
+                          This is the hedge
+                        </button>
+                        <button type="button" className={link.thisIsOriginal ? 'is-on' : ''} onClick={() => setLink({ ...link, thisIsOriginal: true })}>
+                          This is my pick
+                        </button>
+                      </div>
+                    )}
+                    {linkPreview && (
+                      <div className="bet-slip__hint">
+                        {linkPreview.worst >= 0 ? (
+                          <>
+                            Locked profit <strong className="is-up">{formatMoney(linkPreview.worst)}</strong>
+                            {linkPreview.best > linkPreview.worst + 0.005 ? ` (up to ${formatMoney(linkPreview.best)})` : ''}
+                          </>
+                        ) : (
+                          <>
+                            Worst case <strong className="is-down">{formatMoney(linkPreview.worst)}</strong>, best {formatMoney(linkPreview.best)}
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+              </>
+            )}
+          </div>
+        )}
 
         <button type="button" className="link-btn bet-slip__more" onClick={() => setShowMore((v) => !v)}>
           {showMore ? '− Fewer details' : '+ Notes, profit override'}
