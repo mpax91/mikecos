@@ -3,6 +3,8 @@ import { api } from '../api/client';
 import type { BetGameEnrichment, BetGameNote, BetGameTeamSnapshot, BetPromo, BetScheduleGame } from '../api/types';
 import { SPORTS, formatMoney, type SportsbookBalance } from '../utils/bets';
 import { BetsPromosTable, PromoFilterPills, usePromoFilters } from './BetsPromosTable';
+import { BetsArbScreener } from './BetsArbScreener';
+import { findBoardArb, splitMatchup, type BoardArb } from '../utils/promoArb';
 import { Modal } from './Modal';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { KebabMenu } from './KebabMenu';
@@ -31,6 +33,9 @@ const COLLAPSED_KEY = 'mikeos-bets-workspace-collapsed';
 // `collapsed` set — this key stands in for the Promos section so it can
 // collapse the same way without colliding with an actual sport name.
 const PROMOS_SECTION_KEY = '__promos__';
+const ARB_SECTION_KEY = '__arb__';
+// Sports the arb screener can pull DK lines for (ESPN_SPORT_PATHS in the worker).
+const ARB_SPORTS = ['NFL', 'NBA', 'MLB', 'NHL', 'NCAAF', 'NCAAB'];
 // Mike's default tipper roster — matches the "Tipper" tab of his old sheet,
 // swapping out the two he doesn't use anymore (Sportsline, CBS Props) for
 // ChatGPT and Claude. Only applied the very first time (nothing saved yet);
@@ -786,6 +791,7 @@ function GameRow({
   showSport,
   bestCols,
   promoCols,
+  arb,
   onCellCommit,
   onPinToggle,
   onOpenNotes,
@@ -795,6 +801,7 @@ function GameRow({
   showSport: boolean;
   bestCols?: Set<string>;
   promoCols?: Set<string>;
+  arb?: BoardArb | null;
   onCellCommit: (entry: BoardEntry, source: string, value: string) => void;
   onPinToggle: (entry: BoardEntry) => void;
   onOpenNotes: (entry: BoardEntry) => void;
@@ -820,9 +827,22 @@ function GameRow({
       </td>
       <td className="bets-workspace__time-cell">{formatKickoff(entry.startTime)}</td>
       {columns.map((col) => (
-        <td key={col} className={`bets-workspace__value-cell${bestCols?.has(col) ? ' bets-workspace__cell--best' : ''}`}>
+        <td
+          key={col}
+          className={`bets-workspace__value-cell${bestCols?.has(col) ? ' bets-workspace__cell--best' : ''}${arb?.books.includes(col) ? ' bets-workspace__cell--arb' : ''}`}
+        >
           <div className="bets-workspace__cell-wrap">
             <CellInput value={entry.cells.get(col) ?? ''} onCommit={(v) => onCellCommit(entry, col, v)} />
+            {arb?.books.includes(col) && (
+              <span
+                className="bets-workspace__arb-flag"
+                title={`Arb with ${arb.books.find((b) => b !== col)}: ${(arb.margin * 100).toFixed(1)}% locked — stake ${arb.books
+                  .map((b, i) => `${b} $${arb.result.legs[i].stake.toFixed(2)}`)
+                  .join(' / ')}`}
+              >
+                ARB
+              </span>
+            )}
             {promoCols?.has(col) && (
               <span className="bets-workspace__promo-flag" title={`Active promo at ${col} — double-check it actually applies to this bet (odds/legs, straight vs. parlay can matter)`}>
                 🔥
@@ -1177,6 +1197,18 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
   const loading = schedule === null || notes === null;
   const sportKeys = sortSports([...bySport.keys()]);
 
+  // Two typed sportsbook cells in Best Bets that already cover both sides at
+  // prices that lock a profit — flagged on the row and listed in the screener.
+  const boardArbByKey = new Map<string, BoardArb>();
+  for (const e of entries) {
+    if (!e.pinned) continue;
+    const teams = splitMatchup(e.matchup);
+    const arb = teams ? findBoardArb(e.cells, SPORTSBOOK_COLUMNS, teams[0], teams[1]) : null;
+    if (arb) boardArbByKey.set(e.key, arb);
+  }
+  const boardArbs = entries.filter((e) => boardArbByKey.has(e.key)).map((e) => ({ matchup: e.matchup, sport: e.sport, arb: boardArbByKey.get(e.key)! }));
+  const arbSports = sortSports([...new Set((schedule ?? []).map((g) => g.sport))].filter((sp) => ARB_SPORTS.includes(sp)));
+
   return (
     <div className="bets-workspace">
       {displayBalances.length > 0 && (
@@ -1295,6 +1327,17 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
         </div>
       )}
 
+      {!loading && (arbSports.length > 0 || boardArbs.length > 0) && (
+        <BetsArbScreener
+          date={date}
+          sports={arbSports}
+          promos={activePromos}
+          boardArbs={boardArbs}
+          collapsed={collapsed.has(ARB_SECTION_KEY)}
+          onToggleCollapse={() => toggleCollapse(ARB_SECTION_KEY)}
+        />
+      )}
+
       {sortedActivePromos.length > 0 && (
         <div className="bets-workspace__section card" style={{ marginTop: 12 }}>
           <div className="bets-promos__header">
@@ -1366,6 +1409,7 @@ export function BetsWorkspaceTab({ balances, promos }: { balances: SportsbookBal
                     showSport
                     bestCols={bestOddsColumns(entry, SPORTSBOOK_COLUMNS)}
                     promoCols={promoSportsbooks}
+                    arb={boardArbByKey.get(entry.key) ?? null}
                     onCellCommit={handleCellCommit}
                     onPinToggle={handlePinToggle}
                     onOpenNotes={setNotesFor}

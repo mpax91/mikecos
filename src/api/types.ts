@@ -1273,6 +1273,26 @@ export interface BetGameOdds {
   moneyline: { home: BetGameOddsSide; away: BetGameOddsSide } | null;
 }
 
+/** One game's DraftKings line from GET /api/bets/enrichment/slate — the
+ * whole slate in one call, for the Workspace's promo-arb screener. */
+export interface BetSlateGame {
+  sport: string;
+  eventId: string;
+  matchup: string; // ESPN abbreviations, "Away @ Home"
+  awayAbbr: string;
+  homeAbbr: string;
+  awayName: string | null;
+  homeName: string | null;
+  startTime: string | null;
+  state: string | null; // 'pre' | 'in' | 'post'
+  odds: BetGameOdds | null;
+}
+
+export interface BetSlateResponse {
+  games: BetSlateGame[];
+  note: string | null;
+}
+
 export interface BetGameMatchupMeeting {
   date: string | null;
   homeAbbr: string | null;

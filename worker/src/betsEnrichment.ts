@@ -334,6 +334,44 @@ function parseTotalNumber(s: string | undefined): number | null {
   return Number.isNaN(n) ? null : n;
 }
 
+// A price can come back as "EVEN" instead of "+100".
+function parseOddsPrice(s: string | undefined): number | null {
+  if (s && /^\s*even\s*$/i.test(s)) return 100;
+  return parseSignedNumber(s);
+}
+
+/** One ESPN odds block (a summary's pickcenter[0] or a scoreboard
+ * competition's odds[0] — same shape) → the app's BetGameOdds. */
+function parseEspnOdds(oddsInfo: EspnOddsSide | undefined) {
+  if (!oddsInfo) return null;
+  return {
+    provider: oddsInfo.provider?.name ?? null,
+    // Mike wants the price (the vig for taking that side, e.g. -110)
+    // here, not the open line — that's why this is `price`, not `open`
+    // the way moneyline/total still track open-vs-current.
+    spread: oddsInfo.pointSpread
+      ? {
+          home: { current: parseSignedNumber(oddsInfo.pointSpread.home?.close?.line), price: parseOddsPrice(oddsInfo.pointSpread.home?.close?.odds) },
+          away: { current: parseSignedNumber(oddsInfo.pointSpread.away?.close?.line), price: parseOddsPrice(oddsInfo.pointSpread.away?.close?.odds) },
+        }
+      : null,
+    total: oddsInfo.total
+      ? {
+          open: parseTotalNumber(oddsInfo.total.over?.open?.line),
+          current: parseTotalNumber(oddsInfo.total.over?.close?.line),
+          overOdds: parseOddsPrice(oddsInfo.total.over?.close?.odds),
+          underOdds: parseOddsPrice(oddsInfo.total.under?.close?.odds),
+        }
+      : null,
+    moneyline: oddsInfo.moneyline
+      ? {
+          home: { open: parseOddsPrice(oddsInfo.moneyline.home?.open?.odds), current: parseOddsPrice(oddsInfo.moneyline.home?.close?.odds) },
+          away: { open: parseOddsPrice(oddsInfo.moneyline.away?.open?.odds), current: parseOddsPrice(oddsInfo.moneyline.away?.close?.odds) },
+        }
+      : null,
+  };
+}
+
 function statCategoryValue(categories: EspnStatCategory[] | undefined, name: string): string | null {
   return categories?.find((c) => c.name === name)?.displayValue ?? null;
 }
@@ -589,38 +627,95 @@ betsEnrichmentRouter.get('/', async (c) => {
             indoor: !!indoor,
           }
         : null,
-    odds: oddsInfo
-      ? {
-          provider: oddsInfo.provider?.name ?? null,
-          // Mike wants the price (the vig for taking that side, e.g. -110)
-          // here, not the open line — that's why this is `price`, not `open`
-          // the way moneyline/total still track open-vs-current.
-          spread: oddsInfo.pointSpread
-            ? {
-                home: { current: parseSignedNumber(oddsInfo.pointSpread.home?.close?.line), price: parseSignedNumber(oddsInfo.pointSpread.home?.close?.odds) },
-                away: { current: parseSignedNumber(oddsInfo.pointSpread.away?.close?.line), price: parseSignedNumber(oddsInfo.pointSpread.away?.close?.odds) },
-              }
-            : null,
-          total: oddsInfo.total
-            ? {
-                open: parseTotalNumber(oddsInfo.total.over?.open?.line),
-                current: parseTotalNumber(oddsInfo.total.over?.close?.line),
-                overOdds: parseSignedNumber(oddsInfo.total.over?.close?.odds),
-                underOdds: parseSignedNumber(oddsInfo.total.under?.close?.odds),
-              }
-            : null,
-          moneyline: oddsInfo.moneyline
-            ? {
-                home: { open: parseSignedNumber(oddsInfo.moneyline.home?.open?.odds), current: parseSignedNumber(oddsInfo.moneyline.home?.close?.odds) },
-                away: { open: parseSignedNumber(oddsInfo.moneyline.away?.open?.odds), current: parseSignedNumber(oddsInfo.moneyline.away?.close?.odds) },
-              }
-            : null,
-        }
-      : null,
+    odds: parseEspnOdds(oddsInfo),
     matchupHistory,
     predictor,
     home,
     away,
     note: null,
+  });
+});
+
+// ---- Slate lines (promo-arb screener, 2026-10-23) ----
+//
+// Every game's DraftKings line for one sport/date in a single call, for the
+// Workspace's arb screener — the per-game route above is one game at a time
+// (and pulls injuries/form too), far too heavy to fan out over a slate.
+// ESPN's scoreboard carries the same odds block as a game summary's
+// pickcenter (checked 10/23: NBA + NFL, all games). A game the scoreboard
+// has no odds for falls back to its summary, capped so a big college slate
+// can't turn into 60 fetches.
+
+interface EspnSlateEvent {
+  id: string;
+  date?: string;
+  status?: { type?: { state?: string } };
+  competitions?: { competitors?: EspnCompetitor[]; odds?: EspnOddsSide[] }[];
+}
+
+// College slates are huge without a group filter; these match the board's
+// own schedule (FBS / Division I).
+const ESPN_SLATE_GROUPS: Record<string, string> = { NCAAF: '80', NCAAB: '50' };
+const SLATE_SUMMARY_FALLBACK_CAP = 12;
+
+betsEnrichmentRouter.get('/slate', async (c) => {
+  const date = c.req.query('date') ?? '';
+  const sports = (c.req.query('sports') ?? '')
+    .split(',')
+    .map((s) => s.trim().toUpperCase())
+    .filter((s) => ESPN_SPORT_PATHS[s]);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || sports.length === 0) {
+    return c.json({ games: [], note: 'Missing date or sports.' });
+  }
+  const dateCompact = date.replace(/-/g, '');
+  let reached = true;
+
+  const perSport = await Promise.all(
+    sports.map(async (sport) => {
+      const path = ESPN_SPORT_PATHS[sport];
+      const group = ESPN_SLATE_GROUPS[sport];
+      const data = await fetchEspnJson<{ events?: EspnSlateEvent[] }>(
+        `/apis/site/v2/sports/${path}/scoreboard?dates=${dateCompact}${group ? `&groups=${group}&limit=300` : ''}`
+      );
+      if (!data) {
+        reached = false;
+        return [];
+      }
+      let fallbacks = 0;
+      return Promise.all(
+        (data.events ?? []).map(async (event) => {
+          const comp = event.competitions?.[0];
+          const home = comp?.competitors?.find((x) => x.homeAway === 'home')?.team;
+          const away = comp?.competitors?.find((x) => x.homeAway === 'away')?.team;
+          if (!home?.abbreviation || !away?.abbreviation) return null;
+          let oddsInfo = comp?.odds?.[0];
+          const hasPrices = !!(oddsInfo?.moneyline || oddsInfo?.pointSpread || oddsInfo?.total);
+          if (!hasPrices && event.status?.type?.state === 'pre' && fallbacks < SLATE_SUMMARY_FALLBACK_CAP) {
+            fallbacks++;
+            const summary = await fetchEspnJson<EspnSummary>(`/apis/site/v2/sports/${path}/summary?event=${event.id}`);
+            oddsInfo = summary?.pickcenter?.[0] ?? oddsInfo;
+          }
+          return {
+            sport,
+            eventId: event.id,
+            matchup: `${away.abbreviation} @ ${home.abbreviation}`,
+            awayAbbr: away.abbreviation,
+            homeAbbr: home.abbreviation,
+            awayName: away.displayName ?? null,
+            homeName: home.displayName ?? null,
+            startTime: event.date ?? null,
+            state: event.status?.type?.state ?? null, // 'pre' | 'in' | 'post'
+            odds: parseEspnOdds(oddsInfo),
+          };
+        })
+      );
+    })
+  );
+
+  const games = perSport.flat().filter((g): g is NonNullable<typeof g> => g !== null);
+  if (c.req.query('debug') === '1') return c.json({ count: games.length, espnReachable, attempts: lastEspnAttempts });
+  return c.json({
+    games,
+    note: reached ? null : "Couldn't reach ESPN for lines right now — try again in a few minutes.",
   });
 });
