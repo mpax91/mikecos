@@ -57,17 +57,49 @@ const ESPN_SPORT_PATHS: Record<string, string> = {
   NHL: 'hockey/nhl',
 };
 
-async function fetchEspnJson<T>(url: string): Promise<T | null> {
-  try {
-    const res = await fetch(url, {
-      headers: { 'user-agent': BROWSER_UA, accept: 'application/json' },
-      cf: { cacheTtl: 300, cacheEverything: true },
-    });
-    if (!res.ok) return null;
-    return await res.json<T>();
-  } catch {
-    return null;
+// ESPN serves the same site API from two hosts, and its datacenter block has
+// flipped between them: site.api was blocked for Workers when this file was
+// written (site.web worked), and on 2026-10-23 it was the reverse — the
+// board's schedule (site.api) loaded while every line lookup here (site.web
+// only) came back "couldn't find this game". So every ESPN call tries both
+// hosts, starting with whichever answered last in this isolate.
+const ESPN_HOSTS = ['https://site.web.api.espn.com', 'https://site.api.espn.com'];
+let preferredEspnHost = 0;
+
+type EspnAttempt = { host: string; status: number | null; note?: string };
+// Last attempts, for /api/bets/enrichment?debug=1 — one call says which
+// host is up next time ESPN changes things.
+let lastEspnAttempts: EspnAttempt[] = [];
+let espnReachable = true;
+
+/** `path` starts at /apis/... — the host is chosen here. */
+async function fetchEspnJson<T>(path: string): Promise<T | null> {
+  const order = [preferredEspnHost, ...ESPN_HOSTS.map((_, i) => i).filter((i) => i !== preferredEspnHost)];
+  const attempts: EspnAttempt[] = [];
+  for (const i of order) {
+    const host = ESPN_HOSTS[i];
+    try {
+      const res = await fetch(`${host}${path}`, {
+        headers: { 'user-agent': BROWSER_UA, accept: 'application/json' },
+        cf: { cacheTtl: 300, cacheEverything: true },
+      });
+      if (!res.ok) {
+        attempts.push({ host, status: res.status, note: (await res.text().catch(() => '')).slice(0, 120) });
+        continue;
+      }
+      const data = await res.json<T>();
+      attempts.push({ host, status: res.status });
+      preferredEspnHost = i;
+      lastEspnAttempts = attempts;
+      espnReachable = true;
+      return data;
+    } catch (e) {
+      attempts.push({ host, status: null, note: String(e).slice(0, 120) });
+    }
   }
+  lastEspnAttempts = attempts;
+  espnReachable = false;
+  return null;
 }
 
 interface EspnTeamRef {
@@ -118,7 +150,7 @@ interface ResolvedEvent {
 async function resolveEspnEvent(sportPath: string, dateCompact: string, matchup: string): Promise<ResolvedEvent | null> {
   const [awayToken, homeToken] = matchup.split('@').map((s) => s.trim());
   if (!awayToken || !homeToken) return null;
-  const data = await fetchEspnJson<EspnScoreboard>(`https://site.web.api.espn.com/apis/site/v2/sports/${sportPath}/scoreboard?dates=${dateCompact}`);
+  const data = await fetchEspnJson<EspnScoreboard>(`/apis/site/v2/sports/${sportPath}/scoreboard?dates=${dateCompact}`);
   if (!data) return null;
   for (const event of data.events ?? []) {
     const competitors = event.competitions?.[0]?.competitors ?? [];
@@ -399,7 +431,7 @@ async function fetchTeamSnapshot(
   probableGoalie: TeamSnapshot['probableGoalie'],
   recentForm: TeamSnapshot['recentForm']
 ): Promise<TeamSnapshot | null> {
-  const data = await fetchEspnJson<EspnTeamResponse>(`https://site.web.api.espn.com/apis/site/v2/sports/${sportPath}/teams/${teamId}`);
+  const data = await fetchEspnJson<EspnTeamResponse>(`/apis/site/v2/sports/${sportPath}/teams/${teamId}`);
   const team = data?.team;
   if (!team) return null;
   const items = team.record?.items;
@@ -443,6 +475,9 @@ betsEnrichmentRouter.get('/', async (c) => {
 
   const dateCompact = date.replace(/-/g, '');
   const resolved = await resolveEspnEvent(sportPath, dateCompact, matchup);
+  if (c.req.query('debug') === '1') {
+    return c.json({ resolved, espnReachable, attempts: lastEspnAttempts });
+  }
   if (!resolved) {
     return c.json({
       found: false,
@@ -453,11 +488,13 @@ betsEnrichmentRouter.get('/', async (c) => {
       predictor: null,
       home: null,
       away: null,
-      note: "Couldn't find this game on ESPN — either it hasn't posted a schedule for this date yet, or the team names didn't match closely enough.",
+      note: espnReachable
+        ? "Couldn't find this game on ESPN — either it hasn't posted a schedule for this date yet, or the team names didn't match closely enough."
+        : "Couldn't reach ESPN for lines right now — try again in a few minutes.",
     });
   }
 
-  const summary = await fetchEspnJson<EspnSummary>(`https://site.web.api.espn.com/apis/site/v2/sports/${sportPath}/summary?event=${resolved.eventId}`);
+  const summary = await fetchEspnJson<EspnSummary>(`/apis/site/v2/sports/${sportPath}/summary?event=${resolved.eventId}`);
   const venueInfo = summary?.gameInfo?.venue;
   const weatherInfo = summary?.gameInfo?.weather;
   const oddsInfo = summary?.pickcenter?.[0];
