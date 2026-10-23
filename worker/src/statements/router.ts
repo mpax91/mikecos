@@ -25,12 +25,14 @@ import { loadAmexCardData } from './amexCardDerive';
 import { loadBofaCardData } from './bofaCardDerive';
 import { loadTargetCardData } from './targetCardDerive';
 import { summarizeTargetCard, targetGaps } from './targetCardSummary';
+import { loadLowesCardData, lowesPaymentLine } from './lowesCardDerive';
+import { summarizeLowesCard } from './lowesCardSummary';
 import { listAttention } from './attention';
 import { getCashPlacement } from './cashPlacement';
 import { summarizeAmazon } from './amazonSummary';
 import { summarizeAmexCard } from './amexCardSummary';
 import { bofaGaps, summarizeBofaCard } from './bofaCardSummary';
-import { cardRewardsSettings, combineRewards, rewardsFromAmazon, rewardsFromAmexCard, rewardsFromBofaCard, rewardsFromTargetCard, syncRedeemReminder } from './rewards';
+import { cardRewardsSettings, combineRewards, rewardsFromAmazon, rewardsFromAmexCard, rewardsFromBofaCard, rewardsFromTargetCard, rewardsFromLowesCard, syncRedeemReminder } from './rewards';
 import type { CardRewards, RedeemTaskState, RewardsCardLine } from './rewards';
 import { loadPaypalData } from './paypalDerive';
 import { summarizePaypal } from './paypalSummary';
@@ -296,6 +298,12 @@ statementsRouter.get('/accounts', async (c) => {
       const s = summarizeTargetCard(stmts, txns, easternToday());
       // No rewards balance (the 5% is off at checkout) — pointsValue stays null.
       if (s.latest) headline = { kind: 'card', value: s.balance, asOf: s.asOf, status: s.status, dueDate: s.nextDue ? s.latest.dueDate : null, minimum: s.nextDue ? s.latest.minimumPayment : null, pointsValue: null };
+    } else if (row.template_id === 'lowesCard') {
+      const { stmts, txns, checking } = await loadLowesCardData(c.env, row.id);
+      const s = summarizeLowesCard(stmts, txns, checking, easternToday());
+      // Card Balances count what's still owed: 0 once a payment is proven
+      // (the payment-only statements aren't kept, so the last balance lingers).
+      if (s.latest) headline = { kind: 'card', value: s.status === 'credit' ? s.balance : s.owedNow, asOf: s.asOf, status: s.status === 'paid' ? 'paid' : s.status === 'credit' ? 'credit' : 'due', dueDate: s.nextDue ? s.latest.dueDate : null, minimum: s.nextDue ? s.latest.minimumPayment : null, pointsValue: null };
     }
     let extra: Record<string, unknown> | null = null;
     if (row.template_id === 'merrill') {
@@ -337,6 +345,10 @@ async function cardRewardsFor(env: Env, row: FolderRow): Promise<CardRewards | n
   if (row.template_id === 'targetCard') {
     const { stmts, txns } = await loadTargetCardData(env, row.id);
     return stmts.length ? rewardsFromTargetCard(summarizeTargetCard(stmts, txns, today), today) : null;
+  }
+  if (row.template_id === 'lowesCard') {
+    const { stmts, txns, checking } = await loadLowesCardData(env, row.id);
+    return stmts.length ? rewardsFromLowesCard(summarizeLowesCard(stmts, txns, checking, today), today) : null;
   }
   return null;
 }
@@ -388,6 +400,7 @@ statementsRouter.get('/folders/:id/dashboard', async (c) => {
   if (row.template_id === 'amexCard') return c.json(await amexCardDashboard(c.env, row));
   if (row.template_id === 'bofaCard') return c.json(await bofaCardDashboard(c.env, row));
   if (row.template_id === 'targetCard') return c.json(await targetCardDashboard(c.env, row));
+  if (row.template_id === 'lowesCard') return c.json(await lowesCardDashboard(c.env, row));
   if (row.template_id === 'merrill') return c.json(await merrillDashboard(c.env, row));
   if (row.template_id === 'tsp') return c.json(await tspDashboard(c.env, row));
   if (row.template_id !== 'ny529') return c.json({ error: 'No dashboard for this template yet' }, 400);
@@ -868,6 +881,27 @@ async function targetCardDashboard(env: Env, row: FolderRow) {
     account: last ? { accountLast: last.values.accountLast } : null,
     gaps: targetGaps(stmts, files),
     summary,
+    statements: stmts.map((s) => ({ id: s.id, periodStart: s.periodStart, periodEnd: s.periodEnd, fileId: s.fileId, checks: s.checks })),
+    files: files.map((f) => ({ fileId: f.file_id, name: f.file_name, url: f.web_url, status: f.status, error: f.error })),
+    flags: await openFlags(env, row.id),
+  };
+}
+
+/** Lowe's credit card dashboard payload — a handful of statements, so every
+ * purchase and statement comes along. */
+async function lowesCardDashboard(env: Env, row: FolderRow) {
+  const stats = await folderStats(env);
+  const { stmts, txns, files, checking } = await loadLowesCardData(env, row.id);
+  const today = easternToday();
+  const summary = summarizeLowesCard(stmts, txns, checking, today);
+  return {
+    kind: 'lowesCard' as const,
+    today,
+    rewards: summary.latest ? rewardsFromLowesCard(summary, today) : null,
+    folder: folderJson(row, stats.get(row.id)),
+    template: templateById(row.template_id)?.account ?? null,
+    summary,
+    paymentLines: summary.statements.map((r) => lowesPaymentLine(r.payment, r.newBalance)),
     statements: stmts.map((s) => ({ id: s.id, periodStart: s.periodStart, periodEnd: s.periodEnd, fileId: s.fileId, checks: s.checks })),
     files: files.map((f) => ({ fileId: f.file_id, name: f.file_name, url: f.web_url, status: f.status, error: f.error })),
     flags: await openFlags(env, row.id),

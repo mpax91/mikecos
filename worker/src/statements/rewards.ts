@@ -6,6 +6,7 @@ import type { AmexCardSummary } from './amexCardSummary';
 import type { AmazonSummary } from './amazonSummary';
 import type { BofaCardSummary } from './bofaCardSummary';
 import type { TargetCardSummary } from './targetCardSummary';
+import type { LowesCardSummary } from './lowesCardSummary';
 
 /** Card rewards in one shape, whatever the card pays in (Amex Reward
  * Dollars are $1 each, Chase points are 100 per $1). Every credit-card
@@ -174,6 +175,30 @@ export function rewardsFromTargetCard(s: TargetCardSummary, today: string): Card
     rate12: s.rate12,
     since: s.firstStatement,
     years: s.years.map((y) => ({ year: y.year, statements: y.statements, earned: y.savings, net: y.net, rate: y.rate, partial: y.partial, current: y.year === cy })),
+  };
+}
+
+/** Lowe's credit card: the 5% comes off at checkout and the statement never
+ * prints it, so the "reward" is an estimate (charged × 5/95 before sales tax)
+ * — every year is marked partial. Nothing waits to be redeemed. */
+export function rewardsFromLowesCard(s: LowesCardSummary, today: string): CardRewards {
+  const cy = thisYear(today);
+  const since12 = s.statements.filter((r) => r.closingDate > `${Number(today.slice(0, 4)) - 1}${today.slice(4)}`);
+  const net12 = round2(since12.reduce((t, r) => t + r.purchases - r.refunds, 0));
+  const est12 = round2(since12.reduce((t, r) => t + r.estSavings, 0));
+  return {
+    unit: 'dollars',
+    unitLabel: 'Savings (est.)',
+    pointsPerDollar: 1,
+    available: null,
+    availablePoints: null,
+    asOf: s.asOf,
+    earnedAllTime: s.estSavings,
+    redeemedAllTime: s.estSavings,
+    earnedYtd: s.estSavingsYtd,
+    rate12: net12 > 0.005 ? round2((est12 / net12) * 100) : null,
+    since: s.firstStatement,
+    years: s.years.map((y) => ({ year: y.year, statements: y.statements, earned: y.estSavings, net: y.net, rate: y.net > 0.005 ? round2((y.estSavings / y.net) * 100) : null, partial: true, current: y.year === cy })),
   };
 }
 

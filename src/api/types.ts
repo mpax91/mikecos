@@ -3665,6 +3665,127 @@ export interface TargetCardDashboard {
   rewards: CardRewards | null;
 }
 
+// ---- Lowe's credit card (worker/src/statements/lowesCardSummary.ts) ----
+export type LowesPayStatus = 'none_due' | 'checking' | 'statement' | 'next_zero' | 'carried' | 'due' | 'unconfirmed';
+export interface LowesPayment {
+  status: LowesPayStatus;
+  date: string | null;
+  amount: number | null;
+  onTime: boolean | null;
+  source: string | null;
+}
+export interface LowesPromo {
+  type: string;
+  balance: number;
+  date: string | null;
+}
+export interface LowesItemLine {
+  date: string;
+  amount: number;
+  where: string;
+  online: boolean;
+  items: string[];
+  category: string;
+  shipped: boolean;
+  estSavings: number;
+  statementClosing: string;
+}
+export interface LowesCardStatementRow {
+  closingDate: string;
+  openingDate: string;
+  previousBalance: number;
+  paid: number;
+  refunds: number;
+  purchases: number;
+  online: number;
+  inStore: number;
+  fees: number;
+  interest: number;
+  newBalance: number;
+  minimumPayment: number;
+  dueDate: string | null;
+  apr: number | null;
+  termsNotice: boolean;
+  noticeApr: number | null;
+  purchaseCount: number;
+  estSavings: number;
+  promos: LowesPromo[];
+  payment: LowesPayment;
+  fileId: string;
+  checksOk: boolean;
+}
+export interface LowesCardYear {
+  year: number;
+  statements: number;
+  purchases: number;
+  refunds: number;
+  net: number;
+  online: number;
+  inStore: number;
+  estSavings: number;
+  vsFlat: number;
+  fees: number;
+  interest: number;
+  hiddenFees: number;
+  hiddenInterest: number;
+}
+export interface LowesCardSummary {
+  asOf: string | null;
+  latest: LowesCardStatementRow | null;
+  status: 'paid' | 'due' | 'unconfirmed' | 'credit' | 'none';
+  balance: number;
+  owedNow: number;
+  creditLine: number | null;
+  availableCredit: number | null;
+  utilization: number | null;
+  purchaseApr: number | null;
+  accountLast: string | null;
+  firstStatement: string | null;
+  firstPurchase: string | null;
+  lastPurchase: string | null;
+  monthsSinceUse: number | null;
+  longestIdle: { from: string; to: string; months: number } | null;
+  dormant: boolean;
+  purchaseCount: number;
+  lifetimeNet: number;
+  lifetimePurchases: number;
+  last12Net: number;
+  ytdNet: number;
+  avgPurchase: number | null;
+  onlineShare: number | null;
+  estSavings: number;
+  estSavingsYtd: number;
+  vsFlat: number;
+  totalFees: number;
+  totalInterest: number;
+  hiddenFees: number;
+  hiddenInterest: number;
+  paidInFullCount: number;
+  unprovenCount: number;
+  carriedStatements: string[];
+  promos: LowesPromo[];
+  categories: { category: string; amount: number; count: number }[];
+  items: LowesItemLine[];
+  changes: { date: string; what: 'apr' | 'credit_line' | 'terms'; from: string; to: string }[];
+  statements: LowesCardStatementRow[];
+  years: LowesCardYear[];
+  nextDue: { date: string; amount: number; minimum: number } | null;
+  checkingLinked: boolean;
+}
+export interface LowesCardDashboard {
+  kind: 'lowesCard';
+  today: string;
+  folder: StatementFolder;
+  template: { nickname: string; institution: string; type: string; site?: string; phone?: string } | null;
+  summary: LowesCardSummary;
+  /** One line per statement (same order) saying how its balance was paid. */
+  paymentLines: string[];
+  statements: { id: string; periodStart: string; periodEnd: string; fileId: string; checks: StatementCheckRow[] }[];
+  files: { fileId: string; name: string; url: string | null; status: string; error: string | null }[];
+  flags: { id: string; severity: 'warn' | 'info'; message: string; created_at: string }[];
+  rewards: CardRewards | null;
+}
+
 // ---- Card rewards (worker/src/statements/rewards.ts) — all money in $,
 // years = statement closing year ----
 export interface RewardsYear {
@@ -3701,7 +3822,7 @@ export interface RewardsOverview {
   cards: { folderId: string; name: string; owner: AccountOwner; rewards: CardRewards; redeemAt: number }[];
 }
 
-export type FinanceDashboard = TspDashboard | MerrillDashboard | Ny529Dashboard | AdtDashboard | TmobileDashboard | FiosDashboard | HanoverDashboard | AllyDashboard | AmazonDashboard | AmexBankDashboard | UsaaDashboard | AmexCardDashboard | BofaCardDashboard | TargetCardDashboard | PaypalDashboard;
+export type FinanceDashboard = TspDashboard | MerrillDashboard | Ny529Dashboard | AdtDashboard | TmobileDashboard | FiosDashboard | HanoverDashboard | AllyDashboard | AmazonDashboard | AmexBankDashboard | UsaaDashboard | AmexCardDashboard | BofaCardDashboard | TargetCardDashboard | LowesCardDashboard | PaypalDashboard;
 
 /** PayPal on a card dashboard (worker/src/statements/paypalMatch.ts). */
 export interface CardPaypalPanel {

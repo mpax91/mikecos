@@ -28,6 +28,8 @@ const ATTENTION = new Set([
   'price_lock', // a bill's price guarantee ends within 90 days (Verizon Fios) — call for a new rate
   'wash', // possible wash sale across investment accounts (Merrill) — the 1099 won't catch it
   'beneficiary', // a retirement account with no beneficiary designated (TSP)
+  'unconfirmed', // a card balance past due with nothing proving it was paid (Lowe's — payment-only statements aren't kept)
+  'promo', // a deferred-interest promotional balance on a store card (Lowe's)
 ]);
 /** Gaps and missed contributions only matter if recent; old history stays on the dashboard. */
 const RECENT_ONLY = new Set(['gap', 'aip_missed']);

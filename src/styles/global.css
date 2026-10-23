@@ -21399,6 +21399,70 @@ td .hm-chip,
   }
 }
 
+/* ---- Lowe's credit card dashboard (LowesCardDashboard.tsx; reuses .target-dash year rows) ---- */
+.lowes-dash .fin-dash__year.target-dash__year.lowes-dash__cat {
+  grid-template-columns: 128px minmax(0, 1fr) 64px 56px;
+}
+.lowes-dash__buys {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.lowes-dash__buys li + li {
+  border-top: var(--border-hairline);
+}
+.lowes-dash__buy {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: baseline;
+  width: 100%;
+  padding: 8px 0;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.lowes-dash__buy-date {
+  white-space: nowrap;
+  opacity: 0.75;
+}
+.lowes-dash__buy-what {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.lowes-dash__buy-what strong {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.lowes-dash__buy-what .fios-dash__muted {
+  font-size: 12px;
+}
+.lowes-dash__buy-amt {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  font-weight: 600;
+}
+@media (max-width: 640px) {
+  .lowes-dash__buy {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .lowes-dash__buy-date {
+    grid-column: 1 / -1;
+    font-size: 12px;
+  }
+  .lowes-dash .fin-dash__year.target-dash__year.lowes-dash__cat {
+    grid-template-columns: 108px minmax(0, 1fr) 56px 48px;
+  }
+}
+
 /* ---- Bet slip (2026-10-15 redesign — src/components/BetSlip.tsx) ---- */
 .modal.bet-slip-modal {
   width: 440px;

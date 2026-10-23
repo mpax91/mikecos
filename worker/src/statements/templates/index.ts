@@ -14,6 +14,7 @@ import { parseTargetCard } from './targetCard';
 import { parseHanover } from './hanover';
 import { parseMerrill } from './merrill';
 import { parseTsp } from './tsp';
+import { parseLowesCard } from './lowesCard';
 
 /** Per-folder templates (one per Drive folder, all on the shared base
  * engine). Build order per progress.md: 529 is live; ADT, Ally Bank, Amazon Prime Visa, PayPal,
@@ -183,6 +184,23 @@ export const TEMPLATES: StatementTemplate[] = [
     // summaries ("BOA CC - 2024.pdf") and the "BOA Cash Rewards Scorecard"
     // sheet are skipped.
     isStatementFile: (name) => /\d{4}\.\d{2}\.\d{2}/.test(name),
+  },
+  {
+    id: 'lowesCard',
+    name: "Lowe's Credit Card (Synchrony store card, monthly — only months with purchases are kept)",
+    folderNames: ["Lowe's Credit Card", 'Lowes Credit Card', "Lowe's Card", "MyLowe's Rewards Card", "Lowe's Advantage Card"],
+    account: {
+      nickname: "Lowe's Credit Card",
+      institution: 'Synchrony Bank',
+      type: 'Store Credit Card',
+      owner: 'household',
+      cadence: 'monthly',
+      kind: 'card',
+      network: "MyLowe's Rewards Credit Card (store card)",
+      site: 'https://www.lowes.com/eservice',
+      phone: '1-800-444-1408',
+    },
+    parse: parseLowesCard,
   },
   {
     id: 'targetCard',

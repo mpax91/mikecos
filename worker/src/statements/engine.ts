@@ -19,6 +19,7 @@ import { deriveAmazon } from './amazonDerive';
 import { deriveAmexCard } from './amexCardDerive';
 import { deriveBofaCard } from './bofaCardDerive';
 import { deriveTargetCard } from './targetCardDerive';
+import { deriveLowesCard } from './lowesCardDerive';
 import { derivePaypal } from './paypalDerive';
 import { deriveMerrill } from './merrillDerive';
 import { deriveTsp } from './tspDerive';
@@ -201,6 +202,7 @@ export async function derive(env: Env, folder: FolderRow): Promise<void> {
   else if (folder.template_id === 'amexCard') await deriveAmexCard(env, fresh);
   else if (folder.template_id === 'bofaCard') await deriveBofaCard(env, fresh);
   else if (folder.template_id === 'targetCard') await deriveTargetCard(env, fresh);
+  else if (folder.template_id === 'lowesCard') await deriveLowesCard(env, fresh);
   else if (folder.template_id === 'tmobile') await deriveTmobile(env, fresh);
   else if (folder.template_id === 'fios') await deriveFios(env, fresh);
   else if (folder.template_id === 'hanover') await deriveHanover(env, fresh);
@@ -227,6 +229,12 @@ export async function derive(env: Env, folder: FolderRow): Promise<void> {
     // New card lines can prove (or settle) a missing PayPal month.
     const pp = await env.DB.prepare(`SELECT * FROM statement_folders WHERE status = 'live' AND template_id = 'paypal'`).first<FolderRow>();
     if (pp) await derivePaypal(env, pp).catch((err) => console.error('PayPal re-derive failed', err));
+  }
+  // New checking statements can prove a Lowe's balance was paid (its
+  // payment-only statements aren't kept in Drive).
+  if (folder.template_id === 'usaa') {
+    const lowes = await env.DB.prepare(`SELECT * FROM statement_folders WHERE status = 'live' AND template_id = 'lowesCard'`).first<FolderRow>();
+    if (lowes) await deriveLowesCard(env, lowes).catch((err) => console.error("Lowe's re-derive failed", err));
   }
   // Bills & Due Dates: due day / Auto-Pay rows + the monthly pay task.
   await syncBills(env);

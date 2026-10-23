@@ -199,7 +199,7 @@ function LiveFolderCard({ folder, busy, scanMsg, onScan, onChanged }: { folder: 
           </div>
         </div>
         <div className="statements-settings__live-actions">
-          {(folder.templateId === 'ny529' || folder.templateId === 'adt' || folder.templateId === 'tmobile' || folder.templateId === 'fios' || folder.templateId === 'ally' || folder.templateId === 'amazon' || folder.templateId === 'amexBank' || folder.templateId === 'usaa' || folder.templateId === 'amexCard' || folder.templateId === 'bofaCard' || folder.templateId === 'targetCard' || folder.templateId === 'paypal' || folder.templateId === 'hanover' || folder.templateId === 'merrill' || folder.templateId === 'tsp') && (
+          {(folder.templateId === 'ny529' || folder.templateId === 'adt' || folder.templateId === 'tmobile' || folder.templateId === 'fios' || folder.templateId === 'ally' || folder.templateId === 'amazon' || folder.templateId === 'amexBank' || folder.templateId === 'usaa' || folder.templateId === 'amexCard' || folder.templateId === 'bofaCard' || folder.templateId === 'targetCard' || folder.templateId === 'lowesCard' || folder.templateId === 'paypal' || folder.templateId === 'hanover' || folder.templateId === 'merrill' || folder.templateId === 'tsp') && (
             <Link to={`/finance/${folder.id}`} className="btn btn--ghost btn--sm">
               Dashboard
             </Link>
