@@ -1886,9 +1886,15 @@ export interface Bet {
   tipper: string | null; // free text, who the pick came from — see 0084_bet_options_tipper_line.sql
   line: string | null; // 'ATS' | 'Mixed' | 'ML' | 'o/u' by default, Settings-editable
   legs: BetLeg[];
+  link_id: string | null; // Arb / Hedge group — see worker/migrations/0143_bet_links.sql
+  link_kind: BetLinkKind | null;
+  link_role: BetLinkRole | null; // 'original' = a hedge's original pick (still counts toward the record)
   created_at: string;
   updated_at: string;
 }
+
+export type BetLinkKind = 'arb' | 'hedge';
+export type BetLinkRole = 'original' | 'side';
 
 // ---- Bets Settings: editable option lists (0084_bet_options_tipper_line.sql) ----
 

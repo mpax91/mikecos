@@ -5,7 +5,15 @@ import { useReportTabMeta } from '../contexts/TabsContext';
 import type { Granularity } from '../utils/healthPeriods';
 import {
   averageLegsPerParlay,
+  betTitle,
   buildBetPeriods,
+  buildLinkGroups,
+  countsAsPick,
+  filterBetView,
+  LINK_KIND_LABELS,
+  linkTotals,
+  type BetView,
+  type LinkGroup,
   buildEquityCurve,
   byDayOfWeek,
   computeProfit,
@@ -15,6 +23,7 @@ import {
   formatOdds,
   isMultiLegType,
   legSummary,
+  groupBets,
   groupByOddsRange,
   groupByTipper,
   overUnderHitRate,
@@ -34,6 +43,7 @@ import { BetsBankingTab } from '../components/BetsBankingTab';
 import { BetsPromosTab } from '../components/BetsPromosTab';
 import { BetsWorkspaceTab } from '../components/BetsWorkspaceTab';
 import { BetSlipModal, SettleBetModal } from '../components/BetSlip';
+import { BetLinkModal } from '../components/BetLinkModal';
 
 type BetsTab = 'workspace' | 'log' | 'performance' | 'trends' | 'banking' | 'promos';
 
@@ -140,10 +150,15 @@ function dayStats(bets: Bet[]): Map<string, DayStat> {
     s.net += computeProfit(bet);
     s.risked += bet.wager;
     s.count += 1;
+    if (bet.result === 'tbd') s.pending += 1;
+    // Arb sides / hedge bets add to the day's money, not its record.
+    if (!countsAsPick(bet)) {
+      map.set(bet.date, s);
+      continue;
+    }
     if (bet.result === 'win') s.wins += 1;
     else if (bet.result === 'loss') s.losses += 1;
     else if (bet.result === 'push') s.draws += 1;
-    else if (bet.result === 'tbd') s.pending += 1;
     map.set(bet.date, s);
   }
   return map;
@@ -224,18 +239,22 @@ function ProfitCalendar({ stats, selected, onSelect }: { stats: Map<string, DayS
   );
 }
 
-function BetRow({ bet, showDate, onEdit, onDelete, onSettle }: { bet: Bet; showDate: boolean; onEdit: (b: Bet) => void; onDelete: (b: Bet) => void; onSettle: (b: Bet) => void }) {
+type RowActions = { onEdit: (b: Bet) => void; onDelete: (b: Bet) => void; onSettle: (b: Bet) => void; onLink: (b: Bet) => void };
+
+function BetRow({ bet, showDate, actions, inGroup = false }: { bet: Bet; showDate: boolean; actions: RowActions; inGroup?: boolean }) {
+  const { onEdit, onDelete, onSettle, onLink } = actions;
   const profit = computeProfit(bet);
   const multi = isMultiLegType(bet.bet_type) && bet.legs.length > 0;
-  const title = multi ? `${bet.legs.length}-Leg ${bet.bet_type}` : bet.legs[0] ? legSummary(bet.legs[0]) : bet.pick || `${bet.sport} ${bet.bet_type}`;
+  const title = betTitle(bet);
   return (
-    <div className="bets-log__row">
+    <div className={`bets-log__row${inGroup ? ' bets-log__row--in-group' : ''}`}>
       <div className="bets-log__main">
         {showDate && <span className="bets-log__date">{bet.date}</span>}
         <span className="bets-log__pick">{title}</span>
         <span className="bets-log__meta">
           {bet.sport} · {bet.sportsbook} · {formatOdds(bet.odds)} · {formatMoney(bet.wager)}
           {bet.stake_type === 'free_bet' && <span className="bets-log__freebet"> · Free bet</span>}
+          {inGroup && bet.link_role === 'original' && <span className="bets-log__original"> · Original pick</span>}
         </span>
         {multi && (
           <span className="bets-log__legs">
@@ -260,6 +279,7 @@ function BetRow({ bet, showDate, onEdit, onDelete, onSettle }: { bet: Bet; showD
         items={[
           ...(bet.result === 'tbd' ? [] : [{ label: 'Change Result', onClick: () => onSettle(bet) }]),
           { label: 'Edit', onClick: () => onEdit(bet) },
+          { label: bet.link_id ? `Edit ${LINK_KIND_LABELS[bet.link_kind ?? 'arb']} link…` : 'Link as Arb / Hedge…', onClick: () => onLink(bet) },
           { label: 'Delete', onClick: () => onDelete(bet), danger: true, separatorBefore: true },
         ]}
       />
@@ -267,9 +287,76 @@ function BetRow({ bet, showDate, onEdit, onDelete, onSettle }: { bet: Bet; showD
   );
 }
 
+/** A linked Arb / Hedge in the Log: one header with the group's net (or
+ * its locked profit while pending), then each side as a normal row. */
+function LinkGroupBlock({ group, showDate, actions }: { group: LinkGroup; showDate: boolean; actions: RowActions }) {
+  const label = LINK_KIND_LABELS[group.kind];
+  let value: string;
+  let tone: string;
+  if (group.settled) {
+    value = formatMoney(group.net);
+    tone = group.net >= 0 ? 'is-up' : 'is-down';
+  } else if (group.worst >= 0) {
+    value = `${formatMoney(group.worst)} locked`;
+    tone = 'is-up';
+  } else {
+    value = `${formatMoney(group.worst)} to ${formatMoney(group.best)}`;
+    tone = '';
+  }
+  return (
+    <div className={`bets-link-group bets-link-group--${group.kind}`}>
+      <button type="button" className="bets-link-group__header" onClick={() => actions.onLink(group.bets[0])} title={`Edit this ${label.toLowerCase()}`}>
+        <span className="bets-link-group__tag">{label}</span>
+        <span className="bets-link-group__books">
+          {showDate && <span className="bets-log__date">{group.date} · </span>}
+          {group.books.join(' + ')}
+        </span>
+        <span className={`bets-log__profit ${tone}`}>{value}</span>
+      </button>
+      {group.bets.map((bet) => (
+        <BetRow key={bet.id} bet={bet} showDate={showDate && bet.date !== group.date} actions={actions} inGroup />
+      ))}
+    </div>
+  );
+}
+
+type LogEntry = { kind: 'bet'; bet: Bet } | { kind: 'group'; group: LinkGroup };
+
+/** Newest first; a linked group sits once, at its newest side's date. */
+function logEntries(bets: Bet[]): LogEntry[] {
+  const groups = new Map(buildLinkGroups(bets).map((g) => [g.id, g]));
+  const seen = new Set<string>();
+  const entries: { date: string; entry: LogEntry }[] = [];
+  for (const bet of bets) {
+    if (bet.link_id && groups.has(bet.link_id)) {
+      if (seen.has(bet.link_id)) continue;
+      seen.add(bet.link_id);
+      const group = groups.get(bet.link_id)!;
+      entries.push({ date: group.date, entry: { kind: 'group', group } });
+    } else {
+      entries.push({ date: bet.date, entry: { kind: 'bet', bet } });
+    }
+  }
+  return entries.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)).map((e) => e.entry);
+}
+
+function LogEntries({ bets, showDate, actions }: { bets: Bet[]; showDate: boolean; actions: RowActions }) {
+  return (
+    <>
+      {logEntries(bets).map((e) =>
+        e.kind === 'group' ? (
+          <LinkGroupBlock key={e.group.id} group={e.group} showDate={showDate} actions={actions} />
+        ) : (
+          <BetRow key={e.bet.id} bet={e.bet} showDate={showDate} actions={actions} />
+        )
+      )}
+    </>
+  );
+}
+
 /** The clicked day: its record, net and amount risked, then every bet made
  * that day with how it did. */
-function BetsDayDetail({ date, stat, bets, onClose, onEdit, onDelete, onSettle }: { date: string; stat: DayStat; bets: Bet[]; onClose: () => void; onEdit: (b: Bet) => void; onDelete: (b: Bet) => void; onSettle: (b: Bet) => void }) {
+function BetsDayDetail({ date, stat, bets, onClose, actions }: { date: string; stat: DayStat; bets: Bet[]; onClose: () => void; actions: RowActions }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     ref.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -305,28 +392,36 @@ function BetsDayDetail({ date, stat, bets, onClose, onEdit, onDelete, onSettle }
         </div>
       </div>
       <div className="bets-day__list">
-        {bets.map((bet) => (
-          <BetRow key={bet.id} bet={bet} showDate={false} onEdit={onEdit} onDelete={onDelete} onSettle={onSettle} />
-        ))}
+        <LogEntries bets={bets} showDate={false} actions={actions} />
       </div>
     </div>
   );
 }
 
-function LogTab({ bets, onEdit, onDelete, onSettle }: { bets: Bet[]; onEdit: (b: Bet) => void; onDelete: (b: Bet) => void; onSettle: (b: Bet) => void }) {
+function LogTab({ bets, actions }: { bets: Bet[]; actions: RowActions }) {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const stats = useMemo(() => dayStats(bets), [bets]);
   const selectedStat = selectedDate ? stats.get(selectedDate) : undefined;
-  const dayBets = useMemo(() => (selectedDate ? bets.filter((b) => b.date === selectedDate) : []), [bets, selectedDate]);
+  const dayBets = useMemo(() => {
+    if (!selectedDate) return [];
+    // An arb's other side logged on another date still shows with its group.
+    const links = new Set(bets.filter((b) => b.date === selectedDate && b.link_id).map((b) => b.link_id));
+    return bets.filter((b) => b.date === selectedDate || (b.link_id && links.has(b.link_id)));
+  }, [bets, selectedDate]);
 
   const filtered = useMemo(() => {
     let list = bets;
     const q = query.trim().toLowerCase();
     if (q) {
-      list = list.filter((b) =>
-        [b.sport, b.sportsbook, b.bet_type, b.pick, b.notes, ...b.legs.map((l) => l.pick)].filter(Boolean).some((s) => String(s).toLowerCase().includes(q))
+      const kindWords = (b: Bet) => (b.link_kind ? [LINK_KIND_LABELS[b.link_kind]] : []);
+      const hits = list.filter((b) =>
+        [b.sport, b.sportsbook, b.bet_type, b.pick, b.notes, ...b.legs.map((l) => l.pick), ...kindWords(b)].filter(Boolean).some((s) => String(s).toLowerCase().includes(q))
       );
+      // A hit on one side of an arb shows the whole arb.
+      const hitIds = new Set(hits.map((b) => b.id));
+      const hitLinks = new Set(hits.map((b) => b.link_id).filter(Boolean));
+      list = list.filter((b) => hitIds.has(b.id) || (b.link_id && hitLinks.has(b.link_id)));
     }
     return [...list].sort((a, b) => (a.date < b.date ? 1 : -1));
   }, [bets, query]);
@@ -336,7 +431,7 @@ function LogTab({ bets, onEdit, onDelete, onSettle }: { bets: Bet[]; onEdit: (b:
       <ProfitCalendar stats={stats} selected={selectedDate} onSelect={setSelectedDate} />
 
       {selectedDate && selectedStat && (
-        <BetsDayDetail date={selectedDate} stat={selectedStat} bets={dayBets} onClose={() => setSelectedDate(null)} onEdit={onEdit} onDelete={onDelete} onSettle={onSettle} />
+        <BetsDayDetail date={selectedDate} stat={selectedStat} bets={dayBets} onClose={() => setSelectedDate(null)} actions={actions} />
       )}
 
       <div className="toolbar-row" style={{ marginTop: 16 }}>
@@ -347,16 +442,87 @@ function LogTab({ bets, onEdit, onDelete, onSettle }: { bets: Bet[]; onEdit: (b:
         <div className="empty-state">No bets match.</div>
       ) : (
         <div className="bets-log card">
-          {filtered.map((bet) => (
-            <BetRow key={bet.id} bet={bet} showDate onEdit={onEdit} onDelete={onDelete} onSettle={onSettle} />
-          ))}
+          <LogEntries bets={filtered} showDate actions={actions} />
         </div>
       )}
     </div>
   );
 }
 
-function PerformanceTab({ bets }: { bets: Bet[] }) {
+const BET_VIEWS: { id: BetView; label: string }[] = [
+  { id: 'all', label: 'All' },
+  { id: 'picks', label: 'Picks only' },
+  { id: 'linked', label: 'Arbs & Hedges' },
+];
+
+const BET_VIEW_HINTS: Record<BetView, string> = {
+  all: 'Money includes arbs & hedges; records and win rates count your picks only.',
+  picks: 'Just your own picks — arb sides and hedge bets left out.',
+  linked: 'Just your linked arbs & hedges.',
+};
+
+function BetViewSlicer({ view, onChange }: { view: BetView; onChange: (v: BetView) => void }) {
+  return (
+    <div className="bets-view">
+      <div className="bets-view__chips" role="radiogroup" aria-label="Show">
+        {BET_VIEWS.map((v) => (
+          <button key={v.id} type="button" role="radio" aria-checked={view === v.id} className={`chip${view === v.id ? ' is-active' : ''}`} onClick={() => onChange(v.id)}>
+            {v.label}
+          </button>
+        ))}
+      </div>
+      <span className="bets-view__hint">{BET_VIEW_HINTS[view]}</span>
+    </div>
+  );
+}
+
+/** Arbs & Hedges view: each linked group counts once, with its net. */
+function LinkedSummary({ bets }: { bets: Bet[] }) {
+  const groups = useMemo(() => buildLinkGroups(bets), [bets]);
+  const totals = linkTotals(groups);
+  if (groups.length === 0) return <div className="empty-state">No arbs or hedges in this period. Link two bets from the Log's ⋯ menu.</div>;
+  const arbs = groups.filter((g) => g.kind === 'arb').length;
+  return (
+    <>
+      <div className="dashboard-page__tiles">
+        <Tile label="Arbs & Hedges" value={String(totals.groups)} aside={`${arbs} arb${arbs === 1 ? '' : 's'} · ${groups.length - arbs} hedge${groups.length - arbs === 1 ? '' : 's'}`} />
+        <Tile
+          label="Net"
+          value={totals.settled ? formatMoney(totals.net) : null}
+          aside={totals.settled < totals.groups ? `${formatMoney(totals.pendingLocked)} locked on ${totals.groups - totals.settled} pending` : null}
+        />
+        <Tile label="Avg. per group" value={totals.avgNet != null ? formatMoney(totals.avgNet) : null} aside={totals.roi != null ? `${(totals.roi * 100).toFixed(1)}% on cash staked` : null} />
+        <Tile
+          label="Free-bet conversion"
+          value={totals.conversion != null ? `${Math.round(totals.conversion * 100)}%` : null}
+          aside={totals.freeBetStaked > 0 ? `${formatMoney(totals.freeBetNet)} from ${formatMoney(totals.freeBetStaked)} in free bets` : null}
+        />
+      </div>
+      <div className="bets-breakdown card">
+        <div className="bets-breakdown__title">Groups</div>
+        <div className="bets-breakdown__row bets-breakdown__row--head">
+          <span>Books</span>
+          <span>Date</span>
+          <span>Staked</span>
+          <span>Net</span>
+          <span>Kind</span>
+        </div>
+        {groups.map((g) => (
+          <div key={g.id} className="bets-breakdown__row">
+            <span className="bets-breakdown__name">{g.books.join(' + ')}</span>
+            <span>{g.date.slice(5)}</span>
+            <span>{formatMoney(g.cashStaked + g.freeBetStaked)}</span>
+            <span className={`bets-breakdown__net ${(g.settled ? g.net : g.worst) >= 0 ? 'is-up' : 'is-down'}`}>{g.settled ? formatMoney(g.net) : `${formatMoney(g.worst)}*`}</span>
+            <span>{LINK_KIND_LABELS[g.kind]}</span>
+          </div>
+        ))}
+        {groups.some((g) => !g.settled) && <div className="bets-view__footnote">* pending — worst case shown</div>}
+      </div>
+    </>
+  );
+}
+
+function PerformanceTab({ bets, view }: { bets: Bet[]; view: BetView }) {
   const [granularity, setGranularity] = useState<Granularity>('month');
   const [periodIndex, setPeriodIndex] = useState<number>(-1);
 
@@ -411,7 +577,9 @@ function PerformanceTab({ bets }: { bets: Bet[] }) {
         )}
       </div>
 
-      {current && (
+      {current && view === 'linked' && <LinkedSummary bets={current.bets} />}
+
+      {current && view !== 'linked' && (
         <div className="dashboard-page__tiles">
           <Tile label="Risked" value={formatMoney(current.risked)} />
           <Tile label="Net" value={formatMoney(current.net)} />
@@ -425,16 +593,18 @@ function PerformanceTab({ bets }: { bets: Bet[] }) {
           <MoneyBreakdownTable title="By sport" rows={current.bySport} />
           <MoneyBreakdownTable title="By bet type" rows={current.byBetType} />
           <MoneyBreakdownTable title="By sportsbook" rows={current.bySportsbook} />
-          <MoneyBreakdownTable title="By odds range" rows={oddsRanges} />
-          <MoneyBreakdownTable title="By tipper" rows={groupByTipper(current?.bets ?? bets)} />
+          {view !== 'linked' && <MoneyBreakdownTable title="By odds range" rows={oddsRanges} />}
+          {view !== 'linked' && <MoneyBreakdownTable title="By tipper" rows={groupByTipper(current?.bets ?? bets)} />}
         </div>
       )}
 
+      {view !== 'linked' && (
       <div className="bets-breakdowns">
         <PickAccuracyTable title="Pick accuracy by sport" rows={pickAccuracyBySport(current?.bets ?? bets)} />
         <PickAccuracyTable title="Pick accuracy by bet type" rows={pickAccuracyByBetType(current?.bets ?? bets)} />
         <PickAccuracyTable title="Over / Under" rows={[over, under].filter((r) => r.wins + r.losses + r.pushes + r.voids > 0)} />
       </div>
+      )}
     </div>
   );
 }
@@ -458,7 +628,23 @@ function EquityChart({ points }: { points: { date: string; cumulative: number }[
   );
 }
 
-function TrendsTab({ bets }: { bets: Bet[] }) {
+/** Arbs & Hedges per month — how often Mike is doing these, and what they net. */
+function linkedByMonth(bets: Bet[]): BetGroupStat[] {
+  const map = new Map<string, BetGroupStat>();
+  for (const g of buildLinkGroups(bets)) {
+    const key = g.date.slice(0, 7);
+    const stat = map.get(key) ?? { key, count: 0, risked: 0, won: 0, lost: 0, net: 0, wins: 0, losses: 0, winRate: null };
+    stat.count += 1;
+    stat.risked += g.cashStaked + g.freeBetStaked;
+    if (g.settled) stat.net += g.net;
+    map.set(key, stat);
+  }
+  return [...map.values()]
+    .sort((a, b) => (a.key < b.key ? 1 : -1))
+    .map((s) => ({ ...s, key: new Date(`${s.key}-15T12:00:00`).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) }));
+}
+
+function TrendsTab({ bets, view }: { bets: Bet[]; view: BetView }) {
   const sorted = useMemo(() => [...bets].sort((a, b) => (a.date < b.date ? -1 : 1)), [bets]);
   const streaks = useMemo(() => computeStreaks(sorted), [sorted]);
   const dow = useMemo(() => byDayOfWeek(bets), [bets]);
@@ -466,6 +652,27 @@ function TrendsTab({ bets }: { bets: Bet[] }) {
   const equity = useMemo(() => buildEquityCurve(bets), [bets]);
   const parlaySizes = useMemo(() => winRateByParlaySize(bets), [bets]);
   const avgLegs = useMemo(() => averageLegsPerParlay(bets), [bets]);
+
+  if (view === 'linked') {
+    return (
+      <div>
+        {equity.length > 1 && (
+          <div className="bets-equity card">
+            <div className="bets-breakdown__title">Arb & hedge profit over time</div>
+            <EquityChart points={equity} />
+            <div className="bets-equity__endpoints">
+              <span>{equity[0].date}</span>
+              <span className={equity[equity.length - 1].cumulative >= 0 ? 'is-up' : 'is-down'}>{formatMoney(equity[equity.length - 1].cumulative)}</span>
+            </div>
+          </div>
+        )}
+        <div className="bets-breakdowns">
+          <MoneyBreakdownTable title="By month (groups)" rows={linkedByMonth(bets)} />
+          <MoneyBreakdownTable title="By sportsbook" rows={groupBets(bets, (b) => b.sportsbook)} />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -514,6 +721,8 @@ export function BetsPage() {
   const [editing, setEditing] = useState<Bet | null>(null);
   const [deleting, setDeleting] = useState<Bet | null>(null);
   const [settling, setSettling] = useState<Bet | null>(null);
+  const [linking, setLinking] = useState<Bet | null>(null);
+  const [view, setView] = useState<BetView>('all');
 
   const load = () =>
     Promise.all([api.listBets(), api.listBetTransactions(), api.listBetPromos(), api.listBetOptions()])
@@ -546,6 +755,18 @@ export function BetsPage() {
     if (!settling) return;
     await api.updateBet(settling.id, params);
     setSettling(null);
+    load();
+  }
+
+  async function handleLink(params: { bet_ids: string[]; kind: 'arb' | 'hedge'; original_id: string | null; link_id: string | null }) {
+    await api.linkBets(params);
+    setLinking(null);
+    load();
+  }
+
+  async function handleUnlink(linkId: string) {
+    await api.unlinkBets(linkId);
+    setLinking(null);
     load();
   }
 
@@ -593,6 +814,8 @@ export function BetsPage() {
   const bookCounts = new Map<string, number>();
   for (const b of bets) bookCounts.set(b.sportsbook, (bookCounts.get(b.sportsbook) ?? 0) + 1);
   const recentBooks = [...bookCounts.entries()].sort((a, b) => b[1] - a[1]).map(([k]) => k);
+  const rowActions: RowActions = { onEdit: setEditing, onDelete: setDeleting, onSettle: setSettling, onLink: setLinking };
+  const viewBets = filterBetView(bets, view);
 
   return (
     <div>
@@ -626,11 +849,25 @@ export function BetsPage() {
         (bets.length === 0 ? (
           <div className="empty-state">No bets logged yet — log one the day after you make it: sport, sportsbook, odds, wager, and the result.</div>
         ) : (
-          <LogTab bets={bets} onEdit={setEditing} onDelete={setDeleting} onSettle={setSettling} />
+          <LogTab bets={bets} actions={rowActions} />
         ))}
+      {(tab === 'performance' || tab === 'trends') && bets.length > 0 && <BetViewSlicer view={view} onChange={setView} />}
       {tab === 'performance' &&
-        (bets.length === 0 ? <div className="empty-state">No bets logged yet.</div> : <PerformanceTab bets={bets} />)}
-      {tab === 'trends' && (bets.length === 0 ? <div className="empty-state">No bets logged yet.</div> : <TrendsTab bets={bets} />)}
+        (bets.length === 0 ? (
+          <div className="empty-state">No bets logged yet.</div>
+        ) : viewBets.length === 0 ? (
+          <div className="empty-state">{view === 'linked' ? "No arbs or hedges yet — link two bets from the Log's ⋯ menu." : 'No bets in this view.'}</div>
+        ) : (
+          <PerformanceTab key={view} bets={viewBets} view={view} />
+        ))}
+      {tab === 'trends' &&
+        (bets.length === 0 ? (
+          <div className="empty-state">No bets logged yet.</div>
+        ) : viewBets.length === 0 ? (
+          <div className="empty-state">{view === 'linked' ? "No arbs or hedges yet — link two bets from the Log's ⋯ menu." : 'No bets in this view.'}</div>
+        ) : (
+          <TrendsTab bets={viewBets} view={view} />
+        ))}
       {tab === 'banking' && (
         <BetsBankingTab bets={bets} transactions={transactions} onCreate={handleCreateTransaction} onUpdate={handleUpdateTransaction} onDelete={handleDeleteTransaction} />
       )}
@@ -638,6 +875,7 @@ export function BetsPage() {
 
       {adding && <BetSlipModal bet={null} betOptions={betOptions} recentBooks={recentBooks} onClose={() => setAdding(false)} onSave={handleCreate} />}
       {editing && <BetSlipModal bet={editing} betOptions={betOptions} recentBooks={recentBooks} onClose={() => setEditing(null)} onSave={handleUpdate} />}
+      {linking && <BetLinkModal anchor={linking} bets={bets} onClose={() => setLinking(null)} onSave={handleLink} onUnlink={handleUnlink} />}
       {settling && <SettleBetModal bet={settling} betOptions={betOptions} onClose={() => setSettling(null)} onSave={handleSettle} />}
       {deleting && (
         <ConfirmModal

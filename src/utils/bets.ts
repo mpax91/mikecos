@@ -1,4 +1,4 @@
-import type { Bet, BetLeg, BetLegMarket, BetOption, BetOptionCategory, BetResult, BetTransaction } from '../api/types';
+import type { Bet, BetLeg, BetLegMarket, BetLinkKind, BetOption, BetOptionCategory, BetResult, BetTransaction } from '../api/types';
 
 // Fixed lists (like Contacts' CIRCLES) rather than free text, so the
 // "performance by sport"/"performance by bet type" breakdowns stay clean
@@ -283,6 +283,146 @@ export function formatMoney(v: number): string {
   return `${sign}$${Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+// ---- Arb / Hedge links (worker/migrations/0143_bet_links.sql) ----
+//
+// An arb is one side on each of two books for the same game, placed to
+// lock a profit (usually off promos); a hedge is a later bet against an
+// open one. Every side stays its own bet (it moves money on its own book),
+// but the sides of a group aren't picks: an arb is a win + a loss by
+// construction, so counting them would drag the win rate toward 50% and
+// say nothing about Mike's handicapping. Rule: linked bets always count
+// toward MONEY (net, risked, ROI, bankroll, balances); only unlinked bets
+// and a hedge's original pick count toward the RECORD (W-L, win rate, pick
+// accuracy, streaks, parlay-size win rate).
+
+export function countsAsPick(bet: Bet): boolean {
+  return !bet.link_id || bet.link_role === 'original';
+}
+
+/** One-line name for a bet — the Log's row title. */
+export function betTitle(bet: Bet): string {
+  const multi = isMultiLegType(bet.bet_type) && bet.legs.length > 0;
+  if (multi) return `${bet.legs.length}-Leg ${bet.bet_type}`;
+  return bet.legs[0] ? legSummary(bet.legs[0]) : bet.pick || `${bet.sport} ${bet.bet_type}`;
+}
+
+export const LINK_KIND_LABELS: Record<BetLinkKind, string> = { arb: 'Arb', hedge: 'Hedge' };
+
+/** Dashboard slicer: everything, just Mike's own picks, or just the linked groups. */
+export type BetView = 'all' | 'picks' | 'linked';
+
+export function filterBetView(bets: Bet[], view: BetView): Bet[] {
+  if (view === 'picks') return bets.filter(countsAsPick);
+  if (view === 'linked') return bets.filter((b) => !!b.link_id);
+  return bets;
+}
+
+/** What a bet would pay if it won — its manual profit if Mike typed one
+ * (a boost), else the odds math. Stake-exclusive, like computeProfit. */
+export function profitIfWin(bet: Bet): number {
+  if (bet.manual_profit != null && bet.result === 'win') return bet.manual_profit;
+  return americanOddsProfit(bet.wager, bet.odds);
+}
+
+/** What a bet costs if it loses — nothing for a free bet. */
+export function profitIfLoss(bet: Bet): number {
+  return bet.stake_type === 'free_bet' ? 0 : -bet.wager;
+}
+
+export interface LinkScenario {
+  winner: Bet;
+  net: number;
+}
+
+/** One outcome per side: that side wins, every other side loses — the
+ * shape of a two-way arb or hedge. The worst of these is the locked-in
+ * profit (or the most it can lose). */
+export function linkScenarios(bets: Bet[]): LinkScenario[] {
+  return bets.map((winner) => ({
+    winner,
+    net: bets.reduce((sum, b) => sum + (b === winner ? profitIfWin(b) : profitIfLoss(b)), 0),
+  }));
+}
+
+export interface LinkGroup {
+  id: string;
+  kind: BetLinkKind;
+  bets: Bet[]; // oldest first
+  date: string; // latest member's date — where the group sits in the log
+  books: string[];
+  cashStaked: number;
+  freeBetStaked: number;
+  settled: boolean;
+  net: number; // actual, once settled (sum of computeProfit)
+  worst: number; // worst scenario — the locked profit when ≥ 0
+  best: number;
+}
+
+export function summarizeLinkGroup(id: string, bets: Bet[]): LinkGroup {
+  const sorted = [...bets].sort((a, b) => (a.date === b.date ? (a.created_at < b.created_at ? -1 : 1) : a.date < b.date ? -1 : 1));
+  const scenarios = linkScenarios(sorted);
+  const nets = scenarios.map((s) => s.net);
+  return {
+    id,
+    kind: (sorted.find((b) => b.link_kind)?.link_kind ?? 'arb') as BetLinkKind,
+    bets: sorted,
+    date: sorted[sorted.length - 1].date,
+    books: [...new Set(sorted.map((b) => b.sportsbook))],
+    cashStaked: sorted.filter((b) => b.stake_type !== 'free_bet').reduce((s, b) => s + b.wager, 0),
+    freeBetStaked: sorted.filter((b) => b.stake_type === 'free_bet').reduce((s, b) => s + b.wager, 0),
+    settled: sorted.every((b) => !isUnsettled(b)),
+    net: sorted.reduce((s, b) => s + computeProfit(b), 0),
+    worst: nets.length ? Math.min(...nets) : 0,
+    best: nets.length ? Math.max(...nets) : 0,
+  };
+}
+
+/** Every linked group in a bet list, newest first. */
+export function buildLinkGroups(bets: Bet[]): LinkGroup[] {
+  const byId = new Map<string, Bet[]>();
+  for (const b of bets) {
+    if (!b.link_id) continue;
+    const list = byId.get(b.link_id) ?? [];
+    list.push(b);
+    byId.set(b.link_id, list);
+  }
+  return [...byId.entries()].map(([id, list]) => summarizeLinkGroup(id, list)).sort((a, b) => (a.date < b.date ? 1 : -1));
+}
+
+export interface LinkTotals {
+  groups: number;
+  settled: number;
+  net: number; // settled groups only
+  avgNet: number | null;
+  cashStaked: number;
+  roi: number | null; // net / cash staked
+  freeBetStaked: number;
+  freeBetNet: number;
+  conversion: number | null; // net from groups that used a free bet ÷ free-bet stake
+  pendingLocked: number; // worst-case profit already locked in on unsettled groups
+}
+
+export function linkTotals(groups: LinkGroup[]): LinkTotals {
+  const settled = groups.filter((g) => g.settled);
+  const net = settled.reduce((s, g) => s + g.net, 0);
+  const cashStaked = settled.reduce((s, g) => s + g.cashStaked, 0);
+  const promo = settled.filter((g) => g.freeBetStaked > 0);
+  const freeBetStaked = promo.reduce((s, g) => s + g.freeBetStaked, 0);
+  const freeBetNet = promo.reduce((s, g) => s + g.net, 0);
+  return {
+    groups: groups.length,
+    settled: settled.length,
+    net,
+    avgNet: settled.length ? net / settled.length : null,
+    cashStaked,
+    roi: cashStaked > 0 ? net / cashStaked : null,
+    freeBetStaked,
+    freeBetNet,
+    conversion: freeBetStaked > 0 ? freeBetNet / freeBetStaked : null,
+    pendingLocked: groups.filter((g) => !g.settled).reduce((s, g) => s + g.worst, 0),
+  };
+}
+
 // ---- Aggregation (breakdowns + period rollups for the Dashboard) ----
 
 export interface BetGroupStat {
@@ -305,12 +445,13 @@ function foldBet(stat: BetGroupStat, bet: Bet, profit: number): void {
   stat.count += 1;
   stat.risked += bet.wager;
   stat.net += profit;
+  const pick = countsAsPick(bet);
   if (bet.result === 'win') {
     stat.won += profit;
-    stat.wins += 1;
+    if (pick) stat.wins += 1;
   } else if (bet.result === 'loss') {
     stat.lost += bet.wager;
-    stat.losses += 1;
+    if (pick) stat.losses += 1;
   }
   stat.winRate = stat.wins + stat.losses > 0 ? stat.wins / (stat.wins + stat.losses) : null;
 }
@@ -413,6 +554,12 @@ function aggregateBucket(key: string, label: string, shortLabel: string, bucketB
     const profit = computeProfit(bet);
     risked += bet.wager;
     net += profit;
+    if (!countsAsPick(bet)) {
+      // Arb sides / hedge bets: money only — see countsAsPick.
+      if (bet.result === 'win') won += profit;
+      else if (bet.result === 'loss') lost += bet.wager;
+      continue;
+    }
     if (bet.result === 'win') {
       won += profit;
       wins += 1;
@@ -492,6 +639,7 @@ export interface Pick {
 export function picksFromBets(bets: Bet[]): Pick[] {
   const picks: Pick[] = [];
   for (const bet of bets) {
+    if (!countsAsPick(bet)) continue;
     if (isMultiLegType(bet.bet_type) && bet.legs.length > 0) {
       for (const leg of bet.legs) {
         if (leg.result === 'pending') continue; // not graded yet
@@ -571,7 +719,7 @@ export interface ParlaySizeStat extends PickAccuracyStat {
 export function winRateByParlaySize(bets: Bet[]): ParlaySizeStat[] {
   const map = new Map<number, ParlaySizeStat>();
   for (const bet of bets) {
-    if (!isParlayType(bet.bet_type) || bet.legs.length === 0) continue;
+    if (!isParlayType(bet.bet_type) || bet.legs.length === 0 || !countsAsPick(bet)) continue;
     const legCount = bet.legs.length;
     const stat = map.get(legCount) ?? { ...emptyPickStat(`${legCount}-leg`), legCount };
     foldPick(stat, bet.result);
@@ -642,6 +790,7 @@ export function computeStreaks(betsOldestFirst: Bet[]): StreakInfo {
   let runLength = 0;
   for (const bet of betsOldestFirst) {
     if (bet.result !== 'win' && bet.result !== 'loss') continue;
+    if (!countsAsPick(bet)) continue;
     if (bet.result === runType) {
       runLength += 1;
     } else {

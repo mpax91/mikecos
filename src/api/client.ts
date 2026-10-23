@@ -1051,6 +1051,12 @@ export const api = {
 
   deleteBet: (id: string) => request<{ ok: true }>(`/api/bets/${id}`, { method: 'DELETE' }),
 
+  // Arb / Hedge links (0143_bet_links.sql). Passing link_id re-saves that group.
+  linkBets: (params: { bet_ids: string[]; kind: 'arb' | 'hedge'; original_id?: string | null; link_id?: string | null }) =>
+    request<{ link_id: string }>('/api/bets/links', { method: 'POST', body: JSON.stringify(params) }),
+
+  unlinkBets: (linkId: string) => request<{ ok: true }>(`/api/bets/links/${linkId}`, { method: 'DELETE' }),
+
   // ---- Bets Settings: editable option lists (0084_bet_options_tipper_line.sql) ----
 
   listBetOptions: () => request<BetOption[]>('/api/bet-options'),

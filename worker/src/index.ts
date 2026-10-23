@@ -8120,7 +8120,59 @@ app.patch('/api/bets/:id', async (c) => {
 
 app.delete('/api/bets/:id', async (c) => {
   const id = c.req.param('id');
+  const existing = await c.env.DB.prepare('SELECT link_id FROM bets WHERE id = ?').bind(id).first<{ link_id: string | null }>();
   await c.env.DB.prepare('DELETE FROM bets WHERE id = ?').bind(id).run();
+  if (existing?.link_id) await dissolveSmallBetLinks(c.env.DB, [existing.link_id]);
+  return c.json({ ok: true });
+});
+
+// ---- Arb / Hedge links (0143_bet_links.sql) ----
+// A group needs at least two bets; a group that drops below that (a bet
+// deleted or moved to another group) is dissolved so no bet is left
+// "linked" to nothing.
+async function dissolveSmallBetLinks(db: D1Database, linkIds: string[]): Promise<void> {
+  for (const linkId of new Set(linkIds)) {
+    const n = await db.prepare('SELECT COUNT(*) AS n FROM bets WHERE link_id = ?').bind(linkId).first<{ n: number }>();
+    if ((n?.n ?? 0) < 2) {
+      await db.prepare('UPDATE bets SET link_id = NULL, link_kind = NULL, link_role = NULL, updated_at = ? WHERE link_id = ?').bind(now(), linkId).run();
+    }
+  }
+}
+
+// Body: { bet_ids: string[] (2+), kind: 'arb' | 'hedge', original_id?: string
+// (hedge only — the original pick, required), link_id?: string (re-save an
+// existing group: its current members are released first) }.
+app.post('/api/bets/links', async (c) => {
+  const body = await c.req.json<{ bet_ids?: unknown; kind?: unknown; original_id?: unknown; link_id?: unknown }>();
+  const ids = Array.isArray(body.bet_ids) ? [...new Set(body.bet_ids.filter((x): x is string => typeof x === 'string' && x.length > 0))] : [];
+  if (ids.length < 2) return c.json({ error: 'bet_ids needs at least two bets' }, 400);
+  if (body.kind !== 'arb' && body.kind !== 'hedge') return c.json({ error: "kind must be 'arb' or 'hedge'" }, 400);
+  const kind = body.kind;
+  const originalId = typeof body.original_id === 'string' ? body.original_id : null;
+  if (kind === 'hedge' && (!originalId || !ids.includes(originalId))) return c.json({ error: 'a hedge needs original_id — one of bet_ids, the original pick' }, 400);
+
+  const placeholders = ids.map(() => '?').join(', ');
+  const { results } = await c.env.DB.prepare(`SELECT id, link_id FROM bets WHERE id IN (${placeholders})`).bind(...ids).all<{ id: string; link_id: string | null }>();
+  if ((results ?? []).length !== ids.length) return c.json({ error: 'one or more bets not found' }, 404);
+
+  const reuse = typeof body.link_id === 'string' && body.link_id ? body.link_id : null;
+  const linkId = reuse ?? uid();
+  const touched = (results ?? []).map((r) => r.link_id).filter((x): x is string => !!x && x !== linkId);
+  const ts = now();
+  const stmts = [];
+  if (reuse) stmts.push(c.env.DB.prepare('UPDATE bets SET link_id = NULL, link_kind = NULL, link_role = NULL, updated_at = ? WHERE link_id = ?').bind(ts, reuse));
+  for (const id of ids) {
+    const role = kind === 'hedge' && id === originalId ? 'original' : 'side';
+    stmts.push(c.env.DB.prepare('UPDATE bets SET link_id = ?, link_kind = ?, link_role = ?, updated_at = ? WHERE id = ?').bind(linkId, kind, role, ts, id));
+  }
+  await c.env.DB.batch(stmts);
+  await dissolveSmallBetLinks(c.env.DB, touched);
+  return c.json({ link_id: linkId });
+});
+
+app.delete('/api/bets/links/:linkId', async (c) => {
+  const linkId = c.req.param('linkId');
+  await c.env.DB.prepare('UPDATE bets SET link_id = NULL, link_kind = NULL, link_role = NULL, updated_at = ? WHERE link_id = ?').bind(now(), linkId).run();
   return c.json({ ok: true });
 });
 

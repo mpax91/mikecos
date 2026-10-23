@@ -473,9 +473,15 @@ export interface Bet {
   notes: string | null;
   tipper: string | null; // free text — see 0084_bet_options_tipper_line.sql
   line: string | null; // 'ATS' | 'Mixed' | 'ML' | 'o/u' by default, Settings-editable
+  link_id: string | null; // Arb / Hedge group — see 0143_bet_links.sql
+  link_kind: BetLinkKind | null;
+  link_role: BetLinkRole | null;
   created_at: string;
   updated_at: string;
 }
+
+export type BetLinkKind = 'arb' | 'hedge';
+export type BetLinkRole = 'original' | 'side';
 
 // 0084_bet_options_tipper_line.sql — one generic table backing the four
 // Settings-editable lists (Bet Type, Tipper, Line, Result). See that
