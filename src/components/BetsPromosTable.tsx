@@ -128,6 +128,15 @@ export function PromoFilterPills({ f }: { f: ReturnType<typeof usePromoFilters> 
   );
 }
 
+function NoteIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
+      <path d="M14 3v6h6M8 13h8M8 17h5" />
+    </svg>
+  );
+}
+
 function dollarLabel(v: number | null): string | null {
   if (v == null) return null;
   return `$${Number.isInteger(v) ? v : v.toFixed(2)}`;
@@ -151,6 +160,7 @@ export function BetsPromosTable({
   renderActions?: (p: BetPromo) => ReactNode;
 }) {
   const extra = renderStatus || renderActions ? ' bets-promos__table--managed' : '';
+  const [openNote, setOpenNote] = useState<string | null>(null);
   if (promos.length === 0) return <div className="bets-promos__empty">{emptyLabel}</div>;
   return (
     <div className="bets-promos__scroll">
@@ -194,6 +204,21 @@ export function BetsPromosTable({
               </span>
               <span role="cell" className="bets-promos__desc">
                 {p.description || <span className="bets-promos__any">—</span>}
+                {p.notes?.trim() && (
+                  <button
+                    type="button"
+                    className={`bets-promos__note-btn${openNote === p.id ? ' is-open' : ''}`}
+                    aria-label={openNote === p.id ? 'Hide note' : 'Show note'}
+                    aria-expanded={openNote === p.id}
+                    title={openNote === p.id ? 'Hide note' : 'Show note'}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setOpenNote(openNote === p.id ? null : p.id);
+                    }}
+                  >
+                    <NoteIcon />
+                  </button>
+                )}
               </span>
               <span role="cell" className="bets-promos__value">
                 {p.amount && <span className="bets-promos__value-num">{p.amount}</span>}
@@ -220,6 +245,7 @@ export function BetsPromosTable({
               </span>
               {extra && <span role="cell">{renderStatus?.(p)}</span>}
               {extra && <span role="cell">{renderActions?.(p)}</span>}
+              {openNote === p.id && p.notes?.trim() && <div className="bets-promos__note">{p.notes.trim()}</div>}
             </div>
           );
         })}

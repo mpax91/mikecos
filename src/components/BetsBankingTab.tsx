@@ -55,7 +55,7 @@ function TransactionFormModal({
         </label>
         <label className="bets-form__field">
           <span>Sportsbook</span>
-          <input list="bets-sportsbooks-txn" placeholder="DraftKings" value={sportsbook} onChange={(e) => setSportsbook(e.target.value)} />
+          <input list="bets-sportsbooks-txn" placeholder="e.g. DraftKings" value={sportsbook} onChange={(e) => setSportsbook(e.target.value)} />
           <datalist id="bets-sportsbooks-txn">
             {COMMON_SPORTSBOOKS.map((b) => (
               <option key={b} value={b} />
@@ -74,7 +74,7 @@ function TransactionFormModal({
         </label>
         <label className="bets-form__field">
           <span>Amount{type === 'adjustment' ? ' (negative to subtract)' : ''}</span>
-          <input placeholder="100" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
+          <input placeholder="e.g. 100" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
         </label>
         <label className="bets-form__field">
           <span>Notes (optional)</span>

@@ -87,7 +87,7 @@ function PromoFormModal({ promo, onClose, onSave }: { promo: BetPromo | null; on
       <div className="bets-form">
         <label className="bets-form__field">
           <span>Sportsbook</span>
-          <input list="bets-sportsbooks-promo" placeholder="DraftKings" value={sportsbook} onChange={(e) => setSportsbook(e.target.value)} />
+          <input list="bets-sportsbooks-promo" placeholder="e.g. DraftKings" value={sportsbook} onChange={(e) => setSportsbook(e.target.value)} />
           <datalist id="bets-sportsbooks-promo">
             {COMMON_SPORTSBOOKS.map((b) => (
               <option key={b} value={b} />
@@ -108,18 +108,20 @@ function PromoFormModal({ promo, onClose, onSave }: { promo: BetPromo | null; on
           </label>
           <label className="bets-form__field">
             <span>Description</span>
-            <input placeholder="Parlay / SGP" value={description} onChange={(e) => setDescription(e.target.value)} />
+            <input placeholder="e.g. Parlay / SGP" value={description} onChange={(e) => setDescription(e.target.value)} />
           </label>
         </div>
         <div className="bets-form__row">
           <label className="bets-form__field">
             <span>Type</span>
-            <input list="bets-promo-types" value={promoType} onChange={(e) => setPromoType(e.target.value)} />
-            <datalist id="bets-promo-types">
-              {PROMO_TYPES.map((t) => (
-                <option key={t} value={t} />
+            <select value={promoType} onChange={(e) => setPromoType(e.target.value)}>
+              {/* Keep an older promo's custom type selectable so editing it doesn't silently change it. */}
+              {[...PROMO_TYPES, ...(promoType && !PROMO_TYPES.includes(promoType) ? [promoType] : [])].map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
               ))}
-            </datalist>
+            </select>
           </label>
           <label className="bets-form__field">
             <span>Expires</span>
@@ -129,29 +131,30 @@ function PromoFormModal({ promo, onClose, onSave }: { promo: BetPromo | null; on
         <div className="bets-form__row">
           <label className="bets-form__field">
             <span>Min Legs</span>
-            <input placeholder="Blank = Any" value={legs} onChange={(e) => setLegs(e.target.value)} />
+            <input placeholder="e.g. 3" value={legs} onChange={(e) => setLegs(e.target.value)} />
           </label>
           <label className="bets-form__field">
             <span>Min Odds</span>
-            <input placeholder="+100 (Blank = Any)" value={odds} onChange={(e) => setOdds(e.target.value)} />
+            <input placeholder="e.g. +100" value={odds} onChange={(e) => setOdds(e.target.value)} />
           </label>
         </div>
         <div className="bets-form__row">
           <label className="bets-form__field">
             <span>Value</span>
-            <input placeholder="30% or $25" value={amount} onChange={(e) => setAmount(e.target.value)} />
+            <input placeholder="e.g. 30% or $25" value={amount} onChange={(e) => setAmount(e.target.value)} />
           </label>
         </div>
         <div className="bets-form__row">
           <label className="bets-form__field">
             <span>Min Bet ($)</span>
-            <input placeholder="10 (Blank = Any)" inputMode="decimal" value={minBet} onChange={(e) => setMinBet(e.target.value)} />
+            <input placeholder="e.g. 10" inputMode="decimal" value={minBet} onChange={(e) => setMinBet(e.target.value)} />
           </label>
           <label className="bets-form__field">
             <span>Max Bet ($)</span>
-            <input placeholder="25" inputMode="decimal" value={maxBonus} onChange={(e) => setMaxBonus(e.target.value)} />
+            <input placeholder="e.g. 25" inputMode="decimal" value={maxBonus} onChange={(e) => setMaxBonus(e.target.value)} />
           </label>
         </div>
+        <div className="bets-form__hint">Leave Min Legs, Min Odds or Min Bet blank to mean Any.</div>
         <label className="bets-form__field">
           <span>Status</span>
           <select value={status} onChange={(e) => setStatus(e.target.value as BetPromoStatus)}>
@@ -164,7 +167,7 @@ function PromoFormModal({ promo, onClose, onSave }: { promo: BetPromo | null; on
         </label>
         <label className="bets-form__field">
           <span>Notes (optional)</span>
-          <textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
+          <textarea rows={2} placeholder="e.g. Must be placed before first pitch" value={notes} onChange={(e) => setNotes(e.target.value)} />
         </label>
         {error && <div className="bets-form__error">{error}</div>}
       </div>
